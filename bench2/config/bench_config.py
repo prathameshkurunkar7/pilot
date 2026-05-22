@@ -17,6 +17,7 @@ from bench2.exceptions import ConfigError
 
 _BENCH_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
 _EMAIL_PATTERN = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
+_VERSION_PATTERN = re.compile(r"^\d+(\.\d+)*$")
 _VALID_PROCESS_MANAGERS = {"honcho", "supervisor"}
 _REDIS_PORT_MIN = 1024
 _REDIS_PORT_MAX = 65535
@@ -132,6 +133,8 @@ class BenchConfig:
         self._validate_letsencrypt_email()
         self._validate_site_domains()
         self._validate_nginx_ports_distinct()
+        self._validate_mariadb_version()
+        self._validate_redis_version()
 
     def _validate_required_fields(self) -> None:
         if not self.name:
@@ -254,6 +257,20 @@ class BenchConfig:
             raise ConfigError(
                 f"nginx.http_port and nginx.https_port must be distinct, "
                 f"but both are set to {self.nginx.http_port}."
+            )
+
+    def _validate_mariadb_version(self) -> None:
+        if self.mariadb.version and not _VERSION_PATTERN.match(self.mariadb.version):
+            raise ConfigError(
+                f"mariadb.version '{self.mariadb.version}' is invalid. "
+                "Must be a version string like '10.6' or '11.4'."
+            )
+
+    def _validate_redis_version(self) -> None:
+        if self.redis.version and not _VERSION_PATTERN.match(self.redis.version):
+            raise ConfigError(
+                f"redis.version '{self.redis.version}' is invalid. "
+                "Must be a version string like '7' or '7.0'."
             )
 
     def app_by_name(self, name: str) -> AppConfig:

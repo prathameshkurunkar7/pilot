@@ -36,12 +36,14 @@ mariadb:
   host: localhost
   port: 3306
   root_password: "root"     # used only during bench init to create databases/users
+  version: "10.6"           # optional — pin to a specific MariaDB version
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
 redis:
   cache_port: 13000
   queue_port: 11000
   socketio_port: 12000
+  version: "7"              # optional — pin to a specific Redis major version
 
 # ── Workers ───────────────────────────────────────────────────────────────────
 workers:
@@ -121,6 +123,7 @@ Each entry describes a Frappe site to create under `sites/`.
 | `host` | string | no | `localhost` | MariaDB server host. |
 | `port` | int | no | `3306` | MariaDB server port. |
 | `root_password` | string | yes | — | Root password used to create site databases and users during `bench init`. |
+| `version` | string | no | — | MariaDB version to install (e.g. `"10.6"`, `"10.11"`, `"11.4"`). On macOS, selects the `mariadb@<version>` Homebrew formula; on Ubuntu, installs the `mariadb-server-<version>` apt package. Omit to install whichever version the package manager offers by default. |
 
 ### `redis`
 
@@ -129,6 +132,7 @@ Each entry describes a Frappe site to create under `sites/`.
 | `cache_port` | int | no | `13000` | Port for the Redis cache instance. |
 | `queue_port` | int | no | `11000` | Port for the Redis queue instance. |
 | `socketio_port` | int | no | `12000` | Port for the Redis socketio instance. |
+| `version` | string | no | — | Redis version to install (e.g. `"7"`, `"7.0"`). On macOS, selects the `redis@<version>` Homebrew formula. On Ubuntu, apt has no versioned redis package names — use the official Redis apt repository for version pinning, then omit this field. |
 
 All three ports must be distinct and not in use by other processes.
 
@@ -186,6 +190,7 @@ bench2 validates `bench.yml` before executing any command. Violations produce a 
 11. `letsencrypt.email` must match a basic email pattern (`^[^@]+@[^@]+\.[^@]+$`) when present.
 12. All entries in `sites[].domains` must be valid hostnames (no spaces, no path separators).
 13. `nginx.http_port` and `nginx.https_port` must be distinct.
+14. `mariadb.version` and `redis.version`, when present, must match `^\d+(\.\d+)*$` (e.g. `"10.6"`, `"7"`, `"7.0"`).
 
 ---
 

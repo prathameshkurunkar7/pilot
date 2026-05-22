@@ -177,6 +177,9 @@ class MariaDBConfig:
     host: str = 'localhost'
     port: int = 3306
     root_password: str = ''
+    admin_user: str = 'root'
+    socket_path: str = ''
+    version: Optional[str] = None   # e.g. "10.6", "11.4"
 ```
 
 ### `RedisConfig`
@@ -187,6 +190,7 @@ class RedisConfig:
     cache_port: int = 13000
     queue_port: int = 11000
     socketio_port: int = 12000
+    version: Optional[str] = None   # e.g. "7", "7.0"
 ```
 
 ### `WorkerConfig`
@@ -304,8 +308,9 @@ class MariaDBManager:
     def install(self) -> None:
         """
         Install MariaDB via the system package manager.
-        Ubuntu: apt-get install mariadb-server
-        macOS:  brew install mariadb
+        Ubuntu: apt-get install mariadb-server[-<version>]  e.g. mariadb-server-10.6
+        macOS:  brew install mariadb[@<version>]            e.g. mariadb@10.6
+        When config.version is None, the package manager's default is used.
         """
 
     def is_installed(self) -> bool: ...
@@ -315,8 +320,9 @@ class MariaDBManager:
     def start(self) -> None:
         """
         Start the MariaDB service.
-        Ubuntu: systemctl start mariadb
-        macOS:  brew services start mariadb
+        Ubuntu: systemctl start mariadb  (service name is version-independent on Linux)
+        macOS:  brew services start mariadb[@<version>]  — uses the versioned formula name
+                so the correct service is started when a non-default version is installed.
         """
 
     def create_database(self, db_name: str) -> None:
@@ -338,8 +344,9 @@ class RedisManager:
     def install(self) -> None:
         """
         Install Redis via the system package manager.
-        Ubuntu: apt-get install redis-server
-        macOS:  brew install redis
+        Ubuntu: apt-get install redis-server  (apt has no versioned redis package names;
+                use the official Redis apt repo for version pinning before running bench init)
+        macOS:  brew install redis[@<version>]  e.g. redis@7
         Redis is not started as a system service; bench run launches it
         directly from the Procfile/supervisor config with a custom port.
         """

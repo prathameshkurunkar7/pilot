@@ -22,8 +22,13 @@ class RedisManager:
         if self.is_installed():
             return
         package_manager = get_package_manager()
-        package = "redis" if is_macos() else "redis-server"
+        package = self._brew_package() if is_macos() else "redis-server"
         package_manager.install(package)
+
+    def _brew_package(self) -> str:
+        if self.config.version:
+            return f"redis@{self.config.version}"
+        return "redis"
 
     def generate_configs(self) -> None:
         self._write_cache_config()

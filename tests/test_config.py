@@ -441,3 +441,51 @@ nginx:
     with pytest.raises(ConfigError) as exc_info:
         load_from_string(yaml_string)
     assert "nginx.http_port" in str(exc_info.value) or "nginx.https_port" in str(exc_info.value)
+
+
+# ── Dependency version tests ──────────────────────────────────────────────────
+
+
+def test_mariadb_version_accepted() -> None:
+    yaml_string = MINIMAL_VALID_YAML.replace(
+        "mariadb:\n  root_password: \"root\"",
+        "mariadb:\n  root_password: \"root\"\n  version: \"10.6\"",
+    )
+    config = load_from_string(yaml_string)
+    assert config.mariadb.version == "10.6"
+
+
+def test_redis_version_accepted() -> None:
+    data = yaml.safe_load(MINIMAL_VALID_YAML)
+    data["redis"]["version"] = "7"
+    config = BenchConfig._from_dict(data)
+    config.validate()
+    assert config.redis.version == "7"
+
+
+def test_mariadb_version_defaults_to_none() -> None:
+    config = BenchConfig.from_file(FIXTURES_DIR / "minimal.yml")
+    assert config.mariadb.version is None
+
+
+def test_redis_version_defaults_to_none() -> None:
+    config = BenchConfig.from_file(FIXTURES_DIR / "minimal.yml")
+    assert config.redis.version is None
+
+
+def test_invalid_mariadb_version() -> None:
+    data = yaml.safe_load(MINIMAL_VALID_YAML)
+    data["mariadb"]["version"] = "invalid"
+    config = BenchConfig._from_dict(data)
+    with pytest.raises(ConfigError) as exc_info:
+        config.validate()
+    assert "mariadb.version" in str(exc_info.value)
+
+
+def test_invalid_redis_version() -> None:
+    data = yaml.safe_load(MINIMAL_VALID_YAML)
+    data["redis"]["version"] = "not-a-version"
+    config = BenchConfig._from_dict(data)
+    with pytest.raises(ConfigError) as exc_info:
+        config.validate()
+    assert "redis.version" in str(exc_info.value)

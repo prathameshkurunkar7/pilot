@@ -24,6 +24,7 @@ mariadb:
   host: localhost
   port: 3306
   root_password: "root"
+  # version: "10.6"
 
 redis:
   cache_port: 13000

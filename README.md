@@ -95,11 +95,13 @@ mariadb:
   port: 3306
   root_password: "your_root_password"
   admin_user: root
+  version: "10.6"           # optional — omit to use the package manager default
 
 redis:
   cache_port: 13000
   queue_port: 11000
   socketio_port: 12000
+  version: "7"              # optional — macOS only; see docs/config.md for Linux notes
 
 workers:
   default: 2

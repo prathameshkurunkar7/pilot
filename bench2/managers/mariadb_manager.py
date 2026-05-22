@@ -22,8 +22,18 @@ class MariaDBManager:
         if self.is_installed():
             return
         package_manager = get_package_manager()
-        package = "mariadb" if is_macos() else "mariadb-server"
+        package = self._brew_package() if is_macos() else self._apt_package()
         package_manager.install(package)
+
+    def _brew_package(self) -> str:
+        if self.config.version:
+            return f"mariadb@{self.config.version}"
+        return "mariadb"
+
+    def _apt_package(self) -> str:
+        if self.config.version:
+            return f"mariadb-server-{self.config.version}"
+        return "mariadb-server"
 
     def is_running(self) -> bool:
         try:
@@ -35,7 +45,7 @@ class MariaDBManager:
 
     def start(self) -> None:
         if is_macos():
-            run_command(["brew", "services", "start", "mariadb"])
+            run_command(["brew", "services", "start", self._brew_package()])
         else:
             run_command(["sudo", "systemctl", "start", "mariadb"])
 

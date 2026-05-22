@@ -42,7 +42,7 @@ bench new --help      # works
 
 ## Phase 1 — Config Layer + Validation
 
-**Goal:** `BenchConfig.from_file()` parses and validates `bench.yml`; all 13 validation rules are enforced; errors name the offending field.
+**Goal:** `BenchConfig.from_file()` parses and validates `bench.yml`; all 14 validation rules are enforced; errors name the offending field.
 
 ### Files
 
@@ -50,15 +50,15 @@ bench new --help      # works
 |------|---------|
 | `bench2/config/app_config.py` | `AppConfig` dataclass: `name`, `repo`, `branch` |
 | `bench2/config/site_config.py` | `SiteConfig` dataclass: `name`, `db_name`, `db_password`, `apps`, `domains`, `ssl`; `all_domains` property |
-| `bench2/config/mariadb_config.py` | `MariaDBConfig` dataclass with defaults |
-| `bench2/config/redis_config.py` | `RedisConfig` dataclass with defaults |
+| `bench2/config/mariadb_config.py` | `MariaDBConfig` dataclass with defaults; optional `version` field |
+| `bench2/config/redis_config.py` | `RedisConfig` dataclass with defaults; optional `version` field |
 | `bench2/config/worker_config.py` | `WorkerConfig` dataclass with defaults |
 | `bench2/config/nginx_config.py` | `NginxConfig` dataclass with defaults |
 | `bench2/config/letsencrypt_config.py` | `LetsEncryptConfig` dataclass with defaults |
-| `bench2/config/bench_config.py` | `BenchConfig` — `from_file()` classmethod, `validate()` with all 13 rules, `app_by_name()`, `framework_app` |
+| `bench2/config/bench_config.py` | `BenchConfig` — `from_file()` classmethod, `validate()` with all 14 rules, `app_by_name()`, `framework_app` |
 | `bench2/commands/new.py` | `NewCommand.run()` — writes starter `bench.yml` template |
 | `tests/__init__.py` | Empty |
-| `tests/test_config.py` | Unit tests: happy path, each of the 13 validation rules |
+| `tests/test_config.py` | Unit tests: happy path, each of the 14 validation rules |
 | `tests/fixtures/minimal.yml` | Minimal valid `bench.yml` |
 | `tests/fixtures/invalid_*.yml` | One fixture per validation rule |
 
@@ -89,8 +89,8 @@ bench new    # writes bench.yml
 | `bench2/core/app.py` | `App` — `is_cloned`, `clone()`, `install()`, `update()`, `build_assets()` |
 | `bench2/core/site.py` | `Site` — `exists`, `create()`, `install_app()`, `migrate()` |
 | `bench2/managers/python_env_manager.py` | `PythonEnvManager` — `ensure_python()` (deadsnakes on Ubuntu, `brew install python@X` on macOS), `create_venv()`, `install_app()`, `install_node()` (NodeSource on Ubuntu, `brew install node` on macOS) |
-| `bench2/managers/mariadb_manager.py` | `MariaDBManager` — `install()` (apt/brew), `is_installed()`, `is_running()`, `start()` (`systemctl` on Ubuntu / `brew services` on macOS), `create_database()`, `create_user()`, `_connect()` |
-| `bench2/managers/redis_manager.py` | `RedisManager` — `install()` (apt/brew), `is_installed()`, `generate_configs()` |
+| `bench2/managers/mariadb_manager.py` | `MariaDBManager` — `install()` picks `mariadb-server-<version>` (apt) or `mariadb@<version>` (brew); `start()` uses the versioned brew service name when a version is set; `is_installed()`, `is_running()`, `create_database()`, `create_user()`, `_connect()` |
+| `bench2/managers/redis_manager.py` | `RedisManager` — `install()` picks `redis@<version>` (brew) or `redis-server` (apt, version-agnostic); `is_installed()`, `generate_configs()` |
 | `bench2/managers/process_manager.py` | `ProcessManager` ABC, `ProcessDefinition` dataclass, `ProcessManagerFactory` |
 | `bench2/managers/honcho_process_manager.py` | `HonchoProcessManager` — `generate_config()` writes Procfile, `start()`, `stop()`, `is_running()` |
 | `bench2/managers/supervisor_process_manager.py` | `SupervisorProcessManager` — `generate_config()` writes supervisor.conf, `start()`/`stop()`/`is_running()`/`status()` |
