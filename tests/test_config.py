@@ -29,8 +29,6 @@ apps:
 
 sites:
   - name: site1.localhost
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - frappe
 
@@ -58,8 +56,6 @@ def test_load_minimal_config() -> None:
 
     assert len(config.sites) == 1
     assert config.sites[0].name == "site1.localhost"
-    assert config.sites[0].db_name == "site1_db"
-    assert config.sites[0].db_password == "secret"
     assert config.sites[0].apps == ["frappe"]
 
     assert config.mariadb.root_password == "root"

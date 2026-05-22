@@ -28,7 +28,7 @@ def make_bench(tmp_path: Path, process_manager: str = "honcho") -> Bench:
             AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-15"),
         ],
         sites=[
-            SiteConfig(name="site1.localhost", db_name="site1_db", db_password="secret", apps=["frappe"]),
+            SiteConfig(name="site1.localhost", apps=["frappe"]),
         ],
         mariadb=MariaDBConfig(root_password="root"),
         redis=RedisConfig(cache_port=13000, queue_port=11000, socketio_port=12000),
@@ -76,14 +76,14 @@ def test_app_path_is_under_apps_directory(tmp_path: Path) -> None:
 
 def test_site_exists_returns_false_for_nonexistent_path(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    site_config = SiteConfig(name="site1.localhost", db_name="db1", db_password="pw", apps=["frappe"])
+    site_config = SiteConfig(name="site1.localhost", apps=["frappe"])
     site = Site(site_config, bench)
     assert site.exists is False
 
 
 def test_site_exists_returns_false_when_no_site_config_json(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    site_config = SiteConfig(name="site1.localhost", db_name="db1", db_password="pw", apps=["frappe"])
+    site_config = SiteConfig(name="site1.localhost", apps=["frappe"])
     site = Site(site_config, bench)
     site.path.mkdir(parents=True)
     assert site.exists is False
@@ -91,7 +91,7 @@ def test_site_exists_returns_false_when_no_site_config_json(tmp_path: Path) -> N
 
 def test_site_exists_returns_true_when_site_config_json_present(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    site_config = SiteConfig(name="site1.localhost", db_name="db1", db_password="pw", apps=["frappe"])
+    site_config = SiteConfig(name="site1.localhost", apps=["frappe"])
     site = Site(site_config, bench)
     site.path.mkdir(parents=True)
     (site.path / "site_config.json").write_text("{}")
@@ -100,7 +100,7 @@ def test_site_exists_returns_true_when_site_config_json_present(tmp_path: Path) 
 
 def test_site_path_is_under_sites_directory(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    site_config = SiteConfig(name="site1.localhost", db_name="db1", db_password="pw", apps=["frappe"])
+    site_config = SiteConfig(name="site1.localhost", apps=["frappe"])
     site = Site(site_config, bench)
     assert site.path == tmp_path / "sites" / "site1.localhost"
 

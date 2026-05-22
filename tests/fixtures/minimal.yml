@@ -10,8 +10,6 @@ apps:
 
 sites:
   - name: site1.localhost
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - frappe
 

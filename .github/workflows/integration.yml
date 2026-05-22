@@ -1,0 +1,73 @@
+name: Integration Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y mariadb-server redis-server git
+          sudo systemctl start mariadb redis-server
+          # Switch root from unix_socket to password auth so frappe new-site can connect
+          sudo mysql -e "SET PASSWORD FOR root@localhost = PASSWORD('admin'); FLUSH PRIVILEGES;"
+
+      - name: Install yarn and bench2
+        run: |
+          npm install -g yarn
+          pip install -e .
+
+      - name: Create bench directory
+        run: |
+          mkdir -p /tmp/ci-bench
+          cp tests/fixtures/ci_bench.yml /tmp/ci-bench/bench.yml
+
+      - name: bench2 init
+        run: bench2 init
+        working-directory: /tmp/ci-bench
+        timeout-minutes: 45
+
+      - name: Verify sites exist
+        run: |
+          test -f /tmp/ci-bench/sites/site1.localhost/site_config.json
+          test -f /tmp/ci-bench/sites/site2.localhost/site_config.json
+
+      - name: Migrate both sites
+        run: |
+          BENCH=/tmp/ci-bench/env/bin/bench
+          cd /tmp/ci-bench/sites
+          $BENCH frappe --site site1.localhost migrate
+          $BENCH frappe --site site2.localhost migrate
+
+      - name: Clear cache on both sites
+        run: |
+          BENCH=/tmp/ci-bench/env/bin/bench
+          cd /tmp/ci-bench/sites
+          $BENCH frappe --site site1.localhost clear-cache
+          $BENCH frappe --site site2.localhost clear-cache
+
+      - name: bench2 update
+        run: bench2 update
+        working-directory: /tmp/ci-bench
+
+      - name: bench2 build
+        run: bench2 build
+        working-directory: /tmp/ci-bench
