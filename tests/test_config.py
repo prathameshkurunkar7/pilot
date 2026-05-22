@@ -25,7 +25,7 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
 
 sites:
   - name: site1.localhost
@@ -52,7 +52,7 @@ def test_load_minimal_config() -> None:
     assert len(config.apps) == 1
     assert config.apps[0].name == "frappe"
     assert config.apps[0].repo == "https://github.com/frappe/frappe"
-    assert config.apps[0].branch == "version-15"
+    assert config.apps[0].branch == "version-16"
 
     assert len(config.sites) == 1
     assert config.sites[0].name == "site1.localhost"
@@ -114,12 +114,10 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
 
 sites:
   - name: site1.localhost
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - frappe
 
@@ -147,8 +145,6 @@ apps: []
 
 sites:
   - name: site1.localhost
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - frappe
 
@@ -174,7 +170,7 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
 
 sites: []
 
@@ -215,15 +211,13 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
 
 sites:
   - name: site1.localhost
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - frappe
 
@@ -250,17 +244,13 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
 
 sites:
   - name: site1.localhost
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - frappe
   - name: site1.localhost
-    db_name: site2_db
-    db_password: "secret2"
     apps:
       - frappe
 
@@ -287,12 +277,10 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
 
 sites:
   - name: site1.localhost
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - frappe
       - erpnext
@@ -320,15 +308,13 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
   - name: erpnext
     repo: https://github.com/frappe/erpnext
-    branch: version-15
+    branch: version-16
 
 sites:
   - name: site1.localhost
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - erpnext
       - frappe
@@ -382,12 +368,10 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
 
 sites:
   - name: site1.localhost
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - frappe
     ssl: true
@@ -425,12 +409,10 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
 
 sites:
   - name: site1.localhost
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - frappe
     domains:

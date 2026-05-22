@@ -6,7 +6,7 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
 
 sites:
   - name: site1.localhost

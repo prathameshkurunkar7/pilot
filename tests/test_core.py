@@ -25,7 +25,7 @@ def make_bench(tmp_path: Path, process_manager: str = "honcho") -> Bench:
         python_version="3.14",
         process_manager=process_manager,
         apps=[
-            AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-15"),
+            AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16"),
         ],
         sites=[
             SiteConfig(name="site1.localhost", apps=["frappe"]),

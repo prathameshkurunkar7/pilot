@@ -18,12 +18,10 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
 
 sites:
   - name: site1.example.com
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - frappe
 
@@ -45,12 +43,10 @@ bench:
 apps:
   - name: frappe
     repo: https://github.com/frappe/frappe
-    branch: version-15
+    branch: version-16
 
 sites:
   - name: site1.example.com
-    db_name: site1_db
-    db_password: "secret"
     apps:
       - frappe
     ssl: true
