@@ -5,6 +5,10 @@ import click
 
 from bench_cli.exceptions import Bench2Error, BenchError
 
+# Options that bench-cli's own group handles; everything else is treated as a
+# signal that the invocation should be forwarded to the Frappe bench binary.
+_OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "--help", "-h"])
+
 
 def find_bench_root() -> Path:
     current = Path.cwd()
@@ -23,39 +27,29 @@ def _load_bench() -> "Bench":
     return Bench(config, bench_root)
 
 
-class BenchGroup(click.Group):
-    """Click group that forwards unknown commands to env/bin/bench (frappe CLI)."""
+def _is_frappe_passthrough(args: list[str]) -> bool:
+    """
+    Return True when the argv looks like a Frappe bench command rather than a
+    bench-cli command, so we can forward it before Click tries to parse it.
 
-    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
-        cmd = super().get_command(ctx, cmd_name)
-        if cmd is not None:
-            return cmd
-
-        @click.command(
-            cmd_name,
-            context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
-            add_help_option=False,
-        )
-        @click.argument("args", nargs=-1, type=click.UNPROCESSED)
-        @click.pass_context
-        def _passthrough(pass_ctx: click.Context, args: tuple) -> None:
-            parent_extra = pass_ctx.parent.args if pass_ctx.parent else []
-            all_args = [*parent_extra, cmd_name, *args]
-            try:
-                from bench_cli.commands.frappe_cmd import FrappeCommand
-                bench = _load_bench()
-                FrappeCommand(bench).run_raw(all_args)
-            except BenchError as error:
-                click.echo(str(error), err=True)
-                sys.exit(1)
-
-        return _passthrough
+    Strategy: iterate tokens left-to-right.
+    - A token that is a known group option (--verbose / --yes / --help) → skip.
+    - A token starting with '-' that is NOT a known group option → unknown
+      option like --site → this is a Frappe invocation.
+    - The first bare (non-option) token → if it's a registered bench-cli
+      command it stays in bench-cli; otherwise it's forwarded to Frappe.
+    """
+    for arg in args:
+        if arg.startswith("-"):
+            if arg in _OWN_GROUP_OPTIONS:
+                continue
+            return True  # unknown option (e.g. --site, --force)
+        # First positional token: is it a bench-cli command?
+        return arg not in cli.commands
+    return False
 
 
-@click.group(
-    cls=BenchGroup,
-    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
-)
+@click.group()
 @click.option("--verbose", is_flag=True, default=False, help="Show full tracebacks on error.")
 @click.option("--yes", is_flag=True, default=False, help="Skip confirmation prompts.")
 @click.pass_context
@@ -97,6 +91,47 @@ def frappe_cmd(context: click.Context, args: tuple) -> None:
         from bench_cli.commands.frappe_cmd import FrappeCommand
         bench = _load_bench()
         FrappeCommand(bench).run(args)
+    except Bench2Error as error:
+        click.echo(str(error), err=True)
+        sys.exit(1)
+
+
+@cli.command("get-app")
+@click.argument("repo")
+@click.option("--branch", default="", help="Git branch to checkout.")
+def get_app(repo: str, branch: str) -> None:
+    """Clone and install an app from a git repository into this bench."""
+    from pathlib import PurePosixPath
+
+    try:
+        from bench_cli.config.app_config import AppConfig
+        from bench_cli.core.app import App
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+
+        bench = _load_bench()
+
+        name = PurePosixPath(repo.rstrip("/")).name
+        if name.endswith(".git"):
+            name = name[:-4]
+
+        app_cfg = AppConfig(name=name, repo=repo, branch=branch or "main")
+        app = App(app_cfg, bench)
+
+        if app.is_cloned:
+            click.echo(f"'{name}' already cloned at {app.path}, skipping clone.")
+        else:
+            click.echo(f"Cloning {name}...")
+            app.clone()
+
+        click.echo(f"Installing {name}...")
+        PythonEnvManager(bench).install_app(app)
+
+        apps_txt = bench.sites_path / "apps.txt"
+        existing = apps_txt.read_text().splitlines() if apps_txt.exists() else []
+        if name not in existing:
+            apps_txt.write_text("\n".join(existing + [name]) + "\n")
+
+        click.echo(f"\n'{name}' installed successfully.")
     except Bench2Error as error:
         click.echo(str(error), err=True)
         sys.exit(1)
@@ -243,3 +278,24 @@ def setup_production(context: click.Context) -> None:
     except Bench2Error as error:
         click.echo(str(error), err=True)
         sys.exit(1)
+
+
+def main() -> None:
+    """
+    Entry point.  Checks whether the invocation looks like a Frappe bench
+    command (unknown option like --site, or unknown subcommand like migrate).
+    If so, forward the entire argv to `env/bin/bench frappe …` before Click
+    ever parses the args — avoiding Click's strict option validation.
+    Otherwise hand off to the normal Click group.
+    """
+    args = sys.argv[1:]
+    if _is_frappe_passthrough(args):
+        try:
+            from bench_cli.commands.frappe_cmd import FrappeCommand
+            bench = _load_bench()
+            FrappeCommand(bench).run_raw(["frappe", *args])
+        except BenchError as error:
+            click.echo(str(error), err=True)
+            sys.exit(1)
+    else:
+        cli()
