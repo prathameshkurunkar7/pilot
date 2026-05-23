@@ -33,7 +33,7 @@ jobs:
       - name: Install yarn and bench
         run: |
           npm install -g yarn
-          pip install -e .
+          pip install -e ".[test]"
 
       - name: Create bench directory
         run: |
@@ -78,3 +78,8 @@ jobs:
       - name: bench build
         run: bench build
         working-directory: /tmp/ci-bench
+
+      - name: Run integration tests
+        run: pytest tests/integration/ -v
+        env:
+          BENCH_TEST_ROOT: /tmp/ci-bench

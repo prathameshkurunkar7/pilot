@@ -23,7 +23,39 @@ def _load_bench() -> "Bench":
     return Bench(config, bench_root)
 
 
-@click.group()
+class BenchGroup(click.Group):
+    """Click group that forwards unknown commands to env/bin/bench (frappe CLI)."""
+
+    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
+        cmd = super().get_command(ctx, cmd_name)
+        if cmd is not None:
+            return cmd
+
+        @click.command(
+            cmd_name,
+            context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+            add_help_option=False,
+        )
+        @click.argument("args", nargs=-1, type=click.UNPROCESSED)
+        @click.pass_context
+        def _passthrough(pass_ctx: click.Context, args: tuple) -> None:
+            parent_extra = pass_ctx.parent.args if pass_ctx.parent else []
+            all_args = [*parent_extra, cmd_name, *args]
+            try:
+                from bench_cli.commands.frappe_cmd import FrappeCommand
+                bench = _load_bench()
+                FrappeCommand(bench).run_raw(all_args)
+            except BenchError as error:
+                click.echo(str(error), err=True)
+                sys.exit(1)
+
+        return _passthrough
+
+
+@click.group(
+    cls=BenchGroup,
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+)
 @click.option("--verbose", is_flag=True, default=False, help="Show full tracebacks on error.")
 @click.option("--yes", is_flag=True, default=False, help="Skip confirmation prompts.")
 @click.pass_context
