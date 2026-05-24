@@ -15,19 +15,31 @@ const filterButtons = ['all', 'running', 'success', 'failed', 'killed'].map(s =>
 }))
 
 const columns = [
-  { label: 'Command', key: 'command' },
+  { label: 'Command', key: 'command', width: '140px' },
+  { label: 'Context', key: '_args' },
   {
     label: 'Status', key: 'status', width: '90px',
-    prefix: ({ row }) => h(Badge, { label: row.status, color: TASK_COLOR[row.status] || 'gray' }),
+    prefix: ({ row }) => h(Badge, { label: row.status, theme: TASK_COLOR[row.status] || 'gray' }),
     getLabel: () => '',
   },
   { label: 'Started', key: '_started', width: '150px' },
   { label: 'Duration', key: '_duration', width: '80px' },
 ]
 
+function fmtArgs(args) {
+  if (!args || !Object.keys(args).length) return ''
+  const parts = []
+  if (args.site) parts.push(args.site)
+  if (args.app) parts.push(args.app)
+  if (args.name) parts.push(args.name)
+  if (args.repo) parts.push(args.repo)
+  return parts.join(' · ') || Object.values(args).join(' · ')
+}
+
 const rows = computed(() =>
   tasks.value.map(t => ({
     ...t,
+    _args: fmtArgs(t.args),
     _started: fmtDate(t.started_at),
     _duration: fmtDuration(t.duration_seconds),
   }))
@@ -69,8 +81,6 @@ onMounted(load)
 
 <template>
   <div class="flex flex-col gap-4">
-    <h3>Tasks</h3>
-
     <TabButtons :buttons="filterButtons" :modelValue="statusFilter" @update:modelValue="onFilterChange" />
 
     <LoadingText v-if="loading" />

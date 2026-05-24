@@ -45,8 +45,6 @@ onMounted(async () => {
 
 <template>
   <div class="flex flex-col gap-4">
-    <h3>Logs</h3>
-
     <LoadingText v-if="loading" />
     <ErrorMessage v-else-if="error" :message="error" />
 

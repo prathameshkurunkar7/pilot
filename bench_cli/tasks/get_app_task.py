@@ -3,6 +3,7 @@ Clones an app repo and pip-installs it into the bench virtualenv.
 Invoked as: python -m bench_cli.tasks.get_app_task <bench_root> <name> <repo> [--branch <branch>]
 """
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -44,6 +45,9 @@ def main() -> None:
     existing = apps_txt.read_text().splitlines() if apps_txt.exists() else []
     if args.name not in existing:
         apps_txt.write_text("\n".join(existing + [args.name]) + "\n")
+
+    from bench_cli.tasks.build_assets import build_app_assets
+    build_app_assets(bench_root, args.name)
 
     print(f"\n'{args.name}' installed successfully.")
 

@@ -22,6 +22,9 @@ apps:
   - name: erpnext
     repo: https://github.com/frappe/erpnext
     branch: version-16
+    branches:               # optional: list of branches switchable from the admin UI
+      - version-15
+      - version-16
 
 # ── Sites ─────────────────────────────────────────────────────────────────────
 sites:
@@ -94,12 +97,27 @@ Each entry describes a git repository to clone into `apps/`.
 |-------|------|----------|-------------|
 | `name` | string | yes | Directory name under `apps/` and the Python package name used for `uv pip install -e`. |
 | `repo` | string | yes | Git remote URL (HTTPS or SSH). |
-| `branch` | string | yes | Branch to checkout. |
+| `branch` | string | yes | The currently active git branch to checkout. |
+| `branches` | list of strings | no | All branches available to switch between via the admin UI. When set, `branch` must be one of the listed values. |
+
+**Example with multiple branches:**
+```yaml
+apps:
+  - name: gameplan
+    repo: https://github.com/frappe/gameplan
+    branch: main
+    branches:
+      - main
+      - develop
+```
+
+Clicking a branch chip in the admin UI triggers a `switch-branch` task: git checkout → pip reinstall → asset rebuild. The `branch` field in `bench.yml` is updated automatically after a successful switch.
 
 **Constraints:**
 - `name` values must be unique.
 - The first app listed is treated as the **framework app** (frappe). It must expose a `bench` CLI entry point for site management commands.
 - Apps are installed into the virtualenv in the order listed.
+- When `branches` is provided, `branch` must appear in that list.
 
 ### `sites[]`
 

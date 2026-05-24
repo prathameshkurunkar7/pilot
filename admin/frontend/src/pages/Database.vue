@@ -43,8 +43,7 @@ onMounted(async () => {
 
 <template>
   <div class="flex flex-col gap-4">
-    <div class="flex items-center gap-4">
-      <h3>Database</h3>
+    <div>
       <TabButtons
         :buttons="tabs"
         modelValue="binlogs"

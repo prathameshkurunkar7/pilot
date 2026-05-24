@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Button, FormControl, Breadcrumbs, LoadingText } from 'frappe-ui'
+import { Button, FormControl, LoadingText } from 'frappe-ui'
 
 const route = useRoute()
 const filename = route.params.filename
@@ -54,8 +54,6 @@ onUnmounted(() => { if (es) es.close() })
 
 <template>
   <div class="flex flex-col gap-4">
-    <Breadcrumbs :items="[{ label: 'Logs', route: '/logs' }, { label: filename }]" />
-
     <div class="flex flex-wrap items-center gap-2">
       <FormControl
         type="text"

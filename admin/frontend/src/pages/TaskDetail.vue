@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, Badge, Dialog, Breadcrumbs, LoadingText, ErrorMessage } from 'frappe-ui'
+import { Button, Badge, Dialog, LoadingText, ErrorMessage } from 'frappe-ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -111,8 +111,6 @@ onUnmounted(() => { if (es) { es.close(); es = null } })
 
 <template>
   <div class="flex flex-col gap-4">
-    <Breadcrumbs :items="[{ label: 'Tasks', route: '/tasks' }, { label: taskId }]" />
-
     <LoadingText v-if="loading" />
     <ErrorMessage v-else-if="error" :message="error" />
 
@@ -120,7 +118,7 @@ onUnmounted(() => { if (es) { es.close(); es = null } })
       <ErrorMessage :message="actionError" />
 
       <div class="flex flex-wrap items-center gap-4">
-        <Badge :label="streaming ? 'running…' : task.status" :color="TASK_COLOR[task.status] || 'gray'" />
+        <Badge :label="streaming ? 'running…' : task.status" :theme="TASK_COLOR[task.status] || 'gray'" />
         <code>{{ task.command }}</code>
         <code v-if="Object.keys(task.args).length">
           {{ Object.entries(task.args).map(([k,v]) => `${k}=${v}`).join(' ') }}

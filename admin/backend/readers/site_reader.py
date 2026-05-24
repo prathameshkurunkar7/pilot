@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from bench_cli.config.bench_config import BenchConfig
@@ -41,7 +42,7 @@ class SiteReader:
 
         db_name = site_config.get("db_name", "")
         db_host = site_config.get("db_host", "localhost")
-        installed_apps = site_config.get("installed_apps", [])
+        installed_apps = self._list_apps(site_name) if exists else []
 
         return SiteInfo(
             name=site_name,
@@ -51,3 +52,27 @@ class SiteReader:
             installed_apps=installed_apps,
             site_config=site_config,
         )
+
+    def _list_apps(self, site_name: str) -> list[str]:
+        bench_bin = str(self._bench_root / "env" / "bin" / "bench")
+        sites_dir = str(self._bench_root / "sites")
+        try:
+            result = subprocess.run(
+                [bench_bin, "frappe", "--site", site_name, "list-apps"],
+                cwd=sites_dir,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode != 0:
+                return []
+            apps = []
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line:
+                    app_name = line.split()[0]
+                    if app_name:
+                        apps.append(app_name)
+            return apps
+        except Exception:
+            return []

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Button, ListView, Breadcrumbs, LoadingText, ErrorMessage } from 'frappe-ui'
+import { Button, ListView, LoadingText, ErrorMessage } from 'frappe-ui'
 
 const route = useRoute()
 const logName = route.params.name
@@ -44,8 +44,6 @@ onMounted(load)
 
 <template>
   <div class="flex flex-col gap-4">
-    <Breadcrumbs :items="[{ label: 'Database', route: '/database/binlogs' }, { label: logName }]" />
-
     <LoadingText v-if="loading" />
     <ErrorMessage v-else-if="error" :message="error" />
 

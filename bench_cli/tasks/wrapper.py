@@ -16,10 +16,16 @@ def main() -> None:
     task_dir = Path(sys.argv[1])
     meta = json.loads((task_dir / "meta.json").read_text())
 
+    bench_root = task_dir.parent.parent
+    # frappe's bench CLI (env/bin/bench) loads apps.txt from the current
+    # directory using sites_path=".", so cwd must be the sites/ subdirectory.
+    sites_dir = bench_root / "sites"
+    cwd = str(sites_dir) if sites_dir.is_dir() else str(bench_root)
+
     with open(task_dir / "output.log", "wb") as log_file:
         result = subprocess.run(
             meta["command_argv"],
-            cwd=str(task_dir.parent.parent),  # bench_root
+            cwd=cwd,
             stdout=log_file,
             stderr=subprocess.STDOUT,
         )

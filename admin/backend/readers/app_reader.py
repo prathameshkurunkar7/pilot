@@ -12,6 +12,7 @@ class AppInfo:
     name: str
     repo: str
     branch: str
+    branches: list
     is_cloned: bool
     current_commit: str
     commit_message: str
@@ -25,14 +26,18 @@ class AppReader:
 
     def read_all(self) -> list[AppInfo]:
         config = BenchConfig.from_file(self._bench_root / "bench.yml")
-        return [self._read_app(app.name, app.repo, app.branch) for app in config.apps]
+        return [self._read_app(app) for app in config.apps]
 
     def read_one(self, app_name: str) -> AppInfo:
         config = BenchConfig.from_file(self._bench_root / "bench.yml")
         app_config = config.app_by_name(app_name)
-        return self._read_app(app_config.name, app_config.repo, app_config.branch)
+        return self._read_app(app_config)
 
-    def _read_app(self, name: str, repo: str, branch: str) -> AppInfo:
+    def _read_app(self, app_config) -> AppInfo:
+        name = app_config.name
+        repo = app_config.repo
+        branch = app_config.branch
+        branches = app_config.branches or []
         app_path = self._bench_root / "apps" / name
         is_cloned = (app_path / ".git").exists()
 
@@ -41,6 +46,7 @@ class AppReader:
                 name=name,
                 repo=repo,
                 branch=branch,
+                branches=branches,
                 is_cloned=False,
                 current_commit="",
                 commit_message="",
@@ -52,6 +58,7 @@ class AppReader:
             name=name,
             repo=repo,
             branch=branch,
+            branches=branches,
             is_cloned=True,
             current_commit=self._git_short_sha(app_path),
             commit_message=self._git_commit_message(app_path),

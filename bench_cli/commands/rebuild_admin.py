@@ -30,8 +30,25 @@ class RebuildAdminCommand:
         )
 
     def _source_candidates(self):
-        # Standard location created by install.sh
+        # 1. Standard location created by install.sh
         yield Path.home() / "bench-cli"
-        # Editable / development install: __file__ points into the source tree
+
+        # 2. Resolve via dist-info/direct_url.json — works whether the package
+        #    was installed editable or from a local directory, and is unaffected
+        #    by sys.path[0] shadowing when bench runs as a script.
+        try:
+            import importlib.metadata, json
+            dist = importlib.metadata.distribution("bench-cli")
+            direct_url_path = Path(str(dist._path)) / "direct_url.json"
+            if direct_url_path.exists():
+                info = json.loads(direct_url_path.read_text())
+                url = info.get("url", "")
+                if url.startswith("file://"):
+                    yield Path(url[len("file://"):])
+        except Exception:
+            pass
+
+        # 3. Fallback: __file__ of the bench_cli package (works when CWD is
+        #    the source root and bench_cli is imported from there via sys.path).
         import bench_cli as _pkg
         yield Path(_pkg.__file__).parent.parent

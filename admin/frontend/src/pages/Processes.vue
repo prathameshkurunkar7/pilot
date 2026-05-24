@@ -1,5 +1,5 @@
 <script setup>
-import { h, ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Badge, ListView, Button, LoadingText, ErrorMessage } from 'frappe-ui'
 
@@ -15,24 +15,16 @@ let timer
 const router = useRouter()
 const STATUS_COLOR = { running: 'green', stopped: 'red', error: 'red', unknown: 'gray' }
 
+function openLog(filename) {
+  router.push(`/logs/${filename}`)
+}
+
 const columns = [
   { label: 'Name', key: 'name', width: '200px' },
-  {
-    label: 'Status', key: 'status', width: '100px',
-    prefix: ({ row }) => h(Badge, { label: row.status, color: STATUS_COLOR[row.status] || 'gray' }),
-    getLabel: () => '',
-  },
+  { label: 'Status', key: 'status', width: '100px' },
   { label: 'PID', key: 'pid', width: '80px' },
   { label: 'Uptime', key: 'uptime', width: '100px' },
-  {
-    label: 'Log', key: 'log_filename',
-    prefix: ({ row }) => row.log_filename ? h('a', {
-      class: 'truncate text-ink-blue-2 hover:underline',
-      href: `/logs/${row.log_filename}`,
-      onClick: (e) => { e.preventDefault(); router.push(`/logs/${row.log_filename}`) },
-    }, row.log_filename) : null,
-    getLabel: () => '',
-  },
+  { label: 'Log', key: 'log_filename' },
 ]
 
 const rows = computed(() => processes.value)
@@ -65,12 +57,9 @@ onUnmounted(() => clearInterval(timer))
 
 <template>
   <div class="flex flex-col gap-4">
-    <div class="flex items-center justify-between">
-      <h3>Processes</h3>
-      <div class="flex items-center gap-2">
-        <span v-if="!paused">Refreshing in {{ countdownDisplay }}s</span>
-        <Button variant="ghost" size="sm" @click="paused = !paused">{{ paused ? 'Resume' : 'Pause' }}</Button>
-      </div>
+    <div class="flex justify-end items-center gap-2">
+      <span v-if="!paused" class="text-sm text-ink-gray-5">Refreshing in {{ countdownDisplay }}s</span>
+      <Button variant="ghost" size="sm" @click="paused = !paused">{{ paused ? 'Resume' : 'Pause' }}</Button>
     </div>
 
     <LoadingText v-if="loading" />
@@ -82,8 +71,22 @@ onUnmounted(() => clearInterval(timer))
         :rows="rows"
         row-key="name"
         :options="{ selectable: false, showTooltip: false }"
-      />
-      <p v-if="processManager === 'supervisor'" class="mt-3">
+      >
+        <template #cell="{ column, item }">
+          <Badge
+            v-if="column.key === 'status'"
+            :label="item"
+            :theme="STATUS_COLOR[item] || 'gray'"
+          />
+          <button
+            v-else-if="column.key === 'log_filename' && item"
+            class="text-ink-blue-2 hover:underline"
+            @click="openLog(item)"
+          >{{ item }}</button>
+          <span v-else>{{ item || '—' }}</span>
+        </template>
+      </ListView>
+      <p v-if="processManager === 'supervisor'" class="mt-3 text-sm text-ink-gray-5">
         Manage via <code>supervisorctl -c config/supervisor.conf</code>
       </p>
     </div>

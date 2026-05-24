@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -28,7 +29,7 @@ def test_build_argv_migrate(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("migrate", {"site": "mysite.localhost"})
     bench_bin = str(tmp_path / "env" / "bin" / "bench")
-    assert argv == [bench_bin, "--site", "mysite.localhost", "migrate"]
+    assert argv == [bench_bin, "frappe", "--site", "mysite.localhost", "migrate"]
     assert Path(argv[0]).is_absolute()
 
 
@@ -36,29 +37,65 @@ def test_build_argv_clear_cache(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("clear-cache", {"site": "mysite.localhost"})
     bench_bin = str(tmp_path / "env" / "bin" / "bench")
-    assert argv == [bench_bin, "--site", "mysite.localhost", "clear-cache"]
+    assert argv == [bench_bin, "frappe", "--site", "mysite.localhost", "clear-cache"]
 
 
 def test_build_argv_install_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("install-app", {"site": "mysite.localhost", "app": "erpnext"})
+    # install-app uses the install_app_task module (chains install + build)
+    assert argv[0] == sys.executable
+    assert argv[1:3] == ["-m", "bench_cli.tasks.install_app_task"]
+    assert str(tmp_path) in argv
+    assert "mysite.localhost" in argv
+    assert "erpnext" in argv
+
+
+def test_build_argv_uninstall_app(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("uninstall-app", {"site": "mysite.localhost", "app": "erpnext"})
     bench_bin = str(tmp_path / "env" / "bin" / "bench")
-    assert argv == [bench_bin, "--site", "mysite.localhost", "install-app", "erpnext"]
+    assert argv == [bench_bin, "frappe", "--site", "mysite.localhost", "uninstall-app", "erpnext", "--yes", "--no-backup"]
 
 
-def test_build_argv_build(tmp_path: Path) -> None:
+def test_build_argv_get_app(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext"})
+    assert argv[0] == sys.executable
+    assert argv[1:3] == ["-m", "bench_cli.tasks.get_app_task"]
+    assert str(tmp_path) in argv
+    assert "erpnext" in argv
+    assert "https://github.com/frappe/erpnext" in argv
+
+
+def test_build_argv_get_app_with_branch(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext", "branch": "version-16"})
+    assert "--branch" in argv
+    assert "version-16" in argv
+
+
+def test_build_argv_build_no_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("build", {})
     bench_bin = str(tmp_path / "env" / "bin" / "bench")
-    assert argv == [bench_bin, "build"]
+    assert argv == [bench_bin, "frappe", "build"]
     assert Path(argv[0]).is_absolute()
+
+
+def test_build_argv_build_with_app(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("build", {"app": "erpnext"})
+    bench_bin = str(tmp_path / "env" / "bin" / "bench")
+    assert argv == [bench_bin, "frappe", "build", "--app", "erpnext"]
 
 
 def test_build_argv_update(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("update", {})
-    bench_bin = str(tmp_path / "env" / "bin" / "bench")
-    assert argv == [bench_bin, "update", "--yes"]
+    assert argv[0] == sys.executable
+    assert argv[1:3] == ["-m", "bench_cli.tasks.update_task"]
+    assert str(tmp_path) in argv
 
 
 def test_build_argv_reload_supervisor(tmp_path: Path) -> None:
@@ -67,6 +104,23 @@ def test_build_argv_reload_supervisor(tmp_path: Path) -> None:
     supervisor_conf = str(tmp_path / "config" / "supervisor.conf")
     assert argv == ["supervisorctl", "-c", supervisor_conf, "reload"]
     assert Path(supervisor_conf).is_absolute()
+
+
+def test_build_argv_switch_branch(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("switch-branch", {"name": "gameplan", "branch": "develop"})
+    assert argv[0] == sys.executable
+    assert argv[1:3] == ["-m", "bench_cli.tasks.switch_branch_task"]
+    assert str(tmp_path) in argv
+    assert "gameplan" in argv
+    assert "develop" in argv
+
+
+def test_build_argv_backup_site(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("backup-site", {"site": "mysite.localhost"})
+    bench_bin = str(tmp_path / "env" / "bin" / "bench")
+    assert argv == [bench_bin, "frappe", "--site", "mysite.localhost", "backup"]
 
 
 def test_build_argv_unknown_command_raises(tmp_path: Path) -> None:
@@ -85,6 +139,14 @@ def test_build_argv_install_app_requires_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     with pytest.raises(ValueError, match="app"):
         runner._build_argv("install-app", {"site": "mysite.localhost"})
+
+
+def test_build_argv_switch_branch_requires_name_and_branch(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    with pytest.raises(ValueError, match="name"):
+        runner._build_argv("switch-branch", {"branch": "develop"})
+    with pytest.raises(ValueError, match="branch"):
+        runner._build_argv("switch-branch", {"name": "gameplan"})
 
 
 # ── TaskReader._effective_status ────────────────────────────────────────────
@@ -128,7 +190,7 @@ def _make_task_dir(tasks_root: Path, task_id: str, status: str = "success") -> P
         "task_id": task_id,
         "command": "build",
         "args": {},
-        "command_argv": ["/usr/bin/bench", "build"],
+        "command_argv": ["/usr/bin/bench", "frappe", "build"],
         "started_at": "2026-05-21T14:30:22+00:00",
         "finished_at": "2026-05-21T14:30:35+00:00",
         "exit_code": 0,
@@ -170,18 +232,10 @@ def test_read_output_returns_all_lines_when_fewer_than_limit(tmp_path: Path) -> 
 # ── TaskRunner task retention ────────────────────────────────────────────────
 
 
-def _make_fake_popen(task_dir_holder: list) -> MagicMock:
-    """Return a Popen mock that writes pid=99999 side-effectfully."""
-    mock_proc = MagicMock()
-    mock_proc.pid = 99999
-    return mock_proc
-
-
 def test_task_retention_limit(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
 
     # Pre-create TASK_RETENTION_LIMIT + 1 completed tasks directly on disk
-    # so that after running one more the purge removes the oldest.
     tasks_dir = tmp_path / "tasks"
     tasks_dir.mkdir()
 
@@ -195,7 +249,7 @@ def test_task_retention_limit(tmp_path: Path) -> None:
             "task_id": task_id,
             "command": "build",
             "args": {},
-            "command_argv": ["/usr/bin/bench", "build"],
+            "command_argv": ["/usr/bin/bench", "frappe", "build"],
             "started_at": f"2026-05-21T{i // 3600:02d}:{(i % 3600) // 60:02d}:{i % 60:02d}+00:00",
             "finished_at": f"2026-05-21T{i // 3600:02d}:{(i % 3600) // 60:02d}:{i % 60:02d}+00:00",
             "exit_code": 0,
@@ -220,7 +274,6 @@ def test_task_retention_limit(tmp_path: Path) -> None:
     assert not oldest_dir.exists()
 
     # Completed tasks on disk should now equal TASK_RETENTION_LIMIT
-    # (LIMIT+1 pre-existing minus 1 deleted = LIMIT; the new task is 'running').
     remaining_completed = [
         entry
         for entry in tasks_dir.iterdir()

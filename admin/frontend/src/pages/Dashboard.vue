@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { Button, Badge, Card, LoadingText, ErrorMessage, ListView } from 'frappe-ui'
 
 const router = useRouter()
@@ -44,7 +44,7 @@ function fmtDuration(s) {
   return `${Math.round(s / 3600)}h`
 }
 
-const TASK_COLOR = { success: 'green', failed: 'red', running: 'blue', killed: 'gray' }
+const TASK_COLOR = { success: 'green', failed: 'red', running: 'blue', killed: 'gray', queued: 'gray' }
 
 const taskColumns = [
   { label: 'Command', key: 'command' },
@@ -69,28 +69,24 @@ onUnmounted(() => clearInterval(timer))
 
 <template>
   <div class="flex flex-col gap-4">
-    <div class="flex items-center justify-between">
-      <h3>Dashboard</h3>
-      <span>Refreshing in {{ countdownDisplay }}s</span>
-    </div>
 
     <LoadingText v-if="loading" />
     <ErrorMessage v-else-if="error" :message="error" />
 
     <template v-else-if="data">
       <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <RouterLink to="/apps">
+        <button class="text-left" @click="router.push('/apps')">
           <Card :title="`${data.cloned_count} / ${data.apps.length}`" subtitle="Apps cloned" />
-        </RouterLink>
-        <RouterLink to="/sites">
+        </button>
+        <button class="text-left" @click="router.push('/sites')">
           <Card :title="`${data.online_count} / ${data.sites.length}`" subtitle="Sites online" />
-        </RouterLink>
-        <RouterLink to="/processes">
+        </button>
+        <button class="text-left" @click="router.push('/processes')">
           <Card :title="`${data.running_count} / ${data.processes.length}`" subtitle="Processes running" />
-        </RouterLink>
-        <RouterLink to="/tasks">
+        </button>
+        <button class="text-left" @click="router.push('/tasks')">
           <Card :title="String(data.recent_tasks.length)" subtitle="Recent tasks" />
-        </RouterLink>
+        </button>
       </div>
 
       <Card title="Quick Actions">
@@ -104,7 +100,7 @@ onUnmounted(() => clearInterval(timer))
 
       <Card title="Recent Tasks">
         <template #actions>
-          <RouterLink to="/tasks">View all</RouterLink>
+          <Button variant="ghost" size="sm" @click="router.push('/tasks')">View all</Button>
         </template>
         <ListView
           :columns="taskColumns"
@@ -117,7 +113,7 @@ onUnmounted(() => clearInterval(timer))
           }"
         >
           <template #cell="{ column, item }">
-            <Badge v-if="column.key === 'status'" :label="item" :color="TASK_COLOR[item] || 'gray'" size="sm" />
+            <Badge v-if="column.key === 'status'" :label="item" :theme="TASK_COLOR[item] || 'gray'" size="sm" />
             <span v-else>{{ item || '—' }}</span>
           </template>
         </ListView>

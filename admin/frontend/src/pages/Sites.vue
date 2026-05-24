@@ -18,7 +18,7 @@ const columns = [
   { label: 'Name', key: 'name', width: '200px' },
   {
     label: 'Status', key: '_status', width: '80px',
-    prefix: ({ row }) => h(Badge, { label: row._status, color: row._status === 'online' ? 'green' : 'gray' }),
+    prefix: ({ row }) => h(Badge, { label: row._status, theme: row._status === 'online' ? 'green' : 'gray' }),
     getLabel: () => '',
   },
   { label: 'Apps', key: '_apps' },
@@ -76,8 +76,7 @@ onMounted(load)
 
 <template>
   <div class="flex flex-col gap-4">
-    <div class="flex items-center justify-between">
-      <h3>Sites ({{ sites.length }})</h3>
+    <div class="flex justify-end">
       <Button variant="solid" @click="openCreate">Create Site</Button>
     </div>
 

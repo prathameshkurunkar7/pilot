@@ -50,7 +50,15 @@ class BenchConfig:
     @classmethod
     def _from_dict(cls, data: dict) -> "BenchConfig":
         bench_data = data.get("bench", {})
-        apps = [AppConfig(name=a.get("name", ""), repo=a.get("repo", ""), branch=a.get("branch", "")) for a in data.get("apps", [])]
+        apps = [
+            AppConfig(
+                name=a.get("name", ""),
+                repo=a.get("repo", ""),
+                branch=a.get("branch", ""),
+                branches=a.get("branches", []),
+            )
+            for a in data.get("apps", [])
+        ]
         sites = [cls._parse_site(site) for site in data.get("sites", [])]
         mariadb = MariaDBConfig(**data.get("mariadb", {}))
         redis = cls._parse_redis(data.get("redis", {}))
@@ -165,6 +173,10 @@ class BenchConfig:
             if not app.name or not app.repo or not app.branch:
                 raise ConfigError(
                     f"App '{app.name or '(unnamed)'}' must have name, repo, and branch."
+                )
+            if app.branches and app.branch not in app.branches:
+                raise ConfigError(
+                    f"App '{app.name}': active branch '{app.branch}' is not listed in branches {app.branches}."
                 )
         if not self.sites:
             raise ConfigError("At least one site must be defined under sites.")

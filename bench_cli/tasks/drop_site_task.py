@@ -23,15 +23,16 @@ def main() -> None:
     cfg = BenchConfig.from_file(bench_root / "bench.yml")
     bench = Bench(cfg, bench_root)
     bench_bin = str(bench.env_path / "bin" / "bench")
+    mariadb = cfg.mariadb
 
     print(f"Dropping site '{args.site_name}'...")
     sys.stdout.flush()
 
-    run_command(
-        [bench_bin, "--site", args.site_name, "drop-site", "--force"],
-        cwd=bench.sites_path,
-        stream_output=True,
-    )
+    cmd = [bench_bin, "frappe", "drop-site", "--force", args.site_name]
+    if mariadb.root_password:
+        cmd += ["--db-root-password", mariadb.root_password]
+
+    run_command(cmd, cwd=bench.sites_path, stream_output=True)
 
     import yaml
     bench_yml = bench_root / "bench.yml"

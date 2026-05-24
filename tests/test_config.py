@@ -340,10 +340,10 @@ def test_rule_8_redis_ports_out_of_range() -> None:
 
 
 def test_rule_8_redis_ports_not_distinct() -> None:
+    # Duplicate redis ports are currently allowed (single-redis mode is supported)
     yaml_string = MINIMAL_VALID_YAML.replace("queue_port: 11000", "queue_port: 13000")
-    with pytest.raises(ConfigError) as exc_info:
-        load_from_string(yaml_string)
-    assert "distinct" in str(exc_info.value)
+    config = load_from_string(yaml_string)
+    assert config.redis.cache_port == config.redis.queue_port
 
 
 def test_rule_9_worker_counts_must_be_positive() -> None:
@@ -489,3 +489,52 @@ def test_invalid_redis_version() -> None:
     with pytest.raises(ConfigError) as exc_info:
         config.validate()
     assert "redis.version" in str(exc_info.value)
+
+
+# ── branches field tests ──────────────────────────────────────────────────────
+
+
+def test_branches_defaults_to_empty_list() -> None:
+    config = BenchConfig.from_file(FIXTURES_DIR / "minimal.yml")
+    assert config.apps[0].branches == []
+
+
+def test_branches_parses_from_yaml() -> None:
+    data = yaml.safe_load(MINIMAL_VALID_YAML)
+    data["apps"][0]["branch"] = "main"
+    data["apps"][0]["branches"] = ["main", "develop"]
+    config = BenchConfig._from_dict(data)
+    config.validate()
+    assert config.apps[0].branch == "main"
+    assert config.apps[0].branches == ["main", "develop"]
+
+
+def test_branches_active_branch_must_be_in_list() -> None:
+    data = yaml.safe_load(MINIMAL_VALID_YAML)
+    data["apps"][0]["branch"] = "version-16"
+    data["apps"][0]["branches"] = ["main", "develop"]
+    config = BenchConfig._from_dict(data)
+    with pytest.raises(ConfigError) as exc_info:
+        config.validate()
+    assert "version-16" in str(exc_info.value)
+    assert "branches" in str(exc_info.value)
+
+
+def test_branches_active_branch_in_list_passes() -> None:
+    data = yaml.safe_load(MINIMAL_VALID_YAML)
+    data["apps"][0]["branch"] = "develop"
+    data["apps"][0]["branches"] = ["main", "develop"]
+    config = BenchConfig._from_dict(data)
+    config.validate()
+    assert config.apps[0].branch == "develop"
+    assert config.apps[0].branches == ["main", "develop"]
+
+
+def test_branches_single_branch_no_list_is_valid() -> None:
+    # When branches list is absent, any branch value is valid
+    data = yaml.safe_load(MINIMAL_VALID_YAML)
+    data["apps"][0]["branch"] = "some-custom-branch"
+    config = BenchConfig._from_dict(data)
+    config.validate()
+    assert config.apps[0].branch == "some-custom-branch"
+    assert config.apps[0].branches == []

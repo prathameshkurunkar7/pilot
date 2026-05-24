@@ -41,6 +41,7 @@ def add():
     name = (data.get("name") or "").strip()
     repo = (data.get("repo") or "").strip()
     branch = (data.get("branch") or "").strip()
+    branches = [b.strip() for b in data.get("branches") or [] if str(b).strip()]
 
     if not name:
         return jsonify({"ok": False, "error": "App name is required."})
@@ -60,6 +61,8 @@ def add():
     entry: dict = {"name": name, "repo": repo}
     if branch:
         entry["branch"] = branch
+    if branches:
+        entry["branches"] = branches
     cfg.setdefault("apps", []).append(entry)
 
     try:
@@ -75,5 +78,34 @@ def add():
         )
     except Exception as e:
         return jsonify({"ok": False, "error": f"App added but could not start get-app: {e}"})
+
+    return jsonify({"ok": True, "task_id": task_id})
+
+
+@apps_bp.route("/<name>/switch-branch", methods=["POST"])
+def switch_branch(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True) or {}
+
+    branch = (data.get("branch") or "").strip()
+    if not branch:
+        return jsonify({"ok": False, "error": "branch is required."})
+
+    bench_yml = bench_root / "bench.yml"
+    try:
+        cfg = yaml.safe_load(bench_yml.read_text()) or {}
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Could not read bench.yml: {e}"})
+
+    app_names = [a.get("name") for a in cfg.get("apps", [])]
+    if name not in app_names:
+        return jsonify({"ok": False, "error": f"App '{name}' not found in bench.yml."})
+
+    try:
+        task_id = TaskRunner(bench_root).run(
+            "switch-branch", {"name": name, "branch": branch}
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 
     return jsonify({"ok": True, "task_id": task_id})

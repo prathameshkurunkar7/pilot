@@ -5,6 +5,7 @@
     "description": "Full-featured ERP covering accounting, inventory, manufacturing, CRM, HR, and more.",
     "repo": "https://github.com/frappe/erpnext",
     "branch": "version-16",
+    "branches": ["version-15", "version-16"],
     "logo_url": null
   },
   {
@@ -13,6 +14,7 @@
     "description": "Modern HR and payroll management with leave, attendance, expense claims, and appraisals.",
     "repo": "https://github.com/frappe/hrms",
     "branch": "version-16",
+    "branches": ["version-15", "version-16"],
     "logo_url": null
   },
   {
@@ -21,6 +23,7 @@
     "description": "Sales CRM with leads, deals, pipeline views, email sequences, and call management.",
     "repo": "https://github.com/frappe/crm",
     "branch": "main",
+    "branches": ["main", "develop"],
     "logo_url": null
   },
   {
@@ -29,6 +32,7 @@
     "description": "Customer support and ticket management with SLAs, canned replies, and a customer portal.",
     "repo": "https://github.com/frappe/helpdesk",
     "branch": "main",
+    "branches": ["main", "develop"],
     "logo_url": null
   },
   {
@@ -37,6 +41,7 @@
     "description": "Knowledge base and documentation tool with versioning, search, and a clean reading experience.",
     "repo": "https://github.com/frappe/wiki",
     "branch": "main",
+    "branches": ["main", "develop"],
     "logo_url": null
   },
   {
@@ -45,6 +50,7 @@
     "description": "Open source file storage and sharing — upload, organise, and collaborate on documents.",
     "repo": "https://github.com/frappe/drive",
     "branch": "main",
+    "branches": ["main", "develop"],
     "logo_url": null
   },
   {
@@ -53,6 +59,7 @@
     "description": "No-code website builder with drag-and-drop blocks, components, and live preview.",
     "repo": "https://github.com/frappe/builder",
     "branch": "main",
+    "branches": ["main", "develop"],
     "logo_url": null
   },
   {
@@ -61,6 +68,7 @@
     "description": "Learning management system with courses, quizzes, certificates, and progress tracking.",
     "repo": "https://github.com/frappe/lms",
     "branch": "main",
+    "branches": ["main", "develop"],
     "logo_url": null
   },
   {
@@ -69,6 +77,7 @@
     "description": "Payment gateway integrations for Stripe, Razorpay, PayPal, Braintree, and more.",
     "repo": "https://github.com/frappe/payments",
     "branch": "main",
+    "branches": ["main"],
     "logo_url": null
   },
   {
@@ -77,6 +86,7 @@
     "description": "Healthcare management with patient records, appointments, lab results, and billing.",
     "repo": "https://github.com/frappe/health",
     "branch": "main",
+    "branches": ["main", "develop"],
     "logo_url": null
   },
   {
@@ -85,6 +95,7 @@
     "description": "Team collaboration with discussions, projects, to-dos, and a searchable archive.",
     "repo": "https://github.com/frappe/gameplan",
     "branch": "main",
+    "branches": ["main", "develop"],
     "logo_url": null
   },
   {
@@ -93,6 +104,7 @@
     "description": "Self-serve business intelligence with charts, dashboards, and visual data queries.",
     "repo": "https://github.com/frappe/insights",
     "branch": "main",
+    "branches": ["main", "develop"],
     "logo_url": null
   },
   {
@@ -101,6 +113,7 @@
     "description": "Loan origination and management for NBFCs — applications, disbursement, and collections.",
     "repo": "https://github.com/frappe/lending",
     "branch": "main",
+    "branches": ["main"],
     "logo_url": null
   },
   {
@@ -109,6 +122,7 @@
     "description": "Student lifecycle management — admissions, fees, attendance, grading, and scheduling.",
     "repo": "https://github.com/frappe/education",
     "branch": "version-16",
+    "branches": ["version-15", "version-16"],
     "logo_url": null
   },
   {
@@ -117,6 +131,7 @@
     "description": "Grant management, donor tracking, membership, and volunteer coordination for NGOs.",
     "repo": "https://github.com/frappe/non_profit",
     "branch": "version-16",
+    "branches": ["version-15", "version-16"],
     "logo_url": null
   },
   {
@@ -125,6 +140,7 @@
     "description": "Farm management covering crops, soil analysis, water management, and disease tracking.",
     "repo": "https://github.com/frappe/agriculture",
     "branch": "version-16",
+    "branches": ["version-15", "version-16"],
     "logo_url": null
   },
   {
@@ -133,6 +149,7 @@
     "description": "Sync inventory and orders between ERPNext and Shopify, Amazon, WooCommerce, and Unicommerce.",
     "repo": "https://github.com/frappe/ecommerce_integrations",
     "branch": "main",
+    "branches": ["main"],
     "logo_url": null
   }
 ]

@@ -22,9 +22,10 @@ _WHITELIST: dict[str, list[str]] = {
     "new-site": ["name"],
     "drop-site": ["site"],
     "backup-site": ["site"],
-    "build": [],
+    "build": [],        # optional: app
     "update": [],
     "reload-supervisor": [],
+    "switch-branch": ["name", "branch"],
 }
 
 
@@ -94,13 +95,14 @@ class TaskRunner:
         supervisor_conf = str(self._bench_root / "config" / "supervisor.conf")
 
         if command == "migrate":
-            return [bench_bin, "--site", args["site"], "migrate"]
+            return [bench_bin, "frappe", "--site", args["site"], "migrate"]
         if command == "clear-cache":
-            return [bench_bin, "--site", args["site"], "clear-cache"]
+            return [bench_bin, "frappe", "--site", args["site"], "clear-cache"]
         if command == "install-app":
-            return [bench_bin, "--site", args["site"], "install-app", args["app"]]
+            return [sys.executable, "-m", "bench_cli.tasks.install_app_task",
+                    str(self._bench_root), args["site"], args["app"]]
         if command == "uninstall-app":
-            return [bench_bin, "--site", args["site"], "uninstall-app", args["app"], "--yes", "--no-backup"]
+            return [bench_bin, "frappe", "--site", args["site"], "uninstall-app", args["app"], "--yes", "--no-backup"]
         if command == "get-app":
             argv = [sys.executable, "-m", "bench_cli.tasks.get_app_task",
                     str(self._bench_root), args["name"], args["repo"]]
@@ -117,13 +119,19 @@ class TaskRunner:
             return [sys.executable, "-m", "bench_cli.tasks.drop_site_task",
                     str(self._bench_root), args["site"]]
         if command == "backup-site":
-            return [bench_bin, "--site", args["site"], "backup"]
+            return [bench_bin, "frappe", "--site", args["site"], "backup"]
         if command == "build":
-            return [bench_bin, "build"]
+            cmd = [bench_bin, "frappe", "build"]
+            if args.get("app"):
+                cmd += ["--app", args["app"]]
+            return cmd
         if command == "update":
-            return [bench_bin, "update", "--yes"]
+            return [sys.executable, "-m", "bench_cli.tasks.update_task", str(self._bench_root)]
         if command == "reload-supervisor":
             return ["supervisorctl", "-c", supervisor_conf, "reload"]
+        if command == "switch-branch":
+            return [sys.executable, "-m", "bench_cli.tasks.switch_branch_task",
+                    str(self._bench_root), args["name"], args["branch"]]
 
         raise ValueError(f"Unhandled command: {command!r}")
 
