@@ -36,16 +36,20 @@ The goal is a bench you can fully understand by reading the source, debug withou
 curl -fsSL https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | bash
 ```
 
-This clones `bench-cli` to `~/bench-cli` and installs the `bench` command via [uv](https://github.com/astral-sh/uv) (auto-installed if absent). All benches are created inside `~/bench-cli/benches/`.
+This clones `bench-cli` to `~/bench-cli` and adds it to your `PATH`. All bench commands are then available from any directory.
 
 Or manually:
 
 ```bash
 git clone https://github.com/frappe/bench-cli ~/bench-cli
-uv tool install ~/bench-cli
+chmod +x ~/bench-cli/bench
+echo 'export PATH="$HOME/bench-cli:$PATH"' >> ~/.zshrc   # or ~/.bashrc
+source ~/.zshrc
 ```
 
 `bench init` will then install MariaDB, Redis, Node.js, and any other system dependencies itself.
+
+> All commands run through the `bench` wrapper at `~/bench-cli/bench`. All benches are created inside `~/bench-cli/benches/`.
 
 ---
 
@@ -67,7 +71,7 @@ bench init
 
 This will:
 - Install MariaDB, Redis, Node.js via `apt` (or `brew` on macOS)
-- Create a Python virtualenv at `env/` using `uv`
+- Create a Python virtualenv at `env/` using `uv` (auto-installed if absent)
 - Clone the Frappe framework app and install it with `uv pip install -e`
 - Generate a `Procfile` for running all processes
 

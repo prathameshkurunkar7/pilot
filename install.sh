@@ -1,38 +1,37 @@
 #!/bin/bash
 set -e
 
-# Install uv if not already present
-if ! command -v uv &>/dev/null; then
-    echo "Installing uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
-fi
+BENCH_CLI_DIR="$HOME/bench-cli"
 
 # Clone or update bench-cli
-if [ -d "$HOME/bench-cli" ]; then
+if [ -d "$BENCH_CLI_DIR" ]; then
     echo "Updating bench-cli..."
-    git -C "$HOME/bench-cli" pull
+    git -C "$BENCH_CLI_DIR" pull
 else
     echo "Cloning bench-cli..."
-    git clone https://github.com/frappe/bench-cli "$HOME/bench-cli"
+    git clone https://github.com/frappe/bench-cli "$BENCH_CLI_DIR"
 fi
 
-# Install bench as a uv tool
-echo "Installing bench..."
-uv tool install "$HOME/bench-cli"
+# Make the bench wrapper executable
+chmod +x "$BENCH_CLI_DIR/bench"
 
-# Add ~/.local/bin to PATH permanently if not already there
+# Add ~/bench-cli to PATH permanently so `bench` is available anywhere
 SHELL_RC="$HOME/.bashrc"
 if [[ "$SHELL" == */zsh ]]; then
     SHELL_RC="$HOME/.zshrc"
 fi
 
-if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_RC" 2>/dev/null; then
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
+PATH_LINE="export PATH=\"\$HOME/bench-cli:\$PATH\""
+if ! grep -qF 'bench-cli' "$SHELL_RC" 2>/dev/null; then
+    echo "$PATH_LINE" >> "$SHELL_RC"
 fi
 
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="$BENCH_CLI_DIR:$PATH"
 
 echo ""
-echo "bench installed successfully. Run: bench --help"
+echo "bench installed to $BENCH_CLI_DIR"
+echo "bench commands are available from any directory."
+echo ""
+echo "Run: bench new my-bench"
+echo ""
 echo "If bench is not found, run: source $SHELL_RC"
