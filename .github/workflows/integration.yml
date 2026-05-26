@@ -62,15 +62,15 @@ jobs:
 
       - name: Migrate both sites
         run: |
-          BENCH=benches/ci-bench/env/bin/bench
-          cd benches/ci-bench/sites
+          BENCH=$GITHUB_WORKSPACE/benches/ci-bench/env/bin/bench
+          cd $GITHUB_WORKSPACE/benches/ci-bench/sites
           $BENCH frappe --site site1.localhost migrate
           $BENCH frappe --site site2.localhost migrate
 
       - name: Clear cache on both sites
         run: |
-          BENCH=benches/ci-bench/env/bin/bench
-          cd benches/ci-bench/sites
+          BENCH=$GITHUB_WORKSPACE/benches/ci-bench/env/bin/bench
+          cd $GITHUB_WORKSPACE/benches/ci-bench/sites
           $BENCH frappe --site site1.localhost clear-cache
           $BENCH frappe --site site2.localhost clear-cache
 
