@@ -25,6 +25,8 @@ _WHITELIST: dict[str, list[str]] = {
     "build": [],        # optional: app
     "update": [],
     "switch-branch": ["name", "branch"],
+    "setup-nginx": [],
+    "setup-production": [],
 }
 
 
@@ -123,6 +125,10 @@ class TaskRunner:
             return [sys.executable, "-m", "admin.backend.tasks.jobs.install_app_task", str(self._bench_root), args["site"], args["app"]]
         if command == "switch-branch":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.switch_branch_task", str(self._bench_root), args["name"], args["branch"]]
+        if command == "setup-nginx":
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_nginx_task", str(self._bench_root)]
+        if command == "setup-production":
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_production_task", str(self._bench_root)]
 
         raise ValueError(f"Unhandled command: {command!r}")
 

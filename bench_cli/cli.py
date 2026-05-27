@@ -269,39 +269,16 @@ def _cmd_get_app(args: argparse.Namespace) -> None:
 
 
 def _cmd_new_site(args: argparse.Namespace) -> None:
-    from bench_cli.config.site_config import SiteConfig
-    from bench_cli.core.site import Site
+    from bench_cli.commands.new_site import NewSiteCommand
 
     bench = _load_bench()
 
-    # Default to framework app (first cloned app) if no apps specified
     app_names = args.apps
     if not app_names:
         framework = bench.config.framework_app.name
         app_names = [framework] if framework else []
 
-    # Validate that requested apps are actually installed
-    apps_txt = bench.sites_path / "apps.txt"
-    installed = set(apps_txt.read_text().splitlines()) if apps_txt.exists() else set()
-    for app_name in app_names:
-        if app_name not in installed:
-            raise BenchError(
-                f"App '{app_name}' is not installed. Run 'bench get-app <repo>' first."
-            )
-
-    # Check site doesn't already exist
-    if (bench.sites_path / args.name / "site_config.json").exists():
-        raise BenchError(f"Site '{args.name}' already exists.")
-
-    site_cfg = SiteConfig(name=args.name, apps=app_names, admin_password=args.admin_password)
-    site = Site(site_cfg, bench)
-    print(f"Creating site '{args.name}'...")
-    site.create()
-
-    # Refresh common_site_config.json to pick up the new default site
-    bench.write_common_site_config()
-
-    print(f"\nSite '{args.name}' created successfully.")
+    NewSiteCommand(bench, args.name, app_names, args.admin_password).run()
 
 
 def _dispatch_setup(args: argparse.Namespace) -> None:

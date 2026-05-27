@@ -53,26 +53,42 @@ const chartConfig = computed(() => ({
   ],
 }))
 
-const updateLoading = ref(false)
-const updateError = ref('')
-
-async function runUpdate() {
-  updateError.value = ''
-  updateLoading.value = true
+async function runTask(command) {
   try {
     const res = await fetch('/api/tasks/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: 'update' }),
+      body: JSON.stringify({ command }),
     })
     const d = await res.json()
     if (d.ok) router.push(`/tasks/${d.task_id}`)
-    else updateError.value = d.error
+    else taskError.value = d.error
   } catch (e) {
-    updateError.value = e.message
+    taskError.value = e.message
   } finally {
-    updateLoading.value = false
+    taskLoading.value = ''
   }
+}
+
+const taskLoading = ref('')
+const taskError = ref('')
+
+async function runUpdate() {
+  taskError.value = ''
+  taskLoading.value = 'update'
+  await runTask('update')
+}
+
+async function setupNginx() {
+  taskError.value = ''
+  taskLoading.value = 'setup-nginx'
+  await runTask('setup-nginx')
+}
+
+async function setupProduction() {
+  taskError.value = ''
+  taskLoading.value = 'setup-production'
+  await runTask('setup-production')
 }
 
 let dashTimer, statsTimer
@@ -98,8 +114,10 @@ onUnmounted(() => {
       <div class="flex items-center justify-between">
         <h2 class="text-base font-medium text-ink-gray-7">{{ data.summary?.name ?? 'Bench' }}</h2>
         <div class="flex items-center gap-2">
-          <ErrorMessage :message="updateError" />
-          <Button variant="outline" :loading="updateLoading" @click="runUpdate">Update Bench</Button>
+          <ErrorMessage :message="taskError" />
+          <Button variant="outline" :loading="taskLoading === 'setup-nginx'" @click="setupNginx">Setup Nginx</Button>
+          <Button variant="outline" :loading="taskLoading === 'setup-production'" @click="setupProduction">Setup Production</Button>
+          <Button variant="outline" :loading="taskLoading === 'update'" @click="runUpdate">Update Bench</Button>
         </div>
       </div>
 
