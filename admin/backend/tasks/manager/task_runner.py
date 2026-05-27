@@ -22,12 +22,14 @@ _WHITELIST: dict[str, list[str]] = {
     "new-site": ["name"],
     "drop-site": ["site"],
     "backup-site": ["site"],
-    "build": [],        # optional: app
+    "delete-backup": ["site", "filenames"],
+    "build": [],  # optional: app
     "update": [],
     "switch-branch": ["name", "branch"],
     "setup-nginx": [],
     "setup-production": [],
     "setup-letsencrypt": [],
+    "new-site-from-backup": ["name", "db_file"],
 }
 
 
@@ -102,7 +104,10 @@ class TaskRunner:
         if command == "uninstall-app":
             return [bench_bin, "frappe", "--site", args["site"], "uninstall-app", args["app"], "--yes", "--no-backup"]
         if command == "backup-site":
-            return [bench_bin, "frappe", "--site", args["site"], "backup"]
+            command = [bench_bin, "frappe", "--site", args["site"], "backup"]
+            if args.get("with_files"):
+                command += ["--with-files"]
+            return command
         if command == "build":
             cmd = [bench_bin, "frappe", "build"]
             if args.get("app"):
@@ -122,6 +127,8 @@ class TaskRunner:
             return argv
         if command == "drop-site":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.drop_site_task", str(self._bench_root), args["site"]]
+        if command == "delete-backup":
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.delete_backup_task", str(self._bench_root), args["site"], *args["filenames"]]
         if command == "install-app":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.install_app_task", str(self._bench_root), args["site"], args["app"]]
         if command == "switch-branch":
@@ -132,6 +139,15 @@ class TaskRunner:
             return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_production_task", str(self._bench_root)]
         if command == "setup-letsencrypt":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_letsencrypt_task", str(self._bench_root)]
+        if command == "new-site-from-backup":
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_from_backup_task", str(self._bench_root), args["name"], args["db_file"]]
+            if args.get("admin_password"):
+                argv += ["--admin-password", args["admin_password"]]
+            if args.get("public_files"):
+                argv += ["--public-files", args["public_files"]]
+            if args.get("private_files"):
+                argv += ["--private-files", args["private_files"]]
+            return argv
 
         raise ValueError(f"Unhandled command: {command!r}")
 
@@ -144,12 +160,7 @@ class TaskRunner:
         if not tasks_dir.exists():
             return
 
-        completed = [
-            entry
-            for entry in tasks_dir.iterdir()
-            if entry.is_dir() and (entry / "status").exists()
-            and (entry / "status").read_text().strip() != "running"
-        ]
+        completed = [entry for entry in tasks_dir.iterdir() if entry.is_dir() and (entry / "status").exists() and (entry / "status").read_text().strip() != "running"]
 
         if len(completed) <= TASK_RETENTION_LIMIT:
             return
@@ -158,4 +169,5 @@ class TaskRunner:
         to_delete = completed[: len(completed) - TASK_RETENTION_LIMIT]
         for entry in to_delete:
             import shutil
+
             shutil.rmtree(entry)

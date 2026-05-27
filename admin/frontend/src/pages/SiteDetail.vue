@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, Badge, Dialog, FormControl, LoadingText, ErrorMessage, Tabs } from 'frappe-ui'
 import LucideDatabase from '~icons/lucide/database'
@@ -122,8 +122,133 @@ const activeTab = ref(0)
 const tabs = [
   { label: 'Apps' },
   { label: 'Config' },
+  { label: 'Backups' },
   { label: 'Danger Zone' },
 ]
+
+// ── Backups tab ──────────────────────────────────────────────────────────────
+const backups = ref([])
+const backupsLoading = ref(false)
+const backupsError = ref('')
+const backupsTabLoaded = ref(false)
+
+const currentSchedule = ref(null)
+const scheduleInput = ref('')
+const scheduleLoading = ref(false)
+const scheduleSaving = ref(false)
+const scheduleRemoving = ref(false)
+const scheduleError = ref('')
+
+const showDeleteBackup = ref(false)
+const deleteBackupTarget = ref(null)
+const deletingBackup = ref(false)
+const deleteBackupError = ref('')
+
+async function deleteBackupSet() {
+  deletingBackup.value = true
+  deleteBackupError.value = ''
+  try {
+    const filenames = deleteBackupTarget.value.files.map(f => f.filename)
+    const res = await fetch('/api/tasks/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'delete-backup', site: siteName, filenames }),
+    })
+    const d = await res.json()
+    if (d.ok) { showDeleteBackup.value = false; router.push(`/tasks/${d.task_id}`) }
+    else deleteBackupError.value = d.error
+  } catch (e) {
+    deleteBackupError.value = e.message
+  } finally {
+    deletingBackup.value = false
+  }
+}
+
+const schedulePresets = [
+  { label: 'Daily midnight', value: '0 0 * * *' },
+  { label: 'Daily 2am', value: '0 2 * * *' },
+  { label: 'Weekly (Sun 2am)', value: '0 2 * * 0' },
+  { label: 'Monthly (1st 2am)', value: '0 2 1 * *' },
+]
+
+watch(activeTab, (idx) => {
+  if (tabs[idx]?.label === 'Backups' && !backupsTabLoaded.value) {
+    backupsTabLoaded.value = true
+    loadBackups()
+    loadSchedule()
+  }
+})
+
+async function loadBackups() {
+  backupsLoading.value = true
+  backupsError.value = ''
+  try {
+    const res = await fetch(`/api/sites/${siteName}/backups`)
+    const d = await res.json()
+    if (d.error) backupsError.value = d.error
+    else backups.value = d
+  } catch (e) {
+    backupsError.value = e.message
+  } finally {
+    backupsLoading.value = false
+  }
+}
+
+async function loadSchedule() {
+  scheduleLoading.value = true
+  try {
+    const res = await fetch(`/api/sites/${siteName}/backup-schedule`)
+    const d = await res.json()
+    currentSchedule.value = d.schedule ?? null
+    scheduleInput.value = d.schedule ?? ''
+  } finally {
+    scheduleLoading.value = false
+  }
+}
+
+async function saveSchedule() {
+  scheduleError.value = ''
+  scheduleSaving.value = true
+  try {
+    const res = await fetch(`/api/sites/${siteName}/backup-schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schedule: scheduleInput.value }),
+    })
+    const d = await res.json()
+    if (d.ok) await loadSchedule()
+    else scheduleError.value = d.error
+  } catch (e) {
+    scheduleError.value = e.message
+  } finally {
+    scheduleSaving.value = false
+  }
+}
+
+async function removeSchedule() {
+  scheduleError.value = ''
+  scheduleRemoving.value = true
+  try {
+    const res = await fetch(`/api/sites/${siteName}/backup-schedule`, { method: 'DELETE' })
+    const d = await res.json()
+    if (d.ok) { currentSchedule.value = null; scheduleInput.value = '' }
+    else scheduleError.value = d.error
+  } catch (e) {
+    scheduleError.value = e.message
+  } finally {
+    scheduleRemoving.value = false
+  }
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatBackupDate(iso) {
+  return new Date(iso).toLocaleString()
+}
 
 const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
 function hashColor(name) {
@@ -293,6 +418,76 @@ onMounted(() => { load(); loadRegistry() })
             </div>
           </div>
 
+          <!-- Backups -->
+          <div v-else-if="tab.label === 'Backups'" class="pt-4 flex flex-col gap-4">
+            <!-- Schedule -->
+            <div class="rounded border p-4">
+              <h3 class="mb-3 text-sm font-semibold text-ink-gray-9">Backup Schedule</h3>
+              <div v-if="scheduleLoading" class="text-sm text-ink-gray-5">Loading…</div>
+              <div v-else class="flex flex-col gap-3">
+                <p class="text-sm text-ink-gray-7">
+                  <span v-if="currentSchedule">
+                    Active:
+                    <code class="rounded bg-surface-gray-2 px-1 py-0.5 font-mono text-xs">{{ currentSchedule }}</code>
+                  </span>
+                  <span v-else class="text-ink-gray-5">No scheduled backups.</span>
+                </p>
+                <div class="flex flex-wrap gap-1.5">
+                  <button
+                    v-for="p in schedulePresets"
+                    :key="p.value"
+                    class="rounded bg-surface-gray-2 px-2 py-1 text-xs text-ink-gray-7 hover:bg-surface-gray-3"
+                    @click="scheduleInput = p.value"
+                  >{{ p.label }}</button>
+                </div>
+                <div class="flex gap-2">
+                  <input
+                    v-model="scheduleInput"
+                    placeholder="e.g. 0 2 * * *"
+                    class="flex-1 rounded border px-2 py-1.5 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-gray-400"
+                  />
+                  <Button variant="outline" size="sm" :loading="scheduleSaving" :disabled="!scheduleInput" @click="saveSchedule">Save</Button>
+                  <Button v-if="currentSchedule" variant="ghost" size="sm" theme="red" :loading="scheduleRemoving" @click="removeSchedule">Remove</Button>
+                </div>
+                <ErrorMessage :message="scheduleError" />
+              </div>
+            </div>
+
+            <!-- History -->
+            <div class="rounded border p-4">
+              <div class="mb-3 flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-ink-gray-9">Backup History</h3>
+                <Button variant="ghost" size="sm" @click="loadBackups">Refresh</Button>
+              </div>
+              <div v-if="backupsLoading" class="py-6 text-center text-sm text-ink-gray-5">Loading…</div>
+              <div v-else-if="backupsError">
+                <ErrorMessage :message="backupsError" />
+              </div>
+              <div v-else-if="!backups.length" class="py-10 text-center text-sm text-ink-gray-4">
+                No backups found.
+              </div>
+              <div v-else class="flex flex-col gap-2">
+                <div v-for="set in backups" :key="set.timestamp" class="rounded border p-3">
+                  <div class="mb-2 flex items-center justify-between">
+                    <p class="text-sm font-medium text-ink-gray-8">{{ formatBackupDate(set.created_at) }}</p>
+                    <Button variant="ghost" theme="red" size="sm"
+                      @click="deleteBackupTarget = set; showDeleteBackup = true">Delete</Button>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <div
+                      v-for="file in set.files"
+                      :key="file.filename"
+                      class="flex items-center justify-between gap-2 text-xs"
+                    >
+                      <span class="truncate font-mono text-ink-gray-7">{{ file.filename }}</span>
+                      <span class="shrink-0 text-ink-gray-4">{{ formatSize(file.size_bytes) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Danger Zone -->
           <div v-else-if="tab.label === 'Danger Zone'" class="pt-4">
             <div class="rounded border border-red-200 p-4">
@@ -384,6 +579,20 @@ onMounted(() => { load(); loadRegistry() })
             <Button variant="ghost" @click="showEditConfig = false">Cancel</Button>
             <Button variant="solid" :loading="editConfigLoading" @click="saveConfig">Save</Button>
           </div>
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- Delete Backup dialog -->
+    <Dialog v-model="showDeleteBackup" :options="{ title: 'Delete Backup', size: 'sm' }">
+      <template #body-content>
+        <p class="text-sm leading-relaxed text-ink-gray-7">
+          Delete the backup from <strong>{{ deleteBackupTarget ? formatBackupDate(deleteBackupTarget.created_at) : '' }}</strong>? This cannot be undone.
+        </p>
+        <ErrorMessage v-if="deleteBackupError" :message="deleteBackupError" class="mt-2" />
+        <div class="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" @click="showDeleteBackup = false">Cancel</Button>
+          <Button variant="solid" theme="red" :loading="deletingBackup" @click="deleteBackupSet">Delete</Button>
         </div>
       </template>
     </Dialog>

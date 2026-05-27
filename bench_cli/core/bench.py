@@ -122,6 +122,13 @@ class Bench:
             "socketio_port": self.config.socketio_port,
             "webserver_port": self.config.http_port,
         }
+        # Add custom worker timeouts to config (if any exist)
+        custom_workers = {
+            entry.queue: {"timeout": entry.timeout}
+            for entry in self.config.workers.custom
+        }
+        if custom_workers:
+            config["workers"] = custom_workers
         # Use first site found as default (if any exist)
         first_site = next(
             (d.name for d in sorted(self.sites_path.iterdir())

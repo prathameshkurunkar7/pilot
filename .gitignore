@@ -39,3 +39,4 @@ htmlcov/
 # Admin
 admin/frontend/node_modules/
 admin/backend/static/dist/
+*.timestamp-*

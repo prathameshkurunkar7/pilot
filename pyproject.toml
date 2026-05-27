@@ -18,6 +18,12 @@ test = ["pytest>=8.0"]
 [tool.setuptools.packages.find]
 where = ["."]
 
+[tool.ruff]
+line-length = 200
+
+[tool.ruff.format]
+line-ending = "auto"
+
 [tool.setuptools.package-data]
 "admin.backend" = [
   "static/dist/**/*",

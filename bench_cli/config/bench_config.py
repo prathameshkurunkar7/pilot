@@ -10,7 +10,7 @@ from bench_cli.config.letsencrypt_config import LetsEncryptConfig
 from bench_cli.config.mariadb_config import MariaDBConfig
 from bench_cli.config.nginx_config import NginxConfig
 from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.worker_config import WorkerConfig
+from bench_cli.config.worker_config import CustomWorkerEntry, WorkerConfig
 from bench_cli.exceptions import ConfigError
 
 _BENCH_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
@@ -93,10 +93,19 @@ class BenchConfig:
 
     @staticmethod
     def _parse_workers(data: dict) -> WorkerConfig:
+        custom = [
+            CustomWorkerEntry(
+                queue=entry["queue"],
+                count=entry.get("count", 1),
+                timeout=entry.get("timeout", 300),
+            )
+            for entry in data.get("custom", [])
+        ]
         return WorkerConfig(
             default_count=data.get("default", 2),
             short_count=data.get("short", 1),
             long_count=data.get("long", 1),
+            custom=custom,
         )
 
     @staticmethod
@@ -186,6 +195,9 @@ class BenchConfig:
         for name, count in counts.items():
             if not isinstance(count, int) or count < 1:
                 raise ConfigError(f"{name} must be a positive integer, got '{count}'.")
+        for entry in self.workers.custom:
+            if not isinstance(entry.count, int) or entry.count < 1:
+                raise ConfigError(f"workers.custom '{entry.queue}' count must be a positive integer, got '{entry.count}'.")
 
     def _validate_letsencrypt_email(self) -> None:
         if self.letsencrypt.email and not _EMAIL_PATTERN.match(self.letsencrypt.email):

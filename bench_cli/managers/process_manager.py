@@ -87,7 +87,7 @@ class ProcessManager:
         original_sigterm = signal.getsignal(signal.SIGTERM)
         original_sigint = signal.getsignal(signal.SIGINT)
 
-        def _stop(signum, frame):
+        def _stop(_signum, _frame):
             self._stopping = True
             self._stop_all()
 
@@ -166,6 +166,11 @@ class ProcessManager:
             *self._worker_definitions("default", self.bench.config.workers.default_count),
             *self._worker_definitions("short", self.bench.config.workers.short_count),
             *self._worker_definitions("long", self.bench.config.workers.long_count),
+            *[
+                pd
+                for entry in self.bench.config.workers.custom
+                for pd in self._worker_definitions(entry.queue, entry.count)
+            ],
         ]
         if self.bench.config.redis.is_single_instance:
             definitions.append(self._redis_definition("redis", "redis.conf"))

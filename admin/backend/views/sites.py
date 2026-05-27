@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import secrets
 from dataclasses import asdict
 from pathlib import Path
 
@@ -39,6 +40,7 @@ def detail(name: str):
         installable = []
 
     from bench_cli.config.bench_config import BenchConfig
+
     try:
         http_port = BenchConfig.from_file(bench_root / "bench.toml").http_port
     except Exception:
@@ -64,12 +66,52 @@ def create():
         return jsonify({"ok": False, "error": f"Site '{name}' already exists."})
 
     try:
-        task_id = TaskRunner(bench_root).run(
-            "new-site", {"name": name, "admin_password": admin_password}
-        )
+        task_id = TaskRunner(bench_root).run("new-site", {"name": name, "admin_password": admin_password})
     except Exception as e:
         return jsonify({"ok": False, "error": f"Could not start new-site: {e}"})
 
+    return jsonify({"ok": True, "task_id": task_id})
+
+
+@sites_bp.route("/create-from-upload", methods=["POST"])
+def create_from_upload():
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    name = (request.form.get("name") or "").strip()
+    admin_password = (request.form.get("admin_password") or "admin").strip() or "admin"
+
+    if not name:
+        return jsonify({"ok": False, "error": "Site name is required."})
+    if (bench_root / "sites" / name / "site_config.json").exists():
+        return jsonify({"ok": False, "error": f"Site '{name}' already exists."})
+
+    db_upload = request.files.get("db_file")
+    if not db_upload:
+        return jsonify({"ok": False, "error": "Database backup file is required."})
+
+    upload_dir = bench_root / "tmp" / "uploads" / secrets.token_hex(8)
+    upload_dir.mkdir(parents=True)
+
+    db_path = upload_dir / db_upload.filename
+    db_upload.save(str(db_path))
+
+    args = {"name": name, "admin_password": admin_password, "db_file": str(db_path)}
+
+    pub_upload = request.files.get("public_files")
+    if pub_upload:
+        pub_path = upload_dir / pub_upload.filename
+        pub_upload.save(str(pub_path))
+        args["public_files"] = str(pub_path)
+
+    priv_upload = request.files.get("private_files")
+    if priv_upload:
+        priv_path = upload_dir / priv_upload.filename
+        priv_upload.save(str(priv_path))
+        args["private_files"] = str(priv_path)
+
+    try:
+        task_id = TaskRunner(bench_root).run("new-site-from-backup", args)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})
 
 
@@ -87,7 +129,7 @@ def drop_site(name: str):
 def backup_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        task_id = TaskRunner(bench_root).run("backup-site", {"site": name})
+        task_id = TaskRunner(bench_root).run("backup-site", {"site": name, "with_files": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})
@@ -182,6 +224,7 @@ def enable_ssl(name: str):
         return jsonify({"ok": False, "error": "Site not found."}), 404
 
     import json
+
     current = json.loads(config_path.read_text())
     current["ssl"] = True
     config_path.write_text(json.dumps(current, indent=1))
@@ -205,6 +248,7 @@ def update_config(name: str):
         return jsonify({"ok": False, "error": "Invalid JSON body."}), 400
 
     import json
+
     current = json.loads(config_path.read_text())
 
     # Preserve the real db_password if the masked sentinel came back
@@ -216,6 +260,75 @@ def update_config(name: str):
             del data["db_password"]
 
     config_path.write_text(json.dumps(data, indent=1))
+    return jsonify({"ok": True})
+
+
+@sites_bp.route("/<name>/backups")
+def list_backups(name: str):
+    from ..readers.backup_reader import BackupReader
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        sets = BackupReader(bench_root, name).read_all()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(
+        [
+            {
+                "timestamp": s.timestamp,
+                "created_at": s.created_at.isoformat(),
+                "files": [
+                    {
+                        "filename": f.filename,
+                        "path": f.path,
+                        "size_bytes": f.size_bytes,
+                        "kind": f.kind,
+                    }
+                    for f in s.files
+                ],
+            }
+            for s in sets
+        ]
+    )
+
+
+@sites_bp.route("/<name>/backup-schedule", methods=["GET"])
+def get_backup_schedule(name: str):
+    from ..cron_manager import CronManager
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        schedule = CronManager(bench_root).get_schedule(name)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"schedule": schedule})
+
+
+@sites_bp.route("/<name>/backup-schedule", methods=["POST"])
+def set_backup_schedule(name: str):
+    from ..cron_manager import CronManager
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    data = request.get_json(silent=True) or {}
+    schedule = (data.get("schedule") or "").strip()
+    if not schedule:
+        return jsonify({"ok": False, "error": "Schedule expression is required."})
+    try:
+        CronManager(bench_root).set_schedule(name, schedule)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True})
+
+
+@sites_bp.route("/<name>/backup-schedule", methods=["DELETE"])
+def delete_backup_schedule(name: str):
+    from ..cron_manager import CronManager
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        CronManager(bench_root).remove_schedule(name)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True})
 
 

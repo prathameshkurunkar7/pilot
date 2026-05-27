@@ -51,6 +51,17 @@ class Site:
 
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
+    def restore(self, db_file: str, public_files: str | None = None, private_files: str | None = None) -> None:
+        cmd = [self._bench_binary(), "frappe", "--site", self.config.name, "restore", db_file]
+        if public_files:
+            cmd += ["--with-public-files", public_files]
+        if private_files:
+            cmd += ["--with-private-files", private_files]
+
+        cmd += ["--db-root-username", self.bench.config.mariadb.admin_user, "--db-root-password", self.bench.config.mariadb.root_password]
+
+        run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
+
     def install_app(self, app_name: str) -> None:
         run_command([
             self._bench_binary(), "frappe",
