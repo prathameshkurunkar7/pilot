@@ -1,7 +1,6 @@
 # bench-cli
 
 [![Unit Tests](https://github.com/frappe/bench-cli/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/frappe/bench-cli/actions/workflows/unit-tests.yml)
-[![codecov](https://codecov.io/gh/frappe/bench-cli/branch/main/graph/badge.svg)](https://codecov.io/gh/frappe/bench-cli)
 
 A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environments with Admin UI. Single `bench.toml`. No Docker.
 
