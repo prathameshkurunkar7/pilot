@@ -73,6 +73,11 @@ class PythonEnvManager:
         if self._try_download_prebuilt_assets(app, app_public_dir, dist_dir):
             return
 
+        # Assets may already exist locally (e.g. built for another app via frappe build)
+        if self._has_prebuilt_assets(dist_dir):
+            self._setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
+            return
+
         if (app.path / "package.json").exists():
             print(f"  Installing JS dependencies for {app.config.name}...")
             sys.stdout.flush()
@@ -144,6 +149,12 @@ class PythonEnvManager:
         tmp_path.unlink(missing_ok=True)
         self._setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
         return True
+
+    def _has_prebuilt_assets(self, dist_dir: Path) -> bool:
+        js_dir = dist_dir / "js"
+        return js_dir.is_dir() and any(
+            _BUNDLE_RE.match(f.name) for f in js_dir.iterdir()
+        )
 
     @staticmethod
     def _parse_github_owner_repo(remote_url: str) -> str | None:
