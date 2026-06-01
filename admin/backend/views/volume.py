@@ -17,9 +17,11 @@ def _get_config(bench_root):
 
 
 def _get_manager(bench_root):
+    from bench_cli.config.bench_config import BenchConfig
     from bench_cli.managers.volume_manager import VolumeManager
 
-    return VolumeManager(_get_config(bench_root))
+    bench_config = BenchConfig.from_file(bench_root / "bench.toml")
+    return VolumeManager(bench_config.volume, bench_config.mariadb)
 
 
 @volume_bp.route("/status")
