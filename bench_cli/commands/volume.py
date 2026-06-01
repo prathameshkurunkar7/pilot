@@ -38,9 +38,6 @@ class VolumeSetupCommand:
         data_dir = Path(self.config.mariadb.data_dir)
         has_data = data_dir.exists() and any(data_dir.iterdir())
 
-        print(f"Creating ZFS pool '{self.config.pool}' and mariadb dataset...")
-        manager.setup()
-
         if has_data:
             print(f"Existing data found at {data_dir}, stopping MariaDB for migration...")
             _stop_mariadb()
@@ -63,6 +60,8 @@ class VolumeSetupCommand:
         _require_enabled(self.config)
 
         manager = VolumeManager(self.config)
+        print(f"Creating ZFS pool '{self.config.pool}' and datasets...")
+        manager.setup()
         self.setup_mariadb(manager)
         self.setup_bench(manager)
         print("Volume setup complete.")

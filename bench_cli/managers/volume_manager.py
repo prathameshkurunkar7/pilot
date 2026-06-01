@@ -68,6 +68,9 @@ class VolumeManager:
     def set_reservation(self, dataset: str, reservation: str) -> None:
         self._run(["sudo", "zfs", "set", f"reservation={reservation}", dataset])
 
+    def set_recordsize(self, dataset: str, recordsize: str) -> None:
+        self._run(["sudo", "zfs", "set", f"recordsize={recordsize}", dataset])
+
     def get_mountpoint(self, dataset: str) -> Path:
         result = self._run(["sudo", "zfs", "get", "-H", "-o", "value", "mountpoint", dataset])
         return Path(result.stdout.decode().strip())
@@ -108,6 +111,9 @@ class VolumeManager:
         self.create_pool()
         self._setup_dataset(self.config.benches_dataset, self.config.benches.quota, self.config.benches.reservation)
         self._setup_dataset(self.config.mariadb_dataset, self.config.mariadb.quota, self.config.mariadb.reservation)
+        # https://www.usenix.org/system/files/login/articles/login_winter16_09_jude.pdf
+        # Mariadb default page size 16k zfs defaults to 128k introducing massive io ops therefore force tune it
+        self.set_recordsize(self.config.mariadb_dataset, "16K")
 
     def _setup_dataset(self, dataset: str, quota: str, reservation: str) -> None:
         print(f"Creating dataset {dataset} with quota {quota} and reservation {reservation}")
