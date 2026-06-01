@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from bench_cli.core.app import App
     from bench_cli.core.bench import Bench
 
-# Matches esbuild content-hash output names: name.bundle.XXXXXXXX.js / .css
 _BUNDLE_RE = re.compile(r"^(.+)\.bundle\.[A-Z0-9]{8}\.(js|css)$")
 
 
@@ -24,7 +23,6 @@ class PythonEnvManager:
         self.bench = bench
 
     def ensure_python(self) -> None:
-        # uv manages Python discovery and download at venv-creation time.
         pass
 
     def create_venv(self) -> None:
@@ -73,7 +71,6 @@ class PythonEnvManager:
         if self._try_download_prebuilt_assets(app, app_public_dir, dist_dir):
             return
 
-        # Assets may already exist locally (e.g. built for another app via frappe build)
         if self._has_prebuilt_assets(dist_dir):
             self._setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
             return
@@ -91,64 +88,71 @@ class PythonEnvManager:
             stream_output=True,
         )
 
-    # ------------------------------------------------------------------
-    # Pre-built asset helpers
-    # ------------------------------------------------------------------
-
     def _try_download_prebuilt_assets(
         self, app: "App", app_public_dir: Path, dist_dir: Path
     ) -> bool:
-        import subprocess
-        import tarfile as tf
-        import tempfile
-        import urllib.error
-        import urllib.request
+        branch = self._app_branch(app)
+        if not branch:
+            return False
+        url = self._release_asset_url(app, branch)
+        if not url:
+            return False
+        print(f"  Downloading pre-built assets for {app.config.name}...")
+        sys.stdout.flush()
+        if not self._download_and_extract(url, app_public_dir):
+            return False
+        self._setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
+        return True
 
+    @staticmethod
+    def _app_branch(app: "App") -> str | None:
+        import subprocess
         r = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, cwd=app.path,
         )
-        if r.returncode != 0:
-            return False
         branch = r.stdout.strip()
-        if branch in ("HEAD", ""):
-            return False
+        return branch if r.returncode == 0 and branch not in ("HEAD", "") else None
 
+    @staticmethod
+    def _release_asset_url(app: "App", branch: str) -> str | None:
+        import subprocess
         r = subprocess.run(
             ["git", "remote", "get-url", "origin"],
             capture_output=True, text=True, cwd=app.path,
         )
         if r.returncode != 0:
-            return False
-
-        owner_repo = self._parse_github_owner_repo(r.stdout.strip())
-        if not owner_repo:
-            return False
-
+            return None
+        m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", r.stdout.strip())
+        if not m:
+            return None
+        owner_repo = m.group(1)
         tag = f"assets-{branch.replace('/', '-')}"
-        asset = f"{app.config.name}-assets.tar.gz"
-        url = f"https://github.com/{owner_repo}/releases/download/{tag}/{asset}"
+        return f"https://github.com/{owner_repo}/releases/download/{tag}/{app.config.name}-assets.tar.gz"
+
+    @staticmethod
+    def _download_and_extract(url: str, dest_dir: Path) -> bool:
+        import tarfile as tf
+        import tempfile
+        import urllib.error
+        import urllib.request
 
         tmp_path = Path(tempfile.mktemp(suffix=".tar.gz"))
         try:
-            print(f"  Downloading pre-built assets for {app.config.name}...")
-            sys.stdout.flush()
             urllib.request.urlretrieve(url, tmp_path)
         except urllib.error.URLError:
             tmp_path.unlink(missing_ok=True)
             return False
 
         try:
-            app_public_dir.mkdir(parents=True, exist_ok=True)
+            dest_dir.mkdir(parents=True, exist_ok=True)
             with tf.open(tmp_path) as tar:
-                tar.extractall(path=app_public_dir)
+                tar.extractall(path=dest_dir)
+            return True
         except Exception:
-            tmp_path.unlink(missing_ok=True)
             return False
-
-        tmp_path.unlink(missing_ok=True)
-        self._setup_prebuilt_assets(app.config.name, app_public_dir, dist_dir)
-        return True
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
     def _has_prebuilt_assets(self, dist_dir: Path) -> bool:
         js_dir = dist_dir / "js"
@@ -156,19 +160,12 @@ class PythonEnvManager:
             _BUNDLE_RE.match(f.name) for f in js_dir.iterdir()
         )
 
-    @staticmethod
-    def _parse_github_owner_repo(remote_url: str) -> str | None:
-        m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", remote_url.strip())
-        return m.group(1) if m else None
-
     def _setup_prebuilt_assets(
         self, app_name: str, app_public_dir: Path, dist_dir: Path
     ) -> None:
-        """Symlink public/ into sites/assets/ and generate assets.json files."""
         assets_dir = self.bench.sites_path / "assets"
         assets_dir.mkdir(exist_ok=True)
 
-        # sites/assets/{app}/ -> apps/{app}/{app}/public/
         app_link = assets_dir / app_name
         if app_link.is_symlink():
             app_link.unlink()
@@ -228,7 +225,6 @@ class PythonEnvManager:
         path.write_text(json.dumps(existing, indent="\t", sort_keys=True) + "\n")
 
     def _ensure_uv(self) -> str:
-        """Return path to uv, installing it if not on PATH."""
         uv = shutil.which("uv")
         if uv:
             return uv
@@ -246,7 +242,6 @@ class PythonEnvManager:
                 stream_output=True,
             )
 
-        # The installer typically puts uv in ~/.local/bin (Linux/macOS).
         for candidate in [
             Path.home() / ".local" / "bin" / "uv",
             Path.home() / ".cargo" / "bin" / "uv",
