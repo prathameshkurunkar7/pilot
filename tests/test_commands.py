@@ -304,19 +304,27 @@ def test_frappe_command_exits_with_subprocess_returncode(tmp_path: Path) -> None
 # ── BuildCommand ──────────────────────────────────────────────────────────────
 
 
-def test_build_command_calls_frappe_build(tmp_path: Path) -> None:
+def test_build_command_force_calls_frappe_build(tmp_path: Path) -> None:
     from bench_cli.commands.build import BuildCommand
 
     bench = make_bench(tmp_path)
     bench.create_directories()
 
-    with patch("bench_cli.commands.build.run_command") as mock_run:
-        BuildCommand(bench).run()
-        mock_run.assert_called_once()
-        args = mock_run.call_args[0][0]
-        assert "frappe" in args
-        assert "build" in args
-        assert "--force" in args
+    with patch("bench_cli.managers.python_env_manager.PythonEnvManager.build_assets") as mock_build:
+        BuildCommand(bench, force=True).run()
+        mock_build.assert_called_once()
+
+
+def test_build_command_default_uses_prebuilt_per_app(tmp_path: Path) -> None:
+    from bench_cli.commands.build import BuildCommand
+
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+
+    with patch("bench_cli.managers.python_env_manager.PythonEnvManager.build_assets_for_app") as mock_build:
+        with patch.object(bench, "apps", return_value=[]):
+            BuildCommand(bench).run()
+            mock_build.assert_not_called()  # no apps → nothing called
 
 
 # ── SetupRequirementsCommand ──────────────────────────────────────────────────

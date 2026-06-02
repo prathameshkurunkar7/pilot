@@ -140,7 +140,8 @@ def _make_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="Initialise the bench.")
     sub.add_parser("start", help="Start all bench processes.")
     sub.add_parser("stop", help="Stop the running bench.")
-    sub.add_parser("build", help="Rebuild assets.")
+    p_build = sub.add_parser("build", help="Build assets (downloads pre-built if available).")
+    p_build.add_argument("--force", action="store_true", help="Force a full rebuild, skipping pre-built asset download.")
     sub.add_parser("update", help="Pull latest code and migrate sites.")
     p_get = sub.add_parser("get-app", help="Clone and install an app.")
     p_get.add_argument("repo", help="Git repository URL.")
@@ -311,7 +312,7 @@ def _dispatch(args: argparse.Namespace) -> None:
     elif cmd == "build":
         from bench_cli.commands.build import BuildCommand
 
-        BuildCommand(_load_bench()).run()
+        BuildCommand(_load_bench(), force=args.force).run()
 
     elif cmd == "update":
         from bench_cli.commands.update import UpdateCommand

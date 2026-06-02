@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from bench_cli.core.bench import Bench
-from bench_cli.utils import run_command
+from bench_cli.managers.python_env_manager import PythonEnvManager
 
 
 class BuildCommand:
-    def __init__(self, bench: Bench) -> None:
+    def __init__(self, bench: Bench, force: bool = False) -> None:
         self.bench = bench
+        self.force = force
 
     def run(self) -> None:
-        run_command(
-            [*self.bench.frappe_call, "frappe", "build", "--force"],
-            cwd=self.bench.sites_path,
-            stream_output=True,
-        )
+        manager = PythonEnvManager(self.bench)
+        if self.force:
+            manager.build_assets()
+        else:
+            for app in self.bench.apps():
+                manager.build_assets_for_app(app)
