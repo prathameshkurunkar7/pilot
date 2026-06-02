@@ -7,9 +7,11 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
+from admin.backend.tasks.callbacks import new_site_failure_callback
+from admin.backend.tasks.manager.task_runner import TaskRunner
+
 from ..readers.app_reader import AppReader
 from ..readers.site_reader import SiteReader
-from admin.backend.tasks.manager.task_runner import TaskRunner
 
 sites_bp = Blueprint("sites", __name__)
 
@@ -66,7 +68,11 @@ def create():
         return jsonify({"ok": False, "error": f"Site '{name}' already exists."})
 
     try:
-        task_id = TaskRunner(bench_root).run("new-site", {"name": name, "admin_password": admin_password})
+        task_id = TaskRunner(bench_root).run(
+            "new-site",
+            {"name": name, "admin_password": admin_password},
+            callbacks={"on_failure": new_site_failure_callback},
+        )
     except Exception as e:
         return jsonify({"ok": False, "error": f"Could not start new-site: {e}"})
 
@@ -176,6 +182,7 @@ def login_to_site(name: str):
 
     import http.client
     import urllib.parse
+
     from bench_cli.config.bench_config import BenchConfig
 
     try:

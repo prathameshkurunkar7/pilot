@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import pickle
 import secrets
 import signal
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TypedDict
 
 from bench_cli.exceptions import TaskNotFoundError, TaskNotRunningError
 
@@ -33,11 +35,16 @@ _WHITELIST: dict[str, list[str]] = {
 }
 
 
+class TaskCallbacks(TypedDict):
+    on_success: callable | None
+    on_failure: callable | None
+
+
 class TaskRunner:
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
 
-    def run(self, command: str, args: dict) -> str:
+    def run(self, command: str, args: dict, callbacks: TaskCallbacks | None = None) -> str:
         command_argv = self._build_argv(command, args)
         task_id = self._generate_task_id()
         task_dir = self._task_dir(task_id)
@@ -51,9 +58,16 @@ class TaskRunner:
             "started_at": datetime.now(timezone.utc).isoformat(),
             "finished_at": None,
             "exit_code": None,
+            "bench_root": str(self._bench_root),
         }
         (task_dir / "meta.json").write_text(json.dumps(meta, indent=2))
         (task_dir / "status").write_text("running")
+
+        if callbacks:
+            if on_success := callbacks.get("on_success"):
+                (task_dir / "on_success.bin").write_bytes(pickle.dumps(on_success))
+            if on_failure := callbacks.get("on_failure"):
+                (task_dir / "on_failure.bin").write_bytes(pickle.dumps(on_failure))
 
         process = subprocess.Popen(
             [sys.executable, "-m", "admin.backend.tasks.manager.wrapper", str(task_dir)],
