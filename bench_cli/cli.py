@@ -240,7 +240,9 @@ def main() -> None:
     args = parser.parse_args(args_list)
     _active_bench = args.bench
 
+    import time
     verbose = getattr(args, "verbose", False)
+    _t0 = time.monotonic()
     try:
         _dispatch(args)
     except BenchError as e:
@@ -251,6 +253,10 @@ def main() -> None:
             raise
         print(str(e), file=sys.stderr)
         sys.exit(1)
+    elapsed = time.monotonic() - _t0
+    if elapsed >= 2:
+        mins, secs = divmod(int(elapsed), 60)
+        print(f"\nDone in {mins}m {secs}s" if mins else f"\nDone in {secs}s")
 
 
 def _dispatch(args: argparse.Namespace) -> None:
