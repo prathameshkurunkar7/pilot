@@ -44,13 +44,16 @@ def detail(name: str):
     from bench_cli.config.bench_config import BenchConfig
 
     try:
-        http_port = BenchConfig.from_file(bench_root / "bench.toml").http_port
+        bench_config = BenchConfig.from_file(bench_root / "bench.toml")
+        http_port = bench_config.http_port
+        nginx_enabled = bench_config.nginx.enabled
     except Exception:
         http_port = 8000
+        nginx_enabled = False
 
     site_dict = asdict(site)
     site_dict["site_config"] = _mask_password(site.site_config)
-    return jsonify({"site": site_dict, "installable_apps": installable, "http_port": http_port})
+    return jsonify({"site": site_dict, "installable_apps": installable, "http_port": http_port, "nginx_enabled": nginx_enabled})
 
 
 @sites_bp.route("/create", methods=["POST"])
