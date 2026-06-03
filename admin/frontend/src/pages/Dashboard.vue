@@ -2,24 +2,11 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Badge, Card, LoadingText, ErrorMessage, Progress, AxisChart, Button } from 'frappe-ui'
+import { useCache } from '../composables/useCache.js'
 
 const router = useRouter()
 
-const data = ref(null)
-const loading = ref(true)
-const error = ref('')
-
-async function load() {
-  try {
-    const res = await fetch('/api/dashboard')
-    if (!res.ok) throw new Error(`${res.status}`)
-    data.value = await res.json()
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
-}
+const { data, loading, error, refresh } = useCache('/api/dashboard')
 
 const MAX_HISTORY = 60
 const stats = ref(null)
@@ -114,9 +101,8 @@ async function setupProduction() {
 let dashTimer, statsTimer
 
 onMounted(() => {
-  load()
   loadStats()
-  dashTimer = setInterval(load, 10000)
+  dashTimer = setInterval(refresh, 10000)
   statsTimer = setInterval(loadStats, 3000)
 })
 onUnmounted(() => {

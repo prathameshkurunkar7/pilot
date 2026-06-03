@@ -5,11 +5,11 @@ import {
   Button, Badge, Dialog, ListView, FormControl,
   LoadingText, ErrorMessage, TextInput, Select,
 } from 'frappe-ui'
+import { useCache } from '../composables/useCache.js'
 
 const router = useRouter()
-const apps = ref([])
-const loading = ref(true)
-const error = ref('')
+const { data: appsData, loading, error } = useCache('/api/apps/')
+const apps = computed(() => appsData.value ?? [])
 
 // Add app dialog
 const showAdd = ref(false)
@@ -102,17 +102,6 @@ const activeBranchOptions = computed(() =>
 const manualActiveBranchOptions = computed(() =>
   manualBranches.value.map(b => ({ label: b, value: b }))
 )
-
-async function load() {
-  try {
-    const res = await fetch('/api/apps/')
-    apps.value = await res.json()
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
-}
 
 async function loadRegistry() {
   try {
@@ -229,7 +218,7 @@ function hashColor(name) {
   return COLORS[Math.abs(h) % COLORS.length]
 }
 
-onMounted(() => { load(); loadRegistry() })
+onMounted(loadRegistry)
 </script>
 
 <template>
