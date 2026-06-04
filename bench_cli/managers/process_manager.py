@@ -162,6 +162,9 @@ class ProcessManager:
     # ── Process definitions ─────────────────────────────────────────────────
 
     def _process_definitions(self) -> List[ProcessDefinition]:
+        return [*self._shared_process_definitions(), self._admin_frontend_dev_definition()]
+
+    def _shared_process_definitions(self) -> List[ProcessDefinition]:
         definitions = [
             self._web_definition(),
             self._socketio_definition(),
@@ -181,7 +184,6 @@ class ProcessManager:
             definitions.append(self._redis_definition("redis_cache", "redis_cache.conf"))
             definitions.append(self._redis_definition("redis_queue", "redis_queue.conf"))
             definitions.append(self._redis_definition("redis_socketio", "redis_socketio.conf"))
-        definitions.append(self._admin_frontend_dev_definition())
         return definitions
 
     def _web_definition(self) -> ProcessDefinition:
@@ -220,7 +222,7 @@ class ProcessManager:
             log_file=self.bench.logs_path / f"{name}.log",
         )
 
-    def _admin_definition(self) -> ProcessDefinition:
+    def _admin_definition(self, *, dev: bool = True) -> ProcessDefinition:
         cli_root = _cli_root()
         python = AdminEnvManager(cli_root).python
         cfg = self.bench.config.admin
@@ -230,7 +232,8 @@ class ProcessManager:
             f" --port {cfg.port}"
             f" --timeout {cfg.timeout}"
         )
-        command += " --dev"
+        if dev:
+            command += " --dev"
         return ProcessDefinition(
             name="admin",
             command=command,

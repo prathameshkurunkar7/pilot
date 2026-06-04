@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-import shutil
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from bench_cli.managers.process_manager import ProcessManager, ProcessDefinition, _cli_root
 from bench_cli.managers.admin_env_manager import AdminEnvManager
+from bench_cli.managers.process_manager import ProcessDefinition, ProcessManager, _cli_root
 from bench_cli.utils import run_command
-
-if TYPE_CHECKING:
-    from bench_cli.core.bench import Bench
 
 
 class SupervisorProcessManager(ProcessManager):
@@ -31,6 +26,7 @@ class SupervisorProcessManager(ProcessManager):
         self.supervisor_conf_path.write_text(conf)
 
     def install_config(self) -> None:
+        """We don't need to do this at all, we can simply include everything in the supervisord.conf file"""
         symlink = self.supervisor_include_dir / f"{self.bench.config.name}.conf"
         if symlink.exists() or symlink.is_symlink():
             symlink.unlink()
@@ -60,52 +56,58 @@ class SupervisorProcessManager(ProcessManager):
 
     def is_running(self) -> bool:
         import subprocess
+
         result = subprocess.run(
             ["supervisorctl", "status", f"{self.bench.config.name}:*"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         return "RUNNING" in result.stdout
 
     def reload_web(self) -> None:
         """Clear the Frappe asset cache in Redis then restart the web worker."""
         import subprocess
+
         cache_port = self.bench.config.redis.cache_port
-        subprocess.run(["redis-cli", "-p", str(cache_port), "del", "assets_json"],
-                       capture_output=True)
+        subprocess.run(["redis-cli", "-p", str(cache_port), "del", "assets_json"], capture_output=True)
         if self.is_running():
             print("Restarting web worker to pick up new assets...")
-            run_command(["supervisorctl", "restart",
-                         f"{self.bench.config.name}:{self.bench.config.name}-web"])
+            run_command(["supervisorctl", "restart", f"{self.bench.config.name}:{self.bench.config.name}-web"])
+
+    def _process_definitions(self) -> list[ProcessDefinition]:
+        return self._shared_process_definitions()
+
+    def _admin_definition(self, *, dev: bool = False) -> ProcessDefinition:
+        return super()._admin_definition(dev=dev)
 
     def _render_supervisor_conf(self) -> str:
-        defs = self._prod_process_definitions()
-        program_names = ",".join(
-            f"{self.bench.config.name}-{pd.name.replace('_', '-')}" for pd in defs
-        )
+        defs = self._process_definitions()
+        program_names = ",".join(f"{self.bench.config.name}-{pd.name.replace('_', '-')}" for pd in defs)
         group = f"[group:{self.bench.config.name}]\nprograms={program_names}\n\n"
         blocks = [self._render_program(pd, pd.name.replace("_", "-")) for pd in defs]
         return group + "".join(blocks)
 
     def _render_program(self, pd: ProcessDefinition, safe_name: str) -> str:
         import re
+
         log_dir = self.bench.logs_path
         cmd = pd.command
 
         # Extract leading VAR=value env assignments
         env_vars: list[str] = []
         while True:
-            m = re.match(r'^([A-Z_][A-Z0-9_]*)=(\S+)\s+', cmd)
+            m = re.match(r"^([A-Z_][A-Z0-9_]*)=(\S+)\s+", cmd)
             if not m:
                 break
             env_vars.append(f'{m.group(1)}="{m.group(2)}"')
-            cmd = cmd[m.end():]
+            cmd = cmd[m.end() :]
 
         # Extract leading `cd /dir && ` working-directory prefix
         directory = ""
-        m2 = re.match(r'^cd\s+(\S+)\s*&&\s*', cmd)
+        m2 = re.match(r"^cd\s+(\S+)\s*&&\s*", cmd)
         if m2:
             directory = m2.group(1)
-            cmd = cmd[m2.end():]
+            cmd = cmd[m2.end() :]
 
         lines = [
             f"[program:{self.bench.config.name}-{safe_name}]",
@@ -123,39 +125,3 @@ class SupervisorProcessManager(ProcessManager):
         if env_vars:
             lines.insert(2, f"environment={','.join(env_vars)}")
         return "\n".join(lines) + "\n\n"
-
-    def _admin_definition(self) -> ProcessDefinition:
-        cli_root = _cli_root()
-        python = AdminEnvManager(cli_root).python
-        cfg = self.bench.config.admin
-        command = (
-            f"PYTHONPATH={cli_root} {python} -m admin.backend.server"
-            f" --bench-root {self.bench.path}"
-            f" --port {cfg.port}"
-            f" --timeout {cfg.timeout}"
-            f" --no-timeout"
-        )
-        return ProcessDefinition(
-            name="admin",
-            command=command,
-            log_file=self.bench.logs_path / "admin.log",
-        )
-
-    def _prod_process_definitions(self) -> list[ProcessDefinition]:
-        """Process definitions for production (no dev processes)."""
-        defs = [
-            self._web_definition(),
-            self._socketio_definition(),
-            self._admin_definition(),
-            *self._worker_definitions("default", self.bench.config.workers.default_count),
-            *self._worker_definitions("short", self.bench.config.workers.short_count),
-            *self._worker_definitions("long", self.bench.config.workers.long_count),
-            *[pd for entry in self.bench.config.workers.custom for pd in self._worker_definitions(entry.queue, entry.count)],
-        ]
-        if self.bench.config.redis.is_single_instance:
-            defs.append(self._redis_definition("redis", "redis.conf"))
-        else:
-            defs.append(self._redis_definition("redis_cache", "redis_cache.conf"))
-            defs.append(self._redis_definition("redis_queue", "redis_queue.conf"))
-            defs.append(self._redis_definition("redis_socketio", "redis_socketio.conf"))
-        return defs

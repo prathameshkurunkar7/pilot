@@ -1,9 +1,22 @@
 #!/bin/bash
 set -e
 
-BENCH_CLI_DIR="$HOME/bench-cli"
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Error: This script must be run as root (use sudo)." >&2
+    exit 1
+fi
 
-# Clone or update
+if [ -n "$SUDO_USER" ]; then
+    REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+else
+    REAL_HOME="$HOME"
+fi
+
+BENCH_CLI_DIR="$REAL_HOME/bench-cli"
+
+echo $BENCH_CLI_DIR
+
+Clone or update
 if [ -d "$BENCH_CLI_DIR" ]; then
     echo "Updating bench-cli..."
     git -C "$BENCH_CLI_DIR" pull
@@ -45,6 +58,53 @@ else
 fi
 
 export PATH="$BENCH_CLI_DIR:$PATH"
+
+# Configure supervisord to include bench supervisor configs
+configure_supervisor() {
+    local conf="/etc/supervisor/supervisord.conf"
+    local include_glob="$BENCH_CLI_DIR/benches/*/config/supervisor/*.conf"
+
+    if [ ! -f "$conf" ]; then
+        echo "Warning: $conf not found — skipping supervisor include setup."
+        return
+    fi
+
+    if grep -qF "$include_glob" "$conf"; then
+        echo "Supervisor include already configured."
+        return
+    fi
+
+    if grep -q '^\[include\]' "$conf"; then
+        sed -i "/^\[include\]/a files = $include_glob" "$conf"
+    else
+        printf '\n[include]\nfiles = %s\n' "$include_glob" >> "$conf"
+    fi
+}
+
+configure_supervisor
+
+# Configure nginx to include bench site configs (inside the http block)
+configure_nginx() {
+    local conf="/etc/nginx/nginx.conf"
+    local include_path="$BENCH_CLI_DIR/benches/*/config/nginx/include.conf"
+
+    if [ ! -f "$conf" ]; then
+        echo "Warning: $conf not found — skipping nginx include setup."
+        return
+    fi
+
+    if grep -qF "$include_path" "$conf"; then
+        echo "Nginx include already configured."
+        return
+    fi
+
+    sed -i "/^\s*http\s*{/a\\    include $include_path;" "$conf"
+
+    echo "Configured nginx to include $include_path"
+    nginx -t && nginx -s reload 2>/dev/null || true
+}
+
+configure_nginx
 
 echo ""
 echo "bench installed to $BENCH_CLI_DIR"
