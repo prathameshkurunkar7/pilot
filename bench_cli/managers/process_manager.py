@@ -283,7 +283,6 @@ class ProcessManagerFactory:
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
 
-        for manager in (SupervisorProcessManager(bench), SystemdProcessManager(bench)):
-            if manager.is_configured():
-                return manager
-        return ProcessManager(bench)
+        if bench.config.lightweight:
+            return SystemdProcessManager(bench)
+        return SupervisorProcessManager(bench)
