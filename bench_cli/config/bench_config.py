@@ -32,6 +32,7 @@ class BenchConfig:
     apps: List[AppConfig] = field(default_factory=list)
     http_port: int = 8000
     socketio_port: int = 9000
+    lightweight: bool = False
     nginx: NginxConfig = field(default_factory=NginxConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     admin: AdminConfig = field(default_factory=AdminConfig)
@@ -69,6 +70,7 @@ class BenchConfig:
             python_version=bench_data.get("python", ""),
             http_port=bench_data.get("http_port", 8000),
             socketio_port=bench_data.get("socketio_port", 9000),
+            lightweight=bench_data.get("lightweight", False),
             apps=apps,
             mariadb=mariadb,
             redis=redis,

@@ -7,6 +7,7 @@ _BENCH_TOML_TEMPLATE = """\
 [bench]
 name = "{name}"
 python = "3.14"
+lightweight = false
 
 [[apps]]
 name = "frappe"
