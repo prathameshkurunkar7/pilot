@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -279,19 +278,7 @@ class NginxManager:
         symlink_path = nginx_dir / f"{self.bench.config.name}.conf"
         source_path = self.bench.config_path / "nginx" / "include.conf"
 
-        if symlink_path.exists() or symlink_path.is_symlink():
-            symlink_path.unlink()
-
-        try:
-            os.symlink(source_path, symlink_path)
-        except PermissionError:
-            print(
-                f"Permission denied creating symlink at {symlink_path}.\n"
-                f"Run the following command manually:\n"
-                f"  sudo ln -sf {source_path} {symlink_path}\n"
-                f"Then reload nginx:\n"
-                f"  sudo systemctl reload nginx"
-            )
+        run_command(["sudo", "ln", "-sf", str(source_path), str(symlink_path)])
 
     def reload(self) -> None:
         run_command(["sudo", "nginx", "-t"])
