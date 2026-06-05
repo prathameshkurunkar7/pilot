@@ -125,10 +125,12 @@ class InitCommand:
             from bench_cli.managers.systemd_process_manager import SystemdProcessManager
             mgr = SystemdProcessManager(self.bench)
         else:
+            import subprocess
             from bench_cli.platform import get_package_manager, is_linux
             pkg = get_package_manager()
             if is_linux() and not pkg.is_installed("supervisor"):
                 pkg.install("supervisor")
+                subprocess.run(["sudo", "systemctl", "disable", "--now", "supervisor"], check=False)
             from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
             mgr = SupervisorProcessManager(self.bench)
         mgr.install_config()

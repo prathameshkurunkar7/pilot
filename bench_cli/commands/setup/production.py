@@ -45,11 +45,13 @@ class SetupProductionCommand:
         common_config_path.write_text(json.dumps(existing_data, indent=2))
 
     def _setup_supervisor(self) -> None:
+        import subprocess
         from bench_cli.platform import get_package_manager
 
         pkg = get_package_manager()
         if not pkg.is_installed("supervisor"):
             pkg.install("supervisor")
+            subprocess.run(["sudo", "systemctl", "disable", "--now", "supervisor"], check=False)
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
 
         mgr = SupervisorProcessManager(self.bench)
