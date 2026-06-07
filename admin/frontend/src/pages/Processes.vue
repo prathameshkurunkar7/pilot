@@ -4,8 +4,11 @@ import { useRouter } from 'vue-router'
 import { Badge, ListView, Button, LoadingText, ErrorMessage } from 'frappe-ui'
 
 const processes = ref([])
+const production = ref(false)
 const loading = ref(true)
 const error = ref('')
+const controlError = ref('')
+const controlLoading = ref('')   // 'start' | 'stop' | 'restart' | ''
 const paused = ref(false)
 const countdownDisplay = ref(15)
 let countdown = 15
@@ -13,6 +16,8 @@ let timer
 
 const router = useRouter()
 const STATUS_COLOR = { running: 'green', stopped: 'red', error: 'red', unknown: 'gray' }
+
+const anyRunning = computed(() => processes.value.some(p => p.status === 'running'))
 
 function openLog(filename) {
   router.push(`/logs/${filename}`)
@@ -34,10 +39,26 @@ async function load() {
     if (!res.ok) throw new Error(`${res.status}`)
     const d = await res.json()
     processes.value = d.processes
+    production.value = d.production ?? false
   } catch (e) {
     error.value = e.message
   } finally {
     loading.value = false
+  }
+}
+
+async function control(action) {
+  controlLoading.value = action
+  controlError.value = ''
+  try {
+    const res = await fetch(`/api/processes/${action}`, { method: 'POST' })
+    const d = await res.json()
+    if (!d.ok) { controlError.value = d.error; return }
+    await load()
+  } catch (e) {
+    controlError.value = e.message
+  } finally {
+    controlLoading.value = ''
   }
 }
 
@@ -55,10 +76,35 @@ onUnmounted(() => clearInterval(timer))
 
 <template>
   <div class="flex flex-col gap-4">
-    <div class="flex justify-end items-center gap-2">
-      <span v-if="!paused" class="text-sm text-ink-gray-5">Refreshing in {{ countdownDisplay }}s</span>
-      <Button variant="ghost" size="sm" @click="paused = !paused">{{ paused ? 'Resume' : 'Pause' }}</Button>
+    <div class="flex justify-between items-center gap-2">
+      <div v-if="production" class="flex items-center gap-2">
+        <Button
+          variant="subtle"
+          :loading="controlLoading === 'start'"
+          :disabled="!!controlLoading || anyRunning"
+          @click="control('start')"
+        >Start</Button>
+        <Button
+          variant="subtle"
+          :loading="controlLoading === 'stop'"
+          :disabled="!!controlLoading || !anyRunning"
+          @click="control('stop')"
+        >Stop</Button>
+        <Button
+          variant="subtle"
+          :loading="controlLoading === 'restart'"
+          :disabled="!!controlLoading || !anyRunning"
+          @click="control('restart')"
+        >Restart</Button>
+      </div>
+      <div v-else />
+      <div class="flex items-center gap-2">
+        <span v-if="!paused" class="text-sm text-ink-gray-5">Refreshing in {{ countdownDisplay }}s</span>
+        <Button variant="ghost" size="sm" @click="paused = !paused">{{ paused ? 'Resume' : 'Pause' }}</Button>
+      </div>
     </div>
+
+    <ErrorMessage v-if="controlError" :message="controlError" />
 
     <LoadingText v-if="loading" />
     <ErrorMessage v-else-if="error" :message="error" />
