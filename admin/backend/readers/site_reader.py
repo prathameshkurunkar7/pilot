@@ -65,6 +65,10 @@ class SiteReader:
 
 
 def _list_installed_apps(site_config: dict, bench_root: Path, site_name: str) -> list[str]:
+    # Fast path: frappe keeps this in sync after install/uninstall (v16+).
+    if isinstance(site_config.get("installed_apps"), list):
+        return site_config["installed_apps"]
+    # Fallback for older sites that haven't run the backfill patch yet.
     apps = _query_via_db_cli(site_config)
     if apps is not None:
         return apps
