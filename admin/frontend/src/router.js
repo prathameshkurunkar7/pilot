@@ -13,6 +13,7 @@ const routes = [
   { path: '/database', component: () => import('./pages/Database.vue'), meta: { title: 'Database' } },
   { path: '/database/binlogs/:name', component: () => import('./pages/BinlogDetail.vue'), meta: { title: 'Binlogs' } },
   { path: '/snapshots', component: () => import('./pages/Snapshots.vue'), meta: { title: 'Snapshots' } },
+  { path: '/settings', component: () => import('./pages/Settings.vue'), meta: { title: 'Settings' } },
 ]
 
 export const router = createRouter({

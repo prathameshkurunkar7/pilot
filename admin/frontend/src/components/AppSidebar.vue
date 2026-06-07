@@ -11,6 +11,7 @@ import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
 import LucideListTodo from '~icons/lucide/list-todo'
 import LucideLogOut from '~icons/lucide/log-out'
 import LucidePackage2 from '~icons/lucide/package-2'
+import LucideSettings from '~icons/lucide/settings'
 
 const emit = defineEmits(['logout'])
 
@@ -29,6 +30,7 @@ const baseNavItems = [
   { label: 'Logs', to: '/logs', icon: LucideFileText },
   { label: 'Database', to: '/database', icon: LucideDatabase },
   { label: 'Tasks', to: '/tasks', icon: LucideListTodo },
+  { label: 'Settings', to: '/settings', icon: LucideSettings },
 ]
 
 const snapshotsEnabled = ref(false)
