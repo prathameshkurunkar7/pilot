@@ -35,6 +35,12 @@ const switchBranch = ref('')
 const switchLoading = ref(false)
 const switchError = ref('')
 
+// Remove app dialog
+const showRemove = ref(false)
+const removeApp = ref(null)
+const removeLoading = ref(false)
+const removeError = ref('')
+
 const filteredRegistry = computed(() => {
   const q = registrySearch.value.toLowerCase()
   if (!q) return registry.value
@@ -85,6 +91,16 @@ const columns = computed(() => [
     getLabel: () => '',
   },
   { label: 'Version', key: 'installed_version', width: '90px' },
+  {
+    label: '', key: '_actions', width: '60px',
+    prefix: ({ row }) => h(Button, {
+      variant: 'ghost',
+      theme: 'red',
+      label: 'Remove',
+      onClick: (e) => { e.stopPropagation(); openRemove(row) },
+    }),
+    getLabel: () => '',
+  },
 ])
 
 const rows = computed(() =>
@@ -171,6 +187,27 @@ function openSwitch(app, branch) {
   switchBranch.value = branch
   switchError.value = ''
   showSwitch.value = true
+}
+
+function openRemove(app) {
+  removeApp.value = app
+  removeError.value = ''
+  showRemove.value = true
+}
+
+async function doRemove() {
+  removeLoading.value = true
+  removeError.value = ''
+  try {
+    const res = await fetch(`/api/apps/${removeApp.value.name}/remove`, { method: 'POST' })
+    const d = await res.json()
+    if (d.ok) { showRemove.value = false; router.push(`/tasks/${d.task_id}`) }
+    else removeError.value = d.error
+  } catch (e) {
+    removeError.value = e.message
+  } finally {
+    removeLoading.value = false
+  }
 }
 
 async function doAdd(name, repo, branch, branches) {
@@ -354,6 +391,23 @@ onMounted(loadRegistry)
         </div>
 
         </div> <!-- end @pointerdown.stop wrapper -->
+      </template>
+    </Dialog>
+
+    <!-- Remove App confirmation dialog -->
+    <Dialog v-model="showRemove" :options="{ title: 'Remove App' }">
+      <template #body-content>
+        <p v-if="removeApp" class="text-sm">
+          Remove <strong>{{ removeApp.name }}</strong> from the bench?
+        </p>
+        <p class="mt-1 text-sm text-ink-gray-4">
+          This will uninstall it from all sites, remove it from the Python environment, and delete the app directory. Uncommitted changes will be lost.
+        </p>
+        <ErrorMessage :message="removeError" class="mt-2" />
+        <div class="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" @click="showRemove = false">Cancel</Button>
+          <Button variant="solid" theme="red" :loading="removeLoading" @click="doRemove">Remove</Button>
+        </div>
       </template>
     </Dialog>
 

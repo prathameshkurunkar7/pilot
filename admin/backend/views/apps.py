@@ -60,6 +60,21 @@ def add():
     return jsonify({"ok": True, "task_id": task_id})
 
 
+@apps_bp.route("/<name>/remove", methods=["POST"])
+def remove(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+
+    if not (bench_root / "apps" / name).exists():
+        return jsonify({"ok": False, "error": f"App '{name}' not found in bench."})
+
+    try:
+        task_id = TaskRunner(bench_root).run("remove-app", {"name": name})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+    return jsonify({"ok": True, "task_id": task_id})
+
+
 @apps_bp.route("/<name>/switch-branch", methods=["POST"])
 def switch_branch(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])

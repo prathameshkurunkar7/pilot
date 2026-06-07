@@ -21,6 +21,7 @@ _WHITELIST: dict[str, list[str]] = {
     "install-app": ["site", "app"],
     "uninstall-app": ["site", "app"],
     "get-app": ["name", "repo"],
+    "remove-app": ["name"],
     "new-site": ["name"],
     "drop-site": ["site"],
     "backup-site": ["site"],
@@ -135,6 +136,8 @@ class TaskRunner:
             if args.get("branch"):
                 argv += ["--branch", args["branch"]]
             return argv
+        if command == "remove-app":
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.remove_app_task", str(self._bench_root), args["name"]]
         if command == "new-site":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_task", str(self._bench_root), args["name"]]
             if args.get("admin_password"):
