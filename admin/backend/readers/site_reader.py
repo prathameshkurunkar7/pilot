@@ -54,6 +54,45 @@ class SiteReader:
         )
 
     def _list_apps(self, site_name: str) -> list[str]:
+        apps = self._list_apps_via_mysql(site_name)
+        if apps is not None:
+            return apps
+        return self._list_apps_via_frappe(site_name)
+
+    def _list_apps_via_mysql(self, site_name: str) -> list[str] | None:
+        site_config_path = self._bench_root / "sites" / site_name / "site_config.json"
+        try:
+            config = json.loads(site_config_path.read_text())
+            db_name = config.get("db_name", "")
+            db_password = config.get("db_password", "")
+            db_host = config.get("db_host", "127.0.0.1")
+            db_port = str(config.get("db_port", 3306))
+            if not db_name or not db_password:
+                return None
+            result = subprocess.run(
+                [
+                    "mysql",
+                    f"-u{db_name}",
+                    f"-p{db_password}",
+                    f"-h{db_host}",
+                    f"-P{db_port}",
+                    "--batch",
+                    "--skip-column-names",
+                    db_name,
+                    "-e",
+                    "SELECT app_name FROM `tabInstalled Applications` ORDER BY idx",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return None
+            return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        except Exception:
+            return None
+
+    def _list_apps_via_frappe(self, site_name: str) -> list[str]:
         python = str(self._bench_root / "env" / "bin" / "python")
         sites_dir = str(self._bench_root / "sites")
         try:
@@ -74,5 +113,5 @@ class SiteReader:
                     if app_name:
                         apps.append(app_name)
             return apps
-        except Exception as e:
+        except Exception:
             return []

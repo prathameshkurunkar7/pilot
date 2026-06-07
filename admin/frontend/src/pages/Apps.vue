@@ -5,11 +5,24 @@ import {
   Button, Badge, Dialog, ListView, FormControl,
   LoadingText, ErrorMessage, TextInput, Select,
 } from 'frappe-ui'
-import { useCache } from '../composables/useCache.js'
-
 const router = useRouter()
-const { data: appsData, loading, error } = useCache('/api/apps/')
-const apps = computed(() => appsData.value ?? [])
+const apps = ref([])
+const loading = ref(true)
+const error = ref('')
+
+async function loadApps() {
+  loading.value = true
+  error.value = ''
+  try {
+    const res = await fetch('/api/apps/')
+    if (!res.ok) throw new Error(`${res.status}`)
+    apps.value = await res.json()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
 
 // Add app dialog
 const showAdd = ref(false)
@@ -255,7 +268,7 @@ function hashColor(name) {
   return COLORS[Math.abs(h) % COLORS.length]
 }
 
-onMounted(loadRegistry)
+onMounted(() => { loadApps(); loadRegistry() })
 </script>
 
 <template>

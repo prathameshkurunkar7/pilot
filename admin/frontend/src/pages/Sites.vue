@@ -3,11 +3,25 @@ import { h, ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Badge, Dialog, ListView, FormControl, LoadingText, ErrorMessage, Switch, TabButtons } from 'frappe-ui'
 import FilePickerField from '../components/FilePickerField.vue'
-import { useCache } from '../composables/useCache.js'
 
 const router = useRouter()
-const { data: sitesData, loading, error } = useCache('/api/sites/')
-const sites = computed(() => sitesData.value ?? [])
+const sites = ref([])
+const loading = ref(true)
+const error = ref('')
+
+async function loadSites() {
+  loading.value = true
+  error.value = ''
+  try {
+    const res = await fetch('/api/sites/')
+    if (!res.ok) throw new Error(`${res.status}`)
+    sites.value = await res.json()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
 const registry = ref([])
 
 const showCreate = ref(false)
@@ -157,7 +171,7 @@ function openCreate() {
   uploadPrivate.value = null
 }
 
-onMounted(loadRegistry)
+onMounted(() => { loadSites(); loadRegistry() })
 </script>
 
 <template>

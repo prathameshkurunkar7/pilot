@@ -80,7 +80,6 @@ password = "your-admin-password"   # required — admin refuses to start without
 domain = "admin.example.com"       # optional — serve admin over HTTPS via nginx
 
 [production]
-# Just adding this section enables production mode (supervisor by default).
 lightweight = false   # false = supervisor (default), true = systemd --user
 nginx = true          # run nginx setup as part of bench setup production
 ```
