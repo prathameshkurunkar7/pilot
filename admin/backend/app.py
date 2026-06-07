@@ -68,21 +68,22 @@ def create_app(bench_root: Path) -> Flask:
 
     @app.route("/api/status")
     def api_status():
-        if not (bench_root / "env" / "bin" / "python").exists():
-            return jsonify(_wizard_status(bench_root))
+        initialized = (bench_root / "env" / "bin" / "python").exists()
         try:
             config = BenchConfig.from_file(bench_root / "bench.toml")
-            if not config.admin.password:
-                return jsonify({"enabled": False, "error": "No admin password configured in bench.toml"}), 503
-            return jsonify(
-                {
-                    "enabled": config.admin.enabled,
-                    "name": config.name,
-                    "authenticated": bool(session.get("authenticated")),
-                }
-            )
         except Exception as exc:
             return jsonify({"enabled": False, "error": str(exc)}), 503
+        # Show wizard when bench was never initialized, or when init was
+        # interrupted before an admin password was saved.
+        if not initialized or not config.admin.password:
+            return jsonify(_wizard_status(bench_root))
+        return jsonify(
+            {
+                "enabled": config.admin.enabled,
+                "name": config.name,
+                "authenticated": bool(session.get("authenticated")),
+            }
+        )
 
     @app.route("/api/login", methods=["POST"])
     def api_login():

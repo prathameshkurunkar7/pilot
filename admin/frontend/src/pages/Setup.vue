@@ -290,9 +290,14 @@ function backToConfig() {
         <Button v-else-if="step === 'volume'" variant="solid" :loading="loading" class="flex-1" @click="initialize">
           Initialize
         </Button>
-        <Button v-else-if="step === 'create-site'" variant="solid" :loading="loading" class="w-full" @click="createSite">
-          Create Site
-        </Button>
+        <template v-else-if="step === 'create-site'">
+          <Button variant="subtle" class="flex-1" @click="$emit('done')">
+            Go to Dashboard
+          </Button>
+          <Button variant="solid" :loading="loading" class="flex-1" @click="createSite">
+            Create Site
+          </Button>
+        </template>
       </div>
     </div>
   </div>
