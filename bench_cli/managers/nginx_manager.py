@@ -4,7 +4,15 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from bench_cli.platform import get_package_manager, is_linux
+from bench_cli.platform import (
+    _privileged,
+    get_package_manager,
+    is_alpine,
+    is_linux,
+    service_command,
+    service_enable_command,
+    service_running,
+)
 from bench_cli.utils import run_command
 
 if TYPE_CHECKING:
@@ -279,15 +287,22 @@ class NginxManager:
         source_path = self.bench.config_path / "nginx" / "include.conf"
 
         if symlink_path.exists() or symlink_path.is_symlink():
-            run_command(["sudo", "unlink", str(symlink_path)])
-        run_command(["sudo", "ln", "-s", str(source_path), str(symlink_path)])
+            run_command(_privileged(["unlink", str(symlink_path)]))
+        run_command(_privileged(["ln", "-s", str(source_path), str(symlink_path)]))
 
     def reload(self) -> None:
-        run_command(["sudo", "nginx", "-t"])
-        if is_linux():
-            run_command(["sudo", "systemctl", "reload", "nginx"])
-        else:
+        run_command(_privileged(["nginx", "-t"]))
+        if not is_linux():
             run_command(["nginx", "-s", "reload"])
+            return
+        if is_alpine():
+            # Alpine doesn't auto-start nginx after install — bring it up the
+            # first time, then reload in place on subsequent runs.
+            run_command(service_enable_command("nginx"))
+            action = "reload" if service_running("nginx") else "start"
+            run_command(service_command(action, "nginx"))
+            return
+        run_command(service_command("reload", "nginx"))
 
     def cert_path(self, site: "SiteConfig") -> Path:
         return Path("/etc/letsencrypt/live") / site.name / "fullchain.pem"

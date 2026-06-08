@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from bench_cli.exceptions import BenchError
-from bench_cli.platform import is_macos
+from bench_cli.platform import get_package_manager, is_alpine, is_macos
 from bench_cli.utils import get_yarn_bin, run_command
 
 if TYPE_CHECKING:
@@ -46,6 +46,8 @@ class PythonEnvManager:
         if not shutil.which("node"):
             if is_macos():
                 run_command(["brew", "install", "node"])
+            elif is_alpine():
+                get_package_manager().install("nodejs", "npm")
             else:
                 self._install_node_linux()
         if not shutil.which("yarn"):

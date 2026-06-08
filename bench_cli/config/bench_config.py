@@ -135,7 +135,9 @@ class BenchConfig:
 
     @staticmethod
     def _parse_nginx(data: dict) -> NginxConfig:
-        config_dir = data.get("config_dir", "/etc/nginx/conf.d")
+        from bench_cli.platform import default_nginx_config_dir
+
+        config_dir = data.get("config_dir") or default_nginx_config_dir()
         return NginxConfig(
             http_port=data.get("http_port", 80),
             https_port=data.get("https_port", 443),
