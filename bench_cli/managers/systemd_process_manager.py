@@ -94,12 +94,15 @@ class SystemdProcessManager(ProcessManager):
         run_command(self._systemctl("restart", self._target_name()), env=self._systemctl_env())
 
     def is_running(self) -> bool:
-        result = subprocess.run(
-            self._systemctl("is-active", self._target_name()),
-            capture_output=True,
-            env=self._systemctl_env(),
-        )
-        return result.returncode == 0
+        try:
+            result = subprocess.run(
+                self._systemctl("is-active", self._target_name()),
+                capture_output=True,
+                env=self._systemctl_env(),
+            )
+            return result.returncode == 0
+        except FileNotFoundError:
+            return False
 
     def reload_web(self) -> None:
         cache_port = self.bench.config.redis.cache_port
