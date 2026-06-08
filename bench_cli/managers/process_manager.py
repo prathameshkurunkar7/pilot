@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -88,6 +89,23 @@ class ProcessManager:
 
     def reload_web(self) -> None:
         pass
+
+    @staticmethod
+    def _split_command(command: str) -> tuple[list[tuple[str, str]], str, str]:
+        """Split a Procfile command into env assignments, working dir, and command.
+
+        Leading ``VAR=value`` pairs and a ``cd <dir> &&`` prefix are peeled off so
+        each process manager can map them onto its own config format.
+        """
+        env: list[tuple[str, str]] = []
+        while m := re.match(r"^([A-Z_][A-Z0-9_]*)=(\S+)\s+", command):
+            env.append((m.group(1), m.group(2)))
+            command = command[m.end():]
+        working_dir = ""
+        if m := re.match(r"^cd\s+(\S+)\s*&&\s*", command):
+            working_dir = m.group(1)
+            command = command[m.end():]
+        return env, working_dir, command
 
     # ── Procfile runner ─────────────────────────────────────────────────────
 
@@ -279,6 +297,11 @@ class ProcessManagerFactory:
         if not bench.config.production.enabled:
             return ProcessManager(bench)
 
+        if bench.config.production.process_manager == "openrc":
+            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+
+            return OpenRCProcessManager(bench)
+
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
 
@@ -297,6 +320,10 @@ class ProcessManagerFactory:
         Falls back to create() when nothing is detected as running, so callers
         still get the appropriate "not running" error for the configured manager.
         """
+        if bench.config.production.process_manager == "openrc":
+            # Alpine has only OpenRC; skip the systemd/supervisor probes.
+            return cls.create(bench)
+
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
 

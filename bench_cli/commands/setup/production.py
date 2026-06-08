@@ -19,7 +19,9 @@ class SetupProductionCommand:
         self._require_production_enabled()
         self._require_linux()
         self._write_dns_multitenancy()
-        if self.bench.config.production.process_manager == "systemd":
+        if self.bench.config.production.process_manager == "openrc":
+            self._setup_openrc()
+        elif self.bench.config.production.process_manager == "systemd":
             self._setup_systemd()
         else:
             self._setup_supervisor()
@@ -74,6 +76,14 @@ class SetupProductionCommand:
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
         mgr = SystemdProcessManager(self.bench)
+        mgr.generate_config()
+        mgr.install_config()
+        mgr.reload()
+
+    def _setup_openrc(self) -> None:
+        from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+
+        mgr = OpenRCProcessManager(self.bench)
         mgr.generate_config()
         mgr.install_config()
         mgr.reload()

@@ -233,7 +233,14 @@ class InitCommand:
         common_config_path.write_text(json.dumps(existing, indent=2))
 
     def _setup_process_manager(self) -> None:
-        if self.bench.config.production.process_manager == "systemd":
+        if self.bench.config.production.process_manager == "openrc":
+            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+
+            mgr = OpenRCProcessManager(self.bench)
+            mgr.install_config()
+            mgr.reload()
+            # openrc init scripts live inside config/ — _remove_bench_dirs handles it
+        elif self.bench.config.production.process_manager == "systemd":
             from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
             mgr = SystemdProcessManager(self.bench)
