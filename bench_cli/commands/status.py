@@ -25,7 +25,11 @@ class StatusCommand:
             self._row("Mode", "development (Procfile)")
             self._print_processes_dev()
         else:
-            mode = "systemd (--user)" if prod.process_manager == "systemd" else "supervisor (bench-local)"
+            mode = {
+                "systemd": "systemd (--user)",
+                "openrc": "openrc",
+                "supervisor": "supervisor (bench-local)",
+            }.get(prod.process_manager, prod.process_manager)
             self._row("Mode", f"production  [{mode}]")
             self._print_processes_prod()
 
@@ -113,13 +117,9 @@ class StatusCommand:
                 self._row(label, _warn("not found"))
 
     def _service_status(self, service: str) -> str:
-        result = subprocess.run(
-            ["systemctl", "is-active", service],
-            capture_output=True,
-            text=True,
-        )
-        active = result.stdout.strip() == "active"
-        return _ok("active") if active else _dim(result.stdout.strip() or "inactive")
+        from bench_cli.platform import service_running
+
+        return _ok("active") if service_running(service) else _dim("inactive")
 
     def _section(self, title: str) -> None:
         print(f"\n\033[1m{title}\033[0m")
