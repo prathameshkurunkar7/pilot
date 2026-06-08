@@ -58,9 +58,27 @@ webroot_path = "/var/www/letsencrypt"
 
 # ── Admin UI ──────────────────────────────────────────────────────────────────
 [admin]
-port = 8002     # port the admin UI listens on
-enabled = false # set to true to enable the admin UI
-timeout = 180   # seconds of inactivity before auto-stop (standalone mode only)
+port = 8002             # port the admin UI listens on
+password = "secret"     # required — admin refuses to start without this
+domain = ""             # optional — serve admin over HTTPS via nginx (production)
+
+# ── ZFS Volume (Linux only, optional) ────────────────────────────────────────
+[volume]
+enabled = false         # set to true to activate ZFS volume management
+pool = "bench-pool"     # ZFS pool name (created during bench init if absent)
+device = "/dev/sdb"     # block device for the pool (ignored if pool already exists)
+
+[volume.benches]
+reservation = "10G"     # guaranteed space for bench directories
+quota = "50G"           # hard cap on bench directory space
+
+[volume.mariadb]
+reservation = "5G"      # guaranteed space for MariaDB data files
+quota = "20G"           # hard cap on MariaDB data
+data_dir = "/var/lib/mysql"  # remounted onto the ZFS dataset during bench init
+
+[volume.snapshots]
+enabled = false         # set to true to allow bench volume snapshot
 ```
 
 ---
@@ -144,8 +162,39 @@ Omit this section entirely for development benches. The section is only read by 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `port` | int | no | `8002` | Port the admin process listens on. |
-| `enabled` | bool | no | `false` | Set to `true` to enable the admin UI. |
-| `timeout` | int | no | `180` | Seconds of inactivity before the admin process auto-stops. Only applies when started standalone via `bench start-admin`. |
+| `password` | string | yes | — | Password for the admin UI. The process refuses all requests with HTTP 503 if this is empty. |
+| `domain` | string | no | `""` | Hostname to serve the admin UI over HTTPS in production (e.g. `admin.example.com`). When set, `bench setup production` obtains a certificate and generates an nginx proxy block. |
+
+### `[volume]`
+
+Volume management is opt-in and Linux-only. All `[volume.*]` sections are ignored unless `volume.enabled = true`.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `enabled` | bool | no | `false` | Activate ZFS volume management. |
+| `pool` | string | yes (if enabled) | — | ZFS pool name. Created on `device` during `bench init` if it does not exist. |
+| `device` | string | yes (if enabled) | — | Block device path (e.g. `/dev/sdb`). Used only if the pool does not yet exist. |
+
+### `[volume.benches]`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `reservation` | string | no | `"10G"` | Guaranteed space for bench directories. ZFS will not allow this dataset to fall below this allocation. Must be a valid ZFS size (e.g. `"10G"`, `"500M"`). |
+| `quota` | string | no | `"50G"` | Hard space cap. Writes beyond this limit are rejected. Must be greater than `reservation`. Can be updated live via the Settings modal without restarting. |
+
+### `[volume.mariadb]`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `reservation` | string | no | `"5G"` | Guaranteed space for MariaDB data files. |
+| `quota` | string | no | `"20G"` | Hard space cap for MariaDB data. bench validates that the new quota is not less than the dataset's current used size before applying. |
+| `data_dir` | string | no | `"/var/lib/mysql"` | MariaDB data directory. During `bench init`, the dataset is remounted here via `zfs set mountpoint`. |
+
+### `[volume.snapshots]`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `enabled` | bool | no | `false` | Allow `bench volume snapshot` and `bench volume restore-snapshot`. Set to `false` to block accidental snapshots. Togglable via the ZFS Volume tab in the Settings modal. |
 
 ---
 
@@ -161,6 +210,7 @@ bench validates `bench.toml` before executing any command. Violations produce a 
 6. `letsencrypt.email` must match a basic email pattern (`^[^@]+@[^@]+\.[^@]+$`) when present.
 7. `nginx.http_port` and `nginx.https_port` must be distinct.
 8. `mariadb.version` and `redis.version`, when present, must match `^\d+(\.\d+)*$` (e.g. `"10.6"`, `"7"`, `"7.0"`).
+9. When `volume.enabled = true`: `pool` and `device` must be non-empty; `reservation` and `quota` values must match a valid ZFS size pattern (e.g. `"10G"`, `"500M"`, `"1T"`); quota must be greater than reservation for both datasets.
 
 ---
 

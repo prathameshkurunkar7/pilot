@@ -59,7 +59,10 @@ admin/
     │   ├── processes.py         # GET /processes, POST /processes/<name>/restart
     │   ├── logs.py              # GET /logs, /logs/<filename>
     │   ├── database.py          # GET /database/binlogs, /database/slow-queries
-    │   └── tasks.py             # GET /tasks, /tasks/<id>, POST /tasks/run, /tasks/<id>/kill
+    │   ├── tasks.py             # GET /tasks, /tasks/<id>, POST /tasks/run, /tasks/<id>/kill
+    │   ├── settings.py          # GET /api/settings/, PATCH /api/settings/
+    │   ├── updates.py           # GET /api/updates/, POST /api/updates/apply
+    │   └── volume.py            # GET /api/volume/snapshots, POST /api/volume/snapshot
     │
     └── tasks/
         ├── manager/             # Task infrastructure
@@ -376,6 +379,93 @@ See [specs/tasks.md](tasks.md). Lists all tasks, most recent first, with status 
 ### `GET /tasks/<task-id>` — Task detail
 
 See [specs/tasks.md](tasks.md). Shows task metadata, live-streaming output while running, and a kill button for running tasks.
+
+### `GET /api/settings/` — Read current settings
+
+Returns the full settings payload as JSON. The frontend uses this to populate the Settings modal.
+
+```json
+{
+  "is_linux": true,
+  "bench": { "name": "my-bench", "python": "3.14", "http_port": 8000, "socketio_port": 9000 },
+  "mariadb": { "host": "localhost", "port": 3306, "admin_user": "root", "socket_path": "", "version": "10.6" },
+  "redis": { "cache_port": 13000, "queue_port": 11000, "socketio_port": 12000, "version": "7" },
+  "workers": { "default": 2, "short": 1, "long": 1 },
+  "nginx": { "http_port": 80, "https_port": 443, "config_dir": "/etc/nginx/conf.d", "worker_processes": "auto", "client_max_body_size": "50m" },
+  "letsencrypt": { "email": "", "webroot_path": "/var/www/letsencrypt" },
+  "production": { "process_manager": "none", "nginx": false },
+  "volume": {
+    "enabled": true,
+    "pool": "bench-pool",
+    "device": "/dev/sdb",
+    "benches_quota": "50G",
+    "benches_reservation": "10G",
+    "mariadb_quota": "20G",
+    "mariadb_reservation": "5G",
+    "mariadb_data_dir": "/var/lib/mysql",
+    "snapshots_enabled": false
+  }
+}
+```
+
+`is_linux` gates the ZFS Volume tab in the frontend — the tab is only shown on Linux.
+
+### `PATCH /api/settings/` — Update settings
+
+Accepts a JSON body with any subset of the settings sections. Only keys present in the body are updated; omitted keys keep their current values.
+
+```json
+{
+  "bench": { "http_port": 8080 },
+  "workers": { "default": 4 }
+}
+```
+
+**Response:**
+```json
+{ "ok": true, "restarted": true, "restart_error": null, "zfs_error": null }
+```
+
+**Process restart:** If any value in `bench.http_port`, `bench.socketio_port`, `redis.*_port`, `workers.*`, or `production.process_manager` changed, bench regenerates config files and restarts the running process manager (supervisor or systemd) automatically — excluding the admin process itself so the response is delivered before the restart.
+
+**ZFS quota/reservation:** If `volume.benches_quota`, `volume.mariadb_quota`, `volume.benches_reservation`, or `volume.mariadb_reservation` changed, the new values are applied via `zfs set` after writing `bench.toml`. Quota changes are validated before saving: if the new quota is less than the dataset's current used size, the request is rejected with HTTP 400 and the config is not modified.
+
+**Error responses:**
+
+| Condition | HTTP | Body |
+|-----------|------|------|
+| JSON parse error | 400 | `{"ok": false, "error": "..."}` |
+| Validation failure (port out of range, etc.) | 400 | `{"ok": false, "error": "..."}` |
+| ZFS quota below current used size | 400 | `{"ok": false, "error": "Quota 5G is less than current used size (12.4G) for benches dataset"}` |
+| bench.toml write failure | 500 | `{"ok": false, "error": "Failed to write config: ..."}` |
+| ZFS set failure (post-save) | 200 | `{"ok": true, ..., "zfs_error": "..."}` |
+
+Note: ZFS errors are reported in the response body (not HTTP 5xx) because `bench.toml` has already been written at that point.
+
+---
+
+## Settings modal
+
+The frontend presents settings as a tabbed modal dialog. Tabs are:
+
+| Tab | Editable fields | Read-only fields |
+|-----|----------------|-----------------|
+| **Bench** | HTTP Port, SocketIO Port | Name, Python version |
+| **Appearance** | Theme (light/dark/auto) | — |
+| **MariaDB** | — | Host, Port, Admin User, Version, Socket Path |
+| **Redis** | Cache Port, Queue Port, SocketIO Port | — |
+| **Workers** | Default, Short, Long worker counts | — |
+| **Nginx** | Worker Processes, Client Max Body Size, Config Directory, Manage Nginx toggle | HTTP Port, HTTPS Port |
+| **Let's Encrypt** | Email, Webroot Path | — |
+| **Production** | Process Manager (none/supervisor/systemd) | — |
+| **Updates** | — | Current version, update availability badge; Update button |
+| **ZFS Volume** *(Linux only)* | Bench Quota, Bench Reservation, MariaDB Quota, MariaDB Reservation, Enable Snapshots | Pool Name, Block Device |
+
+MariaDB fields are read-only because the host, port, credentials, and socket path are set once during `bench init` and cannot be meaningfully changed by editing `bench.toml` after the fact — the database server itself is not reconfigured.
+
+The Process Manager dropdown lets you switch between `none`, `supervisor`, and `systemd`. A change here writes to `bench.toml` and triggers a process restart.
+
+Theme changes are local to the browser session (stored in `localStorage`) and do not touch `bench.toml`.
 
 ---
 

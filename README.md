@@ -16,7 +16,8 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 | Folder layout | Wherever you `bench init` | All benches under `bench-cli/benches/` |
 | Process manager | Honcho / Supervisor | Built-in Procfile runner |
 | Python env | pip + virtualenv | [uv](https://github.com/astral-sh/uv) (auto-installed) |
-| Admin UI | None | Built-in — app status, sites, logs, task runner, process memory/CPU |
+| Admin UI | None | Built-in — app status, sites, logs, task runner, process memory/CPU, live settings |
+| Storage | Root filesystem only | Optional ZFS pool with per-dataset quotas, reservations, and snapshots |
 
 ## Requirements
 
@@ -105,6 +106,11 @@ Apps and sites are tracked by the filesystem — no need to list them in `bench.
 | `bench setup nginx` | Generate and install nginx config |
 | `bench setup letsencrypt` | Obtain SSL certificates |
 | `bench setup production` | Full production setup (nginx + SSL + supervisor/systemd) |
+| `bench volume status` | Show ZFS pool and dataset usage |
+| `bench volume snapshot` | Snapshot both datasets (or `--dataset benches\|mariadb`) |
+| `bench volume list-snapshots` | List snapshots per dataset |
+| `bench volume destroy-snapshot <tag>` | Destroy a named snapshot |
+| `bench volume restore-snapshot <tag>` | Rollback a dataset to a snapshot |
 
 With multiple benches: `bench -b my-bench start`
 
@@ -154,7 +160,8 @@ The built-in admin UI runs on port 8002 (configurable via `[admin] port`).
 | Logs | Tail and search log files with live streaming |
 | Tasks | Multi-step task view with collapsible output per step; task history |
 | Database | MariaDB process list, slow queries, binary log viewer |
-| Settings | Modal dialog (sidebar dropdown) — configure ports, workers, process manager, nginx, and Let's Encrypt; check and apply bench-cli updates |
+| Settings | Tabbed modal — Bench ports, MariaDB (read-only), Redis ports, Workers, Nginx, Let's Encrypt, Production process manager, ZFS Volume (Linux); saves to `bench.toml` and restarts affected processes automatically |
+| Updates | Check for bench-cli updates and apply in one click |
 
 All forms validate input before submission — site names are checked for valid hostname format, repository URLs for valid git URL format, branch names for legal characters, cron expressions for valid 5-field syntax, and port numbers for the 1–65535 range.
 

@@ -313,6 +313,37 @@ bench volume destroy-snapshot 20250527-020000 --dataset benches --yes
 
 ---
 
+## Live quota and reservation changes
+
+Quotas and reservations can be updated at any time via the **ZFS Volume** tab in the admin Settings modal — no bench restart required. The change is applied in two steps:
+
+1. **Validate** — before writing `bench.toml`, the new quota is compared against the dataset's current used bytes (`zfs get -H -p -o value used <dataset>`). If the new quota would be less than the used size, the request is rejected with an error and nothing is written.
+
+   > Setting a quota below the current used size does not make ZFS refuse the command, but it immediately blocks all further writes to the dataset. MariaDB would receive "Got error 28 from storage engine" and crash. The validation step prevents this.
+
+2. **Apply** — after `bench.toml` is written, `zfs set quota=<value> <dataset>` and `zfs set reservation=<value> <dataset>` are run for any values that changed. If the ZFS commands fail (e.g. device is full, dataset does not exist), the error is returned in the API response alongside `"ok": true` — the TOML has already been saved.
+
+The quota validation is implemented in `VolumeManager.validate_quota(dataset, quota)`:
+
+```python
+def validate_quota(self, dataset: str, quota: str) -> str | None:
+    if quota.lower() in ("none", "0"):
+        return None
+    if not self.dataset_exists(dataset):
+        return None
+    used = self.get_used_bytes(dataset)
+    new_quota = self._parse_size_bytes(quota)
+    if new_quota < used:
+        used_g = round(used / 1024**3, 2)
+        name = dataset.split("/")[-1]
+        return f"Quota {quota} is less than current used size ({used_g}G) for {name} dataset"
+    return None
+```
+
+`_parse_size_bytes` handles suffixes `K`, `M`, `G`, `T`, `P` (base-1024) and bare integer strings.
+
+---
+
 ## Error handling
 
 `VolumeManager` raises `bench_cli.exceptions.VolumeError` (a subclass of `BenchError`) for all ZFS command failures. The CLI catches this at the top level and prints the error along with the underlying command that failed.
