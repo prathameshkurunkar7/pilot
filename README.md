@@ -21,12 +21,19 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 ## Requirements
 
 **Ubuntu 22.04+** — Python 3.11+, `sudo` access  
+**Alpine 3.20+** — uses apk + OpenRC; `install.sh` bootstraps everything (production via `process_manager = "openrc"`)  
 **macOS** — Python 3.11+, [Homebrew](https://brew.sh) (dev only)
 
 ## Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | bash
+```
+
+On bare Alpine (no curl/bash preinstalled), bootstrap with busybox instead:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | sh
 ```
 
 Clones to `~/bench-cli` and adds `bench` to `PATH`. Or manually:
