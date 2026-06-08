@@ -200,9 +200,19 @@ class InitCommand:
 
         VolumeSetupCommand(self.bench.config.volume, self.bench.path).run()
 
+    # Build/runtime deps for compiling frappe's Python and Node wheels.
+    # Alpine (musl) ships no manylinux wheels, so the full header set is needed;
+    # bash and tzdata are runtime deps frappe assumes are present.
+    _ALPINE_BUILD_PACKAGES = (
+        "build-base", "pkgconf", "mariadb-dev", "git", "bash", "tzdata",
+        "linux-headers", "libffi-dev", "openssl-dev", "libxml2-dev",
+        "libxslt-dev", "jpeg-dev", "zlib-dev", "freetype-dev", "tiff-dev",
+        "lcms2-dev", "openjpeg-dev",
+    )
+
     def _install_system_packages(self) -> None:
         from bench_cli.managers.mariadb_manager import MariaDBManager
-        from bench_cli.platform import get_package_manager, is_linux
+        from bench_cli.platform import get_package_manager, is_alpine, is_linux
 
         pkg = get_package_manager()
         if is_linux():
@@ -212,8 +222,9 @@ class InitCommand:
         mariadb_manager.install()
         mariadb_manager.start()
         RedisManager(self.bench.config.redis, self.bench).install()
-        if is_linux():
-            pkg = get_package_manager()
+        if is_alpine():
+            pkg.install(*self._ALPINE_BUILD_PACKAGES)
+        elif is_linux():
             pkg.install("build-essential", "pkg-config", "libmariadb-dev", "git")
         PythonEnvManager(self.bench).ensure_python()
 
