@@ -74,7 +74,7 @@ class SupervisorProcessManager(ProcessManager):
         run_command([*self._supervisorctl(), "restart", f"{self.bench.config.name}:*"])
 
     def is_running(self) -> bool:
-        if not self.is_alive():
+        if not self.is_configured() or not self.is_alive():
             return False
         result = subprocess.run(
             [*self._supervisorctl(), "status", f"{self.bench.config.name}:*"],
