@@ -115,7 +115,7 @@ onUnmounted(() => {
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-xl font-semibold text-ink-gray-9">Server Stats</h2>
           <span class="flex items-center gap-1.5 text-xs text-ink-gray-4">
-            <span class="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+            <span class="h-2 w-2 animate-pulse rounded-full bg-surface-green-3" />
             Live
           </span>
         </div>

@@ -195,29 +195,29 @@ onMounted(loadSnapshots)
           Roll back <strong>{{ currentDataset }}</strong> to snapshot
           <code class="rounded bg-surface-gray-2 px-1 py-0.5 text-ink-gray-9">{{ rollbackRow?.tag }}</code>?
         </p>
-        <p class="text-red-600">
+        <p class="text-ink-red-4">
           All data written after this snapshot was taken will be permanently lost.
           Any snapshots newer than this one will also be destroyed.
         </p>
         <div
           v-if="isMariadbTab"
-          class="rounded border border-amber-200 bg-amber-50 p-3 text-amber-900"
+          class="rounded border border-outline-amber-1 bg-surface-amber-1 p-3 text-ink-amber-3"
         >
           <p class="font-medium">MariaDB will be stopped and restarted</p>
-          <p class="mt-1 text-amber-700">The following commands will run in order:</p>
-          <pre class="mt-2 rounded bg-white px-3 py-2 font-mono text-xs text-ink-gray-9">sudo systemctl stop mariadb
+          <p class="mt-1 text-ink-amber-2">The following commands will run in order:</p>
+          <pre class="mt-2 rounded bg-surface-white px-3 py-2 font-mono text-xs text-ink-gray-9">sudo systemctl stop mariadb
 sudo zfs rollback -r {{ rollbackRow?.tag }}
 sudo systemctl start mariadb</pre>
-          <p class="mt-2 text-amber-700">
+          <p class="mt-2 text-ink-amber-2">
             Ensure no critical database operations are in progress before proceeding.
           </p>
         </div>
         <div
           v-else
-          class="rounded border border-amber-200 bg-amber-50 p-3 text-amber-900"
+          class="rounded border border-outline-amber-1 bg-surface-amber-1 p-3 text-ink-amber-3"
         >
           <p class="font-medium">Sites will be put into maintenance mode</p>
-          <p class="mt-1 text-amber-700">
+          <p class="mt-1 text-ink-amber-2">
             All sites on this bench will be unavailable during the restore. They will be brought
             back online automatically once the rollback completes.
           </p>

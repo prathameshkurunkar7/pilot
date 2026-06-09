@@ -196,8 +196,7 @@ onUnmounted(() => { if (es) { es.close(); es = null } })
         <span class="font-mono text-sm font-medium">{{ task.command }}</span>
         <span
           v-if="Object.keys(task.args).length"
-          class="font-mono text-sm"
-          style="color:#585b70;"
+          class="font-mono text-sm text-ink-gray-5"
         >
           {{ Object.entries(task.args).map(([k, v]) => `${k}=${v}`).join(' ') }}
         </span>
@@ -238,9 +237,9 @@ onUnmounted(() => { if (es) { es.close(); es = null } })
               <div
                 class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
                 :class="{
-                  'bg-green-100 text-green-600': section.status === 'done',
-                  'bg-ink-gray-9 text-white': section.status === 'running',
-                  'bg-red-100 text-red-600': section.status === 'failed',
+                  'bg-surface-green-2 text-ink-green-2': section.status === 'done',
+                  'bg-ink-gray-9 text-surface-white': section.status === 'running',
+                  'bg-surface-red-1 text-ink-red-4': section.status === 'failed',
                   'bg-ink-gray-1': section.status === 'pending',
                 }"
               >

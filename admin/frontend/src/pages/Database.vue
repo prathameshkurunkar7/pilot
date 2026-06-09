@@ -166,7 +166,7 @@ onUnmounted(() => clearInterval(processTimer))
         <div class="mb-3 flex items-center justify-between">
           <span class="text-sm text-ink-gray-5">{{ processes.length }} connection{{ processes.length !== 1 ? 's' : '' }}</span>
           <span class="flex items-center gap-1.5 text-xs text-ink-gray-4">
-            <span class="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+            <span class="h-2 w-2 rounded-full bg-surface-green-3 animate-pulse" />
             Refreshing every 5s
           </span>
         </div>
@@ -190,7 +190,7 @@ onUnmounted(() => clearInterval(processTimer))
             >Kill</Button>
             <span
               v-else-if="column.key === 'time'"
-              :class="item > 30 ? 'font-semibold text-red-600' : item > 5 ? 'text-amber-600' : ''"
+              :class="item > 30 ? 'font-semibold text-ink-red-4' : item > 5 ? 'text-ink-amber-3' : ''"
             >{{ item }}</span>
             <span v-else class="truncate max-w-xs block">{{ item }}</span>
           </template>

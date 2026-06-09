@@ -388,7 +388,7 @@ watch(() => props.modelValue, (val) => {
           <!-- Footer -->
           <div v-if="activeTab !== 'appearance' && activeTab !== 'updates' && !(activeTab === 'volume' && !form?.volume?.enabled)" class="flex items-center justify-end gap-3 px-6 py-3 border-t border-outline-gray-1 flex-shrink-0">
             <ErrorMessage :message="saveError" />
-            <span v-if="saveSuccess" class="text-sm text-green-600 font-medium">{{ saveSuccess }}</span>
+            <span v-if="saveSuccess" class="text-sm text-ink-green-2 font-medium">{{ saveSuccess }}</span>
             <Button @click="show = false">Cancel</Button>
             <Button variant="solid" :loading="saving" @click="save">Save</Button>
           </div>
