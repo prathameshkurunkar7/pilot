@@ -17,7 +17,7 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 | Process manager | Honcho / Supervisor | Built-in Procfile runner |
 | Python env | pip + virtualenv | [uv](https://github.com/astral-sh/uv) (auto-installed) |
 | Admin UI | None | Built-in — app status, sites, logs, task runner, process memory/CPU, live settings |
-| Storage | Root filesystem only | Optional ZFS pool with per-dataset quotas, reservations, and snapshots |
+| Storage | Root filesystem only dedicated disk **or** disk image — no spare disk needed with per-dataset quotas, reservations, and snapshots |
 
 ## Requirements
 
@@ -97,9 +97,19 @@ domain = "admin.example.com"       # optional — serve admin over HTTPS via ngi
 [production]
 process_manager = "supervisor"   # none | supervisor | systemd
 nginx = true
+
+[volume]
+enabled = true
+pool = "bench-pool"
+backing = "auto"                 # discover an unused disk, or fall back to a disk image
+# backing = "device"             # explicit: dedicated disk
+# device = "/dev/sdb"
+# backing = "image"              # explicit: preallocated file on the root filesystem
+# [volume.image]
+# size = "60G"                   # file created at /var/lib/bench-zfs/bench-pool.img
 ```
 
-Apps and sites are tracked by the filesystem — no need to list them in `bench.toml`.
+Apps and sites are tracked by the filesystem — no need to list them in `bench.toml`. See [docs/volume.md](docs/volume.md) for the full ZFS volume guide.
 
 ## Commands
 

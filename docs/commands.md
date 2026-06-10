@@ -62,6 +62,9 @@ If the `IS_SUDOERS_SETUP` environment variable is set, `bench init` assumes the 
 0.  Configure passwordless sudo (only when --sudo-password is given and IS_SUDOERS_SETUP is unset)
 1.  Validate bench.toml
 2.  Install system packages
+2b. Set up ZFS volumes (only when volume.enabled = true) — resolves backing = "auto"
+    by discovering an unused disk (or falling back to a disk image) and persists the
+    resolved values to bench.toml; see docs/volume.md
 3.  Create bench directory structure
 4.  Create Python virtualenv
 5.  Clone and install framework app

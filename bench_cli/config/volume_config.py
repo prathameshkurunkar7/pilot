@@ -28,7 +28,7 @@ class ImageConfig:
 
 @dataclass
 class VolumeConfig:
-    enabled: bool = False
+    enabled: bool = True
     pool: str = ""
     backing: str = "device"  # "device" (dedicated block device) | "image" (file on the root filesystem)
     device: str = ""

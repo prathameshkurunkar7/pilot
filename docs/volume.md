@@ -1,13 +1,52 @@
 # Volume Management
 
-bench supports optional ZFS-based volume management for benches running on a dedicated disk. When enabled, a single ZFS pool is created on a block device, and separate datasets are carved out for bench data and MariaDB data — each with configurable quotas and reservations.
+bench supports optional ZFS-based volume management. When enabled, a single ZFS pool is created and separate datasets are carved out for bench data and MariaDB data — each with configurable quotas and reservations.
+
+The pool can be backed three ways, selected by `volume.backing`:
+
+- **`backing = "device"`** — a dedicated block device (`/dev/sdb`). Best performance; use this when a spare disk or attached volume is available.
+- **`backing = "image"`** — a preallocated image file on the root filesystem (default `/var/lib/bench-zfs/<pool>.img`), used as a file vdev. For machines **without a spare disk**: everything above the vdev (datasets, quotas, reservations, snapshots) works identically. Slightly lower performance than a dedicated device since ZFS sits on top of the existing filesystem — fine for dev and small setups.
+- **`backing = "auto"`** — let `bench init` decide. An unused disk is auto-discovered and used as device backing; if none exists, image backing is used. Quotas and reservations are derived from the backing size. See [Auto backing](#auto-backing-discovery-and-smart-sizing) below.
+
+The image file is always **preallocated** with `fallocate` (never sparse), so the pool can't be corrupted later by the root filesystem filling up — setup fails fast instead if the space isn't there.
+
+---
+
+## Auto backing — discovery and smart sizing
+
+The minimal hands-off config:
+
+```toml
+[volume]
+enabled = true
+pool = "bench-pool"
+backing = "auto"
+```
+
+During `bench init`, the volume setup step resolves `auto` to a concrete backing and **persists the resolved values back to `bench.toml`**, so the settings UI and re-runs see real values.
+
+**Device discovery** (`lsblk -J -b`): a disk qualifies as *unused* when it is a whole disk (`type = disk`), writable, has **no partitions**, **no filesystem signature** (excludes `zfs_member`, `LVM2_member`, `linux_raid_member`, ext4, ...), **nothing mounted**, and is at least 10G. The largest qualifying disk wins — e.g. a freshly attached EBS volume. The root disk never qualifies (it has mounted partitions).
+
+**Smart sizing** (also used by the setup wizard's prefilled defaults):
+
+| Value | Default |
+|---|---|
+| Image size (no spare disk) | 75% of rootfs free space, min 10G |
+| `benches.quota` | 60% of backing size |
+| `mariadb.quota` | 40% of backing size |
+| `benches.reservation` | 10% of backing size |
+| `mariadb.reservation` | 5% of backing size |
+
+Quotas use a strict 60/40 split (no overcommit) so a full benches dataset can never starve MariaDB. All values are floored to whole gigabytes (min 1G).
+
+> **Auto backing implies auto sizing.** With `backing = "auto"`, quotas and reservations are always recomputed from the resolved backing — set `backing = "device"` or `"image"` explicitly if you want manual control over sizes.
 
 ---
 
 ## Design constraints
 
 - **Opt-in only.** ZFS volume management is disabled by default. Set `volume.enabled = true` in `bench.toml` to activate it.
-- **One pool, two datasets.** A single ZFS pool on one large disk holds two datasets: one for bench directories (`<pool>/benches`) and one for MariaDB data (`<pool>/mariadb`). This keeps data locality simple and snapshotting independent per concern.
+- **One pool, two datasets.** A single ZFS pool on one backing (disk or image file) holds two datasets: one for bench directories (`<pool>/benches`) and one for MariaDB data (`<pool>/mariadb`). This keeps data locality simple and snapshotting independent per concern.
 - **Quotas and reservations from bench.toml.** Space limits and guarantees are declared in `bench.toml` — no manual `zfs set` commands needed.
 - **Snapshot support.** ZFS datasets can be snapshotted on demand via `bench volume snapshot`. This is a building block for backup workflows; scheduling is left to the operator (cron, etc.).
 - **Linux only.** ZFS volume management targets Ubuntu/Linux servers. `VolumeSetupCommand` exits with a clear error on macOS.
@@ -23,8 +62,13 @@ bench supports optional ZFS-based volume management for benches running on a ded
 [volume]
 enabled = false            # set to true to enable ZFS volume management
 pool = "bench-pool"        # ZFS pool name (created if it does not exist)
-device = "/dev/sdb"        # block device to create the pool on
+backing = "device"         # "device" (dedicated disk) | "image" (file on root FS) | "auto" (discover)
+device = "/dev/sdb"        # block device to create the pool on (backing = "device")
                            # ignored if the pool already exists
+
+[volume.image]             # only read when backing = "image"
+size = "60G"               # preallocated size of the image file (fallocate)
+# path = "/var/lib/bench-zfs/bench-pool.img"   # optional, this is the default
 
 [volume.benches]
 reservation = "10G"        # guaranteed space for bench directories
@@ -43,10 +87,15 @@ enabled = false            # set to true to allow `bench volume snapshot`
 ### Validation
 
 If `volume.enabled = true`:
-- `volume.pool` and `volume.device` must be non-empty strings.
-- `volume.benches.reservation` and `volume.mariadb.reservation` must be valid ZFS size strings (e.g. `"10G"`, `"512M"`).
-- `volume.benches.quota` must be greater than `volume.benches.reservation`; same for `volume.mariadb`.
+- `volume.pool` must be a non-empty string.
+- `volume.backing` must be `"device"`, `"image"`, or `"auto"`.
+- `backing = "auto"` → no other backing fields required; everything is resolved at `bench init` time.
+- `backing = "device"` → `volume.device` is required.
+- `backing = "image"` → `volume.image.size` is required (valid ZFS size); `volume.image.path`, if set, must be absolute. Before setup, the root filesystem must have enough free space to preallocate the image.
+- All sizes (`reservation`, `quota`, `image.size`) must be positive integers with an optional `K`/`M`/`G`/`T` suffix (e.g. `"10G"`, `"512M"`) — no decimals, negatives, or zero.
+- Reservations cannot exceed their dataset's quota, and no quota/reservation may exceed the backing size (device size or image size).
 - `volume.mariadb.data_dir` must be an absolute path.
+- The image path must **not** live under `benches/` or the MariaDB data dir — the pool mounts over those paths.
 
 ---
 
@@ -128,7 +177,11 @@ class VolumeManager:
     def pool_exists(self) -> bool: ...
 
     def create_pool(self) -> None:
-        """zpool create <pool> <device> — skipped if pool already exists."""
+        """zpool create <pool> <vdev> — skipped if pool already exists.
+
+        vdev is the block device (backing = "device") or the preallocated
+        image file, created via fallocate if missing (backing = "image").
+        """
 
     # Dataset lifecycle
 
