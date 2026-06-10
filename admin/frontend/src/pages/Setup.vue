@@ -14,6 +14,7 @@ const taskStreaming = ref(false)
 const terminal = ref(null)
 const benchName = ref('')
 const isLinux = ref(true)
+const isSudoersSetup = ref(null)
 
 const form = ref({
   python: '3.14',
@@ -71,6 +72,7 @@ async function loadConfig() {
     const data = await res.json()
     benchName.value = data.bench_name || ''
     isLinux.value = data.is_linux !== false
+    isSudoersSetup.value = data.is_sudoers_setup === true
     for (const key of Object.keys(form.value)) {
       if (data[key] !== undefined) form.value[key] = data[key]
     }
@@ -144,8 +146,40 @@ async function startSiteTask() {
   return data.task_id
 }
 
+function parseSize(value) {
+  // Positive integer with an optional K/M/G/T/P suffix — no decimals, no zero, no negatives.
+  const match = String(value).trim().toUpperCase().match(/^([1-9]\d*)\s*([KMGTP]?)$/)
+  if (!match) return null
+  const mult = { '': 1, K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4, P: 1024 ** 5 }[match[2]]
+  return parseInt(match[1], 10) * mult
+}
+
+function validateVolume() {
+  if (!form.value.volume_enabled) return null
+  if (!form.value.volume_pool) return 'Pool name is required.'
+  if (!form.value.volume_device) return 'Block device is required.'
+  const datasets = [
+    ['Bench', form.value.volume_benches_reservation, form.value.volume_benches_quota],
+    ['MariaDB', form.value.volume_mariadb_reservation, form.value.volume_mariadb_quota],
+  ]
+  const sizeHint = 'must be a positive integer with an optional K/M/G/T suffix (e.g. 10G)'
+  for (const [label, reservation, quota] of datasets) {
+    const res = parseSize(reservation)
+    const q = parseSize(quota)
+    if (res === null) return `${label} reservation "${reservation}" ${sizeHint}.`
+    if (q === null) return `${label} quota "${quota}" ${sizeHint}.`
+    if (res > q) return `${label} reservation (${reservation}) cannot exceed quota (${quota}).`
+  }
+  return null
+}
+
 async function initialize() {
   error.value = ''
+  const volumeError = validateVolume()
+  if (volumeError) {
+    error.value = volumeError
+    return
+  }
   loading.value = true
   try {
     await saveConfig()
@@ -218,7 +252,7 @@ function backToConfig() {
       <!-- Body -->
       <div class="flex-1 overflow-y-auto p-5">
         <div v-if="step === 'passwords'" class="flex flex-col gap-4">
-          <div class="space-y-1.5">
+          <div v-if="isSudoersSetup === false" class="space-y-1.5">
             <FormLabel label="Sudo password" />
             <Password v-model="form.sudo_password" placeholder="Used once to install system packages" />
           </div>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shlex
 import shutil
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -91,6 +92,112 @@ class VolumeManager:
                 return f"Quota {quota} is less than current used size ({used_g}G) for {name} dataset"
         except Exception:
             pass
+        return None
+
+    @classmethod
+    def validate_reservation_within_quota(cls, reservation: str, quota: str, dataset_name: str = "") -> str | None:
+        """Return an error if the reservation exceeds the quota, else None.
+
+        Pure size arithmetic — no ZFS calls — so it is safe to run at config
+        validation time, in the setup wizard, and before the pool exists. ZFS
+        itself rejects a reservation larger than the quota.
+        """
+        if quota.lower() in ("none", "0") or reservation.lower() in ("none", "0"):
+            return None
+        try:
+            res_bytes = cls._parse_size_bytes(reservation)
+            quota_bytes = cls._parse_size_bytes(quota)
+        except Exception:
+            return None
+        if res_bytes > quota_bytes:
+            label = f" for {dataset_name} dataset" if dataset_name else ""
+            return f"Reservation {reservation} cannot exceed quota {quota}{label}"
+        return None
+
+    def device_size_bytes(self) -> int | None:
+        """Size of the backing block device in bytes, via ``lsblk``.
+
+        Read-only and unprivileged — no sudo — so it is safe to call from the
+        admin web process. The device is present both before the pool exists
+        (setup wizard) and after (settings). Returns ``None`` if it cannot be
+        read, so callers skip the check rather than raise a false positive.
+        """
+        if not self.config.device:
+            return None
+        try:
+            result = subprocess.run(
+                ["lsblk", "-bdno", "SIZE", self.config.device],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                return None
+            return int(result.stdout.strip().splitlines()[0])
+        except (OSError, ValueError, IndexError):
+            return None
+
+    def validate_sizes_fit_device(self) -> str | None:
+        """Return an error if any quota/reservation exceeds the device size, else None."""
+        if not self.config.enabled:
+            return None
+        device_bytes = self.device_size_bytes()
+        if device_bytes is None:
+            return None
+        device_g = round(device_bytes / 1024**3, 2)
+        for label, dataset in (("benches", self.config.benches), ("mariadb", self.config.mariadb)):
+            for kind, value in (("reservation", dataset.reservation), ("quota", dataset.quota)):
+                if value.lower() in ("none", "0"):
+                    continue
+                try:
+                    size = self._parse_size_bytes(value)
+                except Exception:
+                    continue
+                if size > device_bytes:
+                    return f"{label} {kind} {value} exceeds device size ({device_g}G)"
+        return None
+
+    # ── settings-modal helpers ──────────────────────────────────────────────
+
+    def current_sizes(self) -> dict:
+        """Snapshot the current quota/reservation sizes as a flat dict."""
+        return {
+            "benches_quota": self.config.benches.quota,
+            "benches_reservation": self.config.benches.reservation,
+            "mariadb_quota": self.config.mariadb.quota,
+            "mariadb_reservation": self.config.mariadb.reservation,
+        }
+
+    def validate_quota_above_usage(self, old: dict) -> str | None:
+        """For datasets whose quota changed, ensure the new quota isn't below current usage."""
+        if not self.config.enabled:
+            return None
+        new = self.current_sizes()
+        for dataset, key in [(self.config.benches_dataset, "benches_quota"), (self.config.mariadb_dataset, "mariadb_quota")]:
+            if new[key] != old.get(key):
+                if error := self.validate_quota(dataset, new[key]):
+                    return error
+        return None
+
+    def apply_size_changes(self, old: dict) -> str | None:
+        """Apply changed quota/reservation values to existing datasets."""
+        if not self.config.enabled:
+            return None
+        new = self.current_sizes()
+        return self._apply_dataset_sizes(
+            self.config.benches_dataset, "benches_quota", "benches_reservation", old, new
+        ) or self._apply_dataset_sizes(self.config.mariadb_dataset, "mariadb_quota", "mariadb_reservation", old, new)
+
+    def _apply_dataset_sizes(self, dataset: str, quota_key: str, reservation_key: str, old: dict, new: dict) -> str | None:
+        if not self.dataset_exists(dataset):
+            return None
+        try:
+            if new[quota_key] != old.get(quota_key):
+                self.set_quota(dataset, new[quota_key])
+            if new[reservation_key] != old.get(reservation_key):
+                self.set_reservation(dataset, new[reservation_key])
+        except VolumeError as error:
+            return str(error)
         return None
 
     def set_quota(self, dataset: str, quota: str) -> None:
