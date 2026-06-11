@@ -37,11 +37,11 @@ class SystemPackageManager(ABC):
         """Update package manager"""
 
 
-
 class AptPackageManager(SystemPackageManager):
     def install(self, *packages: str) -> None:
         subprocess.run(
             ["sudo", "apt-get", "install", "-y", *packages],
+            env={"DEBIAN_FRONTEND": "noninteractive"},
             check=True,
         )
 
@@ -51,9 +51,9 @@ class AptPackageManager(SystemPackageManager):
             capture_output=True,
         )
         return result.returncode == 0
-    
+
     def update(self):
-        subprocess.run(["sudo", "apt-get", "-y", "update"])    
+        subprocess.run(["sudo", "apt-get", "-y", "update"])
 
 
 class BrewPackageManager(SystemPackageManager):
@@ -69,7 +69,7 @@ class BrewPackageManager(SystemPackageManager):
             capture_output=True,
         )
         return bool(result.stdout.strip())
-    
+
     def update(self):
         return super().update()
 
