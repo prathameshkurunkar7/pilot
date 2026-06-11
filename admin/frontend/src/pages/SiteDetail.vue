@@ -141,11 +141,66 @@ const backupsError = ref('')
 const backupsTabLoaded = ref(false)
 
 const currentSchedule = ref(null)
-const scheduleInput = ref('')
 const scheduleLoading = ref(false)
 const scheduleSaving = ref(false)
 const scheduleRemoving = ref(false)
 const scheduleError = ref('')
+
+const schedFrequency = ref('daily')
+const schedHour = ref(2)
+const schedWeekday = ref(0)
+const schedMonthDay = ref(1)
+
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+const hourOptions = Array.from({ length: 24 }, (_, i) => ({
+  label: i === 0 ? '12:00 AM' : i < 12 ? `${i}:00 AM` : i === 12 ? '12:00 PM' : `${i - 12}:00 PM`,
+  value: i,
+}))
+
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
+
+const monthDayOptions = Array.from({ length: 28 }, (_, i) => ({
+  label: ordinal(i + 1),
+  value: i + 1,
+}))
+
+const schedCron = computed(() => {
+  const h = Number(schedHour.value)
+  if (schedFrequency.value === 'weekly') return `0 ${h} * * ${schedWeekday.value}`
+  if (schedFrequency.value === 'monthly') return `0 ${h} ${Number(schedMonthDay.value)} * *`
+  return `0 ${h} * * *`
+})
+
+const currentScheduleLabel = computed(() => {
+  if (!currentSchedule.value) return null
+  const h = Number(schedHour.value)
+  const ampm = h === 0 ? '12:00 AM' : h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`
+  if (schedFrequency.value === 'weekly') return `Every ${WEEKDAY_LABELS[schedWeekday.value]} at ${ampm}`
+  if (schedFrequency.value === 'monthly') return `Monthly on the ${ordinal(Number(schedMonthDay.value))} at ${ampm}`
+  return `Daily at ${ampm}`
+})
+
+function parseCronToState(expr) {
+  const parts = expr.trim().split(/\s+/)
+  if (parts.length !== 5) return
+  const [, hour, dom, , dow] = parts
+  const h = parseInt(hour)
+  schedHour.value = isNaN(h) ? 0 : h
+  if (dom !== '*' && dom !== '?') {
+    schedFrequency.value = 'monthly'
+    schedMonthDay.value = parseInt(dom) || 1
+  } else if (dow !== '*' && dow !== '?') {
+    schedFrequency.value = 'weekly'
+    schedWeekday.value = parseInt(dow) || 0
+  } else {
+    schedFrequency.value = 'daily'
+  }
+}
 
 const showDeleteBackup = ref(false)
 const deleteBackupTarget = ref(null)
@@ -171,13 +226,6 @@ async function deleteBackupSet() {
     deletingBackup.value = false
   }
 }
-
-const schedulePresets = [
-  { label: 'Daily midnight', value: '0 0 * * *' },
-  { label: 'Daily 2am', value: '0 2 * * *' },
-  { label: 'Weekly (Sun 2am)', value: '0 2 * * 0' },
-  { label: 'Monthly (1st 2am)', value: '0 2 1 * *' },
-]
 
 watch(activeTab, (idx) => {
   if (tabs[idx]?.label === 'Backups' && !backupsTabLoaded.value) {
@@ -208,30 +256,20 @@ async function loadSchedule() {
     const res = await fetch(`/api/sites/${siteName}/backup-schedule`)
     const d = await res.json()
     currentSchedule.value = d.schedule ?? null
-    scheduleInput.value = d.schedule ?? ''
+    if (d.schedule) parseCronToState(d.schedule)
   } finally {
     scheduleLoading.value = false
   }
 }
 
-const CRON_RE = /^(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)$/
-
 async function saveSchedule() {
   scheduleError.value = ''
-  if (!scheduleInput.value.trim()) {
-    scheduleError.value = 'Schedule expression is required.'
-    return
-  }
-  if (!CRON_RE.test(scheduleInput.value.trim())) {
-    scheduleError.value = "Invalid cron expression. Expected 5 fields like '0 2 * * *' (minute hour day month weekday)."
-    return
-  }
   scheduleSaving.value = true
   try {
     const res = await fetch(`/api/sites/${siteName}/backup-schedule`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ schedule: scheduleInput.value }),
+      body: JSON.stringify({ schedule: schedCron.value }),
     })
     const d = await res.json()
     if (d.ok) await loadSchedule()
@@ -249,8 +287,15 @@ async function removeSchedule() {
   try {
     const res = await fetch(`/api/sites/${siteName}/backup-schedule`, { method: 'DELETE' })
     const d = await res.json()
-    if (d.ok) { currentSchedule.value = null; scheduleInput.value = '' }
-    else scheduleError.value = d.error
+    if (d.ok) {
+      currentSchedule.value = null
+      schedFrequency.value = 'daily'
+      schedHour.value = 2
+      schedWeekday.value = 0
+      schedMonthDay.value = 1
+    } else {
+      scheduleError.value = d.error
+    }
   } catch (e) {
     scheduleError.value = e.message
   } finally {
@@ -491,30 +536,78 @@ onMounted(() => { load(); loadRegistry() })
             <div class="rounded border p-4">
               <h3 class="mb-3 font-semibold text-ink-gray-9">Backup Schedule</h3>
               <div v-if="scheduleLoading" class="text-sm text-ink-gray-5">Loading…</div>
-              <div v-else class="flex flex-col gap-3">
-                <p class="text-sm text-ink-gray-7">
-                  <span v-if="currentSchedule">
-                    Active:
-                    <code class="rounded bg-surface-gray-2 px-1 py-0.5 font-mono text-xs">{{ currentSchedule }}</code>
+              <div v-else class="flex flex-col gap-4">
+                <!-- Active schedule status -->
+                <div class="flex items-center gap-2">
+                  <span v-if="currentSchedule" class="flex items-center gap-1.5 text-sm text-ink-gray-7">
+                    <span class="inline-block h-1.5 w-1.5 rounded-full bg-surface-green-3"></span>
+                    {{ currentScheduleLabel }}
                   </span>
-                  <span v-else class="text-ink-gray-5">No scheduled backups.</span>
-                </p>
-                <div class="flex flex-wrap gap-1.5">
-                  <button
-                    v-for="p in schedulePresets"
-                    :key="p.value"
-                    class="rounded bg-surface-gray-2 px-2 py-1 text-xs text-ink-gray-7 hover:bg-surface-gray-3"
-                    @click="scheduleInput = p.value"
-                  >{{ p.label }}</button>
+                  <span v-else class="text-sm text-ink-gray-4">No scheduled backups.</span>
                 </div>
-                <div class="flex gap-2">
-                  <input
-                    v-model="scheduleInput"
-                    placeholder="e.g. 0 2 * * *"
-                    class="flex-1 rounded border px-2 py-1.5 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-gray-400"
+
+                <!-- Frequency picker -->
+                <div class="flex flex-col gap-1.5">
+                  <span class="text-xs font-medium text-ink-gray-6">Frequency</span>
+                  <div class="flex gap-1.5">
+                    <button
+                      v-for="f in ['daily', 'weekly', 'monthly']"
+                      :key="f"
+                      class="rounded-md border px-3 py-1.5 text-sm capitalize transition-colors"
+                      :class="schedFrequency === f
+                        ? 'border-outline-gray-4 bg-surface-gray-3 text-ink-gray-9'
+                        : 'border-outline-gray-2 bg-surface-white text-ink-gray-6 hover:border-outline-gray-3 hover:text-ink-gray-8'"
+                      @click="schedFrequency = f"
+                    >{{ f }}</button>
+                  </div>
+                </div>
+
+                <!-- Time picker -->
+                <div class="flex flex-col gap-1.5">
+                  <span class="text-xs font-medium text-ink-gray-6">Time</span>
+                  <FormControl
+                    type="select"
+                    v-model="schedHour"
+                    :options="hourOptions"
+                    class="w-40"
                   />
-                  <Button variant="outline" size="sm" :loading="scheduleSaving" :disabled="!scheduleInput" @click="saveSchedule">Save</Button>
-                  <Button v-if="currentSchedule" variant="ghost" size="sm" theme="red" :loading="scheduleRemoving" @click="removeSchedule">Remove</Button>
+                </div>
+
+                <!-- Weekday picker (weekly only) -->
+                <div v-if="schedFrequency === 'weekly'" class="flex flex-col gap-1.5">
+                  <span class="text-xs font-medium text-ink-gray-6">Day of week</span>
+                  <div class="flex gap-1">
+                    <button
+                      v-for="(day, idx) in WEEKDAY_LABELS"
+                      :key="idx"
+                      class="w-10 rounded-md border py-1.5 text-xs font-medium transition-colors"
+                      :class="schedWeekday === idx
+                        ? 'border-outline-gray-4 bg-surface-gray-3 text-ink-gray-9'
+                        : 'border-outline-gray-2 bg-surface-white text-ink-gray-6 hover:border-outline-gray-3 hover:text-ink-gray-8'"
+                      @click="schedWeekday = idx"
+                    >{{ day }}</button>
+                  </div>
+                </div>
+
+                <!-- Month day picker (monthly only) -->
+                <div v-if="schedFrequency === 'monthly'" class="flex flex-col gap-1.5">
+                  <span class="text-xs font-medium text-ink-gray-6">Day of month</span>
+                  <FormControl
+                    type="select"
+                    v-model="schedMonthDay"
+                    :options="monthDayOptions"
+                    class="w-40"
+                  />
+                </div>
+
+                <!-- Actions -->
+                <div class="flex items-center gap-2">
+                  <Button variant="outline" :loading="scheduleSaving" @click="saveSchedule">
+                    {{ currentSchedule ? 'Update Schedule' : 'Enable Schedule' }}
+                  </Button>
+                  <Button v-if="currentSchedule" variant="ghost" theme="red" :loading="scheduleRemoving" @click="removeSchedule">
+                    Disable
+                  </Button>
                 </div>
                 <ErrorMessage :message="scheduleError" />
               </div>
