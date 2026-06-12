@@ -28,8 +28,19 @@ class NewSiteCommand:
         site.create()
         self.bench.write_common_site_config()
         print(f"\nSite '{self.name}' created successfully.")
+        self.build_missing_assets()
         self._add_to_hosts()
         self._reload_nginx()
+
+    def build_missing_assets(self):
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+
+        manager = PythonEnvManager(self.bench)
+        assets_dir = self.bench.sites_path / "assets"
+
+        for app in self.bench.apps():
+            if not (assets_dir / app.config.name).exists():
+                manager.build_assets_for_app(app)
 
     def _validate(self) -> None:
         if (self.bench.sites_path / self.name / "site_config.json").exists():
