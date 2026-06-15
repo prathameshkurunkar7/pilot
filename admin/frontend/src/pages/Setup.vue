@@ -14,10 +14,8 @@ const taskStreaming = ref(false)
 const terminal = ref(null)
 const benchName = ref('')
 const isLinux = ref(true)
-const isSudoersSetup = ref(null)
 
 const form = ref({
-  sudo_password: '',
   mariadb_password: '',
   admin_password: '',
   app_repo: 'https://github.com/frappe/frappe',
@@ -123,7 +121,6 @@ async function loadConfig() {
     const data = await res.json()
     benchName.value = data.bench_name || ''
     isLinux.value = data.is_linux !== false
-    isSudoersSetup.value = data.is_sudoers_setup === true
     availableDevices.value = data.available_devices || []
     for (const key of Object.keys(form.value)) {
       if (data[key] !== undefined) form.value[key] = data[key]
@@ -165,7 +162,7 @@ function streamTask(url, onDone) {
 }
 
 function nextStep() {
-  if (step.value === 'passwords' && (!form.value.mariadb_password || !form.value.admin_password || (isSudoersSetup.value == false && !form.value.sudo_password) )) {
+  if (step.value === 'passwords' && (!form.value.mariadb_password || !form.value.admin_password)) {
     error.value = 'All password fields are required'
     return
   }
@@ -184,7 +181,7 @@ async function saveConfig() {
 }
 
 async function startInitTask() {
-  const data = await postJson('/api/setup/init', { sudo_password: form.value.sudo_password })
+  const data = await postJson('/api/setup/init', {})
   if (!data.ok) throw new Error(data.error || 'Failed to start initialization.')
   return data.task_id
 }
@@ -306,10 +303,6 @@ function backToConfig() {
       <!-- Body -->
       <div class="flex-1 overflow-y-auto p-5">
         <div v-if="step === 'passwords'" class="flex flex-col gap-4">
-          <div v-if="isSudoersSetup === false" class="space-y-1.5">
-            <FormLabel label="Sudo password" />
-            <Password v-model="form.sudo_password" placeholder="Used once to install system packages" />
-          </div>
           <div class="space-y-1.5">
             <FormLabel label="MariaDB root password" />
             <Password v-model="form.mariadb_password" placeholder="root" />

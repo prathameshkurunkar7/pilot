@@ -58,13 +58,10 @@ def _validate(data: dict) -> str | None:
 
 @setup_bp.route("/init", methods=["POST"])
 def start_init():
-    import os
-
     from bench_cli.config.bench_config import BenchConfig
     from bench_cli.managers.volume_manager import VolumeManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
 
     # Pre-flight validation so volume sizing errors surface in the wizard
     # instead of failing deep inside the init task.
@@ -76,12 +73,8 @@ def start_init():
     if error := VolumeManager(config.volume).validate_sizes_fit_backing():
         return jsonify({"ok": False, "error": error}), 400
 
-    args = {}
-    sudoers_already_setup = bool(os.environ.get("IS_SUDOERS_SETUP"))
-    if not sudoers_already_setup and data.get("sudo_password"):
-        args["sudo_password"] = data["sudo_password"]
     try:
-        task_id = TaskRunner(bench_root).run("bench-init", args)
+        task_id = TaskRunner(bench_root).run("bench-init", {})
         return jsonify({"ok": True, "task_id": task_id})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
@@ -149,14 +142,12 @@ def stream_task(task_id: str):
 
 
 def _read_defaults(bench_root: Path) -> dict:
-    import os
     from bench_cli.platform import is_linux
     from admin.backend.tasks.manager.task_reader import TaskReader
 
     result = {
         "bench_name": bench_root.name,
         "is_linux": is_linux(),
-        "is_sudoers_setup": bool(os.environ.get("IS_SUDOERS_SETUP")),
         **BenchTomlBuilder.DEFAULTS,
     }
     toml_path = bench_root / "bench.toml"

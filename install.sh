@@ -21,6 +21,29 @@ if ! command -v uv &>/dev/null; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
+# Configure passwordless sudo for bench (Linux only — macOS bench is dev-only and
+# uses brew, no sudo). bench init runs many sudo commands non-interactively,
+# including via the admin wizard which has no TTY, so this must be set up here
+# where a TTY is available to prompt for the password. Idempotent: skip if present.
+SUDOERS_FILE="/etc/sudoers.d/$(whoami)"
+if [ "$(uname)" != "Darwin" ] && [ ! -f "$SUDOERS_FILE" ] && command -v sudo &>/dev/null; then
+    echo "Bench needs passwordless sudo to install packages and manage services."
+    if ! sudo -n true 2>/dev/null; then
+        read -rsp "Enter your sudo password: " SUDO_PASSWORD
+        echo
+        echo "$SUDO_PASSWORD" | sudo -S -v 2>/dev/null || { echo "sudo authentication failed."; exit 1; }
+    fi
+    SUDOERS_TMP="$(mktemp)"
+    printf '# Frappe bench — managed by install.sh, do not edit\n%s ALL=(ALL) NOPASSWD: ALL\n' "$(whoami)" > "$SUDOERS_TMP"
+    if sudo visudo -cf "$SUDOERS_TMP" >/dev/null; then
+        sudo install -m 0440 "$SUDOERS_TMP" "$SUDOERS_FILE"
+        echo "Configured passwordless sudo at $SUDOERS_FILE"
+    else
+        echo "Generated sudoers file is invalid — skipping."
+    fi
+    rm -f "$SUDOERS_TMP"
+fi
+
 # Install Node.js (needed by bench start (wizard mode) to install JS deps and build assets).
 # Idempotent: skip if node is already present. nodesource needs a root shell,
 # which only works here (TTY + sudo) — not in the no-TTY wizard init context.
