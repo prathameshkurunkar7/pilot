@@ -179,7 +179,6 @@ class ProcessManager:
         else:
             defs.append(self._redis_definition("redis_cache", "redis_cache.conf"))
             defs.append(self._redis_definition("redis_queue", "redis_queue.conf"))
-            defs.append(self._redis_definition("redis_socketio", "redis_socketio.conf"))
         return defs
 
     def _process_definitions(self) -> List[ProcessDefinition]:
@@ -207,10 +206,14 @@ class ProcessManager:
         )
 
     def _socketio_definition(self) -> ProcessDefinition:
-        sites = self.bench.sites_path
+        if self.bench.config.socketio_backend == "python":
+            python = self.bench.env_path / "bin" / "python"
+            command = f"cd {self.bench.path} && {python} -m frappe.realtime.server"
+        else:
+            command = f"cd {self.bench.sites_path} && node {self.bench.apps_path}/frappe/socketio.js"
         return ProcessDefinition(
             name="socketio",
-            command=f"cd {sites} && node {self.bench.apps_path}/frappe/socketio.js",
+            command=command,
             log_file=self.bench.logs_path / "socketio.log",
         )
 
