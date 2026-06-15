@@ -205,7 +205,7 @@ def rootfs_free_bytes() -> int:
 
 
 def default_image_size_bytes() -> int:
-    return max(rootfs_free_bytes(), 10 * 1024**3)
+    return max(int(rootfs_free_bytes() * 0.75), 10 * 1024**3)
 
 
 def smart_dataset_sizes(backing_bytes: int) -> dict:
