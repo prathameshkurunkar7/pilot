@@ -16,6 +16,7 @@ FLAT_KEYS = {
     "python": "python_version",
     "http_port": "http_port",
     "socketio_port": "socketio_port",
+    "socketio_backend": "socketio_backend",
     "mariadb_password": "mariadb.root_password",
     "admin_enabled": "admin.enabled",
     "admin_port": "admin.port",

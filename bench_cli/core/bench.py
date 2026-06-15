@@ -132,6 +132,7 @@ class Bench:
             "redis_socketio": redis_socketio,
             "socketio_port": self.config.socketio_port,
             "webserver_port": self.config.http_port,
+            "socketio_backend": self.config.socketio_backend,
         }
         # Add custom worker timeouts to config (if any exist)
         custom_workers = {

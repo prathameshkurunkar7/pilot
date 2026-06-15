@@ -35,6 +35,7 @@ class BenchConfig:
     apps: List[AppConfig] = field(default_factory=list)
     http_port: int = 8000
     socketio_port: int = 9000
+    socketio_backend: str = "python"
     default_branch: str = ""
     production: ProductionConfig = field(default_factory=ProductionConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
@@ -75,6 +76,7 @@ class BenchConfig:
             python_version=bench_data.get("python", ""),
             http_port=bench_data.get("http_port", 8000),
             socketio_port=bench_data.get("socketio_port", 9000),
+            socketio_backend=bench_data.get("socketio_backend", "python"),
             default_branch=bench_data.get("default_branch", ""),
             apps=apps,
             mariadb=mariadb,
@@ -198,6 +200,7 @@ class BenchConfig:
         self._validate_bench_name()
         self._validate_app_names_unique()
         self._validate_ports()
+        self._validate_socketio_backend()
         self._validate_redis_ports()
         self._validate_worker_counts()
         self._validate_letsencrypt_email()
@@ -240,6 +243,10 @@ class BenchConfig:
         for name, port in ports.items():
             if not (_PORT_MIN <= port <= _PORT_MAX):
                 raise ConfigError(f"{name} {port} is out of range. Must be between {_PORT_MIN} and {_PORT_MAX}.")
+
+    def _validate_socketio_backend(self) -> None:
+        if self.socketio_backend not in ("python", "node"):
+            raise ConfigError(f"bench.socketio_backend '{self.socketio_backend}' is invalid. Must be 'python' or 'node'.")
 
     def _validate_redis_ports(self) -> None:
         ports = [self.redis.cache_port, self.redis.queue_port, self.redis.socketio_port]
