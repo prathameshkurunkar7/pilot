@@ -111,7 +111,7 @@ async function control(action) {
 }
 
 function openLog(filename) {
-  router.push(`/logs/${filename}`)
+  router.push({ path: '/logs', query: { file: filename } })
 }
 
 let statsTimer, processTimer
