@@ -42,6 +42,7 @@ class SystemdProcessManager(ProcessManager):
         from bench_cli.managers.admin_env_manager import AdminEnvManager
 
         AdminEnvManager(_cli_root()).ensure()
+        self._ensure_gunicorn_config()
         self.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
         defs = self._prod_process_definitions()
         for pd in defs:
@@ -154,6 +155,8 @@ class SystemdProcessManager(ProcessManager):
         ]
         if is_redis:
             lines.append("TimeoutStopSec=300")
+        if pd.name == "web" and self.bench.config.production.use_companion_manager:
+            lines.append("TimeoutStopSec=1600")
         lines += [
             f"StandardOutput=append:{pd.log_file}",
             f"StandardError=append:{pd.log_file}.error.log",

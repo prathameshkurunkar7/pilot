@@ -62,6 +62,7 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append("[production]")
     parts.append(f'process_manager = "{p.process_manager}"')
     parts.append(f"nginx = {'true' if p.nginx else 'false'}")
+    parts.append(f"use_companion_manager = {'true' if p.use_companion_manager else 'false'}")
     parts.append("")
 
     n = config.nginx
@@ -71,6 +72,14 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f'config_dir = "{n.config_dir}"')
     parts.append(f'worker_processes = "{n.worker_processes}"')
     parts.append(f'client_max_body_size = "{n.client_max_body_size}"')
+    parts.append("")
+
+    g = config.gunicorn
+    parts.append("[gunicorn]")
+    parts.append(f"workers = {g.workers}")
+    parts.append(f"threads = {g.threads}")
+    parts.append(f"timeout = {g.timeout}")
+    parts.append(f'worker_class = "{g.worker_class}"')
     parts.append("")
 
     le = config.letsencrypt

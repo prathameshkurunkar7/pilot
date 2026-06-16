@@ -51,6 +51,13 @@ config_dir = "/etc/nginx/conf.d"
 worker_processes = "auto"
 client_max_body_size = "50m"
 
+# ── Gunicorn (production only) ───────────────────────────────────────────────
+[gunicorn]
+workers = 4             # number of Gunicorn worker processes
+threads = 4             # threads per worker (used by gthread worker class)
+timeout = 120
+worker_class = "sync"
+
 # ── Let's Encrypt (production only) ──────────────────────────────────────────
 [letsencrypt]
 email = "admin@example.com"  # required if any site has ssl = true
@@ -137,6 +144,14 @@ In single-instance mode, one `redis` process appears in the Procfile and one `re
 | `short` | int | no | `1` | Number of short-queue worker processes. |
 | `long` | int | no | `1` | Number of long-queue worker processes. |
 
+### `[production]`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `process_manager` | string | no | `none` | Production process manager: `none`, `supervisor`, or `systemd`. |
+| `nginx` | bool | no | `false` | Run nginx setup as part of `bench setup production`. |
+| `use_companion_manager` | bool | no | `false` | Run scheduler, RQ workers, and socket.io as Gunicorn companion processes under a single preloaded master. Requires the Frappe Gunicorn fork with companion support. |
+
 ### `[nginx]` _(production only)_
 
 Omit this section entirely for development benches. The section is only read by `bench setup nginx` and `bench setup production`.
@@ -150,12 +165,21 @@ Omit this section entirely for development benches. The section is only read by 
 | `worker_processes` | string or int | no | `auto` | Passed to the Nginx `worker_processes` directive. |
 | `client_max_body_size` | string | no | `50m` | Maximum upload size. Increase for large file imports. |
 
+### `[gunicorn]` _(production only)_
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `workers` | int | no | `4` | Number of Gunicorn worker processes. |
+| `threads` | int | no | `4` | Threads per worker. Used by the `gthread` worker class. |
+| `timeout` | int | no | `120` | Request timeout in seconds. |
+| `worker_class` | string | no | `sync` | Gunicorn worker class. |
+
 ### `[letsencrypt]` _(production only)_
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `email` | string | yes (if any site has `ssl = true`) | — | Contact email for ACME account registration. |
-| `webroot_path` | string | no | `/var/www/letsencrypt` | Directory certbot writes HTTP-01 challenge files to. Nginx serves this path at `/.well-known/acme-challenge/`. |
+| `webroot_path` | string | no | `/var/www/letsencrypt` | Directory certbot writes challenge files to. Nginx serves this path at `/.well-known/acme-challenge/`. |
 
 ### `[admin]`
 
@@ -209,8 +233,9 @@ bench validates `bench.toml` before executing any command. Violations produce a 
 5. Worker counts must be positive integers.
 6. `letsencrypt.email` must match a basic email pattern (`^[^@]+@[^@]+\.[^@]+$`) when present.
 7. `nginx.http_port` and `nginx.https_port` must be distinct.
-8. `mariadb.version` and `redis.version`, when present, must match `^\d+(\.\d+)*$` (e.g. `"10.6"`, `"7"`, `"7.0"`).
-9. When `volume.enabled = true`: `pool` and `device` must be non-empty; `reservation` and `quota` values must match a valid ZFS size pattern (e.g. `"10G"`, `"500M"`, `"1T"`); quota must be greater than reservation for both datasets.
+8. `gunicorn.workers`, `gunicorn.threads`, and `gunicorn.timeout` must be positive integers; `gunicorn.worker_class` must be a non-empty string.
+9. `mariadb.version` and `redis.version`, when present, must match `^\d+(\.\d+)*$` (e.g. `"10.6"`, `"7"`, `"7.0"`).
+10. When `volume.enabled = true`: `pool` and `device` must be non-empty; `reservation` and `quota` values must match a valid ZFS size pattern (e.g. `"10G"`, `"500M"`, `"1T"`); quota must be greater than reservation for both datasets.
 
 ---
 
