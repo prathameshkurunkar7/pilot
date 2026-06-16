@@ -77,8 +77,6 @@ def _set_path(config: BenchConfig, path: str, value) -> None:
 def _apply_setting(config: BenchConfig, key: str, value) -> None:
     if key in FLAT_KEYS:
         _set_path(config, FLAT_KEYS[key], value)
-        if key.startswith("volume_"):
-            config.volume.enabled = True
     elif key == "app_repo":
         config.apps[0].repo = str(value)
     elif key == "app_branch":

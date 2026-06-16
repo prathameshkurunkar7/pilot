@@ -23,7 +23,7 @@ const form = ref({
   workers_default: 2,
   workers_short: 1,
   workers_long: 1,
-  volume_enabled: true,
+  volume_enabled: false,
   volume_pool: 'bench-pool',
   volume_backing: 'device',
   volume_device: '',

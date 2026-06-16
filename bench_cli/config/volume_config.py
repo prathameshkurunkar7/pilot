@@ -28,7 +28,7 @@ class VolumeConfig:
     a preallocated image file on the root filesystem, or auto-resolved at init
     time. Skipped on macOS (dev only)."""
 
-    enabled: bool = True
+    enabled: bool = False
     pool: str = "bench-pool"
     backing: str = "auto"  # "device" | "image" | "auto" (resolved during bench init)
     device: str = ""
