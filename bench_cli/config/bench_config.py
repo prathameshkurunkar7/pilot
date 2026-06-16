@@ -169,7 +169,7 @@ class BenchConfig:
         # Older tomls predate `backing`: an explicit device implies device backing.
         backing = data.get("backing") or ("device" if data.get("device") else "auto")
         return VolumeConfig(
-            enabled=True,
+            enabled=data.get("enabled", True),
             pool=data.get("pool", "bench-pool"),
             backing=backing,
             device=data.get("device", ""),
