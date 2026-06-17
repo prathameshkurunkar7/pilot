@@ -1,6 +1,6 @@
 <script setup>
 import { Button, Dialog, ErrorMessage, FormControl, Sidebar, SidebarItem } from 'frappe-ui'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import LucideActivity from '~icons/lucide/activity'
 import LucideCamera from '~icons/lucide/camera'
@@ -33,9 +33,20 @@ async function loadBenches() {
   } catch { }
 }
 
+// Opened from the sidebar header dropdown (reka-ui Menu). The menu applies
+// inert/pointer-events:none to the rest of the page while open and only
+// releases it after it finishes closing — if we mount a Dialog in the same
+// tick, its subtree inherits that inert state and becomes unclickable. Defer
+// the open until the menu has torn down.
+function openAfterMenuCloses(fn) {
+  nextTick(() => requestAnimationFrame(fn))
+}
+
 function openBenchDialog() {
   loadBenches()
-  showBenchDialog.value = true
+  openAfterMenuCloses(() => {
+    showBenchDialog.value = true
+  })
 }
 
 function switchBench(port) {
@@ -54,7 +65,9 @@ function openNewBenchDialog() {
   newBenchError.value = ''
   newBenchCreating.value = false
   newBenchStatus.value = ''
-  showNewBenchDialog.value = true
+  openAfterMenuCloses(() => {
+    showNewBenchDialog.value = true
+  })
 }
 
 async function waitUntilLive(port, attempt = 0) {
@@ -78,7 +91,12 @@ async function waitUntilLive(port, attempt = 0) {
 }
 
 async function createBench() {
-  if (!newBenchName.value.trim()) return
+  const name = newBenchName.value.trim()
+  if (!name) return
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    newBenchError.value = "Bench name must contain only letters, numbers, '-' and '_'"
+    return
+  }
   newBenchError.value = ''
   newBenchCreating.value = true
   try {
@@ -217,9 +235,10 @@ onUnmounted(() => clearInterval(pollTimer))
           <div autofocus>
             <FormControl
               label="Bench name"
+              type="text"
               v-model="newBenchName"
               placeholder="my-bench"
-              :disabled="newBenchCreating"
+              @input="newBenchError = ''"
               @keyup.enter="createBench"
             />
           </div>

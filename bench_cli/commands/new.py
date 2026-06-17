@@ -33,7 +33,7 @@ class NewCommand(Command):
 
         bench_toml = self.target_directory / "bench.toml"
         if bench_toml.exists():
-            raise BenchError(f"A bench named '{self.name}' already exists at {self.target_directory}. Choose a different name or remove the existing bench.")
+            raise BenchError(f"Bench '{self.name}' already exists.")
 
         benches_dir = self.target_directory.parent
         if not benches_dir.exists():
