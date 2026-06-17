@@ -104,6 +104,8 @@ workers = 4
 threads = 4                          # threads per worker (used by gthread)
 timeout = 120
 malloc_arena_max = 2                 # cap glibc malloc arenas to reduce RSS; 0 = unset
+max_requests = 0                     # recycle the web worker after N requests to release heap; 0 = disabled
+max_requests_jitter = 0              # random +/- spread on max_requests so workers don't all recycle at once
 
 [volume]
 pool = "bench-pool"
@@ -185,6 +187,7 @@ workers = 4
 threads = 4
 timeout = 120
 malloc_arena_max = 2
+max_requests = 0
 
 [letsencrypt]
 email = "ops@example.com"
