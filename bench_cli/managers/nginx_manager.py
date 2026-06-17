@@ -37,14 +37,11 @@ class NginxManager:
             site_ssl_ready = ssl_ready and self.cert_exists(site.config)
             conf_text = self._generate_site_config(site.config, site_ssl_ready)
             (sites_dir / f"{site.config.name}.conf").write_text(conf_text)
-        # Expose the admin via nginx when it has its own domain, or — under
-        # systemd, where it is socket-activated on an internal port — as a
-        # domainless proxy listening on admin.port.
+        # The admin is always reached via its (mandatory) domain in production;
+        # nginx forwards that host to the local admin process.
         if self.bench.config.admin.domain:
             conf_text = self._generate_admin_config(ssl_ready)
             (sites_dir / "_admin.conf").write_text(conf_text)
-        elif self._admin_socket_activated():
-            (sites_dir / "_admin.conf").write_text(self._generate_admin_domainless_config())
         self._write_include_conf(nginx_dir)
 
     def _admin_socket_activated(self) -> bool:
@@ -286,17 +283,6 @@ class NginxManager:
             f"        proxy_set_header   X-Forwarded-For    $proxy_add_x_forwarded_for;\n"
             f"        proxy_set_header   X-Forwarded-Proto  $scheme;\n"
             f"    }}\n"
-        )
-
-    def _generate_admin_domainless_config(self) -> str:
-        """Plain HTTP proxy on admin.port → socket-activated admin gunicorn.
-        No domain or SSL: nginx just fronts the on-demand admin on its port."""
-        return (
-            f"server {{\n"
-            f"    listen {self.bench.config.admin.port};\n"
-            f"    server_name _;\n\n"
-            + self._render_admin_proxy_location()
-            + f"}}\n"
         )
 
     def admin_cert_path(self) -> Path:

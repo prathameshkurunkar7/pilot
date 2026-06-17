@@ -92,11 +92,11 @@ def test_include_conf_content(tmp_path: Path) -> None:
 _ADMIN_SYSTEMD_DATA: dict = {
     **_BASE_DATA,
     "production": {"process_manager": "systemd", "nginx": True},
-    "admin": {"enabled": True, "port": 8002, "password": "x"},
+    "admin": {"enabled": True, "port": 7000, "password": "x", "domain": "admin.example.com"},
 }
 
 
-def test_admin_domainless_proxy_under_systemd(tmp_path: Path) -> None:
+def test_admin_domain_proxy_under_systemd(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _ADMIN_SYSTEMD_DATA)
     bench.create_directories()
     (tmp_path / "sites" / "site1.example.com").mkdir(parents=True)
@@ -108,13 +108,12 @@ def test_admin_domainless_proxy_under_systemd(tmp_path: Path) -> None:
     admin_conf = tmp_path / "config" / "nginx" / "sites" / "_admin.conf"
     assert admin_conf.exists()
     content = admin_conf.read_text()
-    assert "server_name _;" in content
-    assert "listen 8002;" in content
-    # Forwards to the socket-activated gunicorn on the internal port, not admin.port.
+    assert "server_name admin.example.com;" in content
+    # Under systemd the admin is socket-activated on the internal port.
     assert f"proxy_pass         http://127.0.0.1:{bench.config.admin.internal_port};" in content
 
 
-def test_admin_no_domainless_proxy_without_systemd(tmp_path: Path) -> None:
+def test_admin_domain_proxy_under_supervisor(tmp_path: Path) -> None:
     data = copy.deepcopy(_ADMIN_SYSTEMD_DATA)
     data["production"]["process_manager"] = "supervisor"
     bench = _make_bench(tmp_path, data)
@@ -125,7 +124,12 @@ def test_admin_no_domainless_proxy_without_systemd(tmp_path: Path) -> None:
     manager = NginxManager(bench)
     manager.generate_config(ssl_ready=False)
 
-    assert not (tmp_path / "config" / "nginx" / "sites" / "_admin.conf").exists()
+    admin_conf = tmp_path / "config" / "nginx" / "sites" / "_admin.conf"
+    assert admin_conf.exists()
+    content = admin_conf.read_text()
+    assert "server_name admin.example.com;" in content
+    # Supervisor runs the admin directly on admin.port.
+    assert f"proxy_pass         http://127.0.0.1:{bench.config.admin.port};" in content
 
 
 def test_server_name_includes_all_domains(tmp_path: Path) -> None:
@@ -151,6 +155,26 @@ def test_proxy_headers_present(tmp_path: Path) -> None:
 
     assert "X-Frappe-Site-Name" in config
     assert "X-Forwarded-Proto" in config
+
+
+def test_two_benches_generate_non_conflicting_configs(tmp_path: Path) -> None:
+    """All benches share one nginx, so each bench's include.conf must use a
+    uniquely-named upstream and its own admin server_name."""
+    def _include_for(name: str, http_port: int, admin_domain: str) -> str:
+        data = copy.deepcopy(_BASE_DATA)
+        data["bench"] = {"name": name, "python": "3.14", "http_port": http_port}
+        data["admin"] = {"domain": admin_domain}
+        bench = _make_bench(tmp_path / name, data)
+        bench.create_directories()
+        NginxManager(bench).generate_config(ssl_ready=False)
+        return (tmp_path / name / "config" / "nginx" / "include.conf").read_text()
+
+    a = _include_for("alpha", 8000, "alpha-admin.localhost")
+    b = _include_for("beta", 8001, "beta-admin.localhost")
+
+    assert "upstream bench-alpha {" in a
+    assert "upstream bench-beta {" in b
+    assert "bench-beta" not in a and "bench-alpha" not in b
 
 
 def test_http_port_is_configurable(tmp_path: Path) -> None:
