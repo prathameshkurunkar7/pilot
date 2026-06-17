@@ -7,6 +7,8 @@ import LucideServer from '~icons/lucide/server'
 import LucideMoreVertical from '~icons/lucide/more-vertical'
 import LucideDownload from '~icons/lucide/download'
 import LucideTrash2 from '~icons/lucide/trash-2'
+import LucideTriangleAlert from '~icons/lucide/triangle-alert'
+import LucideRefreshCw from '~icons/lucide/refresh-cw'
 import ConfigTree from '../components/ConfigTree.vue'
 
 const route = useRoute()
@@ -33,6 +35,7 @@ const installLoading = ref(false)
 const installError = ref('')
 
 const showDrop = ref(false)
+const dropConfirmText = ref('')
 const showForceDrop = ref(false)
 const forceDropLoading = ref(false)
 const forceDropError = ref('')
@@ -134,7 +137,7 @@ const tabs = [
   { label: 'Apps' },
   { label: 'Config' },
   { label: 'Backups' },
-  { label: 'Danger Zone' },
+  { label: 'Actions' },
 ]
 
 // ── Backups tab ──────────────────────────────────────────────────────────────
@@ -148,6 +151,20 @@ const scheduleLoading = ref(false)
 const scheduleSaving = ref(false)
 const scheduleRemoving = ref(false)
 const scheduleError = ref('')
+const showSchedule = ref(false)
+
+function openSchedule() {
+  scheduleError.value = ''
+  if (currentSchedule.value) {
+    parseCronToState(currentSchedule.value)
+  } else {
+    schedFrequency.value = 'daily'
+    schedHour.value = 2
+    schedWeekday.value = 0
+    schedMonthDay.value = 1
+  }
+  showSchedule.value = true
+}
 
 const schedFrequency = ref('daily')
 const schedHour = ref(2)
@@ -179,14 +196,17 @@ const schedCron = computed(() => {
   return `0 ${h} * * *`
 })
 
-const currentScheduleLabel = computed(() => {
-  if (!currentSchedule.value) return null
+// Human-readable label for the current picker state (independent of whether a schedule is active yet).
+const scheduleLabel = computed(() => {
   const h = Number(schedHour.value)
   const ampm = h === 0 ? '12:00 AM' : h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`
   if (schedFrequency.value === 'weekly') return `Every ${WEEKDAY_LABELS[schedWeekday.value]} at ${ampm}`
   if (schedFrequency.value === 'monthly') return `Monthly on the ${ordinal(Number(schedMonthDay.value))} at ${ampm}`
   return `Daily at ${ampm}`
 })
+
+// Label shown on the status bar — only meaningful when a schedule is active.
+const currentScheduleLabel = computed(() => (currentSchedule.value ? scheduleLabel.value : null))
 
 function parseCronToState(expr) {
   const parts = expr.trim().split(/\s+/)
@@ -275,8 +295,12 @@ async function saveSchedule() {
       body: JSON.stringify({ schedule: schedCron.value }),
     })
     const d = await res.json()
-    if (d.ok) await loadSchedule()
-    else scheduleError.value = d.error
+    if (d.ok) {
+      await loadSchedule()
+      showSchedule.value = false
+    } else {
+      scheduleError.value = d.error
+    }
   } catch (e) {
     scheduleError.value = e.message
   } finally {
@@ -296,6 +320,7 @@ async function removeSchedule() {
       schedHour.value = 2
       schedWeekday.value = 0
       schedMonthDay.value = 1
+      showSchedule.value = false
     } else {
       scheduleError.value = d.error
     }
@@ -525,12 +550,6 @@ onMounted(() => { load(); loadRegistry() })
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
-          <Button variant="outline" :loading="actionLoading === 'backup'" @click="doAction('backup')">
-            Backup
-          </Button>
-          <Button v-if="nginxEnabled && !site.site_config?.ssl" variant="outline" :loading="sslLoading" @click="enableSsl">
-            Enable SSL
-          </Button>
           <Button v-if="installable.length" variant="outline" @click="showInstall = true">
             Install App
           </Button>
@@ -541,7 +560,6 @@ onMounted(() => { load(); loadRegistry() })
       </div>
 
       <ErrorMessage :message="actionError" />
-      <ErrorMessage :message="sslError" />
 
       <!-- Tabs -->
       <Tabs :tabs="tabs" v-model="activeTab">
@@ -590,102 +608,50 @@ onMounted(() => { load(); loadRegistry() })
 
           <!-- Backups -->
           <div v-else-if="tab.label === 'Backups'" class="pt-4 flex flex-col gap-4">
-            <!-- Schedule -->
-            <div class="rounded border p-4">
-              <h3 class="mb-3 font-semibold text-ink-gray-9">Backup Schedule</h3>
-              <div v-if="scheduleLoading" class="text-sm text-ink-gray-5">Loading…</div>
-              <div v-else class="flex flex-col gap-4">
-                <!-- Active schedule status -->
-                <div class="flex items-center gap-2">
-                  <span v-if="currentSchedule" class="flex items-center gap-1.5 text-sm text-ink-gray-7">
-                    <span class="inline-block h-1.5 w-1.5 rounded-full bg-surface-green-3"></span>
-                    {{ currentScheduleLabel }}
-                  </span>
-                  <span v-else class="text-sm text-ink-gray-4">No scheduled backups.</span>
-                </div>
+            <!-- Automatic backup status — click to configure -->
+            <button
+              type="button"
+              @click="openSchedule"
+              class="group flex items-center gap-2.5 rounded-lg border border-outline-gray-2 px-3.5 py-2.5 text-left transition-colors hover:border-outline-gray-3 hover:bg-surface-gray-1"
+            >
+              <span
+                class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                :class="currentSchedule ? 'bg-surface-green-3' : 'bg-ink-gray-4'"
+              ></span>
+              <span class="text-sm font-medium text-ink-gray-8">Automatic backups</span>
+              <span class="text-sm text-ink-gray-5">
+                <template v-if="scheduleLoading">Loading…</template>
+                <template v-else-if="currentSchedule">· {{ currentScheduleLabel }}</template>
+                <template v-else>· Off</template>
+              </span>
+              <span class="ml-auto shrink-0 text-sm font-medium text-ink-gray-5 group-hover:text-ink-gray-8">
+                {{ currentSchedule ? 'Configure' : 'Enable' }}
+              </span>
+            </button>
 
-                <!-- Frequency picker -->
-                <div class="flex flex-col gap-1.5">
-                  <span class="text-xs font-medium text-ink-gray-6">Frequency</span>
-                  <div class="flex gap-1.5">
-                    <button
-                      v-for="f in ['daily', 'weekly', 'monthly']"
-                      :key="f"
-                      class="rounded-md border px-3 py-1.5 text-sm capitalize transition-colors"
-                      :class="schedFrequency === f
-                        ? 'border-outline-gray-4 bg-surface-gray-3 text-ink-gray-9'
-                        : 'border-outline-gray-2 bg-surface-white text-ink-gray-6 hover:border-outline-gray-3 hover:text-ink-gray-8'"
-                      @click="schedFrequency = f"
-                    >{{ f }}</button>
-                  </div>
-                </div>
-
-                <!-- Time picker -->
-                <div class="flex flex-col gap-1.5">
-                  <span class="text-xs font-medium text-ink-gray-6">Time</span>
-                  <FormControl
-                    type="select"
-                    v-model="schedHour"
-                    :options="hourOptions"
-                    class="w-40"
-                  />
-                </div>
-
-                <!-- Weekday picker (weekly only) -->
-                <div v-if="schedFrequency === 'weekly'" class="flex flex-col gap-1.5">
-                  <span class="text-xs font-medium text-ink-gray-6">Day of week</span>
-                  <div class="flex gap-1">
-                    <button
-                      v-for="(day, idx) in WEEKDAY_LABELS"
-                      :key="idx"
-                      class="w-10 rounded-md border py-1.5 text-xs font-medium transition-colors"
-                      :class="schedWeekday === idx
-                        ? 'border-outline-gray-4 bg-surface-gray-3 text-ink-gray-9'
-                        : 'border-outline-gray-2 bg-surface-white text-ink-gray-6 hover:border-outline-gray-3 hover:text-ink-gray-8'"
-                      @click="schedWeekday = idx"
-                    >{{ day }}</button>
-                  </div>
-                </div>
-
-                <!-- Month day picker (monthly only) -->
-                <div v-if="schedFrequency === 'monthly'" class="flex flex-col gap-1.5">
-                  <span class="text-xs font-medium text-ink-gray-6">Day of month</span>
-                  <FormControl
-                    type="select"
-                    v-model="schedMonthDay"
-                    :options="monthDayOptions"
-                    class="w-40"
-                  />
-                </div>
-
-                <!-- Actions -->
-                <div class="flex items-center gap-2">
-                  <Button variant="outline" :loading="scheduleSaving" @click="saveSchedule">
-                    {{ currentSchedule ? 'Update Schedule' : 'Enable Schedule' }}
+            <!-- Backups list -->
+            <div class="rounded-lg border border-outline-gray-2">
+              <div class="flex items-center justify-between px-4 py-2.5">
+                <h3 class="text-sm font-semibold text-ink-gray-9">Backups</h3>
+                <div class="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" :loading="actionLoading === 'backup'" @click="doAction('backup')">
+                    Backup now
                   </Button>
-                  <Button v-if="currentSchedule" variant="ghost" theme="red" :loading="scheduleRemoving" @click="removeSchedule">
-                    Disable
+                  <Button variant="ghost" size="sm" :loading="backupsLoading" @click="loadBackups" title="Refresh">
+                    <template #icon><LucideRefreshCw class="h-4 w-4" /></template>
                   </Button>
                 </div>
-                <ErrorMessage :message="scheduleError" />
               </div>
-            </div>
-
-            <!-- Backups -->
-            <div class="rounded border p-4">
-              <div class="mb-3 flex items-center justify-between">
-                <h3 class="font-semibold text-ink-gray-9">Backups</h3>
-                <Button variant="ghost" size="sm" @click="loadBackups">Refresh</Button>
-              </div>
-              <div v-if="backupsLoading" class="py-6 text-center text-sm text-ink-gray-5">Loading…</div>
-              <div v-else-if="backupsError">
+              <div v-if="backupsLoading" class="py-10 text-center text-sm text-ink-gray-5">Loading…</div>
+              <div v-else-if="backupsError" class="p-4">
                 <ErrorMessage :message="backupsError" />
               </div>
-              <div v-else-if="!backups.length" class="py-10 text-center text-sm text-ink-gray-4">
-                No backups found.
+              <div v-else-if="!backups.length" class="py-12 text-center text-sm text-ink-gray-4">
+                No backups yet.
               </div>
               <ListView
                 v-else
+                class="px-2 pb-2"
                 :columns="backupColumns"
                 :rows="backupRows"
                 row-key="name"
@@ -711,32 +677,81 @@ onMounted(() => { load(); loadRegistry() })
             </div>
           </div>
 
-          <!-- Danger Zone -->
-          <div v-else-if="tab.label === 'Danger Zone'" class="pt-4 flex flex-col gap-3">
-            <div class="rounded border border-red-200 p-4">
-              <div class="flex items-center justify-between gap-4">
+          <!-- Actions -->
+          <div v-else-if="tab.label === 'Actions'" class="pt-4 flex flex-col gap-5">
+            <!-- Regular actions -->
+            <div class="divide-y divide-outline-gray-1 rounded-lg border border-outline-gray-2">
+              <!-- Backup -->
+              <div class="flex items-center justify-between gap-4 px-4 py-3.5">
                 <div>
-                  <p class="text-sm font-medium text-ink-gray-9">Drop Site</p>
+                  <p class="text-sm font-medium text-ink-gray-8">Backup Site</p>
+                  <p class="mt-0.5 text-sm text-ink-gray-5">Create an on-demand backup of the database and files.</p>
+                </div>
+                <Button variant="outline" class="shrink-0" :loading="actionLoading === 'backup'" @click="doAction('backup')">
+                  Backup
+                </Button>
+              </div>
+
+              <!-- Login -->
+              <div class="flex items-center justify-between gap-4 px-4 py-3.5">
+                <div>
+                  <p class="text-sm font-medium text-ink-gray-8">Login to Site</p>
+                  <p class="mt-0.5 text-sm text-ink-gray-5">Open the site in a new tab as the Administrator.</p>
+                </div>
+                <Button variant="outline" class="shrink-0" @click="showLogin = true">
+                  Login
+                </Button>
+              </div>
+
+              <!-- Enable SSL -->
+              <div class="flex items-center justify-between gap-4 px-4 py-3.5">
+                <div>
+                  <p class="text-sm font-medium text-ink-gray-8">Enable SSL</p>
                   <p class="mt-0.5 text-sm text-ink-gray-5">
-                    Permanently delete <strong>{{ siteName }}</strong> and all its data. This cannot be undone.
+                    <template v-if="site.site_config?.ssl">A Let's Encrypt certificate is already active for this site.</template>
+                    <template v-else-if="!nginxEnabled">Requires nginx to be enabled for this bench.</template>
+                    <template v-else>Issue a Let's Encrypt certificate and serve this site over HTTPS.</template>
                   </p>
                 </div>
-                <Button variant="solid" theme="red" class="shrink-0" @click="showDrop = true">
-                  Drop Site
+                <Badge v-if="site.site_config?.ssl" label="Enabled" theme="green" class="shrink-0" />
+                <Button v-else variant="outline" class="shrink-0" :disabled="!nginxEnabled" :loading="sslLoading" @click="enableSsl">
+                  Enable SSL
                 </Button>
               </div>
             </div>
-            <div v-if="site.broken" class="rounded border border-red-200 p-4">
-              <div class="flex items-center justify-between gap-4">
-                <div>
-                  <p class="text-sm font-medium text-ink-gray-9">Force Delete</p>
-                  <p class="mt-0.5 text-sm text-ink-gray-5">
-                    This site is broken (database unreachable). Remove the site directory without running frappe cleanup.
-                  </p>
+            <ErrorMessage :message="sslError" />
+
+            <!-- Danger zone -->
+            <div class="overflow-hidden rounded-lg border border-outline-red-2">
+              <div class="border-b border-outline-red-2 bg-surface-red-1 px-4 py-2.5">
+                <p class="text-sm font-semibold text-ink-red-4">Danger Zone</p>
+              </div>
+              <div class="divide-y divide-outline-red-1">
+                <!-- Drop Site -->
+                <div class="flex items-center justify-between gap-4 px-4 py-3.5">
+                  <div>
+                    <p class="text-sm font-medium text-ink-gray-8">Drop Site</p>
+                    <p class="mt-0.5 text-sm text-ink-gray-5">
+                      Permanently delete <strong>{{ siteName }}</strong> and all its data. This cannot be undone.
+                    </p>
+                  </div>
+                  <Button variant="subtle" theme="red" class="shrink-0" @click="showDrop = true">
+                    Drop Site
+                  </Button>
                 </div>
-                <Button variant="solid" theme="red" class="shrink-0" @click="showForceDrop = true">
-                  Force Delete
-                </Button>
+
+                <!-- Force Delete -->
+                <div v-if="site.broken" class="flex items-center justify-between gap-4 px-4 py-3.5">
+                  <div>
+                    <p class="text-sm font-medium text-ink-gray-8">Force Delete</p>
+                    <p class="mt-0.5 text-sm text-ink-gray-5">
+                      This site is broken (database unreachable). Remove the site directory without running frappe cleanup.
+                    </p>
+                  </div>
+                  <Button variant="solid" theme="red" class="shrink-0" @click="showForceDrop = true">
+                    Force Delete
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -764,16 +779,31 @@ onMounted(() => { load(); loadRegistry() })
     </Dialog>
 
     <!-- Drop Site dialog -->
-    <Dialog v-model="showDrop" :options="{ title: 'Drop Site', size: 'sm' }">
+    <Dialog v-model="showDrop" :options="{ title: 'Drop Site', size: 'sm' }" @close="dropConfirmText = ''">
       <template #body-content>
-        <p class="text-sm text-ink-gray-7">
-          Are you sure you want to permanently drop <strong>{{ siteName }}</strong>?
-          All data will be lost and this cannot be undone.
-        </p>
-        <div class="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" @click="showDrop = false">Cancel</Button>
-          <Button variant="solid" theme="red" :loading="actionLoading === 'drop'"
-            @click="showDrop = false; doAction('drop')">Drop Site</Button>
+        <div @pointerdown.stop>
+          <div class="flex items-start gap-3 rounded-md border border-outline-red-2 bg-surface-red-1 p-3">
+            <LucideTriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-ink-red-4" />
+            <p class="text-sm leading-relaxed text-ink-gray-7">
+              This permanently deletes <strong>{{ siteName }}</strong>, including its database and all files.
+              This action <strong>cannot be undone</strong>.
+            </p>
+          </div>
+          <FormControl
+            class="mt-4"
+            type="text"
+            :label="`Type the site name to confirm`"
+            v-model="dropConfirmText"
+            :placeholder="siteName"
+            autocomplete="off"
+            @keydown.enter="dropConfirmText === siteName && (showDrop = false, doAction('drop'))"
+          />
+          <div class="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" @click="showDrop = false">Cancel</Button>
+            <Button variant="solid" theme="red" :loading="actionLoading === 'drop'"
+              :disabled="dropConfirmText !== siteName"
+              @click="showDrop = false; doAction('drop')">Drop Site</Button>
+          </div>
         </div>
       </template>
     </Dialog>
@@ -844,6 +874,82 @@ onMounted(() => { load(); loadRegistry() })
         <div class="mt-4 flex justify-end gap-2">
           <Button variant="ghost" @click="showDeleteBackup = false">Cancel</Button>
           <Button variant="solid" theme="red" :loading="deletingBackup" @click="deleteBackupSet">Delete</Button>
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- Backup Schedule dialog -->
+    <Dialog v-model="showSchedule" :options="{ title: 'Automatic Backups', size: 'sm' }">
+      <template #body-content>
+        <div @pointerdown.stop class="flex flex-col gap-4">
+          <!-- Frequency picker -->
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-ink-gray-6">Frequency</span>
+            <div class="flex gap-1.5">
+              <button
+                v-for="f in ['daily', 'weekly', 'monthly']"
+                :key="f"
+                class="rounded-md border px-3 py-1.5 text-sm capitalize transition-colors"
+                :class="schedFrequency === f
+                  ? 'border-outline-gray-4 bg-surface-gray-3 text-ink-gray-9'
+                  : 'border-outline-gray-2 bg-surface-white text-ink-gray-6 hover:border-outline-gray-3 hover:text-ink-gray-8'"
+                @click="schedFrequency = f"
+              >{{ f }}</button>
+            </div>
+          </div>
+
+          <!-- Weekday picker (weekly only) -->
+          <div v-if="schedFrequency === 'weekly'" class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-ink-gray-6">Day of week</span>
+            <div class="flex gap-1">
+              <button
+                v-for="(day, idx) in WEEKDAY_LABELS"
+                :key="idx"
+                class="w-10 rounded-md border py-1.5 text-xs font-medium transition-colors"
+                :class="schedWeekday === idx
+                  ? 'border-outline-gray-4 bg-surface-gray-3 text-ink-gray-9'
+                  : 'border-outline-gray-2 bg-surface-white text-ink-gray-6 hover:border-outline-gray-3 hover:text-ink-gray-8'"
+                @click="schedWeekday = idx"
+              >{{ day }}</button>
+            </div>
+          </div>
+
+          <!-- Month day picker (monthly only) -->
+          <div v-if="schedFrequency === 'monthly'" class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-ink-gray-6">Day of month</span>
+            <FormControl type="select" v-model="schedMonthDay" :options="monthDayOptions" class="w-40" />
+          </div>
+
+          <!-- Time picker -->
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-ink-gray-6">Time</span>
+            <FormControl type="select" v-model="schedHour" :options="hourOptions" class="w-40" />
+          </div>
+
+          <p class="text-sm text-ink-gray-5">
+            Backups will run <strong class="text-ink-gray-7">{{ scheduleLabel.toLowerCase() }}</strong>.
+          </p>
+
+          <ErrorMessage :message="scheduleError" />
+
+          <div class="flex items-center justify-between gap-2 pt-1">
+            <Button
+              v-if="currentSchedule"
+              variant="subtle"
+              theme="red"
+              :loading="scheduleRemoving"
+              @click="removeSchedule"
+            >
+              Disable
+            </Button>
+            <span v-else></span>
+            <div class="flex items-center gap-2">
+              <Button variant="ghost" @click="showSchedule = false">Cancel</Button>
+              <Button variant="solid" :loading="scheduleSaving" @click="saveSchedule">
+                {{ currentSchedule ? 'Save' : 'Enable' }}
+              </Button>
+            </div>
+          </div>
         </div>
       </template>
     </Dialog>
