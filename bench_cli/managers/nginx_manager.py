@@ -200,6 +200,8 @@ class NginxManager:
             f"        proxy_http_version 1.1;\n"
             f"        proxy_set_header   Upgrade $http_upgrade;\n"
             f'        proxy_set_header   Connection "upgrade";\n'
+            f"        proxy_set_header   X-Frappe-Site-Name $host;\n"
+            f"        proxy_set_header   Origin $scheme://$http_host;\n"
             f"        proxy_set_header   Host $host;\n"
             f"    }}\n\n"
         )

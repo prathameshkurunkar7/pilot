@@ -77,12 +77,16 @@ class SystemdProcessManager(ProcessManager):
         defs = self._prod_process_definitions()
         units = set(self._unit_name(pd.name) for pd in defs) | {self._target_name(), self._admin_socket_name()}
 
-        # Remove stale user-unit symlinks pointing to this bench's config dir.
+        # Stop dropped units (e.g. socketio after enabling companion mode) so they
+        # release their ports; an orphaned process makes the companion crash-loop on bind.
+        self._reap_stale_units(units)
+
+        # Remove stale symlinks pointing to this bench's config dir, including broken ones.
         for dst in self.user_unit_dir.iterdir():
-            if not (dst.is_symlink() and dst.exists()):
+            if not dst.is_symlink():
                 continue
             try:
-                points_to_bench = dst.resolve().parent == self.systemd_conf_dir.resolve()
+                points_to_bench = dst.resolve(strict=False).parent == self.systemd_conf_dir.resolve()
             except OSError:
                 continue
             if points_to_bench and dst.name not in units:
@@ -110,6 +114,31 @@ class SystemdProcessManager(ProcessManager):
         env = self._systemctl_env()
         run_command(self._systemctl("daemon-reload"), env=env)
         run_command(self._systemctl("enable", self._target_name()), env=env)
+
+    def _installed_bench_units(self) -> set[str]:
+        """Names of this bench's currently-loaded .service/.socket units."""
+        result = subprocess.run(
+            self._systemctl(
+                "list-units", "--all", "--no-legend", "--plain",
+                "--type=service,socket", f"{self.bench.config.name}-*",
+            ),
+            capture_output=True,
+            text=True,
+            env=self._systemctl_env(),
+        )
+        units = set()
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if parts and (parts[0].endswith(".service") or parts[0].endswith(".socket")):
+                units.add(parts[0])
+        return units
+
+    def _reap_stale_units(self, desired: set[str]) -> None:
+        """Stop+disable this bench's loaded units not in ``desired`` (best-effort)."""
+        env = self._systemctl_env()
+        for unit in self._installed_bench_units() - desired:
+            subprocess.run(self._systemctl("stop", unit), capture_output=True, env=env)
+            subprocess.run(self._systemctl("disable", unit), capture_output=True, env=env)
 
     def is_configured(self) -> bool:
         result = subprocess.run(
