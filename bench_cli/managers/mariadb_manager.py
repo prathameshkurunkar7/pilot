@@ -132,12 +132,11 @@ class MariaDBManager:
         if not self.is_dedicated:
             raise RuntimeError("provision_instance called for a bench without a dedicated mariadb.instance")
 
-        self.install()
-
         # Runtime dir for the per-instance socket and pid file (also created by
         # systemd-tmpfiles at boot; ensured here for first provisioning).
         run_command(["sudo", "install", "-d", "-m", "755", "-o", "mysql", "-g", "mysql", "/run/mysqld"])
 
+        self._write_systemd_override(staging_dir)
         self._write_instance_config(staging_dir)
 
         # The unit runs as User=mysql, so the datadir must exist and be owned by
@@ -148,6 +147,30 @@ class MariaDBManager:
         self._wait_until_reachable()
 
         self.secure_installation()
+
+    def _write_systemd_override(self, staging_dir: Path) -> None:
+        """Pin the instance's option-group suffix to the *escaped* unit name (%i).
+
+        The packaged ``mariadb@.service`` runs mariadbd with
+        ``--defaults-group-suffix=.%I``. ``%I`` is systemd's *unescaped*
+        specifier, and systemd encodes ``/`` as ``-``: for ``mariadb@my-bench``
+        it expands to ``my/bench``, so mariadbd looks for ``[mariadbd.my/bench]``
+        and never finds the ``[mariadbd.my-bench]`` group we install. The whole
+        instance config (datadir/socket/port) is then silently ignored and the
+        server falls back to the shared /var/lib/mysql, colliding with the
+        system MariaDB. ``%i`` is the literal unit name, so it matches our group
+        verbatim and keeps dashes in bench names working.
+        """
+        instance = self.config.instance
+        override_dir = f"/etc/systemd/system/mariadb@{instance}.service.d"
+        content = "[Service]\nEnvironment=MYSQLD_MULTI_INSTANCE=--defaults-group-suffix=.%i\n"
+        staged_dir = staging_dir / "mariadb"
+        staged_dir.mkdir(parents=True, exist_ok=True)
+        staged = staged_dir / f"override-{instance}.conf"
+        staged.write_text(content)
+        run_command(["sudo", "install", "-d", "-m", "755", override_dir])
+        run_command(["sudo", "cp", str(staged), f"{override_dir}/override.conf"])
+        run_command(["sudo", "systemctl", "daemon-reload"])
 
     def _write_instance_config(self, staging_dir: Path) -> None:
         """Render the instance's option group and install it under mariadb.conf.d/.

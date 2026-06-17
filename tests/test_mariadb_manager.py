@@ -120,6 +120,23 @@ def test_write_instance_config_targets_mariadb_conf_d_with_pidfile(tmp_path) -> 
     assert dest == "/etc/mysql/mariadb.conf.d/99-bench-b1.cnf"
 
 
+def test_write_systemd_override_pins_escaped_group_suffix(tmp_path) -> None:
+    """systemd's %I unescapes '-' to '/', so the packaged --defaults-group-suffix=.%I
+    looks for [mariadbd.my/bench] and ignores our [mariadbd.my-bench] group. The
+    per-instance drop-in pins %i (literal) so dashed bench names work."""
+    m = _dedicated("my-bench")
+    with patch("bench_cli.managers.mariadb_manager.run_command") as rc:
+        m._write_systemd_override(tmp_path)
+
+    content = (tmp_path / "mariadb" / "override-my-bench.conf").read_text()
+    assert "--defaults-group-suffix=.%i" in content
+
+    commands = [call.args[0] for call in rc.call_args_list]
+    dest = next(c for c in commands if c[:2] == ["sudo", "cp"])[-1]
+    assert dest == "/etc/systemd/system/mariadb@my-bench.service.d/override.conf"
+    assert ["sudo", "systemctl", "daemon-reload"] in commands
+
+
 # ── _sql_quote ────────────────────────────────────────────────────────────────
 
 
