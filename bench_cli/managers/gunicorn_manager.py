@@ -69,8 +69,58 @@ class GunicornManager:
             f"preload_app = True\n"
         )
         if not self.bench.config.production.use_companion_manager:
-            return base
+            return base + self._malloc_trim_hook()
         return self._render_companion_config(base)
+
+    def _malloc_trim_hook(self) -> str:
+        """A throttled post_request hook that returns freed heap to the OS.
+
+        glibc keeps freed allocations in per-arena free lists, so a transient
+        spike (large query/report) pins the web worker's RSS at its high-water
+        mark. Calling malloc_trim(0) periodically gives that memory back. We
+        trim after `malloc_trim_requests` requests OR every `malloc_trim_interval`
+        seconds, whichever comes first; the time check only fires on the next
+        request, which is fine because an idle worker has nothing new to free.
+        Returns "" when both knobs are disabled."""
+        cfg = self.bench.config.gunicorn
+        reqs, interval = cfg.malloc_trim_requests, cfg.malloc_trim_interval
+        if reqs <= 0 and interval <= 0:
+            return ""
+        req_cond = f'st["count"] >= {reqs}' if reqs > 0 else "False"
+        time_cond = f'(now - st["last"]) >= {interval}' if interval > 0 else "False"
+        return f'''
+
+import ctypes
+import threading
+import time
+
+_malloc_trim_lock = threading.Lock()
+_malloc_trim_state = {{"count": 0, "last": 0.0}}
+try:
+    _libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    _libc.malloc_trim.argtypes = [ctypes.c_size_t]
+    _libc.malloc_trim.restype = ctypes.c_int
+except (OSError, AttributeError):
+    _libc = None
+
+
+def post_request(worker, req, environ, resp):
+    if _libc is None:
+        return
+    now = time.monotonic()
+    do_trim = False
+    with _malloc_trim_lock:
+        st = _malloc_trim_state
+        if st["last"] == 0.0:
+            st["last"] = now
+        st["count"] += 1
+        if {req_cond} or {time_cond}:
+            st["count"] = 0
+            st["last"] = now
+            do_trim = True
+    if do_trim:
+        _libc.malloc_trim(0)
+'''
 
     def _render_companion_config(self, base: str) -> str:
         sites_dir = self.bench.sites_path
@@ -100,6 +150,7 @@ class GunicornManager:
             + "def when_ready(server):\n"
             + "    from frappe._optimizations import freeze_gc\n"
             + "    freeze_gc()\n"
+            + self._malloc_trim_hook()
         )
 
     def _render_companion_workers(self, sites_dir: Path, logs_dir: Path) -> str:

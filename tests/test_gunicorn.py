@@ -44,6 +44,8 @@ def test_gunicorn_config_defaults() -> None:
     assert cfg.threads == 4
     assert cfg.timeout == 120
     assert cfg.worker_class == "sync"
+    assert cfg.malloc_trim_requests == 100
+    assert cfg.malloc_trim_interval == 300
 
 
 def test_gunicorn_default_bind_uses_bench_http_port(tmp_path: Path) -> None:
@@ -415,3 +417,67 @@ def test_malloc_arena_max_in_units(tmp_path: Path) -> None:
 def test_malloc_arena_max_validation(tmp_path: Path) -> None:
     with pytest.raises(ConfigError):
         make_bench(tmp_path, gunicorn=GunicornConfig(malloc_arena_max=-1)).config.validate()
+
+
+# ── malloc_trim post_request hook ─────────────────────────────────────────────
+
+
+def _gen_gunicorn_config(tmp_path: Path, gunicorn: GunicornConfig | None = None, *, companion: bool = False) -> str:
+    bench = make_bench(tmp_path, gunicorn)
+    bench.config.production.use_companion_manager = companion
+    bench.config_path.mkdir(parents=True, exist_ok=True)
+    GunicornManager(bench).generate_config()
+    return (bench.config_path / "gunicorn.conf.py").read_text()
+
+
+def test_malloc_trim_hook_in_standalone_config(tmp_path: Path) -> None:
+    content = _gen_gunicorn_config(tmp_path)
+    assert "def post_request(worker, req, environ, resp):" in content
+    assert "_libc.malloc_trim(0)" in content
+    assert 'st["count"] >= 100' in content
+    assert '(now - st["last"]) >= 300' in content
+    # The generated config must be valid Python.
+    compile(content, "gunicorn.conf.py", "exec")
+
+
+def test_malloc_trim_hook_in_companion_config(tmp_path: Path) -> None:
+    content = _gen_gunicorn_config(tmp_path, companion=True)
+    assert "def post_request(worker, req, environ, resp):" in content
+    assert "_libc.malloc_trim(0)" in content
+    # Coexists with the existing companion hooks.
+    assert "def when_ready(server):" in content
+    compile(content, "gunicorn.conf.py", "exec")
+
+
+def test_malloc_trim_hook_honours_custom_thresholds(tmp_path: Path) -> None:
+    content = _gen_gunicorn_config(tmp_path, GunicornConfig(malloc_trim_requests=50, malloc_trim_interval=60))
+    assert 'st["count"] >= 50' in content
+    assert '(now - st["last"]) >= 60' in content
+
+
+def test_malloc_trim_hook_omitted_when_both_disabled(tmp_path: Path) -> None:
+    content = _gen_gunicorn_config(tmp_path, GunicornConfig(malloc_trim_requests=0, malloc_trim_interval=0))
+    assert "post_request" not in content
+    assert "malloc_trim" not in content
+
+
+def test_malloc_trim_single_knob_disabled_uses_false_branch(tmp_path: Path) -> None:
+    content = _gen_gunicorn_config(tmp_path, GunicornConfig(malloc_trim_requests=0, malloc_trim_interval=300))
+    assert "False or (now - st[\"last\"]) >= 300" in content
+    compile(content, "gunicorn.conf.py", "exec")
+
+
+def test_malloc_trim_validation(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="malloc_trim_requests"):
+        make_bench(tmp_path, gunicorn=GunicornConfig(malloc_trim_requests=-1)).config.validate()
+    with pytest.raises(ConfigError, match="malloc_trim_interval"):
+        make_bench(tmp_path, gunicorn=GunicornConfig(malloc_trim_interval=-1)).config.validate()
+
+
+def test_toml_writer_includes_malloc_trim(tmp_path: Path) -> None:
+    from bench_cli.config.toml_writer import bench_config_to_toml
+
+    bench = make_bench(tmp_path, GunicornConfig(malloc_trim_requests=50, malloc_trim_interval=60))
+    toml = bench_config_to_toml(bench.config)
+    assert "malloc_trim_requests = 50" in toml
+    assert "malloc_trim_interval = 60" in toml
