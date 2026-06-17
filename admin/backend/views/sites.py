@@ -248,9 +248,12 @@ def login_to_site(name: str):
     from bench_cli.config.bench_config import BenchConfig
 
     try:
-        http_port = BenchConfig.from_file(bench_root / "bench.toml").http_port
+        bench_config = BenchConfig.from_file(bench_root / "bench.toml")
+        http_port = bench_config.http_port
+        nginx_enabled = bench_config.production.nginx
     except Exception:
         http_port = 8000
+        nginx_enabled = False
 
     try:
         conn = http.client.HTTPConnection("localhost", http_port, timeout=10)
@@ -282,7 +285,19 @@ def login_to_site(name: str):
     if not sid or sid == "Guest":
         return jsonify({"ok": False, "error": "Login failed — wrong password?"})
 
-    return jsonify({"ok": True, "url": f"http://{name}:{http_port}/desk?sid={sid}"})
+    # Behind nginx the site is served by domain on 80/443; only dev talks to the gunicorn port directly.
+    if nginx_enabled:
+        import json
+
+        try:
+            ssl = bool(json.loads((bench_root / "sites" / name / "site_config.json").read_text()).get("ssl"))
+        except Exception:
+            ssl = False
+        url = f"{'https' if ssl else 'http'}://{name}/desk?sid={sid}"
+    else:
+        url = f"http://{name}:{http_port}/desk?sid={sid}"
+
+    return jsonify({"ok": True, "url": url})
 
 
 @sites_bp.route("/<name>/enable-ssl", methods=["POST"])

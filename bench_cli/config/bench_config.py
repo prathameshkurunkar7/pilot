@@ -74,7 +74,6 @@ class BenchConfig:
         redis = cls._parse_redis(data.get("redis", {}))
         workers = cls._parse_workers(data.get("workers", []))
         production = cls._parse_production(data.get("production"))
-        nginx = cls._parse_nginx(data.get("nginx", {}))
         gunicorn = cls._parse_gunicorn(data.get("gunicorn", {}), bench_data.get("http_port", 8000))
         letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
         admin = cls._parse_admin(data.get("admin", {}))
@@ -91,7 +90,6 @@ class BenchConfig:
             redis=redis,
             workers=workers,
             production=production,
-            nginx=nginx,
             gunicorn=gunicorn,
             letsencrypt=letsencrypt,
             admin=admin,
@@ -139,17 +137,6 @@ class BenchConfig:
             process_manager=pm,
             nginx=data.get("nginx", False),
             use_companion_manager=data.get("use_companion_manager", False),
-        )
-
-    @staticmethod
-    def _parse_nginx(data: dict) -> NginxConfig:
-        config_dir = data.get("config_dir", "/etc/nginx/conf.d")
-        return NginxConfig(
-            http_port=data.get("http_port", 80),
-            https_port=data.get("https_port", 443),
-            config_dir=Path(config_dir),
-            worker_processes=str(data.get("worker_processes", "auto")),
-            client_max_body_size=data.get("client_max_body_size", "50m"),
         )
 
     @staticmethod
@@ -221,7 +208,6 @@ class BenchConfig:
         self._validate_redis_ports()
         self._validate_worker_counts()
         self._validate_letsencrypt_email()
-        self._validate_nginx_ports_distinct()
         self._validate_gunicorn()
         self._validate_mariadb_version()
         self._validate_mariadb_instance()
@@ -258,8 +244,6 @@ class BenchConfig:
             "bench.http_port": self.http_port,
             "bench.socketio_port": self.socketio_port,
             "mariadb.port": self.mariadb.port,
-            "nginx.http_port": self.nginx.http_port,
-            "nginx.https_port": self.nginx.https_port,
         }
         for name, port in ports.items():
             if not (_PORT_MIN <= port <= _PORT_MAX):
@@ -306,10 +290,6 @@ class BenchConfig:
             return
         if not _HOSTNAME_PATTERN.match(domain):
             raise ConfigError(f"admin.domain '{domain}' is not a valid hostname (bench '{self.name}').")
-
-    def _validate_nginx_ports_distinct(self) -> None:
-        if self.nginx.http_port == self.nginx.https_port:
-            raise ConfigError(f"nginx.http_port and nginx.https_port must be distinct, but both are set to {self.nginx.http_port}.")
 
     def _validate_gunicorn(self) -> None:
         if not isinstance(self.gunicorn.workers, int) or self.gunicorn.workers < 1:

@@ -63,15 +63,6 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f"use_companion_manager = {'true' if p.use_companion_manager else 'false'}")
     parts.append("")
 
-    n = config.nginx
-    parts.append("[nginx]")
-    parts.append(f"http_port = {n.http_port}")
-    parts.append(f"https_port = {n.https_port}")
-    parts.append(f'config_dir = "{n.config_dir}"')
-    parts.append(f'worker_processes = "{n.worker_processes}"')
-    parts.append(f'client_max_body_size = "{n.client_max_body_size}"')
-    parts.append("")
-
     g = config.gunicorn
     parts.append("[gunicorn]")
     parts.append(f"workers = {g.workers}")

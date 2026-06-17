@@ -140,14 +140,6 @@ def test_rule_11_invalid_letsencrypt_email() -> None:
     assert "letsencrypt.email" in str(exc_info.value)
 
 
-def test_rule_13_nginx_ports_must_be_distinct() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["nginx"] = {"enabled": False, "http_port": 80, "https_port": 80}
-    with pytest.raises(ConfigError) as exc_info:
-        load_from_dict(data)
-    assert "nginx.http_port" in str(exc_info.value) or "nginx.https_port" in str(exc_info.value)
-
-
 # ── Dependency version tests ──────────────────────────────────────────────────
 
 

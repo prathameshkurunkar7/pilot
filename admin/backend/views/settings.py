@@ -60,8 +60,6 @@ class ConfigPatcher:
         self._apply_mariadb()
         self._apply_redis()
         self._apply_workers()
-        self._apply_nginx()
-        self._apply_letsencrypt()
         self._apply_volume()
         if error := self._apply_production():
             return error
@@ -114,27 +112,6 @@ class ConfigPatcher:
         if groups:
             self.config.workers.groups = groups
 
-    def _apply_nginx(self) -> None:
-        nginx = self.data.get("nginx") or {}
-        if not nginx:
-            return
-        nginx_config = self.config.nginx
-        nginx_config.http_port = int(nginx.get("http_port", nginx_config.http_port))
-        nginx_config.https_port = int(nginx.get("https_port", nginx_config.https_port))
-        if "config_dir" in nginx:
-            nginx_config.config_dir = Path(str(nginx["config_dir"]))
-        nginx_config.worker_processes = str(nginx.get("worker_processes", nginx_config.worker_processes))
-        nginx_config.client_max_body_size = str(nginx.get("client_max_body_size", nginx_config.client_max_body_size))
-
-    def _apply_letsencrypt(self) -> None:
-        letsencrypt = self.data.get("letsencrypt") or {}
-        if not letsencrypt:
-            return
-        letsencrypt_config = self.config.letsencrypt
-        letsencrypt_config.email = str(letsencrypt.get("email", letsencrypt_config.email))
-        if "webroot_path" in letsencrypt:
-            letsencrypt_config.webroot_path = Path(str(letsencrypt["webroot_path"]))
-
     def _apply_volume(self) -> None:
         volume = self.data.get("volume") or {}
         if not volume:
@@ -154,7 +131,6 @@ class ConfigPatcher:
             if process_manager not in ("none", "supervisor", "systemd"):
                 return "process_manager must be none, supervisor, or systemd"
             self.config.production.process_manager = process_manager
-        self.config.production.nginx = bool(production.get("nginx", self.config.production.nginx))
         return None
 
 
@@ -237,15 +213,7 @@ def _build_settings_response(config: BenchConfig) -> dict:
         },
         "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port, "version": RedisManager.installed_version() or config.redis.version or ""},
         "workers": _worker_groups_payload(config),
-        "nginx": {
-            "http_port": config.nginx.http_port,
-            "https_port": config.nginx.https_port,
-            "config_dir": str(config.nginx.config_dir),
-            "worker_processes": config.nginx.worker_processes,
-            "client_max_body_size": config.nginx.client_max_body_size,
-        },
-        "letsencrypt": {"email": config.letsencrypt.email, "webroot_path": str(config.letsencrypt.webroot_path)},
-        "production": {"process_manager": config.production.process_manager, "nginx": config.production.nginx},
+        "production": {"process_manager": config.production.process_manager},
         "volume": {
             "pool": volume.pool,
             "backing": volume.backing,

@@ -21,7 +21,6 @@ _BASE_DATA: dict = {
 
 _SSL_DATA: dict = {
     **_BASE_DATA,
-    "nginx": {"enabled": True, "http_port": 80, "https_port": 443},
     "letsencrypt": {"email": "admin@example.com"},
 }
 
@@ -175,18 +174,6 @@ def test_two_benches_generate_non_conflicting_configs(tmp_path: Path) -> None:
     assert "upstream bench-alpha {" in a
     assert "upstream bench-beta {" in b
     assert "bench-beta" not in a and "bench-alpha" not in b
-
-
-def test_http_port_is_configurable(tmp_path: Path) -> None:
-    data = copy.deepcopy(_BASE_DATA)
-    data["nginx"] = {"enabled": True, "http_port": 8080, "https_port": 8443}
-    bench = _make_bench(tmp_path, data)
-    manager = NginxManager(bench)
-
-    config = manager._generate_site_config(_BASE_SITE, ssl_ready=False)
-
-    assert "listen 8080;" in config
-    assert "listen 80;" not in config
 
 
 # ── upstream block ────────────────────────────────────────────────────────────
