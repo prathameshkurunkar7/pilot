@@ -300,12 +300,12 @@ class BenchConfig:
         if not domain:
             if self.production.enabled:
                 raise ConfigError(
-                    "admin.domain is required in production. Set it in bench.toml "
-                    "(e.g. admin.example.com) or run 'bench setup production' to be prompted."
+                    f"admin.domain is required in production but is missing for bench '{self.name}'. "
+                    f"Set it in bench.toml (e.g. admin.example.com) or run 'bench setup production' to be prompted."
                 )
             return
         if not _HOSTNAME_PATTERN.match(domain):
-            raise ConfigError(f"admin.domain '{domain}' is not a valid hostname.")
+            raise ConfigError(f"admin.domain '{domain}' is not a valid hostname (bench '{self.name}').")
 
     def _validate_nginx_ports_distinct(self) -> None:
         if self.nginx.http_port == self.nginx.https_port:
