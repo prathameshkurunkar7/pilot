@@ -196,7 +196,7 @@ class InitCommand(Command):
             # before mariadb-install-db runs against it.
             freshly_installed = not mariadb_manager.is_installed()
             mariadb_manager.install()
-            if freshly_installed:
+            if freshly_installed and is_linux():
                 # apt auto-starts the shared mariadb service on port 3306 after
                 # installation. Stop and disable it so the dedicated instance can
                 # claim its port without a conflict when provision_instance runs.
