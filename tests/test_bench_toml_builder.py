@@ -15,9 +15,11 @@ from bench_cli.config.bench_toml_builder import BenchTomlBuilder, current_port_o
 # ── default_ports ────────────────────────────────────────────────────────────
 
 
-def test_default_ports_returns_all_five_fields() -> None:
+def test_default_ports_returns_all_fields() -> None:
     ports = default_ports()
-    assert set(ports) == {"http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port"}
+    assert set(ports) == {
+        "http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port", "mariadb.port",
+    }
 
 
 def test_default_ports_values_match_known_defaults() -> None:
@@ -27,6 +29,7 @@ def test_default_ports_values_match_known_defaults() -> None:
     assert ports["redis.cache_port"] == 13000
     assert ports["redis.queue_port"] == 11000
     assert ports["admin.port"] == 8002
+    assert ports["mariadb.port"] == 3306
 
 
 # ── BenchTomlBuilder port_offset ─────────────────────────────────────────────
@@ -45,13 +48,14 @@ def test_port_offset_zero_leaves_defaults(tmp_path: Path) -> None:
     assert data["admin"]["port"] == 8002
 
 
-def test_port_offset_shifts_all_five_fields_together(tmp_path: Path) -> None:
+def test_port_offset_shifts_all_fields_together(tmp_path: Path) -> None:
     data = _render(tmp_path, port_offset=1)
     assert data["bench"]["http_port"] == 8001
     assert data["bench"]["socketio_port"] == 9001
     assert data["redis"]["cache_port"] == 13001
     assert data["redis"]["queue_port"] == 11001
     assert data["admin"]["port"] == 8003
+    assert data["mariadb"]["port"] == 3307
 
 
 def test_port_fields_not_settable_via_settings(tmp_path: Path) -> None:

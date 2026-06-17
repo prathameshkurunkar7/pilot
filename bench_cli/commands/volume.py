@@ -8,6 +8,10 @@ from typing import TYPE_CHECKING
 from bench_cli.commands.base import Command
 from bench_cli.exceptions import BenchError, CommandError
 
+from bench_cli.managers.volume_manager import VolumeManager
+from bench_cli.utils import run_command, iter_sibling_benches
+
+
 _DATASET_CHOICES = ["benches", "mariadb"]
 
 if TYPE_CHECKING:
@@ -55,20 +59,22 @@ def _build_orchestrator(bench: Bench) -> SnapshotOrchestrator:
     return SnapshotOrchestrator(volume, mariadb, bench)
 
 
-def _stop_mariadb() -> None:
-    from bench_cli.utils import run_command
-
+def _stop_mariadb(manager=None) -> None:
     try:
-        run_command(["sudo", "systemctl", "stop", "mariadb"])
+        if manager is not None:
+            manager.stop()
+        else:
+            run_command(["sudo", "systemctl", "stop", "mariadb"])
     except CommandError:
         pass
 
 
-def _start_mariadb() -> None:
-    from bench_cli.utils import run_command
-
+def _start_mariadb(manager=None) -> None:
     try:
-        run_command(["sudo", "systemctl", "start", "mariadb"])
+        if manager is not None:
+            manager.start()
+        else:
+            run_command(["sudo", "systemctl", "start", "mariadb"])
     except CommandError as e:
         print(f"Warning: failed to restart MariaDB service: {e}")
 
@@ -80,18 +86,31 @@ class VolumeSetupCommand:
         self.bench_config = bench_config
 
     def setup_mariadb(self, manager: VolumeManager):
-        data_dir = Path(self.config.mariadb.data_dir)
+        # For a bench with its own instance, the dataset mounts at that
+        # instance's datadir (a sibling of /var/lib/mysql) and stop/start
+        # targets that instance rather than the shared `mariadb` service.
+        # (Fresh instance benches are provisioned after volume setup, so the
+        # datadir is empty here and no migration happens.)
+        db_manager = self._mariadb_manager()
+        data_dir = Path(db_manager.data_dir() if db_manager else self.config.mariadb.data_dir)
         has_data = data_dir.exists() and any(data_dir.iterdir())
 
         if has_data:
             print(f"Existing data found at {data_dir}, stopping MariaDB for migration...")
-            _stop_mariadb()
+            _stop_mariadb(db_manager)
             manager.migrate_data(self.config.mariadb_dataset, data_dir)
 
         manager.set_mountpoint(self.config.mariadb_dataset, data_dir)
 
         if has_data:
-            _start_mariadb()
+            _start_mariadb(db_manager)
+
+    def _mariadb_manager(self):
+        if self.bench_config is None or not self.bench_config.mariadb.instance:
+            return None
+        from bench_cli.managers.mariadb_manager import MariaDBManager
+
+        return MariaDBManager(self.bench_config.mariadb)
 
     def setup_bench(self, manager: VolumeManager):
         data_dir = self.bench_path.parent
@@ -102,22 +121,9 @@ class VolumeSetupCommand:
         if self.bench_config is None:
             return
 
-        from bench_cli.config.bench_config import BenchConfig
-
-        me = self.bench_path.resolve()
-        parent_dir = self.bench_path.parent.resolve()
-
-        for sibling in parent_dir.iterdir():
-            if not sibling.is_dir() or sibling.resolve() == me:
-                continue
-
-            sibling_bench_config_path = sibling / "bench.toml"
-            if not sibling_bench_config_path.exists():
-                continue
-
-            sibling_bench_config = BenchConfig.from_file(sibling_bench_config_path)
-            if sibling_bench_config.volume.pool == self.bench_config.volume.pool:
-                raise BenchError(f"Pool {self.bench_config.volume.pool} is already in use by {sibling_bench_config.name}")
+        for path, config in iter_sibling_benches(self.bench_path):
+            if config.volume.pool == self.bench_config.volume.pool:
+                BenchError(f"Pool {self.bench_config.volume.pool} is already in use by {path.name}")
 
     def run(self) -> None:
         from bench_cli.managers.volume_manager import VolumeManager

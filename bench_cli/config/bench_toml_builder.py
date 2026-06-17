@@ -17,6 +17,10 @@ FLAT_KEYS = {
     "python": "python_version",
     "socketio_backend": "socketio_backend",
     "mariadb_password": "mariadb.root_password",
+    "mariadb_instance": "mariadb.instance",
+    "mariadb_socket_path": "mariadb.socket_path",
+    "mariadb_data_dir": "mariadb.data_dir",
+    "mariadb_port": "mariadb.port",
     "admin_enabled": "admin.enabled",
     "admin_password": "admin.password",
     "volume_enabled": "volume.enabled",
@@ -55,7 +59,7 @@ def _default_config(name: str = "") -> BenchConfig:
 # and dotted paths — callers needing them (e.g. NewCommand's port offset
 # logic) should go through default_ports()/BenchTomlBuilder, not duplicate
 # the numbers themselves.
-_PORT_FIELDS = ("http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port")
+_PORT_FIELDS = ("http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port", "mariadb.port")
 
 
 def default_ports() -> dict[str, int]:

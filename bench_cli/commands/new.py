@@ -1,11 +1,12 @@
 import argparse
 import secrets
 import socket
-import tomllib
 from pathlib import Path
 
 from bench_cli.commands.base import Command
 from bench_cli.exceptions import BenchError
+from bench_cli.platform import is_linux
+from bench_cli.utils import iter_sibling_benches
 
 
 class NewCommand(Command):
@@ -42,9 +43,22 @@ class NewCommand(Command):
         print(f"Creating bench directory: {self.target_directory}")
         self.target_directory.mkdir(parents=True, exist_ok=True)
 
-        offset = self._pick_port_offset(benches_dir)
+        offset = self._pick_port_offset(self.target_directory)
         print("Writing bench.toml")
         settings = {"admin_password": secrets.token_hex(nbytes=5)}
+        # New benches get their own MariaDB instance (mariadb@<name>) with an
+        # isolated socket/datadir; mariadb.port is offset automatically via
+        # _PORT_FIELDS. Existing benches without these fields keep using the
+        # shared system MariaDB. macOS is dev-only (Homebrew, no systemd
+        # template units), so it stays on the shared server.
+        if is_linux():
+            settings.update(
+                {
+                    "mariadb_instance": self.name,
+                    "mariadb_socket_path": f"/run/mysqld/mysqld-{self.name}.sock",
+                    "mariadb_data_dir": f"/var/lib/mysql-{self.name}",
+                }
+            )
         bench_toml.write_text(BenchTomlBuilder(self.name, settings, port_offset=offset).render())
 
         admin_port = default_ports()["admin.port"] + offset
@@ -53,7 +67,7 @@ class NewCommand(Command):
         print("  bench start")
         print(f"  Open http://localhost:{admin_port} — the setup wizard guides you through the rest,")
 
-    def _pick_port_offset(self, benches_dir: Path) -> int:
+    def _pick_port_offset(self, bench_path: Path) -> int:
         """Smallest offset (added to every base port) that collides with
         neither another bench's bench.toml nor a port that's actually live
         right now — covers both stale configs and orphaned processes."""
@@ -61,21 +75,18 @@ class NewCommand(Command):
 
         bases = default_ports()
         base_http_port = bases["http_port"]
-
         used = set()
-        if benches_dir.is_dir():
-            for other in benches_dir.iterdir():
-                toml_path = other / "bench.toml"
-                if not toml_path.exists():
-                    continue
-                try:
-                    with open(toml_path, "rb") as f:
-                        data = tomllib.load(f)
-                    used.add(data.get("bench", {}).get("http_port", base_http_port) - base_http_port)
-                except Exception:
-                    continue
+
+        for _, config in iter_sibling_benches(bench_path):
+            try:
+                used.add(config.http_port - base_http_port)
+            except Exception:
+                continue
 
         offset = 0
+        if len(used) == 0:
+            return offset
+
         while offset in used or any(self._port_is_live(base + offset) for base in bases.values()):
             offset += 1
         return offset

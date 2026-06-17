@@ -102,6 +102,55 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
     assert data["admin"]["port"] == 8003
 
 
+def test_new_command_writes_dedicated_mariadb_instance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """New benches default to their own MariaDB instance with an isolated
+    socket/datadir and an offset port."""
+    from bench_cli.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("bench_cli.commands.new.is_macos", lambda: False)
+    benches_dir = tmp_path / "benches"
+    NewCommand(benches_dir / "first", "first").run()
+    NewCommand(benches_dir / "second", "second").run()
+
+    with open(benches_dir / "second" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["mariadb"]["instance"] == "second"
+    assert data["mariadb"]["socket_path"] == "/run/mysqld/mysqld-second.sock"
+    assert data["mariadb"]["data_dir"] == "/var/lib/mysql-second"
+    assert data["mariadb"]["port"] == 3307  # base 3306 + offset 1
+
+
+def test_volume_setup_mounts_dataset_at_instance_datadir(tmp_path: Path) -> None:
+    """For an instance bench, the ZFS mariadb dataset mounts at the instance's
+    sibling datadir (not the shared /var/lib/mysql)."""
+    from bench_cli.commands.volume import VolumeSetupCommand
+
+    data = {
+        "bench": {"name": "shop", "python": "3.14"},
+        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
+        "mariadb": {
+            "root_password": "root",
+            "instance": "shop",
+            "data_dir": "/var/lib/mysql-shop",
+            "socket_path": "/run/mysqld/mysqld-shop.sock",
+        },
+        "redis": {"cache_port": 13000, "queue_port": 11000},
+        "volume": {"enabled": True, "pool": "shop-pool"},
+    }
+    config = BenchConfig._from_dict(data)
+    cmd = VolumeSetupCommand(config.volume, tmp_path / "shop", bench_config=config)
+
+    volume_manager = MagicMock()
+    cmd.setup_mariadb(volume_manager)
+
+    volume_manager.set_mountpoint.assert_called_once()
+    dataset, mountpoint = volume_manager.set_mountpoint.call_args[0]
+    assert dataset == config.volume.mariadb_dataset  # shop-pool/mariadb
+    assert str(mountpoint) == "/var/lib/mysql-shop"
+
+
 def test_new_command_skips_offset_with_live_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An orphaned process holding a port with no matching bench.toml must
     also be avoided, not just offsets already on disk."""

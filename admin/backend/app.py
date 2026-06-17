@@ -159,6 +159,8 @@ def create_app(bench_root: Path) -> Flask:
         # from its own reloader. Inheriting those into the new bench's admin
         # process makes Werkzeug try to reuse a stale fd as an already-bound
         # socket, which crashes it on startup with no visible error.
+        # Since this is just spawining the setup server we can ignore the phantom
+        # process runner it will be killed once the setup is completed anyways.
         spawn_env = {k: v for k, v in os.environ.items() if not k.startswith("WERKZEUG_")}
         spawn_env["PYTHONPATH"] = str(cli_root)
         subprocess.Popen(
