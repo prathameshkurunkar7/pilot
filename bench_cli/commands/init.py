@@ -194,7 +194,14 @@ class InitCommand(Command):
             # Install the package only; the instance is provisioned after volume
             # setup (see _do_run) so a ZFS-backed datadir, if any, is mounted
             # before mariadb-install-db runs against it.
+            freshly_installed = not mariadb_manager.is_installed()
             mariadb_manager.install()
+            if freshly_installed:
+                # apt auto-starts the shared mariadb service on port 3306 after
+                # installation. Stop and disable it so the dedicated instance can
+                # claim its port without a conflict when provision_instance runs.
+                mariadb_manager.stop_shared()
+
         else:
             freshly_installed = not mariadb_manager.is_installed()
             mariadb_manager.install()

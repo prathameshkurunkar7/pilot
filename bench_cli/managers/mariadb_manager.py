@@ -77,6 +77,19 @@ class MariaDBManager:
         else:
             run_command(["sudo", "systemctl", "stop", self.service_unit()])
 
+    def stop_shared(self) -> None:
+        """Stop and disable the shared mariadb service.
+
+        Called after a fresh package install for dedicated-instance benches:
+        apt auto-starts the shared service on port 3306, which would collide
+        with the dedicated instance's port before provision_instance runs.
+        """
+        try:
+            run_command(["sudo", "systemctl", "stop", "mariadb"])
+            run_command(["sudo", "systemctl", "disable", "mariadb"])
+        except Exception:
+            pass
+
     def _version(self) -> str:
         return self.config.version or DEFAULT_VERSION
 
