@@ -80,7 +80,9 @@ use_companion_manager = false    # run scheduler/workers/socketio inside gunicor
 
 ### Companion manager
 
-When `use_companion_manager = true`, the generated `config/gunicorn.conf.py` includes `companion_workers` for the scheduler, each RQ worker, and socket.io. Gunicorn forks a companion manager that supervises these processes, so they share the preloaded application memory copy-on-write.
+When `use_companion_manager = true`, the generated `config/gunicorn.conf.py` includes `companion_workers` for a single RQ worker-pool and socket.io. Gunicorn forks a companion manager that supervises these processes, so they share the preloaded application memory copy-on-write.
+
+The worker-pool runs every queue with `num_workers` equal to the total worker count across all `[workers]` groups (queues are the deduped union of every group's queues). The Frappe scheduler runs as a thread inside the pool workers, so it needs no companion of its own — one fewer process than the legacy per-worker layout.
 
 In this mode the supervisor/systemd configs only manage the Gunicorn web process (plus admin and Redis). The web service gets an extended stop timeout (1600s) so Gunicorn has time to drain all companions before SIGKILL.
 
@@ -428,7 +430,8 @@ class GunicornManager:
         """Write config/gunicorn.conf.py from bench.toml [gunicorn] settings.
 
         When production.use_companion_manager is true, the config also
-        includes companion_workers for scheduler, RQ workers, and socket.io.
+        includes companion_workers for an RQ worker-pool (with the scheduler
+        embedded) and socket.io.
         """
 
     def upstream_server(self) -> str:

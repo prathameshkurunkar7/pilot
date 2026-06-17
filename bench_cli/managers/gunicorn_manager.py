@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from bench_cli.config.worker_config import WorkerGroup
     from bench_cli.core.bench import Bench
 
 
@@ -15,7 +14,6 @@ _COMPANION_QUEUE_STOP_TIMEOUT = {
     "long": 1560,
     "short": 360,
 }
-_COMPANION_SCHEDULER_TIMEOUT = 60
 _COMPANION_SOCKETIO_TIMEOUT = 30
 
 
@@ -185,18 +183,9 @@ def post_worker_init(worker):
         return f'        "{key}": {value}'
 
     def _build_companion_workers(self, sites_dir: Path, logs_dir: Path) -> list[dict]:
-        workers: list[dict] = [
-            self._companion_spec(
-                "scheduler",
-                "frappe.gunicorn_companion:run_scheduler",
-                cwd=sites_dir,
-                stop_timeout=_COMPANION_SCHEDULER_TIMEOUT,
-                logs_dir=logs_dir,
-            )
-        ]
-
-        for group_index, group in enumerate(self.bench.config.workers.groups, start=1):
-            workers.extend(self._worker_group_specs(group_index, group, sites_dir, logs_dir))
+        # A single RQ worker-pool runs all queues; the Frappe scheduler runs as a
+        # thread inside the pool workers, so it needs no companion of its own.
+        workers: list[dict] = [self._worker_pool_spec(sites_dir, logs_dir)]
 
         if self._socketio_companion_enabled():
             workers.append(
@@ -211,30 +200,29 @@ def post_worker_init(worker):
 
         return workers
 
-    def _worker_group_specs(
-        self,
-        group_index: int,
-        group: "WorkerGroup",
-        sites_dir: Path,
-        logs_dir: Path,
-    ) -> list[dict]:
-        queue_names = ",".join(group.queues)
+    def _worker_pool_spec(self, sites_dir: Path, logs_dir: Path) -> dict:
+        groups = self.bench.config.workers.groups
+        queues: list[str] = []
+        for group in groups:
+            for queue in group.queues:
+                if queue not in queues:
+                    queues.append(queue)
+        num_workers = max(1, sum(group.count for group in groups))
         stop_timeout = max(
-            _COMPANION_QUEUE_STOP_TIMEOUT.get(q, _COMPANION_QUEUE_STOP_TIMEOUT["default"])
-            for q in group.queues
+            (_COMPANION_QUEUE_STOP_TIMEOUT.get(q, _COMPANION_QUEUE_STOP_TIMEOUT["default"]) for q in queues),
+            default=_COMPANION_QUEUE_STOP_TIMEOUT["default"],
         )
-        name_slug = "-".join(group.queues)
-        return [
-            self._companion_spec(
-                f"worker-{name_slug}-{i}",
-                "frappe.gunicorn_companion:run_worker",
-                cwd=sites_dir,
-                stop_timeout=stop_timeout,
-                logs_dir=logs_dir,
-                env={"FRAPPE_COMPANION_QUEUE": queue_names},
-            )
-            for i in range(1, group.count + 1)
-        ]
+        return self._companion_spec(
+            "worker-pool",
+            "frappe.gunicorn_companion:run_worker_pool",
+            cwd=sites_dir,
+            stop_timeout=stop_timeout,
+            logs_dir=logs_dir,
+            env={
+                "FRAPPE_COMPANION_QUEUE": ",".join(queues),
+                "FRAPPE_COMPANION_NUM_WORKERS": str(num_workers),
+            },
+        )
 
     def _companion_spec(
         self,

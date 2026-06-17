@@ -295,9 +295,12 @@ def test_gunicorn_config_includes_companion_workers(tmp_path: Path) -> None:
     content = (bench.config_path / "gunicorn.conf.py").read_text()
     assert "companion_control_socket" in content
     assert "companion_workers" in content
-    assert "frappe.gunicorn_companion:run_scheduler" in content
-    assert "frappe.gunicorn_companion:run_worker" in content
+    # A single worker-pool runs all queues with the scheduler embedded as a
+    # thread, so there is no separate scheduler or per-group worker companion.
+    assert "frappe.gunicorn_companion:run_worker_pool" in content
     assert "frappe.gunicorn_companion:run_socketio" in content
+    assert "run_scheduler" not in content
+    assert "FRAPPE_COMPANION_NUM_WORKERS" in content
     assert 'wsgi_app = "frappe.app:application"' in content
     assert "on_starting" in content
     assert "when_ready" in content
@@ -321,6 +324,34 @@ def test_gunicorn_config_uses_explicit_combined_worker_group(tmp_path: Path) -> 
     assert '"FRAPPE_COMPANION_QUEUE": "default,short,long"' in content
     assert '"FRAPPE_COMPANION_QUEUE": "short"' not in content
     assert '"FRAPPE_COMPANION_QUEUE": "long"' not in content
+    # A single group of one worker -> one pool worker.
+    assert '"FRAPPE_COMPANION_NUM_WORKERS": "1"' in content
+
+
+def test_worker_pool_aggregates_groups_into_one_pool(tmp_path: Path) -> None:
+    # Multiple groups collapse into a single pool: deduped queue union and the
+    # summed worker count drive one run_worker_pool companion.
+    config = BenchConfig._from_dict({
+        "bench": {"name": "test-bench", "python": "3.14", "http_port": 8000, "socketio_port": 9000},
+        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
+        "mariadb": {"root_password": "root"},
+        "redis": {"cache_port": 13000, "queue_port": 11000},
+        "workers": [
+            {"queues": ["default"], "count": 2},
+            {"queues": ["short"], "count": 1},
+            {"queues": ["long", "default"], "count": 1},
+        ],
+        "production": {"process_manager": "supervisor", "use_companion_manager": True},
+    })
+    bench = Bench(config, tmp_path)
+    bench.config_path.mkdir(parents=True, exist_ok=True)
+
+    GunicornManager(bench).generate_config()
+
+    content = (bench.config_path / "gunicorn.conf.py").read_text()
+    assert content.count("run_worker_pool") == 1
+    assert '"FRAPPE_COMPANION_QUEUE": "default,short,long"' in content  # union, order-preserving, deduped
+    assert '"FRAPPE_COMPANION_NUM_WORKERS": "4"' in content  # 2 + 1 + 1
 
 
 def test_gunicorn_config_excludes_companion_without_flag(tmp_path: Path) -> None:
