@@ -109,7 +109,7 @@ def test_new_command_writes_dedicated_mariadb_instance(tmp_path: Path, monkeypat
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("bench_cli.commands.new.is_macos", lambda: False)
+    monkeypatch.setattr("bench_cli.commands.new.is_linux", lambda: True)
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "first", "first").run()
     NewCommand(benches_dir / "second", "second").run()

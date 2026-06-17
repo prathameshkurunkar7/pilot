@@ -8,9 +8,7 @@ from typing import TYPE_CHECKING
 from bench_cli.commands.base import Command
 from bench_cli.exceptions import BenchError, CommandError
 
-from bench_cli.managers.volume_manager import VolumeManager
 from bench_cli.utils import run_command, iter_sibling_benches
-
 
 _DATASET_CHOICES = ["benches", "mariadb"]
 
@@ -85,7 +83,7 @@ class VolumeSetupCommand:
         self.bench_path = bench_path
         self.bench_config = bench_config
 
-    def setup_mariadb(self, manager: VolumeManager):
+    def setup_mariadb(self, manager: "VolumeManager"):
         # For a bench with its own instance, the dataset mounts at that
         # instance's datadir (a sibling of /var/lib/mysql) and stop/start
         # targets that instance rather than the shared `mariadb` service.
@@ -112,7 +110,7 @@ class VolumeSetupCommand:
 
         return MariaDBManager(self.bench_config.mariadb)
 
-    def setup_bench(self, manager: VolumeManager):
+    def setup_bench(self, manager: "VolumeManager"):
         data_dir = self.bench_path.parent
         manager.migrate_data(self.config.benches_dataset, data_dir)
         manager.set_mountpoint(self.config.benches_dataset, data_dir)

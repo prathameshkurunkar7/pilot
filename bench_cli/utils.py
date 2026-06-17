@@ -3,9 +3,12 @@ import shutil
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from bench_cli.core.bench import BenchConfig
 from bench_cli.exceptions import BenchError, CommandError
+
+if TYPE_CHECKING:
+    from bench_cli.core.bench import BenchConfig
 
 
 def iter_sibling_benches(bench_path: Path) -> Iterator[tuple[Path, "BenchConfig"]]:
@@ -16,6 +19,8 @@ def iter_sibling_benches(bench_path: Path) -> Iterator[tuple[Path, "BenchConfig"
     Skips ``bench_path`` itself and any directory without a readable
     ``bench.toml``. ``bench_path`` need not exist yet (e.g. during ``bench new``).
     """
+    from bench_cli.core.bench import BenchConfig
+
     parent = bench_path.parent
     if not parent.is_dir():
         return
