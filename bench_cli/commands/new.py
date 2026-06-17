@@ -5,7 +5,6 @@ import tomllib
 from pathlib import Path
 
 from bench_cli.commands.base import Command
-from bench_cli.config.bench_toml_builder import BenchTomlBuilder, default_ports
 from bench_cli.exceptions import BenchError
 
 
@@ -29,6 +28,8 @@ class NewCommand(Command):
         self.name = name
 
     def run(self) -> None:
+        from bench_cli.config.bench_toml_builder import BenchTomlBuilder, default_ports
+
         bench_toml = self.target_directory / "bench.toml"
         if bench_toml.exists():
             raise BenchError(f"A bench named '{self.name}' already exists at {self.target_directory}. Choose a different name or remove the existing bench.")
@@ -56,6 +57,8 @@ class NewCommand(Command):
         """Smallest offset (added to every base port) that collides with
         neither another bench's bench.toml nor a port that's actually live
         right now — covers both stale configs and orphaned processes."""
+        from bench_cli.config.bench_toml_builder import default_ports
+
         bases = default_ports()
         base_http_port = bases["http_port"]
 
