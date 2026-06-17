@@ -110,7 +110,7 @@ const imageSliderModel = computed({
 const deviceOptions = computed(() => [
   ...availableDevices.value.map((d) => ({
     label: `${d.path} (${Math.floor(d.size_bytes / 1024 ** 3)}G${
-      d.pool ? `, pool: ${d.pool}` : d.has_signature ? ', stale data' : ''
+      d.pool ? `, existing volume: ${d.pool}` : d.has_signature ? ', stale data' : ''
     })`,
     value: d.path,
   })),
@@ -169,12 +169,12 @@ const modalWidthClass = computed(() => {
 const titles = {
   passwords: 'Set up passwords',
   customize: 'Customize your bench',
-  volume: 'ZFS volume management',
+  volume: 'Storage setup',
   running: 'Initializing bench…',
   done: 'Setup complete',
 }
 const subtitles = {
-  volume: 'Choose where the ZFS pool lives — a spare disk or a disk image on the root filesystem',
+  volume: 'Choose where your data is stored — a dedicated disk gives better isolation, or you can use space from your current disk',
 }
 const title = computed(() => titles[step.value] || benchName.value)
 const subtitle = computed(() => subtitles[step.value] || null)
@@ -283,14 +283,14 @@ function parseSize(value) {
 
 function validateVolume() {
   if (!isLinux.value || !form.value.volume_enabled) return null
-  if (!form.value.volume_pool) return 'Pool name is required.'
+  if (!form.value.volume_pool) return 'Volume name is required.'
   const sizeHint = 'must be a positive integer with a K/M/G/T suffix (e.g. 10G)'
   let imageSize = null
   if (form.value.volume_backing === 'image') {
     imageSize = parseSize(form.value.volume_image_size)
     if (imageSize === null) return `Image size "${form.value.volume_image_size}" ${sizeHint}.`
   } else if (!form.value.volume_device) {
-    return 'Block device is required.'
+    return 'Disk is required.'
   }
   const datasets = [
     ['Bench', form.value.volume_benches_reservation, form.value.volume_benches_quota],
@@ -451,24 +451,24 @@ function backToConfig() {
         <div v-else-if="step === 'volume'" class="flex flex-col gap-4">
           <FormControl
             type="select"
-            label="Storage backing"
+            label="Storage type"
             v-model="form.volume_backing"
             :options="[
-              { label: 'Dedicated block device', value: 'device' },
-              { label: 'Disk image on root filesystem (no spare disk needed)', value: 'image' },
+              { label: 'Dedicated disk', value: 'device' },
+              { label: 'File on existing disk (no spare disk needed)', value: 'image' },
             ]"
           />
-          <FormControl label="Pool name" v-model="form.volume_pool" placeholder="bench-pool" />
+          <FormControl label="Volume name" v-model="form.volume_pool" placeholder="bench-pool" />
           <FormControl
             v-if="form.volume_backing === 'device' && showDeviceDropdown"
             type="select"
-            label="Block device"
+            label="Disk"
             v-model="form.volume_device"
             :options="deviceOptions"
           />
           <FormControl
             v-else-if="form.volume_backing === 'device'"
-            label="Block device"
+            label="Disk"
             v-model="form.volume_device"
             placeholder="/dev/sdb"
           />
@@ -490,8 +490,8 @@ function backToConfig() {
             <Slider v-model="imageSliderModel" :min="imageSizeMinGiB" :max="imageSizeMaxGiB" :step="1" />
           </div>
           <p v-if="form.volume_backing === 'image'" class="text-xs text-ink-gray-4">
-            A preallocated {{ form.volume_image_size }} file will be created at
-            /var/lib/bench-zfs/{{ form.volume_pool || 'pool' }}.img and used as the ZFS pool.
+            A {{ form.volume_image_size }} storage file will be created at
+            /var/lib/bench-zfs/{{ form.volume_pool || 'bench' }}.img and used as the storage volume.
           </p>
           <div class="grid grid-cols-2 gap-2">
             <FormControl label="Bench reservation" v-model="form.volume_benches_reservation" @input="sizesTouched = true" />

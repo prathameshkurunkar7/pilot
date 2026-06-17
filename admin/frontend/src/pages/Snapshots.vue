@@ -204,10 +204,9 @@ onMounted(loadSnapshots)
           class="rounded border border-outline-amber-1 bg-surface-amber-1 p-3 text-ink-amber-3"
         >
           <p class="font-medium">MariaDB will be stopped and restarted</p>
-          <p class="mt-1 text-ink-amber-2">The following commands will run in order:</p>
-          <pre class="mt-2 rounded bg-surface-white px-3 py-2 font-mono text-xs text-ink-gray-9">sudo systemctl stop mariadb
-sudo zfs rollback -r {{ rollbackRow?.tag }}
-sudo systemctl start mariadb</pre>
+          <p class="mt-1 text-ink-amber-2">
+            MariaDB will be stopped, the snapshot will be restored, then MariaDB will restart automatically.
+          </p>
           <p class="mt-2 text-ink-amber-2">
             Ensure no critical database operations are in progress before proceeding.
           </p>

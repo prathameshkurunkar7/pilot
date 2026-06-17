@@ -37,7 +37,7 @@ const BASE_TABS = [
 const isLinux = ref(false)
 const TABS = computed(() => {
   let tabs = isLinux.value
-    ? [...BASE_TABS, { key: 'volume', label: 'ZFS Volume' }]
+    ? [...BASE_TABS, { key: 'volume', label: 'Volume' }]
     : BASE_TABS
 
     return tabs
@@ -351,17 +351,17 @@ watch(() => props.modelValue, (val) => {
                 </div>
               </div>
 
-              <!-- ZFS Volume -->
+              <!-- Volume -->
               <div v-else-if="activeTab === 'volume'" class="flex flex-col gap-4">
                 <div class="grid grid-cols-2 gap-4">
-                  <FormControl label="Pool Name" :modelValue="form.volume.pool" disabled />
+                  <FormControl label="Volume Name" :modelValue="form.volume.pool" disabled />
                   <FormControl
                     v-if="form.volume.backing === 'image'"
-                    label="Disk Image"
+                    label="Storage File"
                     :modelValue="`${form.volume.image_path} (${form.volume.image_size})`"
                     disabled
                   />
-                  <FormControl v-else label="Block Device" :modelValue="form.volume.device" disabled />
+                  <FormControl v-else label="Disk" :modelValue="form.volume.device" disabled />
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                   <FormControl label="Bench Reservation" v-model="form.volume.benches_reservation" />

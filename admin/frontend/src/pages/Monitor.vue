@@ -166,7 +166,7 @@ onUnmounted(() => {
 
           <div v-if="stats.volume?.enabled">
             <div class="mb-2 flex items-baseline justify-between">
-              <span class="text-sm font-medium text-ink-gray-7">ZFS Pool</span>
+              <span class="text-sm font-medium text-ink-gray-7">Volume</span>
               <Badge :label="stats.volume.pool_health" :theme="poolHealthTheme(stats.volume.pool_health)" />
             </div>
             <p class="font-mono text-xs text-ink-gray-4">{{ stats.volume.pool }}</p>

@@ -77,9 +77,9 @@ def _validate(data: dict) -> str | None:
             return "volume_pool is required"
         backing = data.get("volume_backing", "auto")
         if backing == "device" and not data.get("volume_device"):
-            return "volume_device is required when volume backing is a block device"
+            return "A disk must be selected for dedicated disk storage"
         if backing == "image" and not data.get("volume_image_size"):
-            return "volume_image_size is required when volume backing is a disk image"
+            return "A storage file size is required for file-based storage"
     return None
 
 
