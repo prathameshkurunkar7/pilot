@@ -12,7 +12,7 @@ Scaffolds a starter `bench.toml` inside a new bench directory.
 1. Check that `benches/<name>/` does not already exist. If it does, print an error and exit.
 2. Create `benches/<name>/`.
 3. Write a minimal `bench.toml` with placeholder values to `benches/<name>/bench.toml`. Ports are auto-offset so the bench doesn't collide with existing ones. On Linux the bench is also given its **own** MariaDB instance (`mariadb.instance = <name>`, plus a per-instance socket/datadir) — see [Per-bench MariaDB instances](architecture.md#per-bench-mariadb-instances). On macOS it stays on the shared Homebrew MariaDB.
-4. Print a message telling the user to edit the file and then run `bench init`.
+4. Print a message telling the user to edit the file and then run `bench init -b <name>`.
 
 **Does not** touch the filesystem beyond creating the directory and writing `bench.toml`.
 
@@ -24,6 +24,7 @@ Installs and configures the entire environment described in `bench.toml`. Safe t
 
 ### Pre-conditions
 
+- A bench is named explicitly: pass `-b <name>` or run from inside the bench dir (no auto-pick).
 - `bench.toml` exists and is valid.
 - **Ubuntu:** The process has `sudo` access (required for `apt-get`).
 - **macOS:** Homebrew is installed (`brew` is in `$PATH`). No `sudo` required — Homebrew installs to user-owned directories.

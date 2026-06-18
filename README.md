@@ -112,7 +112,7 @@ It then runs the full initialization with a live progress view.
 ```bash
 bench new my-bench                      # creates bench.toml
 $EDITOR benches/my-bench/bench.toml     # set admin password, MariaDB root password (and admin_user if not root)
-bench init                              # installs deps, creates venv, clones frappe, generates Procfile
+bench init -b my-bench                  # installs deps, creates venv, clones frappe, generates Procfile
 bench get-app https://github.com/frappe/erpnext --branch version-16
 bench new-site site1.localhost
 bench start                             # starts web, workers, Redis, and admin UI
@@ -184,7 +184,7 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | Command | What it does |
 |---------|-------------|
 | `bench new <name>` | Scaffold a new bench |
-| `bench init` | Install deps, create venv, clone framework, generate Procfile |
+| `bench init -b <name>` | Install deps, create venv, clone framework, generate Procfile (needs `-b <name>` or run inside the bench dir) |
 | `bench start` | Start all processes (web, workers, Redis, admin UI) |
 | `bench stop` | Stop a running bench from another terminal |
 | `bench restart` | Restart all processes — supervisor or systemd (production only) |
