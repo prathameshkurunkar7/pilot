@@ -29,8 +29,9 @@ def find_bench_root() -> Path:
 
     Resolution order:
     1. -b / --bench <name> flag → benches/<name>/
-    2. Exactly one bench in benches/ → use it automatically.
-    3. Walk up from cwd (fallback for edge cases).
+    2. Walk up from cwd → the bench you're inside wins (even when many exist).
+    3. Exactly one bench in benches/ → use it automatically.
+    4. Multiple benches and no other signal → ask for -b.
     """
     benches_dir = cli_root() / "benches"
 
@@ -42,6 +43,13 @@ def find_bench_root() -> Path:
             raise BenchError(f"Bench '{_active_bench}' not found.\n{hint}")
         return bench_dir
 
+    # Inside a bench directory? Use it — this takes precedence over the
+    # multiple-benches ambiguity below, so `cd benches/x && bench <cmd>` works.
+    current = Path.cwd()
+    for directory in [current, *current.parents]:
+        if (directory / "bench.toml").exists():
+            return directory
+
     if benches_dir.is_dir():
         candidates = [d for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()]
         if len(candidates) == 1:
@@ -49,11 +57,6 @@ def find_bench_root() -> Path:
         if len(candidates) > 1:
             names = ", ".join(d.name for d in sorted(candidates))
             raise BenchError(f"Multiple benches found: {names}\nSpecify one with: bench -b <name> <command>")
-
-    current = Path.cwd()
-    for directory in [current, *current.parents]:
-        if (directory / "bench.toml").exists():
-            return directory
 
     raise BenchError("No bench found. Create one with: bench new <name>")
 
