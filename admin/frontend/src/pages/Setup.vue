@@ -308,9 +308,11 @@ async function nextStep() {
       error.value = 'MariaDB password is required'
       return
     }
-    // For shared DB, validate credentials against the running instance.
-    // For dedicated, init will create the instance — skip validation.
-    if (form.value.dedicated_db === 'shared') {
+    // Validate credentials against the running instance for any DB that init
+    // connects to rather than creates: shared system MariaDB on Linux, and
+    // macOS (which has no dedicated mode — it always uses the system MariaDB).
+    // For a Linux dedicated instance, init creates it — skip validation.
+    if (!isLinux.value || form.value.dedicated_db === 'shared') {
       loading.value = true
       try {
         const { state } = await postJson('/api/setup/validate-mariadb', {

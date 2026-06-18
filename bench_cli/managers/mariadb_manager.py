@@ -227,11 +227,7 @@ class MariaDBManager:
         import pymysql
 
         try:
-            # On macOS the local socket authenticates the OS user via the
-            # unix_socket plugin and ignores the password, so any password would
-            # appear valid. Force a TCP connection so the server actually
-            # enforces the password.
-            connection = self._connect(password, force_tcp=is_macos())
+            connection = self._connect(password)
         except pymysql.Error:
             return False
         connection.close()
@@ -287,21 +283,15 @@ class MariaDBManager:
                 cursor.execute("UNLOCK TABLES")
             connection.close()
 
-    def _connect(self, password: str | None = None, force_tcp: bool = False):
+    def _connect(self, password: str | None = None):
         import pymysql
 
-        # force_tcp bypasses the Unix socket so password authentication is
-        # actually enforced (see check_credentials); connecting to 127.0.0.1
-        # matches the root@'127.0.0.1' account rather than socket-only
-        # root@'localhost'.
-        host = "127.0.0.1" if force_tcp else self.config.host
-        unix_socket = None if force_tcp else (self._detect_socket() or None)
         return pymysql.connect(
-            host=host,
+            host=self.config.host,
             port=self.config.port,
             user=self.config.admin_user,
             password=self.config.root_password if password is None else password,
-            unix_socket=unix_socket,
+            unix_socket=self._detect_socket() or None,
         )
 
     def _detect_socket(self) -> str:
