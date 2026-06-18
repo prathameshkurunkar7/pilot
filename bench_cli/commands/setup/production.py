@@ -98,6 +98,10 @@ class SetupProductionCommand(Command):
             raise BenchError(f"Invalid process manager '{pm}'. Must be one of {', '.join(VALID_PROCESS_MANAGERS)}.")
         self.bench.config.production.process_manager = pm
         self.bench.config.production.enabled = True
+        # Production serves the admin behind its domain, so it must be enabled —
+        # otherwise the API answers 503 "Admin is disabled". The wizard sets this
+        # too; do it here so pure-CLI deploys are reachable as well.
+        self.bench.config.admin.enabled = True
         if self._domain_arg:
             self.bench.config.admin.domain = self._domain_arg
         if self._tls_arg is not None:
@@ -138,7 +142,7 @@ class SetupProductionCommand(Command):
         self._persist(
             {
                 "production": {"enabled": True, "process_manager": prod.process_manager},
-                "admin": {"domain": admin.domain, "tls": admin.tls},
+                "admin": {"domain": admin.domain, "tls": admin.tls, "enabled": True},
             }
         )
 

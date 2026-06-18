@@ -85,6 +85,15 @@ def test_resolve_target_uses_flag_over_config(tmp_path: Path) -> None:
     cmd._resolve_target()
     assert bench.config.production.process_manager == "systemd"
     assert bench.config.production.enabled is True
+    # Production must enable the admin so it's reachable behind its domain.
+    assert bench.config.admin.enabled is True
+
+
+def test_resolve_target_applies_tls_flag(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, tls=True)
+    cmd = SetupProductionCommand(bench, process_manager="systemd", admin_tls=False)
+    cmd._resolve_target()
+    assert bench.config.admin.tls is False
 
 
 def test_resolve_target_normalizes_supervisord(tmp_path: Path) -> None:
@@ -124,3 +133,4 @@ def test_persist_production_state_writes_enabled_and_drops_nginx(tmp_path: Path)
     assert data["production"]["process_manager"] == "systemd"
     assert "nginx" not in data["production"]
     assert data["admin"]["tls"] is True
+    assert data["admin"]["enabled"] is True
