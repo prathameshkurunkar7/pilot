@@ -705,9 +705,22 @@ def test_start_dev_uninitialized_runs_wizard(tmp_path: Path) -> None:
     from bench_cli.commands.start import RunCommand
 
     bench = make_bench(tmp_path)  # no process manager → dev
-    with patch.object(RunCommand, "_start_wizard") as wizard:
+    with patch.object(RunCommand, "_start_wizard") as wizard, \
+         patch("bench_cli.managers.process_manager.ProcessManager.stop"):
         RunCommand(bench).run()
     wizard.assert_called_once()
+
+
+def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
+    from bench_cli.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)  # dev
+    _mark_initialized(bench)
+    with patch("bench_cli.managers.process_manager.ProcessManager.stop") as stop, \
+         patch("bench_cli.managers.process_manager.ProcessManager.start") as start:
+        RunCommand(bench).run()
+    stop.assert_called_once()
+    start.assert_called_once()
 
 
 def test_start_production_uninitialized_brings_up_admin(tmp_path: Path) -> None:

@@ -25,8 +25,13 @@ class RunCommand(Command):
         process_manager = self.bench.config.production.process_manager
 
         # Dev bench (no process manager): run in the foreground, or the
-        # standalone setup wizard if it isn't initialized yet.
+        # standalone setup wizard if it isn't initialized yet. Stop any existing
+        # instance first (best-effort) so a stale process doesn't hold the ports.
         if not process_manager:
+            try:
+                ProcessManager(self.bench).stop()
+            except Exception:
+                pass
             if not initialized:
                 self._start_wizard()
                 return
