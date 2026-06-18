@@ -12,7 +12,7 @@ from bench_cli.config.mariadb_config import MariaDBConfig
 from bench_cli.config.nginx_config import NginxConfig
 from bench_cli.config.production_config import ProductionConfig
 from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.volume_config import BenchesDatasetConfig, ImageConfig, MariaDBDatasetConfig, VolumeConfig
+from bench_cli.config.volume_config import DatasetConfig, ImageConfig, VolumeConfig
 from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
 from bench_cli.exceptions import ConfigError
 
@@ -74,6 +74,9 @@ class BenchConfig:
         letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
         admin = cls._parse_admin(data.get("admin", {}))
         volume = cls._parse_volume(data.get("volume"))
+        # One dataset per bench, named after the bench unless explicitly set.
+        if not volume.name:
+            volume.name = bench_data.get("name", "")
         return cls(
             name=bench_data.get("name", ""),
             python_version=bench_data.get("python", ""),
@@ -170,7 +173,7 @@ class BenchConfig:
     @staticmethod
     def _parse_admin(data: dict) -> AdminConfig:
         return AdminConfig(
-            port=data.get("port", 8002),
+            port=data.get("port", 7000),
             timeout=data.get("timeout", 180),
             enabled=data.get("enabled", False),
             password=data.get("password", ""),
@@ -181,29 +184,23 @@ class BenchConfig:
     def _parse_volume(data: dict | None) -> VolumeConfig:
         if data is None:
             return VolumeConfig()
-        benches_data = data.get("benches", {})
-        mariadb_data = data.get("mariadb", {})
+        dataset_data = data.get("dataset", {})
         image_data = data.get("image", {})
         # Older tomls predate `backing`: an explicit device implies device backing.
         backing = data.get("backing") or ("device" if data.get("device") else "auto")
         return VolumeConfig(
             enabled=data.get("enabled", True),
             pool=data.get("pool", "bench-pool"),
+            name=data.get("name", ""),
             backing=backing,
             device=data.get("device", ""),
             image=ImageConfig(
                 size=image_data.get("size", ""),
                 path=image_data.get("path", ""),
             ),
-            benches=BenchesDatasetConfig(
-                reservation=benches_data.get("reservation", "10G"),
-                quota=benches_data.get("quota", "50G"),
-                data_dir=benches_data.get("data_dir", "/home/frappe/bench"),
-            ),
-            mariadb=MariaDBDatasetConfig(
-                reservation=mariadb_data.get("reservation", "5G"),
-                quota=mariadb_data.get("quota", "20G"),
-                data_dir=mariadb_data.get("data_dir", "/var/lib/mysql"),
+            dataset=DatasetConfig(
+                reservation=dataset_data.get("reservation", "5G"),
+                quota=dataset_data.get("quota", "50G"),
             ),
         )
 
@@ -339,13 +336,9 @@ class BenchConfig:
         if not self.volume.pool:
             raise ConfigError("volume.pool is required.")
         self._validate_volume_backing()
-        self._validate_zfs_size("volume.benches.reservation", self.volume.benches.reservation)
-        self._validate_zfs_size("volume.benches.quota", self.volume.benches.quota)
-        self._validate_zfs_size("volume.mariadb.reservation", self.volume.mariadb.reservation)
-        self._validate_zfs_size("volume.mariadb.quota", self.volume.mariadb.quota)
+        self._validate_zfs_size("volume.dataset.reservation", self.volume.dataset.reservation)
+        self._validate_zfs_size("volume.dataset.quota", self.volume.dataset.quota)
         self._validate_reservation_quota()
-        if not Path(self.volume.mariadb.data_dir).is_absolute():
-            raise ConfigError(f"volume.mariadb.data_dir '{self.volume.mariadb.data_dir}' must be an absolute path.")
 
     def _validate_volume_backing(self) -> None:
         backing = self.volume.backing
@@ -367,9 +360,9 @@ class BenchConfig:
     def _validate_reservation_quota(self) -> None:
         from bench_cli.managers.volume_manager import VolumeManager
 
-        for label, dataset in (("benches", self.volume.benches), ("mariadb", self.volume.mariadb)):
-            if error := VolumeManager.validate_reservation_within_quota(dataset.reservation, dataset.quota, label):
-                raise ConfigError(error)
+        dataset = self.volume.dataset
+        if error := VolumeManager.validate_reservation_within_quota(dataset.reservation, dataset.quota):
+            raise ConfigError(error)
 
     @staticmethod
     def _validate_zfs_size(field_name: str, value: str) -> None:
