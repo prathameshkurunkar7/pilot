@@ -25,6 +25,7 @@ FLAT_KEYS = {
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",
     "admin_tls": "admin.tls",
+    "letsencrypt_email": "letsencrypt.email",
     "volume_enabled": "volume.enabled",
     "volume_pool": "volume.pool",
     "volume_backing": "volume.backing",

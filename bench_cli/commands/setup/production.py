@@ -32,15 +32,33 @@ class SetupProductionCommand(Command):
             default=None,
             help="Admin domain (defaults to admin.domain in bench.toml).",
         )
+        tls = parser.add_mutually_exclusive_group()
+        tls.add_argument(
+            "--tls",
+            dest="admin_tls",
+            action="store_true",
+            default=None,
+            help="Terminate TLS for the admin via Let's Encrypt (default).",
+        )
+        tls.add_argument(
+            "--no-tls",
+            dest="admin_tls",
+            action="store_false",
+            default=None,
+            help="Don't terminate TLS — a central proxy fronts the admin on :80.",
+        )
 
     @classmethod
     def from_args(cls, args, bench):
-        return cls(bench, process_manager=args.process_manager, admin_domain=args.admin_domain)
+        return cls(bench, process_manager=args.process_manager, admin_domain=args.admin_domain,
+                   admin_tls=args.admin_tls)
 
-    def __init__(self, bench: "Bench", process_manager: Optional[str] = None, admin_domain: Optional[str] = None) -> None:
+    def __init__(self, bench: "Bench", process_manager: Optional[str] = None, admin_domain: Optional[str] = None,
+                 admin_tls: Optional[bool] = None) -> None:
         self.bench = bench
         self._pm_arg = process_manager
         self._domain_arg = admin_domain
+        self._tls_arg = admin_tls
 
     def run(self) -> None:
         self._require_linux()
@@ -82,6 +100,8 @@ class SetupProductionCommand(Command):
         self.bench.config.production.enabled = True
         if self._domain_arg:
             self.bench.config.admin.domain = self._domain_arg
+        if self._tls_arg is not None:
+            self.bench.config.admin.tls = self._tls_arg
 
     def _installed_manager(self) -> Optional[str]:
         """Which process manager already has a deployment on disk, if any —
@@ -232,5 +252,6 @@ class SetupProductionCommand(Command):
                 http_port = self.bench.config.nginx.http_port
                 port_suffix = "" if http_port == 80 else f":{http_port}"
                 print(f"  http://{site.config.name}{port_suffix}")
-        scheme = "https" if nginx_manager.admin_cert_exists() else "http"
+        admin_https = self.bench.config.admin.tls and nginx_manager.admin_cert_exists()
+        scheme = "https" if admin_https else "http"
         print(f"Admin:\n  {scheme}://{self.bench.config.admin.domain}")

@@ -28,6 +28,13 @@ class NewCommand(Command):
             default="",
             help="Admin domain for this bench (defaults to <name>-admin.localhost).",
         )
+        parser.add_argument(
+            "--no-tls",
+            dest="admin_tls",
+            action="store_false",
+            default=True,
+            help="Don't terminate TLS for the admin (a central proxy fronts it on :80).",
+        )
 
     @classmethod
     def from_args(cls, args, bench):
@@ -38,13 +45,16 @@ class NewCommand(Command):
             args.name,
             process_manager=args.process_manager,
             admin_domain=args.admin_domain,
+            admin_tls=args.admin_tls,
         )
 
-    def __init__(self, target_directory: Path, name: str, process_manager: str = "", admin_domain: str = "") -> None:
+    def __init__(self, target_directory: Path, name: str, process_manager: str = "",
+                 admin_domain: str = "", admin_tls: bool = True) -> None:
         self.target_directory = target_directory
         self.name = name
         self.process_manager = process_manager
         self.admin_domain = admin_domain
+        self.admin_tls = admin_tls
 
     def run(self) -> None:
         from bench_cli.config.bench_toml_builder import BenchTomlBuilder, default_ports
@@ -66,9 +76,16 @@ class NewCommand(Command):
         settings = {
             "admin_password": secrets.token_hex(nbytes=5),
             "admin_domain": self.admin_domain or f"{self.name}-admin.localhost",
+            "admin_tls": self.admin_tls,
         }
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager
+        # The Let's Encrypt account email is a server-wide setting; inherit it
+        # from a sibling bench so a new production bench can issue certs without
+        # re-entering it.
+        sibling_email = self._sibling_letsencrypt_email()
+        if sibling_email:
+            settings["letsencrypt_email"] = sibling_email
         # New benches get their own MariaDB instance (mariadb@<name>) with an
         # isolated socket/datadir; mariadb.port is offset automatically via
         # _PORT_FIELDS. Existing benches without these fields keep using the
@@ -89,6 +106,15 @@ class NewCommand(Command):
         print("\nNext step:")
         print("  bench start")
         print(f"  Open http://localhost:{admin_port} — the setup wizard guides you through the rest,")
+
+    def _sibling_letsencrypt_email(self) -> str:
+        """The Let's Encrypt email from any sibling bench that has one, so a new
+        production bench inherits the server-wide ACME account."""
+        for _, config in iter_sibling_benches(self.target_directory):
+            email = getattr(config.letsencrypt, "email", "")
+            if email:
+                return email
+        return ""
 
     def _pick_port_offset(self, bench_path: Path) -> int:
         """Smallest offset (added to every base port) that collides with

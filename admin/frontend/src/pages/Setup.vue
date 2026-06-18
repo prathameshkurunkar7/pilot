@@ -32,6 +32,7 @@ const form = ref({
   volume_mariadb_quota: '20G',
   production_process_manager: 'none',
   admin_domain: '',
+  admin_tls: true,
 })
 
 function addWorkerGroup() {
@@ -371,7 +372,8 @@ async function finishAndRedirectToDomain() {
     await postJson('/api/setup/finish', {})
   } catch {}
   // The admin now lives behind nginx at its domain, not the local wizard port.
-  const url = `https://${form.value.admin_domain.trim()}`
+  const scheme = form.value.admin_tls === false ? 'http' : 'https'
+  const url = `${scheme}://${form.value.admin_domain.trim()}`
   setTimeout(() => { window.location.href = url }, 2500)
 }
 
@@ -485,6 +487,15 @@ function backToConfig() {
             />
             <p class="mt-1 text-xs text-ink-gray-5">
               After init the bench is deployed to production and reachable at this domain.
+            </p>
+            <FormControl
+              class="mt-3"
+              type="checkbox"
+              label="Handle HTTPS for this bench"
+              v-model="form.admin_tls"
+            />
+            <p class="mt-1 text-xs text-ink-gray-5">
+              Uncheck if a central proxy already terminates TLS — this bench then serves plain HTTP on port 80.
             </p>
           </div>
           <FormControl
