@@ -23,6 +23,19 @@ const route = useRoute()
 const benches = ref([])
 const showBenchDialog = ref(false)
 const currentPort = window.location.port
+const currentHost = window.location.hostname
+
+function isCurrentBench(bench) {
+  if (bench.domain) return bench.domain === currentHost
+  return String(bench.port) === String(currentPort)
+}
+
+function benchUrl(bench) {
+  // Domain-routed (production) benches live behind nginx on the same scheme as
+  // the current page; dev benches are reachable directly on their admin port.
+  if (bench.domain) return `${window.location.protocol}//${bench.domain}`
+  return `${window.location.protocol}//${currentHost}:${bench.port}`
+}
 
 async function loadBenches() {
   try {
@@ -49,9 +62,9 @@ function openBenchDialog() {
   })
 }
 
-function switchBench(port) {
-  if (String(port) === String(currentPort)) return
-  window.location.href = `${window.location.protocol}//${window.location.hostname}:${port}`
+function switchBench(bench) {
+  if (isCurrentBench(bench)) return
+  window.location.href = benchUrl(bench)
 }
 
 const showNewBenchDialog = ref(false)
@@ -216,13 +229,13 @@ onUnmounted(() => clearInterval(pollTimer))
               v-for="bench in benches"
               :key="bench.port"
               class="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors w-full text-left"
-              :class="String(bench.port) === String(currentPort)
+              :class="isCurrentBench(bench)
                 ? 'bg-surface-gray-2 text-ink-gray-9 font-medium cursor-default'
                 : 'text-ink-gray-7 hover:bg-surface-gray-2 cursor-pointer'"
-              @click="switchBench(bench.port)"
+              @click="switchBench(bench)"
             >
               <span>{{ bench.name }}</span>
-              <LucideCheck v-if="String(bench.port) === String(currentPort)" class="h-4 w-4 text-ink-green-3" />
+              <LucideCheck v-if="isCurrentBench(bench)" class="h-4 w-4 text-ink-green-3" />
             </button>
           </div>
         </div>

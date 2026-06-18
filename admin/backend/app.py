@@ -35,6 +35,14 @@ _OPEN_PATHS = {"/api/status", "/api/login", "/api/logout"}
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
+def _port_open(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
 def _wizard_status(bench_root: Path) -> dict:
     name = bench_root.name
     try:
@@ -167,13 +175,18 @@ def create_app(bench_root: Path) -> Flask:
             try:
                 with open(toml_path, "rb") as f:
                     config = tomllib.load(f)
-                port = config.get("admin", {}).get("port")
+                admin = config.get("admin", {})
+                port = admin.get("port")
                 name = config.get("bench", {}).get("name", bench_dir.name)
                 if not port:
                     continue
-                with socket.create_connection(("127.0.0.1", port), timeout=0.5):
-                    pass
-                running.append({"name": name, "port": port})
+                # The admin binds `port` directly in dev, but under socket
+                # activation gunicorn binds internal_port (port + 1) and nginx
+                # serves the public domain — nothing listens on `port` itself.
+                # Probe both so domain-routed production benches still show up.
+                if not (_port_open(port) or _port_open(port + 1)):
+                    continue
+                running.append({"name": name, "port": port, "domain": admin.get("domain", "")})
             except Exception:
                 continue
         return jsonify(running)
