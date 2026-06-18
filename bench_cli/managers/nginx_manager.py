@@ -317,6 +317,14 @@ class NginxManager:
         run_command(["sudo", "cp", str(staged), str(_NGINX_CONF)])
         staged.unlink()
 
+    def uninstall_config(self) -> None:
+        """Remove this bench's nginx vhosts (the symlink in the config dir), then
+        validate and reload the remaining machine-wide config. Certs are kept."""
+        symlink_path = self.bench.config.nginx.config_dir / f"{self.bench.config.name}.conf"
+        if symlink_path.exists() or symlink_path.is_symlink():
+            run_command(["sudo", "unlink", str(symlink_path)])
+        self.reload()
+
     def reload(self) -> None:
         run_command(["sudo", "nginx", "-t"])
         if is_linux():

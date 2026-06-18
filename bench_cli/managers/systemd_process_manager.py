@@ -155,6 +155,27 @@ class SystemdProcessManager(ProcessManager):
             subprocess.run(self._systemctl("stop", unit), capture_output=True, env=env)
             subprocess.run(self._systemctl("disable", unit), capture_output=True, env=env)
 
+    def remove_units(self) -> None:
+        """Stop, disable and unlink every unit this bench owns (workload + admin).
+        Best-effort: missing units are ignored. Conf files under config/systemd
+        stay on disk; only the installed symlinks are removed."""
+        env = self._systemctl_env()
+        units = self._installed_bench_units() | {self._target_name()}
+        subprocess.run(self._systemctl("stop", self._target_name()), capture_output=True, env=env)
+        for unit in units:
+            subprocess.run(self._systemctl("stop", unit), capture_output=True, env=env)
+            subprocess.run(self._systemctl("disable", unit), capture_output=True, env=env)
+        if self.user_unit_dir.is_dir():
+            for dst in list(self.user_unit_dir.iterdir()):
+                if not dst.is_symlink():
+                    continue
+                try:
+                    if dst.resolve(strict=False).parent == self.systemd_conf_dir.resolve():
+                        dst.unlink()
+                except OSError:
+                    continue
+        subprocess.run(self._systemctl("daemon-reload"), capture_output=True, env=env)
+
     def is_configured(self) -> bool:
         result = subprocess.run(
             self._systemctl("is-enabled", self._target_name()),

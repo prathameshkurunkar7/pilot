@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import tomllib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from bench_cli.commands.base import Command
 from bench_cli.exceptions import BenchError
@@ -15,16 +16,38 @@ if TYPE_CHECKING:
 
 class SetupProductionCommand(Command):
     name = "production"
-    help = "Full production setup (process manager + nginx)."
+    help = "Deploy a bench to production (process manager + nginx)."
     group = "setup"
 
-    def __init__(self, bench: "Bench") -> None:
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--process-manager",
+            choices=["systemd", "supervisor", "supervisord"],
+            default=None,
+            help="Process manager to deploy with (defaults to production.process_manager in bench.toml).",
+        )
+        parser.add_argument(
+            "--admin-domain",
+            default=None,
+            help="Admin domain (defaults to admin.domain in bench.toml).",
+        )
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, process_manager=args.process_manager, admin_domain=args.admin_domain)
+
+    def __init__(self, bench: "Bench", process_manager: Optional[str] = None, admin_domain: Optional[str] = None) -> None:
         self.bench = bench
+        self._pm_arg = process_manager
+        self._domain_arg = admin_domain
 
     def run(self) -> None:
         self._require_linux()
+        self._resolve_target()
         self._check_admin_domain()
         self.bench.config.validate()
+        old_pm = self._installed_manager()
         self._write_dns_multitenancy()
         if self.bench.config.production.process_manager == "systemd":
             self._setup_systemd()
@@ -35,7 +58,68 @@ class SetupProductionCommand(Command):
 
         self._build_admin_for_production()
 
+        self._migrate_from(old_pm)
+        self._persist_production_state()
+
         self._print_summary()
+
+    def _resolve_target(self) -> None:
+        """Apply --process-manager / --admin-domain to the in-memory config so the
+        rest of setup operates on the requested target. The toml is written last."""
+        from bench_cli.config.bench_config import BenchConfig
+        from bench_cli.config.production_config import VALID_PROCESS_MANAGERS
+
+        pm = BenchConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager)
+        if not pm:
+            raise BenchError(
+                "No process manager configured. Pass --process-manager systemd|supervisor "
+                "(or set production.process_manager in bench.toml)."
+            )
+        if pm not in VALID_PROCESS_MANAGERS:
+            raise BenchError(f"Invalid process manager '{pm}'. Must be one of {', '.join(VALID_PROCESS_MANAGERS)}.")
+        self.bench.config.production.process_manager = pm
+        self.bench.config.production.enabled = True
+        if self._domain_arg:
+            self.bench.config.admin.domain = self._domain_arg
+
+    def _installed_manager(self) -> Optional[str]:
+        """Which process manager already has a deployment on disk, if any —
+        used to migrate when --process-manager differs."""
+        from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+
+        if SystemdProcessManager(self.bench).is_configured():
+            return "systemd"
+        if SupervisorProcessManager(self.bench).is_configured():
+            return "supervisor"
+        return None
+
+    def _migrate_from(self, old_pm: Optional[str]) -> None:
+        """Tear down the previous manager after the new one is up and healthy."""
+        new_pm = self.bench.config.production.process_manager
+        if not old_pm or old_pm == new_pm:
+            return
+        print(f"Migrating from {old_pm} to {new_pm}: removing old manager resources...")
+        if old_pm == "supervisor":
+            from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+
+            SupervisorProcessManager(self.bench).shutdown()
+        else:
+            from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+
+            SystemdProcessManager(self.bench).remove_units()
+
+    def _persist_production_state(self) -> None:
+        """Write the production state to bench.toml LAST, so the switcher never
+        points users at a half-built deployment."""
+        prod = self.bench.config.production
+        admin = self.bench.config.admin
+        self._persist(
+            {
+                "production": {"enabled": True, "process_manager": prod.process_manager},
+                "admin": {"domain": admin.domain, "tls": admin.tls},
+            }
+        )
 
     def _require_linux(self) -> None:
         from bench_cli.platform import is_linux
@@ -73,6 +157,8 @@ class SetupProductionCommand(Command):
         data = tomllib.loads(toml_path.read_text())
         for section, values in updates.items():
             data.setdefault(section, {}).update(values)
+        # Drop the deprecated production.nginx key — nginx is always on in prod.
+        data.get("production", {}).pop("nginx", None)
         write_toml(toml_path, data)
 
     def _write_dns_multitenancy(self) -> None:

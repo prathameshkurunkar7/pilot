@@ -70,3 +70,53 @@ def test_needs_letsencrypt(tmp_path: Path) -> None:
     assert not needs_letsencrypt(_make_bench(tmp_path, name="b", admin_domain="admin.example.com"))
     # Local dev domain → not obtainable.
     assert not needs_letsencrypt(_make_bench(tmp_path, name="c", admin_domain="c-admin.localhost", email="x@y.com"))
+
+
+# ── --process-manager / persist-last / migration ────────────────────────────────
+
+
+def test_resolve_target_uses_flag_over_config(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, process_manager="supervisor")
+    cmd = SetupProductionCommand(bench, process_manager="systemd")
+    cmd._resolve_target()
+    assert bench.config.production.process_manager == "systemd"
+    assert bench.config.production.enabled is True
+
+
+def test_resolve_target_normalizes_supervisord(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, process_manager="supervisor")
+    cmd = SetupProductionCommand(bench, process_manager="supervisord")
+    cmd._resolve_target()
+    assert bench.config.production.process_manager == "supervisor"
+
+
+def test_resolve_target_errors_without_manager(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, process_manager="none")
+    cmd = SetupProductionCommand(bench)
+    with pytest.raises(BenchError, match="No process manager"):
+        cmd._resolve_target()
+
+
+def test_resolve_target_applies_admin_domain(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path)
+    cmd = SetupProductionCommand(bench, process_manager="systemd", admin_domain="admin-new.example.com")
+    cmd._resolve_target()
+    assert bench.config.admin.domain == "admin-new.example.com"
+
+
+def test_persist_production_state_writes_enabled_and_drops_nginx(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, process_manager="supervisor")
+    # legacy nginx key present in toml
+    toml_path = bench.path / "bench.toml"
+    toml_path.write_text(toml_path.read_text().replace(
+        '[production]\nprocess_manager = "supervisor"\n',
+        '[production]\nprocess_manager = "supervisor"\nnginx = true\n',
+    ))
+    cmd = SetupProductionCommand(bench, process_manager="systemd")
+    cmd._resolve_target()
+    cmd._persist_production_state()
+    data = tomllib.loads(toml_path.read_text())
+    assert data["production"]["enabled"] is True
+    assert data["production"]["process_manager"] == "systemd"
+    assert "nginx" not in data["production"]
+    assert data["admin"]["tls"] is True

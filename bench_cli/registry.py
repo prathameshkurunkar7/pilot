@@ -10,6 +10,7 @@ from bench_cli.loader import load_bench
 # Help text for command groups (e.g. `bench setup ...`, `bench volume ...`).
 GROUP_HELP = {
     "setup": "Production setup commands.",
+    "remove": "Teardown commands.",
     "volume": "ZFS volume management commands.",
 }
 
