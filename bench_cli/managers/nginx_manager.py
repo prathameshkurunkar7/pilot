@@ -288,38 +288,10 @@ class NginxManager:
             + f"}}\n"
         )
 
-    def setup_wizard_routing(self, port: int) -> None:
-        """Route the admin domain to a standalone setup-wizard server on ``port``
-        over plain HTTP, so a freshly-created production bench is reachable at its
-        own domain while the user runs the setup wizard. ``bench setup production``
-        later regenerates this vhost to point at the managed admin."""
-        nginx_dir = self.bench.config_path / "nginx"
-        sites_dir = nginx_dir / "sites"
-        sites_dir.mkdir(parents=True, exist_ok=True)
-        domain = self.bench.config.admin.domain
-        webroot = self.bench.config.letsencrypt.webroot_path
-        http_port = self.bench.config.nginx.http_port
-        vhost = (
-            f"server {{\n"
-            f"    listen {http_port};\n"
-            f"    server_name {domain};\n\n"
-            f"    location /.well-known/acme-challenge/ {{\n"
-            f"        root {webroot};\n"
-            f"        try_files $uri =404;\n"
-            f"    }}\n\n"
-            + self._render_admin_proxy_location(port)
-            + f"}}\n"
-        )
-        (sites_dir / "_admin.conf").write_text(vhost)
-        self._write_include_conf(nginx_dir)
-        self.install_config()
-        self.reload()
-
-    def _render_admin_proxy_location(self, port: int | None = None) -> str:
-        proxy_port = port if port is not None else self._admin_proxy_port()
+    def _render_admin_proxy_location(self) -> str:
         return (
             f"    location / {{\n"
-            f"        proxy_pass         http://127.0.0.1:{proxy_port};\n"
+            f"        proxy_pass         http://127.0.0.1:{self._admin_proxy_port()};\n"
             f"        proxy_read_timeout 120;\n"
             f"        proxy_redirect     off;\n"
             f"        proxy_set_header   Host               $host;\n"

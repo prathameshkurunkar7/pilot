@@ -116,6 +116,17 @@ class SystemdProcessManager(ProcessManager):
         run_command(self._systemctl("enable", self._target_name()), env=env)
         self._activate_admin_socket(env)
 
+    def setup_admin(self) -> None:
+        """Bring up just the admin control plane (socket-activated), leaving the
+        workload down. Used to serve a new bench's setup wizard at its domain
+        before it's initialized; install_config activates the admin socket but
+        the workload target is only enabled, not started."""
+        # The admin service appends to logs/admin.log; the dir won't exist yet on
+        # an uninitialized bench, and systemd fails the unit if it's missing.
+        self.bench.logs_path.mkdir(parents=True, exist_ok=True)
+        self.generate_config()
+        self.install_config()
+
     def _activate_admin_socket(self, env: dict) -> None:
         """(Re)open the admin socket so a changed ListenStream takes effect.
 
@@ -322,6 +333,10 @@ class SystemdProcessManager(ProcessManager):
                     f"ExecStart={gunicorn} -c {admin_conf} admin.backend.wsgi:application",
                     # Re-activation happens via the socket, not systemd restart.
                     "Restart=no",
+                    # Only signal gunicorn itself on stop; never cgroup-kill. Tasks
+                    # (init, setup production, update) run as children of the admin
+                    # but must outlive it idle-stopping or restarting its own socket.
+                    "KillMode=process",
                     f"StandardOutput=append:{log_file}",
                     f"StandardError=append:{log_file}.error.log",
                 ]

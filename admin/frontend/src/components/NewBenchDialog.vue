@@ -100,13 +100,15 @@ async function createBench() {
       creating.value = false
       return
     }
-    // A production parent routes the bench's domain to the wizard; otherwise the
-    // wizard is reached on this host's raw port.
-    const target = data.wizard_at_domain && data.domain
-      ? `http://${data.domain}`
-      : `${window.location.protocol}//${window.location.hostname}:${data.port}`
     status.value = 'Bench created — opening setup…'
-    waitUntilLive(data.port, target)
+    if (data.wizard_at_domain && data.domain) {
+      // The bench's own (socket-activated) admin serves the wizard at its
+      // domain; it spins up on first request, so just go there.
+      window.location.href = `http://${data.domain}`
+    } else {
+      // Dev parent: standalone wizard on this host's raw port.
+      waitUntilLive(data.port, `${window.location.protocol}//${window.location.hostname}:${data.port}`)
+    }
   } catch {
     error.value = 'Failed to create bench'
     creating.value = false

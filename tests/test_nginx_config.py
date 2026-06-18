@@ -192,25 +192,6 @@ def test_admin_domain_proxy_under_supervisor(tmp_path: Path) -> None:
     assert f"proxy_pass         http://127.0.0.1:{bench.config.admin.port};" in content
 
 
-def test_setup_wizard_routing_points_domain_at_wizard_port(tmp_path: Path) -> None:
-    # The wizard routing is a plain-HTTP vhost sending the admin domain straight
-    # to the standalone wizard server on the given port (not internal_port).
-    bench = _make_bench(tmp_path, _ADMIN_SYSTEMD_DATA)
-    bench.create_directories()
-
-    manager = NginxManager(bench)
-    manager.install_config = lambda: None  # avoid sudo symlink/nginx.conf edits
-    manager.reload = lambda: None
-    manager.setup_wizard_routing(7000)
-
-    content = (tmp_path / "config" / "nginx" / "sites" / "_admin.conf").read_text()
-    assert "server_name admin.example.com;" in content
-    assert "listen 80;" in content
-    assert "proxy_pass         http://127.0.0.1:7000;" in content
-    assert "ssl_certificate" not in content
-    assert "return 301 https://" not in content
-
-
 def test_server_name_includes_all_domains(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)

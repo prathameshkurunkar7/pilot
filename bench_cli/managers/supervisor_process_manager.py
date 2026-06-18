@@ -76,6 +76,17 @@ class SupervisorProcessManager(ProcessManager):
         run_command([*self._supervisorctl(), "start", f"{self.admin_group}:*"])
         run_command([*self._supervisorctl(), "start", f"{self.workload_group}:*"])
 
+    def setup_admin(self) -> None:
+        """Bring up just the admin group, leaving the workload down — serves a new
+        bench's setup wizard at its domain before it's initialized."""
+        self.generate_config()
+        if self.is_alive():
+            run_command([*self._supervisorctl(), "reread"])
+            run_command([*self._supervisorctl(), "update"])
+        else:
+            run_command(["supervisord", "-c", str(self.supervisor_conf_path)])
+        run_command([*self._supervisorctl(), "start", f"{self.admin_group}:*"])
+
     def stop(self) -> None:
         """Stop the workload only; the admin group and supervisord daemon keep
         running so the control plane stays reachable while the workload is down."""

@@ -137,23 +137,20 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
     with client.session_transaction() as sess:
         sess["authenticated"] = True
 
-    class _Ok:
-        returncode, stdout, stderr = 0, "", ""
-
-    with patch("subprocess.run", return_value=_Ok()) as mock_run, \
-         patch("subprocess.Popen") as mock_popen, \
-         patch("bench_cli.managers.nginx_manager.NginxManager.setup_wizard_routing") as mock_route:
+    with patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.setup_admin") as mock_admin, \
+         patch("bench_cli.managers.nginx_manager.NginxManager.generate_config") as mock_gen, \
+         patch("bench_cli.managers.nginx_manager.NginxManager.install_config"), \
+         patch("bench_cli.managers.nginx_manager.NginxManager.reload"), \
+         patch("subprocess.Popen") as mock_popen:
         resp = client.post("/api/benches/new", json=_new_payload("fresh"))
 
     data = resp.get_json()
     assert data["wizard_at_domain"] is True
     assert data["domain"] == "fresh-admin.example.com"
-    mock_route.assert_called_once()
-    # A systemd parent is socket-activated, so the wizard is launched as its own
-    # transient user unit (independent cgroup), not a bare child process.
-    launch = mock_run.call_args[0][0]
-    assert "systemd-run" in launch and "--user" in launch
-    assert "admin.backend.server" in launch and "--wizard" in launch
+    # The new bench's OWN admin is brought up (no standalone wizard server) and
+    # nginx routes its domain to it.
+    mock_admin.assert_called_once()
+    mock_gen.assert_called_once()
     mock_popen.assert_not_called()
     # New benches from the UI default to plain HTTP (TLS is opt-in afterwards).
     assert "tls = false" in (benches_dir / "fresh" / "bench.toml").read_text()
