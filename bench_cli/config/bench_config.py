@@ -173,7 +173,7 @@ class BenchConfig:
     @staticmethod
     def _parse_admin(data: dict) -> AdminConfig:
         return AdminConfig(
-            port=data.get("port", 8002),
+            port=data.get("port", 7000),
             timeout=data.get("timeout", 180),
             enabled=data.get("enabled", False),
             password=data.get("password", ""),
