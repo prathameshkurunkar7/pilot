@@ -17,6 +17,7 @@ FLAT_KEYS = {
     "python": "python_version",
     "socketio_backend": "socketio_backend",
     "mariadb_password": "mariadb.root_password",
+    "mariadb_admin_user": "mariadb.admin_user",
     "mariadb_instance": "mariadb.instance",
     "mariadb_socket_path": "mariadb.socket_path",
     "mariadb_data_dir": "mariadb.data_dir",
@@ -32,11 +33,9 @@ FLAT_KEYS = {
     "volume_device": "volume.device",
     "volume_image_size": "volume.image.size",
     "volume_image_path": "volume.image.path",
-    "volume_benches_reservation": "volume.benches.reservation",
-    "volume_benches_quota": "volume.benches.quota",
-    "volume_mariadb_reservation": "volume.mariadb.reservation",
-    "volume_mariadb_quota": "volume.mariadb.quota",
-    "volume_mariadb_data_dir": "volume.mariadb.data_dir",
+    "volume_reservation": "volume.dataset.reservation",
+    "volume_quota": "volume.dataset.quota",
+    "production_process_manager": "production.process_manager",
 }
 
 # Framework branches the setup wizard offers, newest/recommended first. The

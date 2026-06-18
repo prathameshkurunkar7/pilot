@@ -104,6 +104,7 @@ class NginxManager:
         return (
             f"server {{\n"
             f"    listen {http_port};\n"
+            f"    listen [::]:{http_port};\n"
             f"    server_name {server_name};\n\n"
             f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
@@ -126,6 +127,7 @@ class NginxManager:
         return (
             f"server {{\n"
             f"    listen {http_port};\n"
+            f"    listen [::]:{http_port};\n"
             f"    server_name {server_name};\n\n"
             f"    location /.well-known/acme-challenge/ {{\n"
             f"        root {webroot};\n"
@@ -165,6 +167,7 @@ class NginxManager:
         return (
             f"server {{\n"
             f"    listen {https_port} ssl http2;\n"
+            f"    listen [::]:{https_port} ssl http2;\n"
             f"    server_name {server_name};\n\n"
             + ssl_directives
             + f"    root {bench_root}/sites;\n"
@@ -243,6 +246,7 @@ class NginxManager:
             return (
                 f"server {{\n"
                 f"    listen {http_port};\n"
+                f"    listen [::]:{http_port};\n"
                 f"    server_name {domain};\n\n"
                 + acme_block
                 + proxy_block
@@ -253,6 +257,7 @@ class NginxManager:
             return (
                 f"server {{\n"
                 f"    listen {http_port};\n"
+                f"    listen [::]:{http_port};\n"
                 f"    server_name {domain};\n\n"
                 + acme_block
                 + proxy_block
@@ -274,6 +279,7 @@ class NginxManager:
         return (
             f"server {{\n"
             f"    listen {http_port};\n"
+            f"    listen [::]:{http_port};\n"
             f"    server_name {domain};\n\n"
             + acme_block
             + f"    location / {{\n"
@@ -282,6 +288,7 @@ class NginxManager:
             f"}}\n\n"
             f"server {{\n"
             f"    listen {https_port} ssl http2;\n"
+            f"    listen [::]:{https_port} ssl http2;\n"
             f"    server_name {domain};\n\n"
             + ssl_directives
             + proxy_block

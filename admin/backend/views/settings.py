@@ -118,10 +118,8 @@ class ConfigPatcher:
         if not volume:
             return
         volume_config = self.config.volume
-        volume_config.benches.reservation = str(volume.get("benches_reservation", volume_config.benches.reservation))
-        volume_config.benches.quota = str(volume.get("benches_quota", volume_config.benches.quota))
-        volume_config.mariadb.reservation = str(volume.get("mariadb_reservation", volume_config.mariadb.reservation))
-        volume_config.mariadb.quota = str(volume.get("mariadb_quota", volume_config.mariadb.quota))
+        volume_config.dataset.reservation = str(volume.get("reservation", volume_config.dataset.reservation))
+        volume_config.dataset.quota = str(volume.get("quota", volume_config.dataset.quota))
 
     def _apply_admin(self) -> None:
         """TLS termination is opt-in: persisting tls=true only records the intent;
@@ -236,11 +234,8 @@ def _build_settings_response(config: BenchConfig) -> dict:
             "device": volume.device,
             "image_size": volume.image.size,
             "image_path": volume.image_path if volume.backing == "image" else "",
-            "benches_reservation": volume.benches.reservation,
-            "benches_quota": volume.benches.quota,
-            "mariadb_reservation": volume.mariadb.reservation,
-            "mariadb_quota": volume.mariadb.quota,
-            "mariadb_data_dir": volume.mariadb.data_dir,
+            "reservation": volume.dataset.reservation,
+            "quota": volume.dataset.quota,
         },
     }
 

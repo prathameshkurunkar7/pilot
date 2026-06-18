@@ -31,6 +31,15 @@ def save_config():
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
+    # A fresh install can only secure the pre-existing 'root' account
+    # (secure_installation runs ALTER USER 'root'@'localhost' — an arbitrary name
+    # is never created), so reject a custom root user for fresh installs. An
+    # existing DB can legitimately use a custom superuser.
+    admin_user = data.get("mariadb_admin_user") or "root"
+    if admin_user != "root" and _will_install_fresh(bench_root, data):
+        return jsonify({"ok": False, "error":
+            "A fresh MariaDB install only has the 'root' superuser; set the MariaDB root user to 'root'."}), 400
+
     # Preserve any settings the wizard didn't send (e.g. python version, fields
     # not shown in the current step). Incoming data wins on conflicts.
     toml_path = bench_root / "bench.toml"
@@ -49,48 +58,78 @@ def save_config():
 
 @setup_bp.route("/validate-mariadb", methods=["POST"])
 def validate_mariadb():
-    """Tell the wizard whether the entered root password will work.
+    """Tell the wizard whether the entered credentials will work.
 
-    - not installed `secure_installation` function will set this password
-    - dedicated instance not provisioned yet → init will create + secure it
-    - installed+valid everything is fine
-    - installed+invalid panic
+    Dedicated instance: not yet provisioned → bench init will create it → will_install.
+    Shared instance: must validate against the running system MariaDB.
     """
     from bench_cli.managers.mariadb_manager import MariaDBManager
 
     data = request.get_json(silent=True) or {}
     password = data.get("mariadb_password", "")
+    admin_user = data.get("mariadb_admin_user", "root")
+    dedicated = data.get("dedicated_db", True)  # True = dedicated, False = shared
 
-    # Carry the bench's instance/socket/port so a dedicated bench is validated
-    # against its own instance rather than the shared default.
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config = _mariadb_config(bench_root, password)
+    config = _mariadb_config(bench_root, password, admin_user, dedicated=dedicated)
     manager = MariaDBManager(config)
 
-    if not manager.is_installed():
+    # Fresh install → init will install + secure it (the wizard locks the root
+    # user to 'root' in this case, since secure_installation can only ALTER the
+    # pre-existing root account).
+    if _is_fresh_install(manager, dedicated):
         return jsonify({"state": "will_install"})
+
     if manager.check_credentials(password):
         return jsonify({"state": "valid"})
-    # A dedicated instance that isn't running yet will be created + secured by
-    # bench init — don't mistake "not provisioned" for "wrong password".
-    if manager.is_dedicated and not manager.service_is_active():
-        return jsonify({"state": "will_install"})
+
     return jsonify({"state": "invalid"})
 
 
-def _mariadb_config(bench_root: Path, password: str):
-    """Build a MariaDBConfig from the bench's toml with the entered password applied."""
+def _is_fresh_install(manager, dedicated: bool) -> bool:
+    """True when init will install/provision + secure MariaDB itself (rather than
+    connecting to an already-configured server)."""
+    if not manager.is_installed():
+        return True
+    # Dedicated instance not yet provisioned — init will create + secure it.
+    if dedicated and manager.is_dedicated and not manager.service_is_active():
+        return True
+    return False
+
+
+def _will_install_fresh(bench_root: Path, data: dict) -> bool:
+    """Fresh-install check for the /save payload (shared if no instance name)."""
+    from bench_cli.managers.mariadb_manager import MariaDBManager
+
+    dedicated = bool(data.get("mariadb_instance"))
+    config = _mariadb_config(
+        bench_root,
+        data.get("mariadb_password", ""),
+        data.get("mariadb_admin_user") or "root",
+        dedicated=dedicated,
+    )
+    return _is_fresh_install(MariaDBManager(config), dedicated)
+
+
+def _mariadb_config(bench_root: Path, password: str, admin_user: str = "root", dedicated: bool = True):
+    """Build a MariaDBConfig from the bench's toml with the entered credentials applied.
+
+    For shared DB (dedicated=False) we don't read the bench toml — the toml may
+    already have a dedicated instance name set (written by `bench new`), which would
+    make the manager try the dedicated socket that doesn't exist yet.
+    """
     from bench_cli.config.mariadb_config import MariaDBConfig
 
-    config = MariaDBConfig(root_password=password)
-    toml_path = bench_root / "bench.toml"
-    if toml_path.exists():
-        try:
-            settings = BenchTomlBuilder.read_settings(toml_path)
-            config.instance = settings.get("mariadb_instance", "") or ""
-            config.socket_path = settings.get("mariadb_socket_path", "") or ""
-        except Exception:
-            pass
+    config = MariaDBConfig(root_password=password, admin_user=admin_user)
+    if dedicated:
+        toml_path = bench_root / "bench.toml"
+        if toml_path.exists():
+            try:
+                settings = BenchTomlBuilder.read_settings(toml_path)
+                config.instance = settings.get("mariadb_instance", "") or ""
+                config.socket_path = settings.get("mariadb_socket_path", "") or ""
+            except Exception:
+                pass
     return config
 
 
@@ -113,8 +152,15 @@ def _validate(data: dict) -> str | None:
 def start_init():
     from bench_cli.config.bench_config import BenchConfig
     from bench_cli.managers.volume_manager import VolumeManager
+    from bench_cli.platform import has_passwordless_sudo, is_linux
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
+
+    # The wizard runs init as a no-TTY task; without passwordless sudo it would
+    # hang on a hidden password prompt. Surface a clean error instead.
+    if is_linux() and not has_passwordless_sudo():
+        return jsonify({"ok": False, "error": "Passwordless sudo is not configured. "
+                        "Run install.sh (or add /etc/sudoers.d/<user> NOPASSWD) and retry."}), 400
 
     # Pre-flight validation so volume sizing errors surface in the wizard
     # instead of failing deep inside the init task.
@@ -200,6 +246,8 @@ def stream_task(task_id: str):
         for line in reader.stream_output(task_id):
             if line.startswith("__DONE__:"):
                 yield f"event: done\ndata: {line[9:]}\n\n"
+            elif line.startswith("__CR__:"):
+                yield f"event: overwrite\ndata: {line[7:]}\n\n"
             else:
                 yield f"data: {line}\n\n"
 

@@ -333,12 +333,8 @@ watch(() => props.modelValue, (val) => {
                   <FormControl v-else label="Block Device" :modelValue="form.volume.device" disabled />
                 </div>
                 <div class="grid grid-cols-2 gap-4">
-                  <FormControl label="Bench Reservation" v-model="form.volume.benches_reservation" />
-                  <FormControl label="Bench Quota" v-model="form.volume.benches_quota" />
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                  <FormControl label="MariaDB Reservation" v-model="form.volume.mariadb_reservation" />
-                  <FormControl label="MariaDB Quota" v-model="form.volume.mariadb_quota" />
+                  <FormControl label="Reservation" v-model="form.volume.reservation" />
+                  <FormControl label="Quota" v-model="form.volume.quota" />
                 </div>
               </div>
 

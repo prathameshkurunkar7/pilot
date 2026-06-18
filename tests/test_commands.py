@@ -122,9 +122,10 @@ def test_new_command_writes_dedicated_mariadb_instance(tmp_path: Path, monkeypat
     assert data["mariadb"]["port"] == 3307  # base 3306 + offset 1
 
 
-def test_volume_setup_mounts_dataset_at_instance_datadir(tmp_path: Path) -> None:
-    """For an instance bench, the ZFS mariadb dataset mounts at the instance's
-    sibling datadir (not the shared /var/lib/mysql)."""
+def test_volume_setup_binds_mariadb_to_instance_datadir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """For an instance bench, the dataset's mariadb subdir bind-mounts onto the
+    instance's sibling datadir (not the shared /var/lib/mysql)."""
+    from bench_cli.commands import volume as volume_cmd
     from bench_cli.commands.volume import VolumeSetupCommand
 
     data = {
@@ -142,13 +143,29 @@ def test_volume_setup_mounts_dataset_at_instance_datadir(tmp_path: Path) -> None
     config = BenchConfig._from_dict(data)
     cmd = VolumeSetupCommand(config.volume, tmp_path / "shop", bench_config=config)
 
-    volume_manager = MagicMock()
-    cmd.setup_mariadb(volume_manager)
+    monkeypatch.setattr(volume_cmd, "run_command", MagicMock())
+    manager = MagicMock()
+    cmd._bind_mariadb(manager, Path("/shop-pool/shop"))
 
-    volume_manager.set_mountpoint.assert_called_once()
-    dataset, mountpoint = volume_manager.set_mountpoint.call_args[0]
-    assert dataset == config.volume.mariadb_dataset  # shop-pool/mariadb
-    assert str(mountpoint) == "/var/lib/mysql-shop"
+    manager.bind_mount.assert_called_once()
+    source, target = manager.bind_mount.call_args[0]
+    assert source == Path("/shop-pool/shop/mariadb")
+    assert str(target) == "/var/lib/mysql-shop"
+    manager.persist_bind_mount.assert_called_once()
+
+
+def test_volume_config_dataset_path_is_per_bench() -> None:
+    """Each bench gets one dataset named after it inside the shared pool."""
+    data = {
+        "bench": {"name": "shop", "python": "3.14"},
+        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
+        "mariadb": {"root_password": "root"},
+        "redis": {"cache_port": 13000, "queue_port": 11000},
+        "volume": {"enabled": True, "pool": "bench-pool"},
+    }
+    config = BenchConfig._from_dict(data)
+    assert config.volume.name == "shop"
+    assert config.volume.dataset_path == "bench-pool/shop"
 
 
 def test_new_command_skips_offset_with_live_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -748,3 +765,35 @@ def test_start_production_initialized_starts_manager(tmp_path: Path) -> None:
          patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.start") as start:
         RunCommand(bench).run()
     start.assert_called_once()
+
+
+# ── snapshot orchestrator (single global dataset) ─────────────────────────────
+
+
+def test_orchestrator_create_snapshot_quiesces_mariadb() -> None:
+    from bench_cli.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume = MagicMock()
+    volume.config.dataset_path = "bench-pool/shop"
+    mariadb = MagicMock()
+    SnapshotOrchestrator(volume, mariadb, None).create_snapshot("tag1")
+
+    mariadb.snapshot_lock.assert_called_once()
+    volume.snapshot.assert_called_once_with("bench-pool/shop", "tag1")
+
+
+def test_orchestrator_rollback_stops_mariadb_and_sets_maintenance() -> None:
+    from unittest.mock import call
+
+    from bench_cli.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume = MagicMock()
+    volume.config.dataset_path = "bench-pool/shop"
+    mariadb = MagicMock()
+    bench = MagicMock()
+    SnapshotOrchestrator(volume, mariadb, bench).rollback_snapshot("tag1")
+
+    mariadb.stop.assert_called_once()
+    mariadb.start.assert_called_once()
+    volume.rollback_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
+    assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]

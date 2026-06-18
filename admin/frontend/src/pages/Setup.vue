@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
-import { Button, FormControl, FormLabel, Password, ErrorMessage, TextInput, Slider } from 'frappe-ui'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { Button, FormControl, FormLabel, Password, Slider, ErrorMessage, Progress, FeatherIcon } from 'frappe-ui'
 import TerminalOutput from '../components/TerminalOutput.vue'
 import { processLine } from '../utils/ansi.js'
 
@@ -9,39 +9,51 @@ const emit = defineEmits(['done'])
 const step = ref('passwords')
 const error = ref('')
 const loading = ref(false)
+const benchName = ref('')
+const isLinux = ref(true)
+const dedicatedWillInstall = ref(false)  // true when a new dedicated instance will be created
+const sharedWillInstall = ref(false)     // true when the system/shared MariaDB isn't installed yet
+
+// Whether init will install + secure MariaDB for the selected mode (and so set
+// its root password to the entered value). macOS has no dedicated mode, so it
+// always follows the shared/system MariaDB.
+const dbWillInstall = computed(() => {
+  if (isLinux.value && form.value.dedicated_db === 'dedicated') return dedicatedWillInstall.value
+  return sharedWillInstall.value
+})
+const dbPasswordDescription = computed(() => {
+  if (!dbWillInstall.value) return undefined
+  if (isLinux.value && form.value.dedicated_db === 'dedicated')
+    return 'A new MariaDB instance will be created and its root password set to this value.'
+  return 'MariaDB will be installed and its root password set to this value.'
+})
+
+// ── init-task streaming state ─────────────────────────────────────────────
 const taskLines = ref([])
 const taskStreaming = ref(false)
 const terminal = ref(null)
-const benchName = ref('')
-const isLinux = ref(true)
+const progress = ref(0)
+const currentStep = ref('Starting…')
+const showDetails = ref(false)
 
 const form = ref({
-  mariadb_password: '',
   admin_password: '',
+  mariadb_password: '',
+  mariadb_admin_user: 'root',
+  dedicated_db: 'dedicated',  // 'dedicated' | 'shared' — Linux only, UI-only field
   app_repo: 'https://github.com/frappe/frappe',
   app_branch: 'develop',
   volume_enabled: false,
-  workers: [{ queues: 'default, short, long', count: 1 }],
   volume_pool: 'bench-pool',
-  volume_backing: 'device',
+  volume_backing: 'image',
   volume_device: '',
   volume_image_size: '60G',
-  volume_benches_reservation: '10G',
-  volume_benches_quota: '50G',
-  volume_mariadb_reservation: '5G',
-  volume_mariadb_quota: '20G',
+  volume_reservation: '15G',
+  volume_quota: '60G',
   production_process_manager: 'none',
   admin_domain: '',
   admin_tls: false,
 })
-
-function addWorkerGroup() {
-  form.value.workers.push({ queues: '', count: 1 })
-}
-
-function removeWorkerGroup(i) {
-  form.value.workers.splice(i, 1)
-}
 
 // ── framework branch dropdown (fetched from the admin backend) ────────────
 const branchOptions = ref([])
@@ -66,57 +78,20 @@ const branchSelectOptions = computed(() => {
   return options
 })
 
-// ── volume smart defaults ─────────────────────────────────────────────────
+// ── storage (volumes) ─────────────────────────────────────────────────────
+// Non-technical framing: "this machine's disk" (a disk image) vs "an attached
+// disk" (a dedicated block device). Pool name, reservations and quotas are kept
+// at smart defaults and never shown — advanced tuning lives in Settings.
 const CUSTOM_DEVICE = '__custom__'
 const availableDevices = ref([])
 const customDevice = ref(false)
-const sizesTouched = ref(false)
-
-// ── image-size slider, bounded by total rootfs free space ─────────────────
-const GIB = 1024 ** 3
-const rootfsFreeBytes = ref(0)
-const freeGiB = computed(() => Math.floor(rootfsFreeBytes.value / GIB))
-const imageSizeMaxGiB = computed(() => Math.max(5, freeGiB.value || 100))
-const imageSizeMinGiB = computed(() => Math.min(5, imageSizeMaxGiB.value))
-// Raw text input value — typed freely, clamped only on blur
-const imageSizeInputValue = ref(String(parseInt(form.value.volume_image_size) || 60))
-
-// Keep text input in sync when the form changes from outside (config load, slider drag)
-watch(
-  () => form.value.volume_image_size,
-  (size) => {
-    const n = parseInt(size)
-    if (!isNaN(n)) imageSizeInputValue.value = String(n)
-  }
-)
-
-function onImageSizeBlur() {
-  const n = parseInt(imageSizeInputValue.value)
-  const clamped = Math.min(
-    imageSizeMaxGiB.value,
-    Math.max(imageSizeMinGiB.value, isNaN(n) ? imageSizeMinGiB.value : n),
-  )
-  form.value.volume_image_size = `${clamped}G`
-}
-
-const imageSliderModel = computed({
-  get() {
-    const n = parseInt(form.value.volume_image_size) || imageSizeMinGiB.value
-    return [Math.min(imageSizeMaxGiB.value, Math.max(imageSizeMinGiB.value, n))]
-  },
-  set([n]) {
-    form.value.volume_image_size = `${n}G`
-  },
-})
 
 const deviceOptions = computed(() => [
   ...availableDevices.value.map((d) => ({
-    label: `${d.path} (${Math.floor(d.size_bytes / 1024 ** 3)}G${
-      d.pool ? `, pool: ${d.pool}` : d.has_signature ? ', stale data' : ''
-    })`,
+    label: `${d.path} (${Math.floor(d.size_bytes / 1024 ** 3)} GB${d.pool ? ', in use' : d.has_signature ? ', has data' : ''})`,
     value: d.path,
   })),
-  { label: 'Custom path…', value: CUSTOM_DEVICE },
+  { label: 'Other disk…', value: CUSTOM_DEVICE },
 ])
 const showDeviceDropdown = computed(() => availableDevices.value.length > 0 && !customDevice.value)
 
@@ -130,6 +105,14 @@ watch(
   }
 )
 
+function parseSize(value) {
+  // Positive integer with a required K/M/G/T/P suffix — no bare numbers, no decimals, no negatives.
+  const match = String(value).trim().toUpperCase().match(/^([1-9]\d*)\s*([KMGTP])$/)
+  if (!match) return null
+  const mult = { K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4, P: 1024 ** 5 }[match[2]]
+  return parseInt(match[1], 10) * mult
+}
+
 function backingSizeBytes() {
   if (form.value.volume_backing === 'device') {
     const device = availableDevices.value.find((d) => d.path === form.value.volume_device)
@@ -138,50 +121,81 @@ function backingSizeBytes() {
   return parseSize(form.value.volume_image_size)
 }
 
-// Mirrors the backend policy: quotas 60/40, reservations 10/5 of the backing size.
+// ── image size, bounded by free space on this machine's disk ───────────────
+const GIB = 1024 ** 3
+const rootfsFreeBytes = ref(0)
+const freeGiB = computed(() => Math.floor(rootfsFreeBytes.value / GIB))
+const imageSizeMaxGiB = computed(() => Math.max(5, freeGiB.value || 100))
+const imageSizeMinGiB = computed(() => Math.min(5, imageSizeMaxGiB.value))
+const imageSizeGiB = computed(() => parseInt(form.value.volume_image_size) || imageSizeMinGiB.value)
+
+const imageSliderModel = computed({
+  get: () => [Math.min(imageSizeMaxGiB.value, Math.max(imageSizeMinGiB.value, imageSizeGiB.value))],
+  set: ([n]) => { form.value.volume_image_size = `${n}G` },
+})
+
+// Keep the allocation within what's actually free, even if the saved default
+// was sized for a larger disk.
+function clampImageSize() {
+  const clamped = Math.min(imageSizeMaxGiB.value, Math.max(imageSizeMinGiB.value, imageSizeGiB.value))
+  form.value.volume_image_size = `${clamped}G`
+}
+
+// Mirrors the backend policy: a single dataset per bench — quota = whole
+// backing, reservation = 15%. Computed silently so the user never has to think
+// about ZFS datasets.
 function applySmartSizes() {
-  if (sizesTouched.value) return
   const bytes = backingSizeBytes()
   if (!bytes) return
   const wholeG = (n) => `${Math.max(1, Math.floor(n / 1024 ** 3))}G`
-  form.value.volume_benches_quota = wholeG(bytes * 0.6)
-  form.value.volume_mariadb_quota = wholeG(bytes * 0.4)
-  form.value.volume_benches_reservation = wholeG(bytes * 0.1)
-  form.value.volume_mariadb_reservation = wholeG(bytes * 0.05)
+  form.value.volume_quota = wholeG(bytes)
+  form.value.volume_reservation = wholeG(bytes * 0.15)
 }
 
-watch(
-  () => [form.value.volume_backing, form.value.volume_device, form.value.volume_image_size],
-  applySmartSizes
-)
+watch(() => form.value.dedicated_db, (val) => {
+  if (val === 'shared') form.value.volume_enabled = false
+  if (val === 'dedicated') form.value.mariadb_admin_user = 'root'
+})
+// A fresh install can only ever secure the pre-existing 'root' account, so lock
+// the root user to 'root' whenever init will install MariaDB itself.
+watch(dbWillInstall, (fresh) => {
+  if (fresh) form.value.mariadb_admin_user = 'root'
+}, { immediate: true })
+watch(() => [form.value.volume_backing, form.value.volume_device, form.value.volume_image_size], applySmartSizes)
 
-const configSteps = computed(() =>
-  isLinux.value && form.value.volume_enabled
-    ? ['passwords', 'customize', 'volume']
-    : ['passwords', 'customize']
-)
+// ── step flow ──────────────────────────────────────────────────────────────
+const configSteps = computed(() => {
+  const steps = ['passwords', 'database', 'customize']
+  if (isLinux.value && form.value.dedicated_db === 'dedicated' && form.value.volume_enabled)
+    steps.push('storage')
+  return steps
+})
 const stepNumber = computed(() => configSteps.value.indexOf(step.value) + 1)
 const isConfiguring = computed(() => stepNumber.value > 0)
-const isTerminal = computed(() => step.value === 'running')
-const modalWidthClass = computed(() => {
-  if (isTerminal.value) return 'max-w-2xl'
-  return 'max-w-lg'
-})
+const isRunning = computed(() => step.value === 'running')
+const isLastConfigStep = computed(() => step.value === configSteps.value[configSteps.value.length - 1])
+const modalWidthClass = computed(() => (isRunning.value && showDetails.value ? 'max-w-2xl' : 'max-w-lg'))
 
 const titles = {
-  passwords: 'Set up passwords',
+  passwords: 'Admin password',
+  database: 'Database',
   customize: 'Customize your bench',
-  volume: 'ZFS volume management',
-  running: 'Initializing bench…',
+  storage: 'Storage',
+  running: 'Setting up your bench',
   done: 'Setup complete',
 }
 const subtitles = {
-  volume: 'Choose where the ZFS pool lives — a spare disk or a disk image on the root filesystem',
+  database: 'Configure your MariaDB connection',
+  storage: 'Choose where your bench keeps its data',
 }
 const title = computed(() => titles[step.value] || benchName.value)
 const subtitle = computed(() => subtitles[step.value] || null)
 
-onMounted(loadConfig)
+onMounted(() => {
+  loadConfig()
+  document.addEventListener('visibilitychange', onVisibilityChange)
+})
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisibilityChange))
 
 async function loadConfig() {
   try {
@@ -194,14 +208,28 @@ async function loadConfig() {
     for (const key of Object.keys(form.value)) {
       if (data[key] !== undefined) form.value[key] = data[key]
     }
-    if (Array.isArray(data.workers) && data.workers.length)
-      form.value.workers = data.workers.map(g => ({ queues: (g.queues || []).join(', '), count: g.count }))
+    clampImageSize()
+    if (isLinux.value) form.value.dedicated_db = data.mariadb_instance ? 'dedicated' : 'shared'
     if (data.running_init_task_id) {
       step.value = 'running'
       streamTask(`/api/setup/stream/${data.running_init_task_id}`, onInitDone)
     }
   } catch {}
   fetchBranches()
+  checkDedicatedInstall()
+}
+
+// Check whether init will install MariaDB fresh for each mode, so the password
+// step can tell the user their entered value becomes the new root password.
+async function checkDedicatedInstall() {
+  try {
+    const [dedicated, shared] = await Promise.all([
+      postJson('/api/setup/validate-mariadb', { mariadb_password: '', dedicated_db: true }),
+      postJson('/api/setup/validate-mariadb', { mariadb_password: '', dedicated_db: false }),
+    ])
+    dedicatedWillInstall.value = dedicated.state === 'will_install'
+    sharedWillInstall.value = shared.state === 'will_install'
+  } catch {}
 }
 
 async function postJson(url, body) {
@@ -213,14 +241,45 @@ async function postJson(url, body) {
   return res.json()
 }
 
+// ── streaming + progress ─────────────────────────────────────────────────
+// Init prints `[N/M] description...` per step (see InitCommand). We parse those
+// to drive the progress bar; the raw output stays available behind "details".
+function updateProgress(raw) {
+  const match = raw.match(/^\[(\d+)\/(\d+)\]\s*(.+?)\.*\s*$/)
+  if (!match) return
+  const [, done, total, label] = match
+  progress.value = Math.round((parseInt(done) / parseInt(total)) * 100)
+  currentStep.value = label
+}
+
+function scrollTerminal() {
+  // Skip while the tab is hidden: scrolling against un-painted background-tab
+  // layout is what made the terminal jump to a blank area on return.
+  if (!document.hidden) terminal.value?.scrollToBottom()
+}
+
+function onVisibilityChange() {
+  if (!document.hidden) terminal.value?.scrollToBottom()
+}
+
 function streamTask(url, onDone) {
   taskLines.value = []
   taskStreaming.value = true
+  progress.value = 0
+  currentStep.value = 'Starting…'
+  let volatile = false // last line is an uncommitted \r progress preview
   const source = new EventSource(url)
   source.onmessage = (e) => {
+    if (volatile) { taskLines.value.pop(); volatile = false }
     taskLines.value.push(processLine(e.data))
-    terminal.value?.scrollToBottom()
+    updateProgress(e.data)
+    scrollTerminal()
   }
+  source.addEventListener('overwrite', (e) => {
+    if (volatile) taskLines.value[taskLines.value.length - 1] = processLine(e.data)
+    else { taskLines.value.push(processLine(e.data)); volatile = true }
+    scrollTerminal()
+  })
   source.addEventListener('done', (e) => {
     taskStreaming.value = false
     source.close()
@@ -229,31 +288,60 @@ function streamTask(url, onDone) {
   source.onerror = () => {
     taskStreaming.value = false
     source.close()
-    error.value = 'Lost connection to task stream.'
+    failWith('Lost connection to the setup process.')
   }
 }
 
+function failWith(message) {
+  error.value = message
+  showDetails.value = true // surface the terminal so the user can see what broke
+}
+
+function toggleDetails() {
+  showDetails.value = !showDetails.value
+  if (showDetails.value) scrollTerminal()
+}
+
+// ── navigation ─────────────────────────────────────────────────────────────
 async function nextStep() {
   if (step.value === 'passwords') {
-    if (!form.value.mariadb_password || !form.value.admin_password) {
-      error.value = 'All password fields are required'
+    if (!form.value.admin_password) {
+      error.value = 'Admin password is required'
       return
     }
+  }
+
+  if (step.value === 'database') {
+    if (!form.value.mariadb_password) {
+      error.value = 'MariaDB password is required'
+      return
+    }
+    // Always validate before leaving the database step. The endpoint reports
+    // 'will_install' (fresh — nothing to validate), 'valid', or 'invalid'.
+    // dedicated only applies to a Linux dedicated instance; shared system
+    // MariaDB (Linux 'shared' and all of macOS) validates the live credentials.
+    const dedicated = isLinux.value && form.value.dedicated_db === 'dedicated'
     loading.value = true
     try {
       const { state } = await postJson('/api/setup/validate-mariadb', {
         mariadb_password: form.value.mariadb_password,
+        mariadb_admin_user: form.value.mariadb_admin_user,
+        dedicated_db: dedicated,
       })
+      if (dedicated) dedicatedWillInstall.value = state === 'will_install'
+      else sharedWillInstall.value = state === 'will_install'
       if (state === 'invalid') {
-        error.value = 'Incorrect MariaDB root password.'
+        error.value = 'Incorrect MariaDB credentials.'
         return
       }
     } catch {
-      // Validation is best-effort; init still guards the password.
+      // Validation is best-effort against transport errors; init still guards
+      // the password. An explicit 'invalid' above always blocks.
     } finally {
       loading.value = false
     }
   }
+
   error.value = ''
   step.value = configSteps.value[configSteps.value.indexOf(step.value) + 1]
 }
@@ -264,50 +352,31 @@ function prevStep() {
 }
 
 async function saveConfig() {
-  const data = await postJson('/api/setup/save', form.value)
+  const payload = { ...form.value }
+  delete payload.dedicated_db
+  if (isLinux.value) {
+    if (form.value.dedicated_db === 'dedicated') {
+      payload.mariadb_instance = benchName.value
+      payload.mariadb_socket_path = `/run/mysqld/mysqld-${benchName.value}.sock`
+      payload.mariadb_data_dir = `/var/lib/mysql-${benchName.value}`
+      payload.mariadb_admin_user = 'root'  // fresh instance always has root; not user-configurable
+    } else {
+      payload.mariadb_instance = ''
+      payload.mariadb_socket_path = ''
+      payload.mariadb_data_dir = ''
+      payload.volume_enabled = false
+      // Shared: the root user is locked to 'root' only for a fresh install;
+      // an existing server may use a custom superuser (see the field's watcher).
+    }
+  }
+  const data = await postJson('/api/setup/save', payload)
   if (!data.ok) throw new Error(data.error || 'Failed to save configuration.')
 }
 
-async function startInitTask() {
-  const data = await postJson('/api/setup/init', {})
-  if (!data.ok) throw new Error(data.error || 'Failed to start initialization.')
-  return data.task_id
-}
-
-
-function parseSize(value) {
-  // Positive integer with a required K/M/G/T/P suffix — no bare numbers, no decimals, no negatives.
-  const match = String(value).trim().toUpperCase().match(/^([1-9]\d*)\s*([KMGTP])$/)
-  if (!match) return null
-  const mult = { K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4, P: 1024 ** 5 }[match[2]]
-  return parseInt(match[1], 10) * mult
-}
-
-function validateVolume() {
+function validateStorage() {
   if (!isLinux.value || !form.value.volume_enabled) return null
-  if (!form.value.volume_pool) return 'Pool name is required.'
-  const sizeHint = 'must be a positive integer with a K/M/G/T suffix (e.g. 10G)'
-  let imageSize = null
-  if (form.value.volume_backing === 'image') {
-    imageSize = parseSize(form.value.volume_image_size)
-    if (imageSize === null) return `Image size "${form.value.volume_image_size}" ${sizeHint}.`
-  } else if (!form.value.volume_device) {
-    return 'Block device is required.'
-  }
-  const datasets = [
-    ['Bench', form.value.volume_benches_reservation, form.value.volume_benches_quota],
-    ['MariaDB', form.value.volume_mariadb_reservation, form.value.volume_mariadb_quota],
-  ]
-  for (const [label, reservation, quota] of datasets) {
-    const res = parseSize(reservation)
-    const q = parseSize(quota)
-    if (res === null) return `${label} reservation "${reservation}" ${sizeHint}.`
-    if (q === null) return `${label} quota "${quota}" ${sizeHint}.`
-    if (res > q) return `${label} reservation (${reservation}) cannot exceed quota (${quota}).`
-    if (imageSize !== null && q > imageSize) {
-      return `${label} quota (${quota}) exceeds the disk image size (${form.value.volume_image_size}).`
-    }
-  }
+  if (form.value.volume_backing === 'device' && !form.value.volume_device)
+    return 'Please choose an attached disk.'
   return null
 }
 
@@ -317,17 +386,18 @@ async function initialize() {
     error.value = 'Admin domain is required for a production process manager.'
     return
   }
-  const volumeError = validateVolume()
-  if (volumeError) {
-    error.value = volumeError
+  const storageError = validateStorage()
+  if (storageError) {
+    error.value = storageError
     return
   }
   loading.value = true
   try {
     await saveConfig()
-    const taskId = await startInitTask()
+    const data = await postJson('/api/setup/init', {})
+    if (!data.ok) throw new Error(data.error || 'Failed to start setup.')
     step.value = 'running'
-    streamTask(`/api/setup/stream/${taskId}`, onInitDone)
+    streamTask(`/api/setup/stream/${data.task_id}`, onInitDone)
   } catch (e) {
     error.value = e.message
   } finally {
@@ -337,9 +407,11 @@ async function initialize() {
 
 function onInitDone(success) {
   if (!success) {
-    error.value = 'Initialization failed. Check the output above and try again.'
+    failWith('Setup failed. Open the details to see what went wrong, then try again.')
     return
   }
+  progress.value = 100
+  currentStep.value = 'Done'
   if (form.value.production_process_manager !== 'none') {
     deployProduction()
   } else {
@@ -363,6 +435,8 @@ function onProductionDone(success) {
     error.value = 'Production setup failed. Check the output above and try again.'
     return
   }
+  progress.value = 100
+  currentStep.value = 'Done'
   step.value = 'done'
   finishAndRedirectToDomain()
 }
@@ -405,6 +479,7 @@ async function pollUntilBenchIsBack() {
 
 function backToConfig() {
   error.value = ''
+  showDetails.value = false
   step.value = configSteps.value[configSteps.value.length - 1]
 }
 </script>
@@ -428,14 +503,35 @@ function backToConfig() {
       <!-- Body -->
       <div class="flex-1 overflow-y-auto p-5">
         <div v-if="step === 'passwords'" class="flex flex-col gap-4">
-          <div class="space-y-1.5">
-            <FormLabel label="MariaDB root password" />
-            <Password v-model="form.mariadb_password" placeholder="root" />
-          </div>
-          <div class="space-y-1.5">
-            <FormLabel label="Admin password" />
-            <Password v-model="form.admin_password" placeholder="Choose a password" @keydown.enter="nextStep" />
-          </div>
+          <Password label="Admin password" v-model="form.admin_password" placeholder="Choose a password" @keydown.enter="nextStep" />
+          <ErrorMessage v-if="error" :message="error" />
+        </div>
+
+        <div v-else-if="step === 'database'" class="flex flex-col gap-4">
+          <FormControl
+            v-if="isLinux"
+            type="select"
+            label="Database"
+            v-model="form.dedicated_db"
+            :options="[
+              { label: 'Dedicated instance (recommended)', value: 'dedicated' },
+              { label: 'Shared system MariaDB', value: 'shared' },
+            ]"
+          />
+          <FormControl
+            v-if="!isLinux || form.dedicated_db === 'shared'"
+            label="MariaDB root user"
+            v-model="form.mariadb_admin_user"
+            :disabled="dbWillInstall"
+            :description="dbWillInstall ? 'A fresh MariaDB install only has the \'root\' superuser.' : undefined"
+          />
+          <Password
+            label="MariaDB root password"
+            v-model="form.mariadb_password"
+            placeholder="password"
+            :description="dbPasswordDescription"
+            @keydown.enter="nextStep"
+          />
           <ErrorMessage v-if="error" :message="error" />
         </div>
 
@@ -447,27 +543,6 @@ function backToConfig() {
             :options="branchSelectOptions"
           />
           <FormControl label="Frappe repository" v-model="form.app_repo" />
-          <div class="space-y-1.5">
-            <FormLabel label="Workers" />
-            <p class="text-xs text-ink-gray-5">
-              Each group spawns <span class="font-medium">count</span> workers for the listed queues.
-            </p>
-            <div
-              v-for="(group, i) in form.workers"
-              :key="i"
-              class="grid grid-cols-[1fr_5rem_auto] items-center gap-2"
-            >
-              <TextInput v-model="group.queues" placeholder="default, short, long" />
-              <TextInput v-model.number="group.count" type="number" :min="1" />
-              <Button
-                variant="ghost"
-                icon="trash-2"
-                :disabled="form.workers.length === 1"
-                @click="removeWorkerGroup(i)"
-              />
-            </div>
-            <Button variant="subtle" icon-left="plus" label="Add group" @click="addWorkerGroup" />
-          </div>
           <FormControl
             type="select"
             label="Production process manager"
@@ -490,72 +565,64 @@ function backToConfig() {
             </p>
           </div>
           <FormControl
-            v-if="isLinux"
+            v-if="isLinux && form.dedicated_db === 'dedicated'"
             type="checkbox"
-            label="Enable ZFS volume management"
+            label="Use volumes (snapshots & backups)"
             v-model="form.volume_enabled"
           />
           <ErrorMessage v-if="error" :message="error" />
         </div>
 
-        <div v-else-if="step === 'volume'" class="flex flex-col gap-4">
+        <div v-else-if="step === 'storage'" class="flex flex-col gap-4">
           <FormControl
             type="select"
-            label="Storage backing"
+            label="Store data on"
             v-model="form.volume_backing"
             :options="[
-              { label: 'Dedicated block device', value: 'device' },
-              { label: 'Disk image on root filesystem (no spare disk needed)', value: 'image' },
+              { label: 'This machine\'s disk', value: 'image' },
+              { label: 'An attached disk', value: 'device' },
             ]"
           />
-          <FormControl label="Pool name" v-model="form.volume_pool" placeholder="bench-pool" />
           <FormControl
             v-if="form.volume_backing === 'device' && showDeviceDropdown"
             type="select"
-            label="Block device"
+            label="Attached disk"
             v-model="form.volume_device"
             :options="deviceOptions"
           />
           <FormControl
             v-else-if="form.volume_backing === 'device'"
-            label="Block device"
+            label="Attached disk"
             v-model="form.volume_device"
             placeholder="/dev/sdb"
           />
-          <div v-else-if="form.volume_backing === 'image'" class="space-y-1.5">
-            <div class="flex items-center justify-between gap-2">
-              <FormLabel label="Image size" />
-              <div class="flex items-center gap-1.5">
-                <TextInput
-                  type="number"
-                  class="w-20"
-                  :min="imageSizeMinGiB"
-                  :max="imageSizeMaxGiB"
-                  v-model="imageSizeInputValue"
-                  @blur="onImageSizeBlur"
-                />
-                <span class="text-xs text-ink-gray-5">GB of {{ freeGiB }} GB free</span>
-              </div>
+          <div v-else class="space-y-1.5">
+            <div class="flex items-baseline justify-between">
+              <FormLabel label="Space to allocate" />
+              <span class="text-sm text-ink-gray-5">{{ imageSizeGiB }} GB of {{ freeGiB }} GB free</span>
             </div>
             <Slider v-model="imageSliderModel" :min="imageSizeMinGiB" :max="imageSizeMaxGiB" :step="1" />
-          </div>
-          <p v-if="form.volume_backing === 'image'" class="text-xs text-ink-gray-4">
-            A preallocated {{ form.volume_image_size }} file will be created at
-            /var/lib/bench-zfs/{{ form.volume_pool || 'pool' }}.img and used as the ZFS pool.
-          </p>
-          <div class="grid grid-cols-2 gap-2">
-            <FormControl label="Bench reservation" v-model="form.volume_benches_reservation" @input="sizesTouched = true" />
-            <FormControl label="Bench quota" v-model="form.volume_benches_quota" @input="sizesTouched = true" />
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <FormControl label="MariaDB reservation" v-model="form.volume_mariadb_reservation" @input="sizesTouched = true" />
-            <FormControl label="MariaDB quota" v-model="form.volume_mariadb_quota" @input="sizesTouched = true" />
           </div>
           <ErrorMessage v-if="error" :message="error" />
         </div>
 
-        <div v-else-if="isTerminal" class="flex flex-col gap-3">
-          <TerminalOutput ref="terminal" :lines="taskLines" :streaming="taskStreaming" />
+        <div v-else-if="isRunning" class="flex flex-col gap-4">
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <p class="text-sm text-ink-gray-7">{{ currentStep }}</p>
+              <p class="text-sm text-ink-gray-4">{{ progress }}%</p>
+            </div>
+            <Progress :value="progress" size="md" />
+          </div>
+          <button
+            type="button"
+            class="flex items-center gap-1 self-start text-sm text-ink-gray-5 hover:text-ink-gray-7"
+            @click="toggleDetails"
+          >
+            <FeatherIcon :name="showDetails ? 'chevron-down' : 'chevron-right'" class="h-4 w-4" />
+            {{ showDetails ? 'Hide details' : 'Show details' }}
+          </button>
+          <TerminalOutput v-if="showDetails" ref="terminal" :lines="taskLines" :streaming="taskStreaming" />
           <ErrorMessage v-if="error" :message="error" />
         </div>
 
@@ -572,22 +639,27 @@ function backToConfig() {
       </div>
 
       <!-- Footer -->
-      <div v-if="(!isTerminal && step !== 'done') || error" class="flex gap-2 border-t border-outline-gray-2 px-5 py-4">
-        <Button v-if="stepNumber > 1 && isConfiguring" variant="subtle" class="flex-1" @click="prevStep">
-          Back
-        </Button>
-        <Button v-if="isTerminal && error" variant="subtle" class="w-full" @click="backToConfig">
+      <div v-if="(!isRunning && step !== 'done') || (isRunning && error)" class="flex gap-2 border-t border-outline-gray-2 px-5 py-4">
+        <Button v-if="isRunning && error" variant="subtle" class="w-full" @click="backToConfig">
           Back to configuration
         </Button>
-        <Button v-else-if="step === 'passwords'" variant="solid" :loading="loading" class="w-full" @click="nextStep">
-          Next
-        </Button>
-        <Button v-else-if="step !== configSteps[configSteps.length - 1] && isConfiguring" variant="solid" class="flex-1" @click="nextStep">
-          Next
-        </Button>
-        <Button v-else-if="isConfiguring" variant="solid" :loading="loading" class="flex-1" @click="initialize">
-          Initialize
-        </Button>
+        <template v-else>
+          <Button v-if="stepNumber > 1" variant="subtle" class="flex-1" @click="prevStep">
+            Back
+          </Button>
+          <Button v-if="step === 'passwords'" variant="solid" class="w-full" @click="nextStep">
+            Next
+          </Button>
+          <Button v-else-if="step === 'database'" variant="solid" :loading="loading" class="flex-1" @click="nextStep">
+            Next
+          </Button>
+          <Button v-else-if="!isLastConfigStep" variant="solid" class="flex-1" @click="nextStep">
+            Next
+          </Button>
+          <Button v-else variant="solid" :loading="loading" class="flex-1" @click="initialize">
+            Set up bench
+          </Button>
+        </template>
       </div>
     </div>
   </div>
