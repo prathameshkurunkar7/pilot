@@ -8,5 +8,5 @@ class GunicornConfig:
     timeout: int = 120
     worker_class: str = "gthread"
     malloc_arena_max: int = 2  # cap glibc malloc arenas; 0 = unset
-    max_requests: int = 0  # recycle web worker after N requests to release heap; 0 = disabled
-    max_requests_jitter: int = 0
+    max_requests: int = 2000  # recycle web worker after N requests to release heap; 0 = disabled
+    max_requests_jitter: int = 500
