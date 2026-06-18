@@ -1,6 +1,6 @@
 <script setup>
-import { Button, Dialog, ErrorMessage, FormControl, Sidebar, SidebarItem } from 'frappe-ui'
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { Sidebar, SidebarItem } from 'frappe-ui'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import LucideActivity from '~icons/lucide/activity'
 import LucideCamera from '~icons/lucide/camera'
@@ -14,164 +14,18 @@ import LucideStore from '~icons/lucide/store'
 import LucideSettings from '~icons/lucide/settings'
 import LucideRepeat from '~icons/lucide/repeat'
 import LucidePlus from '~icons/lucide/plus'
-import LucideCheck from '~icons/lucide/check'
 
-const emit = defineEmits(['logout', 'open-settings'])
+const emit = defineEmits(['logout', 'open-settings', 'change-bench', 'new-bench'])
 
 const route = useRoute()
-
-const benches = ref([])
-const showBenchDialog = ref(false)
-const currentPort = window.location.port
-const currentHost = window.location.hostname
-
-function isCurrentBench(bench) {
-  if (bench.domain) return bench.domain === currentHost
-  return String(bench.port) === String(currentPort)
-}
-
-function benchUrl(bench) {
-  // Domain-routed (production) benches live behind nginx on the same scheme as
-  // the current page; dev benches are reachable directly on their admin port.
-  if (bench.domain) return `${window.location.protocol}//${bench.domain}`
-  return `${window.location.protocol}//${currentHost}:${bench.port}`
-}
-
-async function loadBenches() {
-  try {
-    const response = await fetch('/api/benches/')
-    if (response.ok) {
-      benches.value = await response.json()
-    }
-  } catch { }
-}
-
-// These dialogs open from the sidebar header dropdown (reka-ui DropdownMenu).
-// The menu content is portaled near the trigger (top-left) and stays mounted
-// through its close animation, sitting *over* the dialog's upper fields. If the
-// dialog opens before the menu unmounts, that leftover content swallows clicks
-// on the fields it overlaps — so a click can't focus the input, even though Tab
-// (keyboard) still reaches it. Wait until the menu is fully gone, then open.
-function openAfterMenuCloses(fn) {
-  let tries = 0
-  const tick = () => {
-    const menuStillMounted = document.querySelector('[role="menu"], .dropdown-content')
-    if (!menuStillMounted || tries++ > 60) {
-      document.body.style.pointerEvents = ''
-      fn()
-    } else {
-      requestAnimationFrame(tick)
-    }
-  }
-  nextTick(() => requestAnimationFrame(tick))
-}
-
-function openBenchDialog() {
-  loadBenches()
-  openAfterMenuCloses(() => {
-    showBenchDialog.value = true
-  })
-}
-
-function switchBench(bench) {
-  if (isCurrentBench(bench)) return
-  window.location.href = benchUrl(bench)
-}
-
-const showNewBenchDialog = ref(false)
-const newBenchName = ref('')
-const newBenchProcessManager = ref('systemd')
-const newBenchAdminDomain = ref('')
-const newBenchError = ref('')
-const newBenchCreating = ref(false)
-const newBenchStatus = ref('')
-
-const processManagerOptions = [
-  { value: 'systemd', label: 'Systemd', hint: 'Recommended' },
-  { value: 'supervisor', label: 'Supervisor', hint: 'Alternative' },
-]
-
-function benchMode(bench) {
-  return bench.production ? 'Live' : 'Development'
-}
-
-function openNewBenchDialog() {
-  newBenchName.value = ''
-  newBenchProcessManager.value = 'systemd'
-  newBenchAdminDomain.value = ''
-  newBenchError.value = ''
-  newBenchCreating.value = false
-  newBenchStatus.value = ''
-  openAfterMenuCloses(() => {
-    showNewBenchDialog.value = true
-  })
-}
-
-async function waitUntilLive(port, attempt = 0) {
-  try {
-    const response = await fetch(`/api/benches/ready?port=${port}`)
-    if (response.ok) {
-      const data = await response.json()
-      if (data.ready) {
-        newBenchStatus.value = 'Bench created! Redirecting you to setup…'
-        window.location.href = `${window.location.protocol}//${window.location.hostname}:${port}`
-        return
-      }
-    }
-  } catch { }
-  if (attempt >= 60) {
-    newBenchError.value = 'New bench admin server did not come up in time.'
-    newBenchCreating.value = false
-    return
-  }
-  setTimeout(() => waitUntilLive(port, attempt + 1), 1000)
-}
-
-async function createBench() {
-  const name = newBenchName.value.trim()
-  if (!name) return
-  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-    newBenchError.value = "Bench name must contain only letters, numbers, '-' and '_'"
-    return
-  }
-  const adminDomain = newBenchAdminDomain.value.trim()
-  if (!adminDomain) {
-    newBenchError.value = 'Admin domain is required so the bench is reachable.'
-    return
-  }
-  newBenchError.value = ''
-  newBenchCreating.value = true
-  try {
-    const response = await fetch('/api/benches/new', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name,
-        process_manager: newBenchProcessManager.value,
-        admin_domain: adminDomain,
-      }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      newBenchError.value = data.error || 'Failed to create bench'
-      newBenchCreating.value = false
-      return
-    }
-    newBenchStatus.value = 'Bench created — waiting for it to come up…'
-    waitUntilLive(data.port)
-  } catch {
-    newBenchError.value = 'Failed to create bench'
-    newBenchCreating.value = false
-  }
-}
 
 const header = {
   title: 'Bench',
   logo: '/logos/frappe-icon.png',
   menuItems: [
     { label: 'Settings', icon: LucideSettings, onClick: () => emit('open-settings') },
-    { label: 'Change Bench', icon: LucideRepeat, onClick: openBenchDialog },
-    { label: 'New Bench', icon: LucidePlus, onClick: openNewBenchDialog },
+    { label: 'Change Bench', icon: LucideRepeat, onClick: () => emit('change-bench') },
+    { label: 'New Bench', icon: LucidePlus, onClick: () => emit('new-bench') },
     { label: 'Logout', icon: LucideLogOut, onClick: () => logout() },
   ],
 }
@@ -250,86 +104,5 @@ onUnmounted(() => clearInterval(pollTimer))
       </template>
       <template #footer-items />
     </Sidebar>
-
-    <Dialog v-model="showBenchDialog" title="Change Bench" size="lg" :showCloseButton="true">
-      <template #default>
-        <div v-if="benches.length === 0" class="rounded-lg bg-surface-gray-1 px-3 py-6 text-center text-sm text-ink-gray-5">
-          No other benches running.
-        </div>
-        <div v-else class="flex flex-col gap-1">
-          <button
-            v-for="bench in benches"
-            :key="bench.port"
-            class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors w-full"
-            :class="isCurrentBench(bench)
-              ? 'bg-surface-gray-2 cursor-default'
-              : 'hover:bg-surface-gray-2 cursor-pointer'"
-            @click="switchBench(bench)"
-          >
-            <span class="h-2 w-2 flex-shrink-0 rounded-full bg-ink-green-3" />
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-sm font-medium text-ink-gray-9">{{ bench.name }}</span>
-              <span class="block truncate text-xs text-ink-gray-5">{{ benchMode(bench) }}</span>
-            </span>
-            <span v-if="isCurrentBench(bench)" class="flex-shrink-0 text-xs font-medium text-ink-gray-5">Current</span>
-            <LucideCheck v-if="isCurrentBench(bench)" class="h-4 w-4 flex-shrink-0 text-ink-green-3" />
-          </button>
-        </div>
-      </template>
-    </Dialog>
-
-    <Dialog v-model="showNewBenchDialog" title="New Bench" size="lg" :showCloseButton="true">
-      <template #default>
-        <div class="flex flex-col gap-5">
-          <FormControl
-            label="Bench name"
-            type="text"
-            v-model="newBenchName"
-            placeholder="my-bench"
-            @input="newBenchError = ''"
-            @keyup.enter="createBench"
-          />
-          <div>
-            <span class="mb-1.5 block text-xs text-ink-gray-5">Process manager</span>
-            <div class="grid grid-cols-2 gap-2">
-              <button
-                v-for="opt in processManagerOptions"
-                :key="opt.value"
-                type="button"
-                class="rounded-lg border px-3 py-2 text-left transition-colors"
-                :class="newBenchProcessManager === opt.value
-                  ? 'border-outline-gray-3 bg-surface-gray-2'
-                  : 'border-outline-gray-2 hover:bg-surface-gray-1'"
-                @click="newBenchProcessManager = opt.value"
-              >
-                <span class="block text-sm font-medium text-ink-gray-9">{{ opt.label }}</span>
-                <span class="block text-xs text-ink-gray-5">{{ opt.hint }}</span>
-              </button>
-            </div>
-          </div>
-          <div>
-            <FormControl
-              label="Admin domain"
-              type="text"
-              v-model="newBenchAdminDomain"
-              placeholder="my-admin.example.com"
-              @input="newBenchError = ''"
-              @keyup.enter="createBench"
-            />
-            <p class="mt-1.5 text-xs text-ink-gray-5">
-              The web address you'll use to open this bench.
-            </p>
-          </div>
-          <ErrorMessage v-if="newBenchError" :message="newBenchError" />
-          <p v-if="newBenchStatus" class="text-sm text-ink-gray-6">{{ newBenchStatus }}</p>
-        </div>
-      </template>
-      <template #actions>
-        <div class="flex justify-end gap-2">
-          <Button variant="ghost" @click="showNewBenchDialog = false">Cancel</Button>
-          <Button variant="solid" :loading="newBenchCreating" @click="createBench">Create</Button>
-        </div>
-      </template>
-    </Dialog>
   </div>
 </template>
