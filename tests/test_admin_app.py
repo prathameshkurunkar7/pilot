@@ -73,6 +73,26 @@ def test_api_benches_lists_only_running_benches(tmp_path: Path) -> None:
     assert "dead-bench" not in names
 
 
+def test_api_benches_includes_production_metadata(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+
+    with _listening_socket() as live_port:
+        prod_dir = benches_dir / "prod-bench"
+        prod_dir.mkdir(parents=True, exist_ok=True)
+        (prod_dir / "bench.toml").write_text(
+            f'[bench]\nname = "prod-bench"\n\n'
+            f'[admin]\nport = {live_port}\ndomain = "admin-prod.example.com"\ntls = true\n\n'
+            f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
+        )
+        resp = client.get("/api/benches/")
+
+    entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
+    assert entry["production"] is True
+    assert entry["process_manager"] == "systemd"
+    assert entry["admin_url"] == "https://admin-prod.example.com"
+
+
 # ── POST /api/benches/new ────────────────────────────────────────────────────
 
 

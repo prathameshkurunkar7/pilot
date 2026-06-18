@@ -176,17 +176,35 @@ def create_app(bench_root: Path) -> Flask:
                 with open(toml_path, "rb") as f:
                     config = tomllib.load(f)
                 admin = config.get("admin", {})
+                prod = config.get("production", {})
                 port = admin.get("port")
                 name = config.get("bench", {}).get("name", bench_dir.name)
                 if not port:
                     continue
+                pm = str(prod.get("process_manager", "")).lower()
+                pm = "" if pm in ("", "none") else ("supervisor" if pm == "supervisord" else pm)
+                production = bool(prod.get("enabled", pm != ""))
+                domain = admin.get("domain", "")
+                tls = bool(admin.get("tls", True))
                 # The admin binds `port` directly in dev, but under socket
                 # activation gunicorn binds internal_port (port + 1) and nginx
                 # serves the public domain — nothing listens on `port` itself.
-                # Probe both so domain-routed production benches still show up.
-                if not (_port_open(port) or _port_open(port + 1)):
+                # A production admin stays reachable while its workload is
+                # stopped; a stopped dev bench is unavailable (dead port).
+                reachable = _port_open(port) or _port_open(port + 1)
+                if not reachable:
                     continue
-                running.append({"name": name, "port": port, "domain": admin.get("domain", "")})
+                scheme = "https" if tls else "http"
+                admin_url = f"{scheme}://{domain}" if production and domain else ""
+                running.append({
+                    "name": name,
+                    "port": port,
+                    "domain": domain,
+                    "production": production,
+                    "process_manager": pm or None,
+                    "runtime_state": "running",
+                    "admin_url": admin_url,
+                })
             except Exception:
                 continue
         return jsonify(running)
