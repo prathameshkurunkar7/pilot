@@ -238,41 +238,37 @@ onUnmounted(() => clearInterval(pollTimer))
 
     <Dialog v-model="showBenchDialog" title="Change Bench" size="sm" :showCloseButton="true">
       <template #default>
-        <div class="px-4 pb-6">
-          <div v-if="benches.length === 0" class="text-sm text-ink-gray-5 py-2">
-            No other benches running.
-          </div>
-          <div v-else class="flex flex-col gap-1">
-            <button
-              v-for="bench in benches"
-              :key="bench.port"
-              class="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors w-full text-left"
-              :class="isCurrentBench(bench)
-                ? 'bg-surface-gray-2 text-ink-gray-9 font-medium cursor-default'
-                : 'text-ink-gray-7 hover:bg-surface-gray-2 cursor-pointer'"
-              @click="switchBench(bench)"
-            >
-              <span>{{ bench.name }}</span>
-              <LucideCheck v-if="isCurrentBench(bench)" class="h-4 w-4 text-ink-green-3" />
-            </button>
-          </div>
+        <div v-if="benches.length === 0" class="text-sm text-ink-gray-5 py-2">
+          No other benches running.
+        </div>
+        <div v-else class="flex flex-col gap-1">
+          <button
+            v-for="bench in benches"
+            :key="bench.port"
+            class="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors w-full text-left"
+            :class="isCurrentBench(bench)
+              ? 'bg-surface-gray-2 text-ink-gray-9 font-medium cursor-default'
+              : 'text-ink-gray-7 hover:bg-surface-gray-2 cursor-pointer'"
+            @click="switchBench(bench)"
+          >
+            <span>{{ bench.name }}</span>
+            <LucideCheck v-if="isCurrentBench(bench)" class="h-4 w-4 text-ink-green-3" />
+          </button>
         </div>
       </template>
     </Dialog>
 
     <Dialog v-model="showNewBenchDialog" title="New Bench" size="sm" :showCloseButton="true">
       <template #default>
-        <div class="px-4 flex flex-col gap-4">
-          <div autofocus>
-            <FormControl
-              label="Bench name"
-              type="text"
-              v-model="newBenchName"
-              placeholder="my-bench"
-              @input="newBenchError = ''"
-              @keyup.enter="createBench"
-            />
-          </div>
+        <div class="flex flex-col gap-4">
+          <FormControl
+            label="Bench name"
+            type="text"
+            v-model="newBenchName"
+            placeholder="my-bench"
+            @input="newBenchError = ''"
+            @keyup.enter="createBench"
+          />
           <FormControl
             label="Process manager"
             type="select"
@@ -288,16 +284,18 @@ onUnmounted(() => clearInterval(pollTimer))
               @input="newBenchError = ''"
               @keyup.enter="createBench"
             />
-            <p class="mt-1 text-xs text-ink-gray-5">
+            <p class="mt-1.5 text-xs text-ink-gray-5">
               The bench's admin is reached at this domain in production (nginx-fronted).
             </p>
           </div>
           <ErrorMessage v-if="newBenchError" :message="newBenchError" />
           <p v-if="newBenchStatus" class="text-sm text-ink-gray-6">{{ newBenchStatus }}</p>
-          <div class="flex justify-end gap-2 border-t border-outline-gray-1 pt-3">
-            <Button variant="ghost" @click="showNewBenchDialog = false">Cancel</Button>
-            <Button variant="solid" :loading="newBenchCreating" @click="createBench">Create</Button>
-          </div>
+        </div>
+      </template>
+      <template #actions>
+        <div class="flex justify-end gap-2">
+          <Button variant="ghost" @click="showNewBenchDialog = false">Cancel</Button>
+          <Button variant="solid" :loading="newBenchCreating" @click="createBench">Create</Button>
         </div>
       </template>
     </Dialog>
