@@ -431,7 +431,7 @@ Accepts a JSON body with any subset of the settings sections. Only keys present 
 
 **Process restart:** If any value in `bench.http_port`, `bench.socketio_port`, `redis.*_port`, `workers.*`, or `production.process_manager` changed, bench regenerates config files and restarts the running process manager (supervisor or systemd) automatically — excluding the admin process itself so the response is delivered before the restart.
 
-**ZFS quota/reservation:** If `volume.benches_quota`, `volume.mariadb_quota`, `volume.benches_reservation`, or `volume.mariadb_reservation` changed, the new values are applied via `zfs set` after writing `bench.toml`. Quota changes are validated before saving: if the new quota is less than the dataset's current used size, the request is rejected with HTTP 400 and the config is not modified.
+**ZFS quota/reservation:** If `volume.quota` or `volume.reservation` changed, the new values are applied to the bench's dataset via `zfs set` after writing `bench.toml`. Quota changes are validated before saving: if the new quota is less than the dataset's current used size, the request is rejected with HTTP 400 and the config is not modified.
 
 **Error responses:**
 
@@ -439,7 +439,7 @@ Accepts a JSON body with any subset of the settings sections. Only keys present 
 |-----------|------|------|
 | JSON parse error | 400 | `{"ok": false, "error": "..."}` |
 | Validation failure (port out of range, etc.) | 400 | `{"ok": false, "error": "..."}` |
-| ZFS quota below current used size | 400 | `{"ok": false, "error": "Quota 5G is less than current used size (12.4G) for benches dataset"}` |
+| ZFS quota below current used size | 400 | `{"ok": false, "error": "Quota 5G is less than current used size (12.4G) for shop dataset"}` |
 | bench.toml write failure | 500 | `{"ok": false, "error": "Failed to write config: ..."}` |
 | ZFS set failure (post-save) | 200 | `{"ok": true, ..., "zfs_error": "..."}` |
 
@@ -462,7 +462,7 @@ The frontend presents settings as a tabbed modal dialog. Tabs are:
 | **Let's Encrypt** | Email, Webroot Path | — |
 | **Production** | Process Manager (none/supervisor/systemd) | — |
 | **Updates** | — | Current version, update availability badge; Update button |
-| **ZFS Volume** *(Linux only)* | Bench Quota, Bench Reservation, MariaDB Quota, MariaDB Reservation, Enable Snapshots | Pool Name, Block Device |
+| **ZFS Volume** *(Linux only)* | Quota, Reservation | Pool Name, Block Device |
 
 MariaDB fields are read-only because the host, port, credentials, and socket path are set once during `bench init` and cannot be meaningfully changed by editing `bench.toml` after the fact — the database server itself is not reconfigured.
 

@@ -24,7 +24,7 @@ class SnapshotReader:
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
 
-    def read(self, dataset_filter: str | None = None) -> SnapshotStatus:
+    def read(self) -> SnapshotStatus:
         from bench_cli.config.bench_config import BenchConfig
         from bench_cli.managers.volume_manager import VolumeManager
         from bench_cli.platform import is_linux
@@ -35,30 +35,21 @@ class SnapshotReader:
         if not is_linux():
             return SnapshotStatus(volume_enabled=False, snapshots_enabled=False)
 
-        datasets = self._resolve_datasets(volume_config, dataset_filter)
         manager = VolumeManager(volume_config)
-        snapshots = self._collect_snapshots(manager, datasets)
+        snapshots = self._collect_snapshots(manager, volume_config.dataset_path)
         return SnapshotStatus(
             volume_enabled=True,
             snapshots_enabled=True,
             snapshots=snapshots,
         )
 
-    def _resolve_datasets(self, volume_config, dataset_filter: str | None) -> list[str]:
-        if dataset_filter == "mariadb":
-            return [volume_config.mariadb_dataset]
-        if dataset_filter == "benches":
-            return [volume_config.benches_dataset]
-        return [volume_config.benches_dataset, volume_config.mariadb_dataset]
-
-    def _collect_snapshots(self, manager, datasets: list[str]) -> list[SnapshotEntry]:
-        snapshots = []
-        for dataset in datasets:
-            for snap in manager.list_snapshots(dataset):
-                snapshots.append(SnapshotEntry(
-                    dataset=snap.dataset,
-                    tag=snap.snapshot_tag,
-                    created_at=snap.created_at,
-                    used_bytes=snap.used_bytes,
-                ))
-        return snapshots
+    def _collect_snapshots(self, manager, dataset: str) -> list[SnapshotEntry]:
+        return [
+            SnapshotEntry(
+                dataset=snap.dataset,
+                tag=snap.snapshot_tag,
+                created_at=snap.created_at,
+                used_bytes=snap.used_bytes,
+            )
+            for snap in manager.list_snapshots(dataset)
+        ]

@@ -112,15 +112,9 @@ def bench_config_to_toml(config: BenchConfig) -> str:
             parts.append(f'device = "{v.device}"')
         # backing = "auto" carries no device/image fields — resolved during bench init
         parts.append("")
-        parts.append("[volume.benches]")
-        parts.append(f'reservation = "{v.benches.reservation}"')
-        parts.append(f'quota = "{v.benches.quota}"')
-        parts.append(f'data_dir = "{v.benches.data_dir}"')
-        parts.append("")
-        parts.append("[volume.mariadb]")
-        parts.append(f'reservation = "{v.mariadb.reservation}"')
-        parts.append(f'quota = "{v.mariadb.quota}"')
-        parts.append(f'data_dir = "{v.mariadb.data_dir}"')
+        parts.append("[volume.dataset]")
+        parts.append(f'reservation = "{v.dataset.reservation}"')
+        parts.append(f'quota = "{v.dataset.quota}"')
         parts.append("")
 
     return "\n".join(parts)

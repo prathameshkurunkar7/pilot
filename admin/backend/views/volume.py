@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify
 
 from ..readers.snapshot_reader import SnapshotReader
 from ..readers.volume_reader import VolumeReader
@@ -74,7 +74,7 @@ def status():
 def list_snapshots():
     bench_root = current_app.config["BENCH_ROOT"]
     try:
-        status = SnapshotReader(bench_root).read(request.args.get("dataset"))
+        status = SnapshotReader(bench_root).read()
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -101,62 +101,35 @@ def list_snapshots():
 def create_snapshot():
     bench_root = current_app.config["BENCH_ROOT"]
     config = _get_config(bench_root)
-    body = request.get_json(silent=True) or {}
-    dataset_name = body.get("dataset")
-    if dataset_name == "mariadb":
-        datasets = [config.mariadb_dataset]
-    elif dataset_name == "benches":
-        datasets = [config.benches_dataset]
-    else:
-        datasets = [config.benches_dataset, config.mariadb_dataset]
-
     tag = datetime.now().strftime("%Y%m%d-%H%M%S")
     try:
         orchestrator = _get_orchestrator(bench_root)
-        created = []
-        for ds in datasets:
-            orchestrator.create_snapshot(ds, tag)
-            created.append(f"{ds}@{tag}")
+        orchestrator.create_snapshot(tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    return jsonify({"ok": True, "tag": tag, "snapshots": created})
+    return jsonify({"ok": True, "tag": tag, "snapshots": [f"{config.dataset_path}@{tag}"]})
 
 
-@volume_bp.route("/snapshots/<dataset>/<tag>/rollback", methods=["POST"])
-def rollback_snapshot(dataset: str, tag: str):
+@volume_bp.route("/snapshots/<tag>/rollback", methods=["POST"])
+def rollback_snapshot(tag: str):
     bench_root = current_app.config["BENCH_ROOT"]
-    config = _get_config(bench_root)
-    if dataset == "mariadb":
-        full_dataset = config.mariadb_dataset
-    elif dataset == "benches":
-        full_dataset = config.benches_dataset
-    else:
-        return jsonify({"error": f"Unknown dataset '{dataset}'. Use 'benches' or 'mariadb'."}), 400
-
     try:
         orchestrator = _get_orchestrator(bench_root)
-        orchestrator.rollback_snapshot(full_dataset, tag)
+        orchestrator.rollback_snapshot(tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
     return jsonify({"ok": True})
 
 
-@volume_bp.route("/snapshots/<dataset>/<tag>", methods=["DELETE"])
-def destroy_snapshot(dataset: str, tag: str):
+@volume_bp.route("/snapshots/<tag>", methods=["DELETE"])
+def destroy_snapshot(tag: str):
     bench_root = current_app.config["BENCH_ROOT"]
     config = _get_config(bench_root)
-    if dataset == "mariadb":
-        full_dataset = config.mariadb_dataset
-    elif dataset == "benches":
-        full_dataset = config.benches_dataset
-    else:
-        return jsonify({"error": f"Unknown dataset '{dataset}'. Use 'benches' or 'mariadb'."}), 400
-
     try:
         manager = _get_volume_manager(bench_root)
-        manager.destroy_snapshot(full_dataset, tag)
+        manager.destroy_snapshot(config.dataset_path, tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

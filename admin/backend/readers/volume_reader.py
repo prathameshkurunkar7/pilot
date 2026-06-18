@@ -41,8 +41,7 @@ class VolumeReader:
             pool=config.pool,
             pool_health=health,
             datasets=[
-                self._read_dataset(config.benches_dataset),
-                self._read_dataset(config.mariadb_dataset),
+                self._read_dataset(config.dataset_path),
             ],
         )
 

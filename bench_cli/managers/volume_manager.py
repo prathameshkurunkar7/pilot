@@ -44,13 +44,13 @@ class PoolInfo:
     datasets: list[DatasetInfo] = field(default_factory=list)
 
 
-# Smart sizing policy: strict 60/40 quota split between benches and mariadb,
-# 10/5 reservations, image sized at 75% of the root filesystem's free space.
+# Smart sizing policy: a single dataset per bench may grow to fill its backing
+# (quota = 100%), with a 15% guaranteed reservation; image sized at 75% of the
+# root filesystem's free space. The user lowers the quota to fit more benches in
+# a shared pool.
 _MIN_USABLE_DISK_BYTES = 10 * 1024**3
-_BENCHES_QUOTA_FRACTION = 0.60
-_MARIADB_QUOTA_FRACTION = 0.40
-_BENCHES_RESERVATION_FRACTION = 0.10
-_MARIADB_RESERVATION_FRACTION = 0.05
+_DATASET_QUOTA_FRACTION = 1.0
+_DATASET_RESERVATION_FRACTION = 0.15
 _IMAGE_FREE_SPACE_FRACTION = 0.75
 
 
@@ -211,10 +211,8 @@ def default_image_size_bytes() -> int:
 def smart_dataset_sizes(backing_bytes: int) -> dict:
     """Quota/reservation defaults derived from the backing size (flat wizard keys)."""
     return {
-        "volume_benches_quota": _whole_gigabytes(backing_bytes * _BENCHES_QUOTA_FRACTION),
-        "volume_mariadb_quota": _whole_gigabytes(backing_bytes * _MARIADB_QUOTA_FRACTION),
-        "volume_benches_reservation": _whole_gigabytes(backing_bytes * _BENCHES_RESERVATION_FRACTION),
-        "volume_mariadb_reservation": _whole_gigabytes(backing_bytes * _MARIADB_RESERVATION_FRACTION),
+        "volume_quota": _whole_gigabytes(backing_bytes * _DATASET_QUOTA_FRACTION),
+        "volume_reservation": _whole_gigabytes(backing_bytes * _DATASET_RESERVATION_FRACTION),
     }
 
 
@@ -267,10 +265,8 @@ def resolve_auto_backing(config: VolumeConfig) -> str:
         config.backing = "image"
         config.image.size = _whole_gigabytes(backing_bytes)
         choice = f"No unused disk found — using a {config.image.size} image file at {config.image_path}"
-    config.benches.quota = _whole_gigabytes(backing_bytes * _BENCHES_QUOTA_FRACTION)
-    config.mariadb.quota = _whole_gigabytes(backing_bytes * _MARIADB_QUOTA_FRACTION)
-    config.benches.reservation = _whole_gigabytes(backing_bytes * _BENCHES_RESERVATION_FRACTION)
-    config.mariadb.reservation = _whole_gigabytes(backing_bytes * _MARIADB_RESERVATION_FRACTION)
+    config.dataset.quota = _whole_gigabytes(backing_bytes * _DATASET_QUOTA_FRACTION)
+    config.dataset.reservation = _whole_gigabytes(backing_bytes * _DATASET_RESERVATION_FRACTION)
     return choice
 
 
@@ -441,16 +437,16 @@ class VolumeManager:
             return None
         backing_label = "image size" if self.config.backing == "image" else "device size"
         backing_g = round(backing_bytes / 1024**3, 2)
-        for label, dataset in (("benches", self.config.benches), ("mariadb", self.config.mariadb)):
-            for kind, value in (("reservation", dataset.reservation), ("quota", dataset.quota)):
-                if value.lower() in ("none", "0"):
-                    continue
-                try:
-                    size = self._parse_size_bytes(value)
-                except Exception:
-                    continue
-                if size > backing_bytes:
-                    return f"{label} {kind} {value} exceeds {backing_label} ({backing_g}G)"
+        dataset = self.config.dataset
+        for kind, value in (("reservation", dataset.reservation), ("quota", dataset.quota)):
+            if value.lower() in ("none", "0"):
+                continue
+            try:
+                size = self._parse_size_bytes(value)
+            except Exception:
+                continue
+            if size > backing_bytes:
+                return f"dataset {kind} {value} exceeds {backing_label} ({backing_g}G)"
         return None
 
     def _validate_image_fits_filesystem(self) -> str | None:
@@ -474,26 +470,20 @@ class VolumeManager:
 
     # ── settings-modal helpers ──────────────────────────────────────────────
 
-    def _dataset_configs(self) -> list[tuple[str, object]]:
-        return [(self.config.benches_dataset, self.config.benches), (self.config.mariadb_dataset, self.config.mariadb)]
-
     def validate_quotas_above_usage(self) -> str | None:
-        """Ensure no configured quota is below its dataset's current used size."""
-        for dataset, cfg in self._dataset_configs():
-            if error := self.validate_quota(dataset, cfg.quota):
-                return error
-        return None
+        """Ensure the configured quota is not below the dataset's current used size."""
+        return self.validate_quota(self.config.dataset_path, self.config.dataset.quota)
 
     def apply_sizes(self) -> str | None:
-        """Apply the configured quota/reservation to existing datasets (idempotent)."""
-        for dataset, cfg in self._dataset_configs():
-            if not self.dataset_exists(dataset):
-                continue
-            try:
-                self.set_quota(dataset, cfg.quota)
-                self.set_reservation(dataset, cfg.reservation)
-            except VolumeError as error:
-                return str(error)
+        """Apply the configured quota/reservation to the dataset (idempotent)."""
+        dataset = self.config.dataset_path
+        if not self.dataset_exists(dataset):
+            return None
+        try:
+            self.set_quota(dataset, self.config.dataset.quota)
+            self.set_reservation(dataset, self.config.dataset.reservation)
+        except VolumeError as error:
+            return str(error)
         return None
 
     def set_quota(self, dataset: str, quota: str) -> None:
@@ -543,37 +533,67 @@ class VolumeManager:
             raise VolumeError(f"Snapshot '{snapshot}' does not exist.")
         self._run(["sudo", "zfs", "destroy", snapshot])
 
-    def _is_pool_already_configured(self) -> bool:
-        pools = existing_pools()
-
-        for pool in pools:
-            for dataset_info in pool.datasets:
-                # Two active datasets of the same name are not allowed
-                if dataset_info.name == self.config.mariadb_dataset or dataset_info.name == self.config.benches_dataset:
-                    return True
-
-        return False
-
     def setup(self) -> None:
         self._ensure_zfs()
-        if self._is_pool_already_configured():
-            print("Pool is already configured skipping")
-            return
-
-        print(f"Creating ZFS pool '{self.config.pool}' and datasets...")
-
+        # Reuse an existing pool — create_pool() is a no-op when the pool is
+        # already present — then ensure this bench's single dataset exists in it.
+        # Multiple benches can therefore share one pool, each with its own dataset.
         self.create_pool()
-        self._setup_dataset(self.config.benches_dataset, self.config.benches.quota, self.config.benches.reservation)
-        self._setup_dataset(self.config.mariadb_dataset, self.config.mariadb.quota, self.config.mariadb.reservation)
+        dataset = self.config.dataset_path
+        self._setup_dataset(dataset, self.config.dataset.quota, self.config.dataset.reservation)
         # https://www.usenix.org/system/files/login/articles/login_winter16_09_jude.pdf
-        # Mariadb default page size 16k zfs defaults to 128k introducing massive io ops therefore force tune it
-        self.set_recordsize(self.config.mariadb_dataset, "16K")
+        # The dataset holds the MariaDB data (16k page size); ZFS defaults to a
+        # 128k recordsize, introducing massive IO amplification — force-tune it.
+        self.set_recordsize(dataset, "16K")
 
     def _setup_dataset(self, dataset: str, quota: str, reservation: str) -> None:
         print(f"Creating dataset {dataset} with quota {quota} and reservation {reservation}")
         self.create_dataset(dataset)
         self.set_quota(dataset, quota)
         self.set_reservation(dataset, reservation)
+
+    # ── bind mounts ─────────────────────────────────────────────────────────
+
+    def bind_mount(self, source: Path, target: Path) -> None:
+        """Bind-mount source onto target (idempotent). Used to expose the
+        dataset's `benches`/`mariadb` subdirs at their conventional paths."""
+        self._run(["sudo", "mkdir", "-p", str(source)])
+        self._run(["sudo", "mkdir", "-p", str(target)])
+        if self._is_mountpoint(target):
+            return
+        self._run(["sudo", "mount", "--bind", str(source), str(target)])
+
+    def persist_bind_mount(self, source: Path, target: Path) -> None:
+        """Record the bind mount in /etc/fstab so it survives reboots, ordered
+        after zfs-mount.service so the dataset is mounted first. Idempotent."""
+        entry = (
+            f"{source} {target} none "
+            "bind,nofail,x-systemd.requires=zfs-mount.service,x-systemd.after=zfs-mount.service 0 0"
+        )
+        if self._fstab_has_target(target):
+            return
+        try:
+            subprocess.run(["sudo", "tee", "-a", "/etc/fstab"], input=f"{entry}\n".encode(), capture_output=True, check=True)
+        except subprocess.CalledProcessError as exc:
+            raise VolumeError(f"Failed to write /etc/fstab entry for {target}: {exc}")
+
+    def _fstab_has_target(self, target: Path) -> bool:
+        try:
+            lines = Path("/etc/fstab").read_text().splitlines()
+        except OSError:
+            return False
+        for line in lines:
+            fields = line.split()
+            if len(fields) >= 2 and not line.lstrip().startswith("#") and fields[1] == str(target):
+                return True
+        return False
+
+    def _is_mountpoint(self, path: Path) -> bool:
+        try:
+            self._run(["mountpoint", "-q", str(path)])
+            return True
+        except VolumeError:
+            return False
 
     def _snapshot_exists(self, snapshot: str) -> bool:
         try:

@@ -78,20 +78,12 @@ domain = ""             # optional — serve admin over HTTPS via nginx (product
 # ── ZFS Volume (Linux only, optional) ────────────────────────────────────────
 [volume]
 enabled = false         # set to true to activate ZFS volume management
-pool = "bench-pool"     # ZFS pool name (created during bench init if absent)
+pool = "bench-pool"     # shared ZFS pool (created if absent, reused if present)
 device = "/dev/sdb"     # block device for the pool (ignored if pool already exists)
 
-[volume.benches]
-reservation = "10G"     # guaranteed space for bench directories
-quota = "50G"           # hard cap on bench directory space
-
-[volume.mariadb]
-reservation = "5G"      # guaranteed space for MariaDB data files
-quota = "20G"           # hard cap on MariaDB data
-data_dir = "/var/lib/mysql"  # remounted onto the ZFS dataset during bench init
-
-[volume.snapshots]
-enabled = false         # set to true to allow bench volume snapshot
+[volume.dataset]        # one dataset per bench: <pool>/<bench>, holding files + database
+reservation = "15G"     # guaranteed space for this bench
+quota = "60G"           # hard cap — lower it to fit more benches in the pool
 ```
 
 ---
@@ -129,7 +121,7 @@ Declares the framework app (frappe) to clone during `bench init`. After init, ad
 | `version` | string | no | `11.8` | MariaDB version to install (e.g. `"11.8"`, `"11.4"`). On Linux, bench adds MariaDB's official APT repository pinned to this version and installs `mariadb-server` from it; on macOS it selects the `mariadb@<version>` Homebrew formula. Omit to install the default **11.8 LTS** series. |
 | `socket_path` | string | no | — | Unix socket to connect through. For a dedicated instance this is the per-instance socket (e.g. `/run/mysqld/mysqld-<instance>.sock`). |
 | `instance` | string | no | — | **Own instance vs shared MariaDB.** When empty (legacy), the bench uses the shared system MariaDB (`mariadb` service on port 3306). When set, the bench gets its own `mariadb@<instance>` systemd instance (the distro's multi-instance template) with an isolated datadir, socket, and port — its `[mariadbd.<instance>]` option group is written to `/etc/mysql/mariadb.conf.d/99-bench-<instance>.cnf` (read after `50-server.cnf` so the instance's own `pid-file`/`socket`/`port`/`datadir` win). `bench new` sets this to the bench name by default (Linux only; macOS dev benches stay on the shared server); existing benches without it keep using the shared server. |
-| `data_dir` | string | no | `/var/lib/mysql-<instance>` | Data directory for the instance — a **sibling** of `/var/lib/mysql`, never nested inside it (a legacy shared server owns `/var/lib/mysql` as its datadir). Must be an absolute path. When the bench's `[volume]` is enabled, the bench's ZFS `mariadb` dataset is mounted here (set `volume.mariadb.data_dir` to the same path); otherwise it is a plain directory. Ignored in shared mode. |
+| `data_dir` | string | no | `/var/lib/mysql-<instance>` | Data directory for the instance — a **sibling** of `/var/lib/mysql`, never nested inside it (a legacy shared server owns `/var/lib/mysql` as its datadir). Must be an absolute path. When the bench's `[volume]` is enabled, the bench dataset's `mariadb` subdir is bind-mounted here; otherwise it is a plain directory. Ignored in shared mode. |
 
 > **Shared server vs. own instance.** By default every bench talks to one shared MariaDB on `:3306`. Set `instance` (which `bench new` does by default on Linux) to give a bench its **own** server, isolating its data, lifecycle, and — importantly — its ZFS snapshots/rollbacks. See [Per-bench MariaDB instances](architecture.md#per-bench-mariadb-instances) for the rationale and mechanics.
 
@@ -228,29 +220,18 @@ Volume management is opt-in and Linux-only. All `[volume.*]` sections are ignore
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `enabled` | bool | no | `false` | Activate ZFS volume management. |
-| `pool` | string | yes (if enabled) | — | ZFS pool name. Created on `device` during `bench init` if it does not exist. |
+| `pool` | string | yes (if enabled) | — | Shared ZFS pool name. Created on `device` during `bench init` if it does not exist, reused otherwise — many benches can share one pool. |
+| `name` | string | no | bench name | Dataset leaf; the bench's dataset is `<pool>/<name>`. Defaults to the bench name. |
 | `device` | string | yes (if enabled) | — | Block device path (e.g. `/dev/sdb`). Used only if the pool does not yet exist. |
 
-### `[volume.benches]`
+### `[volume.dataset]`
+
+The bench's single dataset (`<pool>/<bench>`) holds both the bench files and its MariaDB data, exposed at their conventional paths via bind mounts. A snapshot/rollback covers both.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `reservation` | string | no | `"10G"` | Guaranteed space for bench directories. ZFS will not allow this dataset to fall below this allocation. Must be a valid ZFS size (e.g. `"10G"`, `"500M"`). |
-| `quota` | string | no | `"50G"` | Hard space cap. Writes beyond this limit are rejected. Must be greater than `reservation`. Can be updated live via the Settings modal without restarting. |
-
-### `[volume.mariadb]`
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `reservation` | string | no | `"5G"` | Guaranteed space for MariaDB data files. |
-| `quota` | string | no | `"20G"` | Hard space cap for MariaDB data. bench validates that the new quota is not less than the dataset's current used size before applying. |
-| `data_dir` | string | no | `"/var/lib/mysql"` | MariaDB data directory. During `bench init`, the dataset is remounted here via `zfs set mountpoint`. |
-
-### `[volume.snapshots]`
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `enabled` | bool | no | `false` | Allow `bench volume snapshot` and `bench volume restore-snapshot`. Set to `false` to block accidental snapshots. Togglable via the ZFS Volume tab in the Settings modal. |
+| `reservation` | string | no | `"5G"` | Guaranteed space for the bench. ZFS will not allow the dataset to fall below this allocation. Must be a valid ZFS size (e.g. `"15G"`, `"500M"`). |
+| `quota` | string | no | `"50G"` | Hard space cap for the bench (files + database). Must be greater than `reservation`. Lower it to fit more benches in a shared pool. Can be updated live via the Settings modal without restarting; bench validates that the new quota is not less than the dataset's current used size before applying. |
 
 ---
 

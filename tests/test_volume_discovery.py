@@ -106,19 +106,17 @@ def test_discover_returns_empty_when_lsblk_missing(monkeypatch) -> None:
 # ── smart sizing ──────────────────────────────────────────────────────────────
 
 
-def test_smart_dataset_sizes_strict_60_40_split() -> None:
+def test_smart_dataset_sizes_single_dataset() -> None:
     sizes = smart_dataset_sizes(100 * G)
     assert sizes == {
-        "volume_benches_quota": "60G",
-        "volume_mariadb_quota": "40G",
-        "volume_benches_reservation": "10G",
-        "volume_mariadb_reservation": "5G",
+        "volume_quota": "100G",  # quota = whole backing (100%)
+        "volume_reservation": "15G",  # 15% guaranteed reservation
     }
 
 
 def test_smart_dataset_sizes_floor_one_gigabyte() -> None:
-    sizes = smart_dataset_sizes(10 * G)
-    assert sizes["volume_mariadb_reservation"] == "1G"  # 5% of 10G = 0.5G -> floored to min 1G
+    sizes = smart_dataset_sizes(5 * G)
+    assert sizes["volume_reservation"] == "1G"  # 15% of 5G = 0.75G -> floored to min 1G
 
 
 def test_compute_smart_defaults_prefers_device(monkeypatch) -> None:
@@ -127,7 +125,7 @@ def test_compute_smart_defaults_prefers_device(monkeypatch) -> None:
     defaults = compute_smart_defaults()
     assert defaults["volume_backing"] == "device"
     assert defaults["volume_device"] == "/dev/sdb"
-    assert defaults["volume_benches_quota"] == "60G"
+    assert defaults["volume_quota"] == "100G"
     assert defaults["available_devices"] == [{"path": "/dev/sdb", "size_bytes": 100 * G, "has_signature": False}]
 
 
@@ -138,8 +136,8 @@ def test_compute_smart_defaults_falls_back_to_image(monkeypatch) -> None:
     defaults = compute_smart_defaults()
     assert defaults["volume_backing"] == "image"
     assert defaults["volume_image_size"] == "40G"
-    assert defaults["volume_benches_quota"] == "24G"
-    assert defaults["volume_mariadb_quota"] == "16G"
+    assert defaults["volume_quota"] == "40G"
+    assert defaults["volume_reservation"] == "6G"
     assert defaults["available_devices"] == []
 
 
@@ -164,10 +162,8 @@ def test_resolve_auto_picks_largest_disk(monkeypatch) -> None:
     assert "/dev/sdc" in choice
     assert config.backing == "device"
     assert config.device == "/dev/sdc"
-    assert config.benches.quota == "120G"
-    assert config.mariadb.quota == "80G"
-    assert config.benches.reservation == "20G"
-    assert config.mariadb.reservation == "10G"
+    assert config.dataset.quota == "200G"
+    assert config.dataset.reservation == "30G"
 
 
 def test_resolve_auto_falls_back_to_image(monkeypatch) -> None:
@@ -179,15 +175,15 @@ def test_resolve_auto_falls_back_to_image(monkeypatch) -> None:
     assert "image" in choice
     assert config.backing == "image"
     assert config.image.size == "40G"
-    assert config.benches.quota == "24G"
-    assert config.mariadb.quota == "16G"
+    assert config.dataset.quota == "40G"
+    assert config.dataset.reservation == "6G"
 
 
 def test_resolve_auto_noop_for_explicit_backing() -> None:
     config = VolumeConfig(pool="bench-pool", backing="device", device="/dev/sdb")
     assert resolve_auto_backing(config) == ""
     assert config.device == "/dev/sdb"
-    assert config.benches.quota == "50G"  # untouched defaults
+    assert config.dataset.quota == "50G"  # untouched defaults
 
 
 # ── existing pool reuse ───────────────────────────────────────────────────────
@@ -200,7 +196,7 @@ def test_compute_smart_defaults_prefers_existing_pool(monkeypatch) -> None:
     assert defaults["volume_backing"] == "device"
     assert defaults["volume_device"] == "/dev/nvme1n1"
     assert defaults["volume_pool"] == "bench-pool"
-    assert defaults["volume_benches_quota"] == "30G"  # 60% of the pool, not the unused disk
+    assert defaults["volume_quota"] == "50G"  # the pool size, not the unused disk
     assert defaults["available_devices"] == [
         {"path": "/dev/nvme1n1", "size_bytes": 50 * G, "pool": "bench-pool"},
         {"path": "/dev/sdb", "size_bytes": 100 * G, "has_signature": False},
@@ -215,7 +211,7 @@ def test_resolve_auto_reuses_matching_pool(monkeypatch) -> None:
     assert "reusing" in choice
     assert config.backing == "device"
     assert config.device == "/dev/nvme1n1"
-    assert config.benches.quota == "30G"
+    assert config.dataset.quota == "50G"
 
 
 def test_resolve_auto_ignores_pool_with_other_name(monkeypatch) -> None:
@@ -259,3 +255,90 @@ def test_existing_pools_empty_when_zfs_missing(monkeypatch) -> None:
 
     monkeypatch.setattr(volume_manager.subprocess, "run", fake_run)
     assert volume_manager.existing_pools() == []
+
+
+# ── single dataset setup + bind mounts ────────────────────────────────────────
+
+from pathlib import Path
+from unittest.mock import MagicMock
+
+from bench_cli.exceptions import VolumeError
+from bench_cli.managers.volume_manager import VolumeManager
+
+
+def _fake_run_factory(calls, pool_exists=True, dataset_exists=False, is_mountpoint=False):
+    def fake_run(cmd):
+        calls.append(cmd)
+        if cmd[:2] == ["zpool", "list"]:
+            if pool_exists:
+                return SimpleNamespace(stdout=b"bench-pool\n")
+            raise VolumeError("no pool")
+        if cmd[:2] == ["zfs", "list"]:
+            if dataset_exists:
+                return SimpleNamespace(stdout=b"bench-pool/shop\n")
+            raise VolumeError("no dataset")
+        if cmd[:1] == ["mountpoint"]:
+            if is_mountpoint:
+                return SimpleNamespace(stdout=b"")
+            raise VolumeError("not a mountpoint")
+        return SimpleNamespace(stdout=b"")
+    return fake_run
+
+
+def test_setup_reuses_existing_pool_and_creates_dataset(monkeypatch) -> None:
+    monkeypatch.setattr(volume_manager.shutil, "which", lambda _: "/usr/sbin/zfs")
+    config = VolumeConfig(enabled=True, pool="bench-pool", name="shop", backing="device", device="/dev/sdb")
+    mgr = VolumeManager(config)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(VolumeManager, "_run", lambda self, cmd: _fake_run_factory(calls)(cmd))
+
+    mgr.setup()
+
+    assert not any(c[:3] == ["sudo", "zpool", "create"] for c in calls)  # pool reused
+    assert ["sudo", "zfs", "create", "bench-pool/shop"] in calls  # dataset created
+    assert ["sudo", "zfs", "set", "recordsize=16K", "bench-pool/shop"] in calls
+
+
+def test_bind_mount_skips_when_already_mounted(monkeypatch) -> None:
+    mgr = VolumeManager(VolumeConfig())
+    calls: list[list[str]] = []
+    monkeypatch.setattr(VolumeManager, "_run", lambda self, cmd: _fake_run_factory(calls, is_mountpoint=True)(cmd))
+
+    mgr.bind_mount(Path("/src"), Path("/dst"))
+
+    assert not any(c[:3] == ["sudo", "mount", "--bind"] for c in calls)
+
+
+def test_bind_mount_mounts_when_absent(monkeypatch) -> None:
+    mgr = VolumeManager(VolumeConfig())
+    calls: list[list[str]] = []
+    monkeypatch.setattr(VolumeManager, "_run", lambda self, cmd: _fake_run_factory(calls, is_mountpoint=False)(cmd))
+
+    mgr.bind_mount(Path("/src"), Path("/dst"))
+
+    assert ["sudo", "mount", "--bind", "/src", "/dst"] in calls
+
+
+def test_persist_bind_mount_skips_when_already_in_fstab(monkeypatch) -> None:
+    mgr = VolumeManager(VolumeConfig())
+    monkeypatch.setattr(VolumeManager, "_fstab_has_target", lambda self, target: True)
+    run = MagicMock()
+    monkeypatch.setattr(volume_manager.subprocess, "run", run)
+
+    mgr.persist_bind_mount(Path("/src"), Path("/dst"))
+
+    run.assert_not_called()
+
+
+def test_persist_bind_mount_writes_ordered_entry(monkeypatch) -> None:
+    mgr = VolumeManager(VolumeConfig())
+    monkeypatch.setattr(VolumeManager, "_fstab_has_target", lambda self, target: False)
+    run = MagicMock()
+    monkeypatch.setattr(volume_manager.subprocess, "run", run)
+
+    mgr.persist_bind_mount(Path("/src"), Path("/dst"))
+
+    run.assert_called_once()
+    written = run.call_args.kwargs["input"]
+    assert b"/src /dst none bind" in written
+    assert b"x-systemd.requires=zfs-mount.service" in written

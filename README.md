@@ -159,16 +159,20 @@ max_requests = 0                     # recycle the web worker after N requests t
 max_requests_jitter = 0              # random +/- spread on max_requests so workers don't all recycle at once
 
 [volume]
-pool = "bench-pool"
+pool = "bench-pool"              # shared pool, reused if it exists; one dataset per bench
 backing = "auto"                 # discover an unused disk, or fall back to a disk image
 # backing = "device"             # explicit: dedicated disk
 # device = "/dev/sdb"
 # backing = "image"              # explicit: preallocated file on the root filesystem
 # [volume.image]
 # size = "60G"                   # file created at /var/lib/bench-zfs/bench-pool.img
+
+[volume.dataset]
+reservation = "15G"              # guaranteed space for this bench (files + database)
+quota = "60G"                    # hard cap — lower it to fit more benches in the pool
 ```
 
-Apps and sites are tracked by the filesystem — no need to list them in `bench.toml`. See [docs/volume.md](docs/volume.md) for the full ZFS volume guide.
+Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files and its MariaDB data via bind mounts, so snapshots/rollbacks are atomic across both. Apps and sites are tracked by the filesystem — no need to list them in `bench.toml`. See [docs/volume.md](docs/volume.md) for the full ZFS volume guide.
 
 ## Commands
 
@@ -190,10 +194,10 @@ Apps and sites are tracked by the filesystem — no need to list them in `bench.
 | `bench setup letsencrypt` | Obtain SSL certificates |
 | `bench setup production` | Full production setup (nginx + SSL + supervisor/systemd) |
 | `bench volume status` | Show ZFS pool and dataset usage |
-| `bench volume snapshot` | Snapshot both datasets (or `--dataset benches\|mariadb`) |
-| `bench volume list-snapshots` | List snapshots per dataset |
+| `bench volume snapshot` | Snapshot the bench (files + database) |
+| `bench volume list-snapshots` | List snapshots |
 | `bench volume destroy-snapshot <tag>` | Destroy a named snapshot |
-| `bench volume restore-snapshot <tag>` | Rollback a dataset to a snapshot |
+| `bench volume restore-snapshot <tag>` | Roll the bench back to a snapshot |
 
 With multiple benches: `bench -b my-bench start`
 

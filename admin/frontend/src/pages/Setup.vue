@@ -31,10 +31,8 @@ const form = ref({
   volume_backing: 'image',
   volume_device: '',
   volume_image_size: '60G',
-  volume_benches_reservation: '10G',
-  volume_benches_quota: '50G',
-  volume_mariadb_reservation: '5G',
-  volume_mariadb_quota: '20G',
+  volume_reservation: '15G',
+  volume_quota: '60G',
 })
 
 // ── framework branch dropdown (fetched from the admin backend) ────────────
@@ -123,16 +121,15 @@ function clampImageSize() {
   form.value.volume_image_size = `${clamped}G`
 }
 
-// Mirrors the backend policy: quotas 60/40, reservations 10/5 of the backing
-// size. Computed silently so the user never has to think about ZFS datasets.
+// Mirrors the backend policy: a single dataset per bench — quota = whole
+// backing, reservation = 15%. Computed silently so the user never has to think
+// about ZFS datasets.
 function applySmartSizes() {
   const bytes = backingSizeBytes()
   if (!bytes) return
   const wholeG = (n) => `${Math.max(1, Math.floor(n / 1024 ** 3))}G`
-  form.value.volume_benches_quota = wholeG(bytes * 0.6)
-  form.value.volume_mariadb_quota = wholeG(bytes * 0.4)
-  form.value.volume_benches_reservation = wholeG(bytes * 0.1)
-  form.value.volume_mariadb_reservation = wholeG(bytes * 0.05)
+  form.value.volume_quota = wholeG(bytes)
+  form.value.volume_reservation = wholeG(bytes * 0.15)
 }
 
 watch(() => [form.value.volume_backing, form.value.volume_device, form.value.volume_image_size], applySmartSizes)
