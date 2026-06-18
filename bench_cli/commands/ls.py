@@ -29,14 +29,10 @@ class ListCommand(Command):
         mgr_w = max(len("MANAGER"), *(len(r["manager"]) for r in rows))
 
         header = f"  {'':1} {'NAME':<{name_w}}  {'MODE':<{mode_w}}  {'MANAGER':<{mgr_w}}  ADDRESS"
-        title = f"Benches ({len(rows)})"
-        print(f"\n\033[1m{title}\033[0m")
-        print("  " + "─" * (len(title) + 2))
         print(_dim(header))
         for r in rows:
             dot = _ok("●") if r["running"] else _dim("○")
             print(f"  {dot} {r['name']:<{name_w}}  {r['mode']:<{mode_w}}  {r['manager']:<{mgr_w}}  {r['address']}")
-        print(_dim("\n  ● running   ○ stopped"))
 
     def _collect(self, benches_dir: Path) -> list[dict]:
         if not benches_dir.is_dir():

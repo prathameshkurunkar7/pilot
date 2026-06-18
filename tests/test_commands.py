@@ -683,7 +683,6 @@ def test_ls_lists_benches_with_mode_and_address(tmp_path: Path, capsys: pytest.C
         ListCommand().run()
 
     out = capsys.readouterr().out
-    assert "Benches (2)" in out
     assert "alpha" in out and "production" in out and "alpha-admin.example.com" in out
     assert "beta" in out and "development" in out and "http://localhost:7005" in out
 
