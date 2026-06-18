@@ -41,8 +41,11 @@ class SetupNginxCommand(Command):
         nginx_dir.mkdir(parents=True, exist_ok=True)
 
     def _print_site_urls(self) -> None:
+        # HTTPS is only served when TLS termination is enabled for the bench; a
+        # stale cert left on disk must not make us advertise an https:// URL.
+        tls = self.bench.config.admin.tls
         for site in self.bench.sites():
-            if site.config.ssl and self.nginx_manager.cert_exists(site.config):
+            if tls and site.config.ssl and self.nginx_manager.cert_exists(site.config):
                 print(f"  https://{site.config.name}")
             else:
                 http_port = self.bench.config.nginx.http_port
@@ -50,5 +53,5 @@ class SetupNginxCommand(Command):
                 print(f"  http://{site.config.name}{port_suffix}")
         domain = self.bench.config.admin.domain
         if domain:
-            scheme = "https" if self.nginx_manager.admin_cert_exists() else "http"
+            scheme = "https" if tls and self.nginx_manager.admin_cert_exists() else "http"
             print(f"  {scheme}://{domain} (admin)")
