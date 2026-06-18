@@ -28,15 +28,6 @@ class NewCommand(Command):
             default="",
             help="Admin domain for this bench (defaults to <name>-admin.localhost).",
         )
-        tls = parser.add_mutually_exclusive_group()
-        tls.add_argument(
-            "--tls", dest="admin_tls", action="store_true", default=None,
-            help="Terminate TLS for this bench (HTTPS via Let's Encrypt).",
-        )
-        tls.add_argument(
-            "--no-tls", dest="admin_tls", action="store_false", default=None,
-            help="Serve over plain HTTP — a central proxy terminates TLS upstream.",
-        )
 
     @classmethod
     def from_args(cls, args, bench):
@@ -47,7 +38,6 @@ class NewCommand(Command):
             args.name,
             process_manager=args.process_manager,
             admin_domain=args.admin_domain,
-            admin_tls=args.admin_tls,
         )
 
     def __init__(self, target_directory: Path, name: str, process_manager: str = "",
@@ -76,8 +66,6 @@ class NewCommand(Command):
 
         offset = self._pick_port_offset(self.target_directory)
         print("Writing bench.toml")
-        # TLS termination is a server-wide choice: unless explicitly overridden,
-        # carry forward whatever sibling benches use (default False).
         admin_tls = self.admin_tls if self.admin_tls is not None else self._sibling_admin_tls()
         settings = {
             "admin_password": secrets.token_hex(nbytes=5),
