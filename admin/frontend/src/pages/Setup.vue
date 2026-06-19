@@ -26,7 +26,7 @@ const dbPasswordDescription = computed(() =>
 )
 
 // ── init-task streaming state ─────────────────────────────────────────────
-const { terminal, lines: taskLines, streaming: taskStreaming, start: startStream } = useTaskStream()
+const { terminal, lines: taskLines, streaming: taskStreaming, start: startStream } = useTaskStream({ guardHiddenTab: true })
 const progress = ref(0)
 const currentStep = ref('Starting…')
 const showDetails = ref(false)

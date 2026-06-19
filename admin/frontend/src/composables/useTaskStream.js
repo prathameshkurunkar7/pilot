@@ -1,7 +1,11 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { processLine } from '../utils/ansi.js'
 
-export function useTaskStream() {
+// guardHiddenTab: skip scrolling while the browser tab is hidden and re-scroll
+// on visibility change. Needed when the TerminalOutput sits behind a v-if (Setup)
+// — calling scrollTop against an unpainted layout causes a blank-area jump.
+// Leave it off when the terminal is always mounted (TaskDetail).
+export function useTaskStream({ guardHiddenTab = false } = {}) {
   const terminal = ref(null)
   const lines = ref([])     // processed (ANSI → HTML-safe spans)
   const rawLines = ref([])  // raw text (for callers that need to parse markers)
@@ -9,7 +13,8 @@ export function useTaskStream() {
   let es = null
 
   function scrollToBottom() {
-    if (!document.hidden) terminal.value?.scrollToBottom()
+    if (guardHiddenTab && document.hidden) return
+    terminal.value?.scrollToBottom()
   }
 
   // start() does NOT clear lines — caller clears if needed (Setup resets on each
@@ -57,11 +62,11 @@ export function useTaskStream() {
     streaming.value = false
   }
 
-  onMounted(() => document.addEventListener('visibilitychange', scrollToBottom))
-  onBeforeUnmount(() => {
-    document.removeEventListener('visibilitychange', scrollToBottom)
-    stop()
-  })
+  if (guardHiddenTab) {
+    onMounted(() => document.addEventListener('visibilitychange', scrollToBottom))
+    onBeforeUnmount(() => document.removeEventListener('visibilitychange', scrollToBottom))
+  }
+  onBeforeUnmount(stop)
 
   return { terminal, lines, rawLines, streaming, start, stop, scrollToBottom }
 }
