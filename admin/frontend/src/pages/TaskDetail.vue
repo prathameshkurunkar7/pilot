@@ -3,8 +3,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, Badge, Dialog, LoadingText, ErrorMessage } from 'frappe-ui'
 import TerminalOutput from '../components/TerminalOutput.vue'
+import TaskStream from '../components/TaskStream.vue'
 import { processLine } from '../utils/ansi.js'
-import { useTaskStream } from '../composables/useTaskStream.js'
 import LucideCheck from '~icons/lucide/check'
 import LucideLoader2 from '~icons/lucide/loader-2'
 import LucideX from '~icons/lucide/x'
@@ -15,8 +15,15 @@ const route = useRoute()
 const router = useRouter()
 const taskId = route.params.id
 
-const { terminal, lines, rawLines, streaming, start } = useTaskStream()
+// TaskStream owns the SSE connection and output; we read its reactive state for
+// the step parsing below. streamUrl stays empty until the REST load decides the
+// task is still running (autoStart connects once it's set).
+const taskStream = ref(null)
+const streamUrl = ref('')
+const rawLines = computed(() => taskStream.value?.rawLines ?? [])
+const streaming = computed(() => taskStream.value?.streaming ?? false)
 const task = ref(null)
+const initialOutput = ref([])
 const loading = ref(true)
 const error = ref('')
 const showKill = ref(false)
@@ -106,8 +113,7 @@ async function load() {
     if (!res.ok) throw new Error(`${res.status}`)
     const d = await res.json()
     task.value = d.task
-    rawLines.value = d.output
-    lines.value = d.output.map(processLine)
+    initialOutput.value = d.output  // seeds TaskStream on mount; streaming appends from here
   } catch (e) {
     error.value = e.message
   } finally {
@@ -115,21 +121,18 @@ async function load() {
   }
 }
 
-function startStream() {
-  start(`/api/tasks/${taskId}/stream`, {
-    onLine: (raw) => {
-      const m = raw.match(/^##\[step:(\w+),/)
-      if (m && m[1] !== 'done') expandedSteps.value = new Set([m[1]])
-    },
-    onDone: (success) => {
-      if (!success && stepSections.value.length) {
-        // Expand the failed step so the output is immediately visible
-        expandedSteps.value = new Set([stepSections.value[stepSections.value.length - 1].key])
-      }
-      load()
-    },
-    onError: () => load(),
-  })
+// Auto-expand the step whose output is currently arriving.
+function onStreamLine(raw) {
+  const m = raw.match(/^##\[step:(\w+),/)
+  if (m && m[1] !== 'done') expandedSteps.value = new Set([m[1]])
+}
+
+function onStreamDone(success) {
+  if (!success && stepSections.value.length) {
+    // Expand the failed step so the output is immediately visible
+    expandedSteps.value = new Set([stepSections.value[stepSections.value.length - 1].key])
+  }
+  load()
 }
 
 async function killTask() {
@@ -165,7 +168,9 @@ async function rerunTask() {
 
 onMounted(async () => {
   await load()
-  if (task.value?.status === 'running') startStream()
+  // Setting the url makes TaskStream connect (autoStart); it seeds from
+  // initialOutput first, then appends the live tail (reset disabled).
+  if (task.value?.status === 'running') streamUrl.value = `/api/tasks/${taskId}/stream`
 })
 </script>
 
@@ -213,76 +218,87 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Multi-step view -->
-      <template v-if="hasSteps">
-        <div class="flex flex-col gap-1.5">
-          <div v-for="section in stepSections" :key="section.key">
-            <!-- Step header row -->
-            <div
-              class="flex items-center gap-3 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-2.5 transition-colors"
-              :class="sectionHasOutput(section) ? 'cursor-pointer hover:bg-surface-gray-1' : ''"
-              @click="sectionHasOutput(section) && toggleStep(section.key)"
-            >
-              <!-- Status icon -->
+      <!-- TaskStream owns the SSE connection + output; we render either a
+           step-grouped view or a plain terminal from its reactive state. -->
+      <TaskStream
+        ref="taskStream"
+        :url="streamUrl"
+        :reset="false"
+        :initial-lines="initialOutput"
+        @line="onStreamLine"
+        @done="onStreamDone"
+        @error="load"
+      >
+        <template #default="{ lines, setTerminal }">
+          <!-- Multi-step view -->
+          <div v-if="hasSteps" class="flex flex-col gap-1.5">
+            <div v-for="section in stepSections" :key="section.key">
+              <!-- Step header row -->
               <div
-                class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-                :class="{
-                  'bg-surface-green-2 text-ink-green-2': section.status === 'done',
-                  'bg-ink-gray-9 text-surface-white': section.status === 'running',
-                  'bg-surface-red-1 text-ink-red-4': section.status === 'failed',
-                  'bg-ink-gray-1': section.status === 'pending',
-                }"
+                class="flex items-center gap-3 rounded-lg border border-outline-gray-1 bg-surface-white px-4 py-2.5 transition-colors"
+                :class="sectionHasOutput(section) ? 'cursor-pointer hover:bg-surface-gray-1' : ''"
+                @click="sectionHasOutput(section) && toggleStep(section.key)"
               >
-                <LucideCheck v-if="section.status === 'done'" class="h-3.5 w-3.5" />
-                <LucideLoader2 v-else-if="section.status === 'running'" class="h-3.5 w-3.5 animate-spin" />
-                <LucideX v-else-if="section.status === 'failed'" class="h-3.5 w-3.5" />
-                <span v-else class="h-1.5 w-1.5 rounded-full bg-ink-gray-3" />
+                <!-- Status icon -->
+                <div
+                  class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+                  :class="{
+                    'bg-surface-green-2 text-ink-green-2': section.status === 'done',
+                    'bg-ink-gray-9 text-surface-white': section.status === 'running',
+                    'bg-surface-red-1 text-ink-red-4': section.status === 'failed',
+                    'bg-ink-gray-1': section.status === 'pending',
+                  }"
+                >
+                  <LucideCheck v-if="section.status === 'done'" class="h-3.5 w-3.5" />
+                  <LucideLoader2 v-else-if="section.status === 'running'" class="h-3.5 w-3.5 animate-spin" />
+                  <LucideX v-else-if="section.status === 'failed'" class="h-3.5 w-3.5" />
+                  <span v-else class="h-1.5 w-1.5 rounded-full bg-ink-gray-3" />
+                </div>
+
+                <span
+                  class="flex-1 text-sm"
+                  :class="section.status === 'pending' ? 'text-ink-gray-4' : 'font-medium text-ink-gray-9'"
+                >{{ section.label }}</span>
+
+                <span class="text-xs text-ink-gray-5">
+                  <template v-if="stepDuration(section)">{{ stepDuration(section) }}</template>
+                  <span v-else-if="section.status === 'running'" class="animate-pulse">running…</span>
+                </span>
+
+                <LucideChevronUp
+                  v-if="sectionHasOutput(section) && expandedSteps.has(section.key)"
+                  class="h-4 w-4 shrink-0 text-ink-gray-4"
+                />
+                <LucideChevronDown
+                  v-else-if="sectionHasOutput(section)"
+                  class="h-4 w-4 shrink-0 text-ink-gray-4"
+                />
               </div>
 
-              <span
-                class="flex-1 text-sm"
-                :class="section.status === 'pending' ? 'text-ink-gray-4' : 'font-medium text-ink-gray-9'"
-              >{{ section.label }}</span>
-
-              <span class="text-xs text-ink-gray-5">
-                <template v-if="stepDuration(section)">{{ stepDuration(section) }}</template>
-                <span v-else-if="section.status === 'running'" class="animate-pulse">running…</span>
-              </span>
-
-              <LucideChevronUp
-                v-if="sectionHasOutput(section) && expandedSteps.has(section.key)"
-                class="h-4 w-4 shrink-0 text-ink-gray-4"
-              />
-              <LucideChevronDown
-                v-else-if="sectionHasOutput(section)"
-                class="h-4 w-4 shrink-0 text-ink-gray-4"
-              />
-            </div>
-
-            <!-- Collapsible output -->
-            <div v-if="expandedSteps.has(section.key)" class="mt-0.5 overflow-hidden rounded-b-lg">
-              <TerminalOutput
-                :lines="sectionLines(section)"
-                :streaming="streaming && section.status === 'running'"
-                max-height="40vh"
-                empty-text="No output for this step."
-              />
+              <!-- Collapsible output -->
+              <div v-if="expandedSteps.has(section.key)" class="mt-0.5 overflow-hidden rounded-b-lg">
+                <TerminalOutput
+                  :lines="sectionLines(section)"
+                  :streaming="streaming && section.status === 'running'"
+                  max-height="40vh"
+                  empty-text="No output for this step."
+                />
+              </div>
             </div>
           </div>
-        </div>
-      </template>
 
-      <!-- Plain terminal (tasks without steps) -->
-      <template v-else>
-        <TerminalOutput
-          ref="terminal"
-          :lines="lines"
-          :streaming="streaming"
-          :line-numbers="true"
-          empty-text="No output yet…"
-          max-height="calc(100vh - 200px)"
-        />
-      </template>
+          <!-- Plain terminal (tasks without steps) -->
+          <TerminalOutput
+            v-else
+            :ref="setTerminal"
+            :lines="lines"
+            :streaming="streaming"
+            :line-numbers="true"
+            empty-text="No output yet…"
+            max-height="calc(100vh - 200px)"
+          />
+        </template>
+      </TaskStream>
     </template>
 
     <Dialog v-model="showKill" :options="{ title: 'Kill Task', size: 'sm' }">

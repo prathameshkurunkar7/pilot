@@ -1,8 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { Button, FormControl, FormLabel, Password, Slider, ErrorMessage, Progress, FeatherIcon } from 'frappe-ui'
-import TerminalOutput from '../components/TerminalOutput.vue'
-import { useTaskStream } from '../composables/useTaskStream.js'
+import TaskStream from '../components/TaskStream.vue'
 
 const emit = defineEmits(['done'])
 
@@ -26,7 +25,12 @@ const dbPasswordDescription = computed(() =>
 )
 
 // ── init-task streaming state ─────────────────────────────────────────────
-const { terminal, lines: taskLines, streaming: taskStreaming, start: startStream } = useTaskStream({ guardHiddenTab: true })
+// TaskStream owns the SSE connection; we drive it via streamUrl and read its
+// `[N/M]` lines for the progress bar. streamPhase routes the shared "done" event
+// to the right handler across the init → production sequence.
+const taskStream = ref(null)
+const streamUrl = ref('')
+const streamPhase = ref('init')  // 'init' | 'production'
 const progress = ref(0)
 const currentStep = ref('Starting…')
 const showDetails = ref(false)
@@ -206,7 +210,7 @@ async function loadConfig() {
     }
     if (data.running_init_task_id) {
       step.value = 'running'
-      streamTask(`/api/setup/stream/${data.running_init_task_id}`, onInitDone)
+      beginStream('init', data.running_init_task_id)
     }
   } catch {}
   fetchBranches()
@@ -246,15 +250,18 @@ function updateProgress(raw) {
   currentStep.value = label
 }
 
-function streamTask(url, onDone) {
-  taskLines.value = []
+// Point TaskStream at a task's output. Changing streamUrl makes the component
+// (re)connect and reset its output; we reset our own progress alongside it.
+function beginStream(phase, taskId) {
+  streamPhase.value = phase
   progress.value = 0
   currentStep.value = 'Starting…'
-  startStream(url, {
-    onDone,
-    onLine: updateProgress,
-    onError: () => failWith('Lost connection to the setup process.'),
-  })
+  streamUrl.value = `/api/setup/stream/${taskId}`
+}
+
+function onStreamDone(success) {
+  if (streamPhase.value === 'production') onProductionDone(success)
+  else onInitDone(success)
 }
 
 function failWith(message) {
@@ -264,7 +271,7 @@ function failWith(message) {
 
 function toggleDetails() {
   showDetails.value = !showDetails.value
-  if (showDetails.value) terminal.value?.scrollToBottom()
+  if (showDetails.value) taskStream.value?.scrollToBottom()
 }
 
 // ── navigation ─────────────────────────────────────────────────────────────
@@ -362,7 +369,7 @@ async function initialize() {
     const data = await postJson('/api/setup/init', {})
     if (!data.ok) throw new Error(data.error || 'Failed to start setup.')
     step.value = 'running'
-    streamTask(`/api/setup/stream/${data.task_id}`, onInitDone)
+    beginStream('init', data.task_id)
   } catch (e) {
     error.value = e.message
   } finally {
@@ -389,9 +396,10 @@ async function deployProduction() {
   try {
     const data = await postJson('/api/setup/setup-production', {})
     if (!data.ok) throw new Error(data.error || 'Failed to start production setup.')
-    streamTask(`/api/setup/stream/${data.task_id}`, onProductionDone)
+    beginStream('production', data.task_id)
   } catch (e) {
-    error.value = e.message
+    // step is already 'running' with init output on screen — surface it.
+    failWith(e.message)
   }
 }
 
@@ -587,7 +595,19 @@ function backToConfig() {
             <FeatherIcon :name="showDetails ? 'chevron-down' : 'chevron-right'" class="h-4 w-4" />
             {{ showDetails ? 'Hide details' : 'Show details' }}
           </button>
-          <TerminalOutput v-if="showDetails" ref="terminal" :lines="taskLines" :streaming="taskStreaming" />
+          <!-- v-show on the wrapper, not <TaskStream>: the component's root is a
+               slot (fragment), which v-show can't toggle. Keeping it mounted while
+               hidden lets streaming continue in the background. -->
+          <div v-show="showDetails">
+            <TaskStream
+              ref="taskStream"
+              :url="streamUrl"
+              :guard-hidden-tab="true"
+              @line="updateProgress"
+              @done="onStreamDone"
+              @error="failWith('Lost connection to the setup process.')"
+            />
+          </div>
           <ErrorMessage v-if="error" :message="error" />
         </div>
 
