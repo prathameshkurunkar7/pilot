@@ -210,15 +210,20 @@ function hashColor(name) {
   return COLORS[Math.abs(h) % COLORS.length]
 }
 
-const appLogoMap = computed(() => Object.fromEntries(appRegistry.value.map(a => [a.name, a.logo_url])))
-const appTitleMap = computed(() => Object.fromEntries(appRegistry.value.map(a => [a.name, a.title])))
+const appLogoMap = computed(() =>
+  Object.fromEntries(appRegistry.value.filter(a => a?.name).map(a => [a.name, a.logo_url]))
+)
+const appTitleMap = computed(() =>
+  Object.fromEntries(appRegistry.value.filter(a => a?.name).map(a => [a.name, a.title]))
+)
 
 const filteredApps = computed(() => {
   const q = appSearch.value.toLowerCase().trim()
-  if (!q) return benchApps.value
-  return benchApps.value.filter(a =>
-    a.config.name.toLowerCase().includes(q) ||
-    (appTitleMap.value[a.config.name] || '').toLowerCase().includes(q)
+  const apps = benchApps.value.filter(a => a?.name)
+  if (!q) return apps
+  return apps.filter(a =>
+    a.name.toLowerCase().includes(q) ||
+    (appTitleMap.value[a.name] || '').toLowerCase().includes(q)
   )
 })
 
@@ -230,8 +235,10 @@ async function loadBenchApps() {
       fetch('/api/apps/'),
       fetch('/api/apps/registry'),
     ])
-    benchApps.value = await appsRes.json()
-    appRegistry.value = await regRes.json()
+    const appsData = await appsRes.json()
+    const regData = await regRes.json()
+    benchApps.value = Array.isArray(appsData) ? appsData : []
+    appRegistry.value = Array.isArray(regData) ? regData : []
   } catch (e) {
     appsError.value = e.message
   } finally {
@@ -310,23 +317,23 @@ watch(() => props.modelValue, (val) => {
                 <div v-else class="flex flex-col gap-2">
                   <div
                     v-for="app in filteredApps"
-                    :key="app.config.name"
+                    :key="app.name"
                     class="flex items-center gap-3 rounded-lg border border-outline-gray-1 px-4 py-3"
                   >
                     <div
                       class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
-                      :style="appLogoMap[app.config.name] ? {} : { background: hashColor(app.config.name) }"
+                      :style="appLogoMap[app.name] ? {} : { background: hashColor(app.name) }"
                     >
-                      <img v-if="appLogoMap[app.config.name]" :src="appLogoMap[app.config.name]" :alt="app.config.name" class="h-full w-full object-contain" />
-                      <span v-else class="text-xs font-bold text-white leading-none">{{ app.config.name[0].toUpperCase() }}</span>
+                      <img v-if="appLogoMap[app.name]" :src="appLogoMap[app.name]" :alt="app.name" class="h-full w-full object-contain" />
+                      <span v-else class="text-xs font-bold text-white leading-none">{{ app.name[0].toUpperCase() }}</span>
                     </div>
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center gap-2 flex-wrap">
-                        <span class="text-sm font-medium text-ink-gray-9">{{ appTitleMap[app.config.name] || app.config.name }}</span>
-                        <Badge :label="app.config.branch" theme="gray" size="sm" />
-                        <Badge v-if="app.dirty" label="Modified" theme="orange" size="sm" />
+                        <span class="text-sm font-medium text-ink-gray-9">{{ appTitleMap[app.name] || app.name }}</span>
+                        <Badge v-if="app.branch" :label="app.branch" theme="gray" size="sm" />
+                        <Badge v-if="app.uncommitted_changes" label="Modified" theme="orange" size="sm" />
                       </div>
-                      <p class="text-xs text-ink-gray-4 font-mono mt-0.5">{{ app.config.name }}</p>
+                      <p class="text-xs text-ink-gray-4 font-mono mt-0.5">{{ app.name }}</p>
                     </div>
                   </div>
                 </div>

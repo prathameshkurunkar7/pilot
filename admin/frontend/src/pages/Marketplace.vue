@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Badge, Dialog, FormControl, LoadingText, ErrorMessage, TextInput } from 'frappe-ui'
+import { Button, Badge, Checkbox, Dialog, FormControl, LoadingText, ErrorMessage, TextInput } from 'frappe-ui'
 
 const router = useRouter()
 const registry = ref([])
@@ -107,7 +107,7 @@ async function openInstall(app) {
   try {
     const res = await fetch('/api/sites/')
     const all = await res.json()
-    sites.value = all.filter(s => s.exists && !s.broken)
+    sites.value = all.filter(s => s.exists && !s.broken && !s.installed_apps?.includes(app.name))
   } catch { sites.value = [] }
   finally { sitesLoading.value = false }
 }
@@ -185,7 +185,6 @@ onMounted(load)
       <ErrorMessage v-else-if="error" :message="error" />
 
       <template v-else>
-        <!-- eslint-disable-next-line vue/no-v-for-template-key -->
         <template v-for="(app, i) in filteredRegistry" :key="app.name">
           <!-- Section labels (only shown when both frappe + community apps are present) -->
           <p
@@ -233,9 +232,9 @@ onMounted(load)
             </div>
 
             <!-- Action -->
-            <div class="shrink-0">
+            <div class="flex shrink-0 items-center gap-2">
               <Badge v-if="installedNames.has(app.name)" label="Installed" theme="green" />
-              <Button v-else-if="app.repo" variant="outline" size="sm" @click="openInstall(app)">Add</Button>
+              <Button v-if="app.repo" variant="outline" size="sm" @click="openInstall(app)">Add</Button>
             </div>
           </div>
         </template>
@@ -264,14 +263,17 @@ onMounted(load)
             <p class="text-sm font-medium text-ink-gray-7">Also install on sites</p>
             <LoadingText v-if="sitesLoading" />
             <p v-else-if="!sites.length" class="text-sm text-ink-gray-4">No sites available.</p>
-            <div v-else class="flex flex-col gap-1.5">
+            <div v-else class="flex flex-col">
               <label
                 v-for="s in sites"
                 :key="s.name"
-                class="flex cursor-pointer items-center gap-2.5 rounded px-1 py-1 hover:bg-surface-gray-1"
+                class="flex cursor-pointer items-center gap-2.5 rounded px-2.5 py-1.5 hover:bg-surface-gray-3 transition-colors"
               >
-                <input type="checkbox" :value="s.name" v-model="selectedSites" class="h-3.5 w-3.5 rounded accent-ink-gray-9" />
-                <span class="text-sm text-ink-gray-8">{{ s.name }}</span>
+                <Checkbox
+                  :modelValue="selectedSites.includes(s.name)"
+                  @update:modelValue="val => val ? selectedSites.push(s.name) : selectedSites.splice(selectedSites.indexOf(s.name), 1)"
+                />
+                <span class="text-sm font-medium select-none text-ink-gray-8">{{ s.name }}</span>
               </label>
             </div>
           </div>

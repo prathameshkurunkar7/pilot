@@ -71,6 +71,10 @@ const installBranchOptions = computed(() =>
   (installPending.value?.branches ?? []).map(b => ({ label: b, value: b }))
 )
 
+const showReinstall = ref(false)
+const reinstallConfirmText = ref('')
+const reinstallAdminPassword = ref('')
+
 const showDrop = ref(false)
 const dropConfirmText = ref('')
 const showForceDrop = ref(false)
@@ -837,7 +841,7 @@ onMounted(() => { load(); loadRegistry() })
               </div>
               <ListView v-else class="px-2 pb-2" :columns="backupColumns" :rows="backupRows" row-key="name"
                 :options="{ selectable: false, showTooltip: false, rowHeight: 44 }">
-                <template #cell="{ column, row, item, align }">
+                <template #cell="{ column, row, item }">
                   <div v-if="column.key === 'actions'" class="flex w-full justify-end">
                     <Dropdown :options="backupMenuOptions(row.set)" placement="left">
                       <template #default="{ open }">
@@ -901,6 +905,19 @@ onMounted(() => { load(); loadRegistry() })
                 <p class="text-sm font-semibold text-ink-red-4">Danger Zone</p>
               </div>
               <div class="divide-y divide-outline-red-1">
+                <!-- Reinstall Site -->
+                <div class="flex items-center justify-between gap-4 px-4 py-3.5">
+                  <div>
+                    <p class="text-sm font-medium text-ink-gray-8">Reinstall Site</p>
+                    <p class="mt-0.5 text-sm text-ink-gray-5">
+                      Wipe all data and reinstall frappe from scratch. Installed apps are preserved but all records are lost.
+                    </p>
+                  </div>
+                  <Button variant="subtle" theme="red" class="shrink-0" @click="reinstallConfirmText = ''; showReinstall = true">
+                    Reinstall
+                  </Button>
+                </div>
+
                 <!-- Drop Site -->
                 <div class="flex items-center justify-between gap-4 px-4 py-3.5">
                   <div>
@@ -1021,6 +1038,33 @@ onMounted(() => { load(); loadRegistry() })
               <ErrorMessage v-if="installError" :message="installError" />
             </div>
           </template>
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- Reinstall Site dialog -->
+    <Dialog v-model="showReinstall" :options="{ title: 'Reinstall Site', size: 'sm' }"
+      @close="reinstallConfirmText = ''; reinstallAdminPassword = ''">
+      <template #body-content>
+        <div @pointerdown.stop>
+          <div class="flex items-start gap-3 rounded-md border border-outline-red-2 bg-surface-red-1 p-3">
+            <LucideTriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-ink-red-4" />
+            <p class="text-sm leading-relaxed text-ink-gray-7">
+              This will wipe <strong>all data</strong> from <strong>{{ siteName }}</strong> and reinstall frappe from scratch.
+              Installed apps will be preserved but all records, users, and configuration will be lost.
+              This action <strong>cannot be undone</strong>.
+            </p>
+          </div>
+          <FormControl class="mt-4" type="password" label="New Administrator password" v-model="reinstallAdminPassword"
+            placeholder="admin" autocomplete="new-password" />
+          <FormControl class="mt-3" type="text" label="Type the site name to confirm" v-model="reinstallConfirmText"
+            :placeholder="siteName" autocomplete="off" />
+          <div class="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" @click="showReinstall = false">Cancel</Button>
+            <Button variant="solid" theme="red" :loading="actionLoading === 'reinstall'"
+              :disabled="reinstallConfirmText !== siteName || !reinstallAdminPassword"
+              @click="showReinstall = false; doAction('reinstall', { admin_password: reinstallAdminPassword })">Reinstall</Button>
+          </div>
         </div>
       </template>
     </Dialog>

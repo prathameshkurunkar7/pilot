@@ -35,6 +35,7 @@ _WHITELIST: dict[str, list[str]] = {
     "setup-production": [],
     "setup-letsencrypt": [],
     "new-site-from-backup": ["name", "db_file"],
+    "reinstall-site": ["site", "admin_password"],
     "bench-init": [],
     "update-cli": [],
 }
@@ -149,6 +150,10 @@ class TaskRunner:
             return argv
         if command == "drop-site":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.drop_site_task", str(self._bench_root), args["site"]]
+        if command == "reinstall-site":
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.reinstall_site_task", str(self._bench_root), args["site"]]
+            argv += ["--admin-password", args["admin_password"]]
+            return argv
         if command == "delete-backup":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.delete_backup_task", str(self._bench_root), args["site"], *args["filenames"]]
         if command == "install-app":
