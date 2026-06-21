@@ -35,12 +35,13 @@ def _catchall_conf() -> Path:
 
 def _stock_default_sites() -> list[Path]:
     """The distro's own default vhost(s), which also claim default_server on :80
-    and would conflict with our catch-all. Debian symlinks sites-enabled/default;
-    Alpine ships http.d/default.conf."""
-    return [
-        Path("/etc/nginx/sites-enabled/default"),
-        default_nginx_config_dir() / "default.conf",
-    ]
+    and would conflict with our catch-all. Debian symlinks sites-enabled/default
+    (removed on every Linux, as upstream does); Alpine additionally ships
+    http.d/default.conf."""
+    sites = [Path("/etc/nginx/sites-enabled/default")]
+    if is_alpine():
+        sites.append(default_nginx_config_dir() / "default.conf")
+    return sites
 
 # Custom pages for nginx-generated errors (downed upstream, missing static
 # file). App responses pass through unchanged — proxy_intercept_errors is off.
