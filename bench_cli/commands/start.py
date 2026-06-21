@@ -56,14 +56,21 @@ class RunCommand(Command):
             ProcessManager(self.bench, admin_dev=self.admin_dev).start()
             return
 
-        # Production bench (systemd/supervisor): the admin always runs under the
-        # process manager. Pick by the configured manager rather than via the
-        # factory, which gates on production.enabled.
-        from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+        # Production bench (systemd/supervisor/openrc): the admin always runs
+        # under the process manager. Pick by the configured manager rather than
+        # via the factory, which gates on production.enabled.
+        if process_manager == "systemd":
+            from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
-        manager = (SystemdProcessManager if process_manager == "systemd"
-                   else SupervisorProcessManager)(self.bench)
+            manager = SystemdProcessManager(self.bench)
+        elif process_manager == "openrc":
+            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+
+            manager = OpenRCProcessManager(self.bench)
+        else:
+            from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+
+            manager = SupervisorProcessManager(self.bench)
 
         if not initialized:
             # No workload yet — bring up just the admin (socket-activated) so the
