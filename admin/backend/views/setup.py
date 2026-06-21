@@ -6,7 +6,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, stream_wit
 
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
-from bench_cli.config.bench_toml_builder import BenchTomlBuilder
+from bench_cli.config.bench_toml_builder import FRAMEWORK_BRANCHES, BenchTomlBuilder, current_port_offset
 
 setup_bp = Blueprint("setup", __name__)
 
@@ -15,6 +15,11 @@ setup_bp = Blueprint("setup", __name__)
 def get_config():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     return jsonify(_read_defaults(bench_root))
+
+
+@setup_bp.route("/branches")
+def get_branches():
+    return jsonify({"branches": FRAMEWORK_BRANCHES})
 
 
 @setup_bp.route("/save", methods=["POST"])
@@ -26,35 +31,193 @@ def save_config():
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
-    settings = {**data, "admin_enabled": True}
-    content = BenchTomlBuilder(_current_name(bench_root), settings).render()
-    (bench_root / "bench.toml").write_text(content)
+    # A fresh install can only secure the pre-existing 'root' account
+    # (secure_installation runs ALTER USER 'root'@'localhost' — an arbitrary name
+    # is never created), so reject a custom root user for fresh installs. An
+    # existing DB can legitimately use a custom superuser.
+    admin_user = data.get("mariadb_admin_user") or "root"
+    if admin_user != "root" and _will_install_fresh(bench_root, data):
+        return jsonify({"ok": False, "error":
+            "A fresh MariaDB install only has the 'root' superuser; set the MariaDB root user to 'root'."}), 400
+
+    # Preserve any settings the wizard didn't send (e.g. python version, fields
+    # not shown in the current step). Incoming data wins on conflicts.
+    toml_path = bench_root / "bench.toml"
+    existing: dict = {}
+    if toml_path.exists():
+        try:
+            existing = BenchTomlBuilder.read_settings(toml_path)
+        except Exception:
+            pass
+
+    settings = {**existing, **data, "admin_enabled": True}
+    content = BenchTomlBuilder(_current_name(bench_root), settings, port_offset=current_port_offset(toml_path)).render()
+    toml_path.write_text(content)
     return jsonify({"ok": True})
+
+
+@setup_bp.route("/validate-mariadb", methods=["POST"])
+def validate_mariadb():
+    """Tell the wizard whether the entered credentials will work.
+
+    Dedicated instance: not yet provisioned → bench init will create it → will_install.
+    Shared instance: must validate against the running system MariaDB.
+    """
+    from bench_cli.managers.mariadb_manager import MariaDBManager
+
+    data = request.get_json(silent=True) or {}
+    password = data.get("mariadb_password", "")
+    admin_user = data.get("mariadb_admin_user", "root")
+    dedicated = data.get("dedicated_db", True)  # True = dedicated, False = shared
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    config = _mariadb_config(bench_root, password, admin_user, dedicated=dedicated)
+    manager = MariaDBManager(config)
+
+    # Fresh install → init will install + secure it (the wizard locks the root
+    # user to 'root' in this case, since secure_installation can only ALTER the
+    # pre-existing root account).
+    if _is_fresh_install(manager, dedicated):
+        return jsonify({"state": "will_install"})
+
+    if manager.check_credentials(password):
+        return jsonify({"state": "valid"})
+
+    return jsonify({"state": "invalid"})
+
+
+def _is_fresh_install(manager, dedicated: bool) -> bool:
+    """True when init will install/provision + secure MariaDB itself (rather than
+    connecting to an already-configured server)."""
+    if not manager.is_installed():
+        return True
+    # Dedicated instance not yet provisioned — init will create + secure it.
+    if dedicated and manager.is_dedicated and not manager.service_is_active():
+        return True
+    return False
+
+
+def _will_install_fresh(bench_root: Path, data: dict) -> bool:
+    """Fresh-install check for the /save payload (shared if no instance name)."""
+    from bench_cli.managers.mariadb_manager import MariaDBManager
+
+    dedicated = bool(data.get("mariadb_instance"))
+    config = _mariadb_config(
+        bench_root,
+        data.get("mariadb_password", ""),
+        data.get("mariadb_admin_user") or "root",
+        dedicated=dedicated,
+    )
+    return _is_fresh_install(MariaDBManager(config), dedicated)
+
+
+def _mariadb_config(bench_root: Path, password: str, admin_user: str = "root", dedicated: bool = True):
+    """Build a MariaDBConfig from the bench's toml with the entered credentials applied.
+
+    For shared DB (dedicated=False) we don't read the bench toml — the toml may
+    already have a dedicated instance name set (written by `bench new`), which would
+    make the manager try the dedicated socket that doesn't exist yet.
+    """
+    from bench_cli.config.mariadb_config import MariaDBConfig
+
+    config = MariaDBConfig(root_password=password, admin_user=admin_user)
+    if dedicated:
+        toml_path = bench_root / "bench.toml"
+        if toml_path.exists():
+            try:
+                settings = BenchTomlBuilder.read_settings(toml_path)
+                config.instance = settings.get("mariadb_instance", "") or ""
+                config.socket_path = settings.get("mariadb_socket_path", "") or ""
+            except Exception:
+                pass
+    return config
 
 
 def _validate(data: dict) -> str | None:
     for field in ("mariadb_password", "admin_password"):
         if not data.get(field):
             return f"{field} is required"
-    if data.get("volume_enabled"):
-        for field in ("volume_pool", "volume_device"):
-            if not data.get(field):
-                return f"{field} is required when volume management is enabled"
+    if data.get("volume_enabled", True):
+        if not data.get("volume_pool"):
+            return "volume_pool is required"
+        backing = data.get("volume_backing", "auto")
+        if backing == "device" and not data.get("volume_device"):
+            return "volume_device is required when volume backing is a block device"
+        if backing == "image" and not data.get("volume_image_size"):
+            return "volume_image_size is required when volume backing is a disk image"
     return None
 
 
 @setup_bp.route("/init", methods=["POST"])
 def start_init():
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.managers.volume_manager import VolumeManager
+    from bench_cli.platform import has_passwordless_sudo, is_linux
+
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
-    args = {}
-    if data.get("sudo_password"):
-        args["sudo_password"] = data["sudo_password"]
+
+    # The wizard runs init as a no-TTY task; without passwordless sudo it would
+    # hang on a hidden password prompt. Surface a clean error instead.
+    if is_linux() and not has_passwordless_sudo():
+        return jsonify({"ok": False, "error": "Passwordless sudo is not configured. "
+                        "Run install.sh (or add /etc/sudoers.d/<user> NOPASSWD) and retry."}), 400
+
+    # Pre-flight validation so volume sizing errors surface in the wizard
+    # instead of failing deep inside the init task.
     try:
-        task_id = TaskRunner(bench_root).run("bench-init", args)
+        config = BenchConfig.from_file(bench_root / "bench.toml")
+        config.validate()
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    if config.volume.enabled:
+        if error := VolumeManager(config.volume).validate_sizes_fit_backing():
+            return jsonify({"ok": False, "error": error}), 400
+
+    try:
+        task_id = TaskRunner(bench_root).run("bench-init", {})
         return jsonify({"ok": True, "task_id": task_id})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@setup_bp.route("/setup-production", methods=["POST"])
+def start_setup_production():
+    """Deploy the freshly-initialized bench to production using the process
+    manager + admin domain stored during the wizard, so it's reachable at its
+    domain instead of a localhost dev port."""
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        task_id = TaskRunner(bench_root).run("setup-production", {})
+        return jsonify({"ok": True, "task_id": task_id})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@setup_bp.route("/finish", methods=["POST"])
+def finish_setup():
+    """Shut down the standalone wizard server so the user can run `bench start`.
+
+    Only the wizard server (started with --wizard) may be shut down this way —
+    the procfile-managed admin process must never exit, since the dev-mode
+    runner stops the whole bench when any one process dies.
+    """
+    import os
+    import signal
+    import threading
+
+    if not current_app.config.get("WIZARD_SERVER"):
+        return jsonify({"ok": False, "error": "Not running as the setup-wizard server"}), 400
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not (bench_root / "config" / "Procfile").exists():
+        return jsonify({"ok": False, "error": "Bench is not initialized yet"}), 400
+
+    # call_on_close fires after the response body has been written to the
+    # socket, so the kill can't race ahead of the response. The tiny timer
+    # just lets the handler thread finish tearing down the connection.
+    response = jsonify({"ok": True})
+    response.call_on_close(lambda: threading.Timer(0.1, lambda: os.kill(os.getpid(), signal.SIGTERM)).start())
+    return response
 
 
 @setup_bp.route("/new-site", methods=["POST"])
@@ -83,6 +246,8 @@ def stream_task(task_id: str):
         for line in reader.stream_output(task_id):
             if line.startswith("__DONE__:"):
                 yield f"event: done\ndata: {line[9:]}\n\n"
+            elif line.startswith("__CR__:"):
+                yield f"event: overwrite\ndata: {line[7:]}\n\n"
             else:
                 yield f"data: {line}\n\n"
 
@@ -90,10 +255,14 @@ def stream_task(task_id: str):
 
 
 def _read_defaults(bench_root: Path) -> dict:
-    from bench_cli.platform import is_linux
     from admin.backend.tasks.manager.task_reader import TaskReader
+    from bench_cli.platform import is_linux
 
-    result = {"bench_name": bench_root.name, "is_linux": is_linux(), **BenchTomlBuilder.DEFAULTS}
+    result = {
+        "bench_name": bench_root.name,
+        "is_linux": is_linux(),
+        **BenchTomlBuilder.DEFAULTS,
+    }
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():
         try:
@@ -103,6 +272,8 @@ def _read_defaults(bench_root: Path) -> dict:
         except Exception:
             pass
 
+    result.update(_volume_suggestions(toml_path))
+
     try:
         tasks = TaskReader(bench_root).list_tasks()
         running = next((t for t in tasks if t.command == "bench-init" and t.status == "running"), None)
@@ -111,6 +282,41 @@ def _read_defaults(bench_root: Path) -> dict:
         result["running_init_task_id"] = None
 
     return result
+
+
+def _volume_suggestions(toml_path: Path) -> dict:
+    """Smart volume defaults for the wizard.
+
+    Fresh setups (no [volume] table yet) get discovery-driven defaults:
+    device backing on the largest unused disk, or image backing sized from
+    rootfs free space, with quotas/reservations derived from the backing size.
+    Existing volume config is never overridden — only the discovered device
+    list is returned so the UI can still offer a dropdown.
+    """
+    from bench_cli.platform import is_linux
+
+    if not is_linux():
+        return {"available_devices": []}
+
+    from bench_cli.managers.volume_manager import (
+        compute_smart_defaults,
+        list_device_choices,
+        rootfs_free_bytes,
+    )
+
+    slider_bounds = {"rootfs_free_bytes": rootfs_free_bytes()}
+
+    try:
+        import tomllib
+
+        with open(toml_path, "rb") as f:
+            has_volume_config = "volume" in tomllib.load(f)
+    except Exception:
+        has_volume_config = False
+
+    if has_volume_config:
+        return {"available_devices": list_device_choices(), **slider_bounds}
+    return {**compute_smart_defaults(), **slider_bounds}
 
 
 def _current_name(bench_root: Path) -> str:

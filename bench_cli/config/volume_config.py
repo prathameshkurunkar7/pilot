@@ -2,37 +2,41 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class BenchesDatasetConfig:
-    reservation: str = "10G"
-    quota: str = "50G"
-    data_dir: str = "/home/bench"
-
-
-@dataclass
-class MariaDBDatasetConfig:
+class DatasetConfig:
     reservation: str = "5G"
-    quota: str = "20G"
-    data_dir: str = "/var/lib/mysql"
+    quota: str = "50G"
 
 
 @dataclass
-class SnapshotConfig:
-    enabled: bool = False
+class ImageConfig:
+    size: str = ""
+    path: str = ""
 
 
 @dataclass
 class VolumeConfig:
+    """ZFS storage for the bench. Set enabled = false to skip ZFS entirely.
+
+    When enabled on Linux, the bench lives on a single dataset inside a shared
+    pool (one dataset per bench, named after the bench). Both the bench files
+    and the MariaDB data live on that one dataset — exposed at their
+    conventional paths via bind mounts — so a snapshot/rollback is atomic across
+    both. The pool is backed by a dedicated disk, a preallocated image file on
+    the root filesystem, or auto-resolved at init time. Skipped on macOS (dev
+    only)."""
+
     enabled: bool = False
-    pool: str = ""
+    pool: str = "bench-pool"
+    name: str = ""  # dataset leaf, defaults to the bench name
+    backing: str = "auto"  # "device" | "image" | "auto" (resolved during bench init)
     device: str = ""
-    benches: BenchesDatasetConfig = field(default_factory=BenchesDatasetConfig)
-    mariadb: MariaDBDatasetConfig = field(default_factory=MariaDBDatasetConfig)
-    snapshots: SnapshotConfig = field(default_factory=SnapshotConfig)
+    image: ImageConfig = field(default_factory=ImageConfig)
+    dataset: DatasetConfig = field(default_factory=DatasetConfig)
 
     @property
-    def benches_dataset(self) -> str:
-        return f"{self.pool}/benches"
+    def dataset_path(self) -> str:
+        return f"{self.pool}/{self.name or 'bench'}"
 
     @property
-    def mariadb_dataset(self) -> str:
-        return f"{self.pool}/mariadb"
+    def image_path(self) -> str:
+        return self.image.path or f"/var/lib/bench-zfs/{self.pool}.img"

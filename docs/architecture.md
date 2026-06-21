@@ -10,7 +10,9 @@ bench_cli/
 │
 └── bench_cli/                         # Python package
     ├── __init__.py
-    ├── cli.py                   # argparse entry point — wires commands to classes
+    ├── cli.py                   # thin entry point — global flags + Frappe passthrough
+    ├── registry.py              # auto-discovers commands, builds parser, dispatches
+    ├── loader.py                # find_bench_root / load_bench — bench resolution
     ├── platform.py              # OS detection and system package manager abstraction
     ├── utils.py                 # write_toml — stdlib TOML serialiser
     │
@@ -40,14 +42,15 @@ bench_cli/
     │   ├── nginx_manager.py          # NginxManager — config generation and reload
     │   └── letsencrypt_manager.py    # LetsEncryptManager — cert obtain and renew
     │
-    ├── commands/                # One class per CLI command
+    ├── commands/                # One self-registering Command subclass per file
     │   ├── __init__.py
+    │   ├── base.py              # Command    — base class all commands subclass
     │   ├── new.py               # NewCommand     — scaffold a starter bench.toml
     │   ├── init.py              # InitCommand    — install deps, clone framework app
-    │   ├── start.py             # StartCommand   — run Procfile processes in foreground
+    │   ├── start.py             # RunCommand     — run Procfile processes in foreground
     │   ├── build.py             # BuildCommand
     │   ├── update.py            # UpdateCommand
-    │   └── setup/
+    │   └── setup/               # commands with group = "setup"
     │       ├── __init__.py
     │       ├── nginx.py         # SetupNginxCommand
     │       ├── letsencrypt.py   # SetupLetsEncryptCommand
@@ -97,7 +100,7 @@ bench-cli/
         │   ├── redis_queue.conf
         │   ├── redis_socketio.conf
         │   ├── Procfile        # built-in process runner input
-        │   └── nginx/          # written by bench setup nginx (nginx.enabled = true)
+        │   └── nginx/          # written by bench setup nginx (production.enabled = true)
         │       ├── include.conf    # single include directive — symlinked into nginx config_dir
         │       ├── site1.example.com.conf
         │       └── site2.example.com.conf
@@ -176,7 +179,12 @@ class MariaDBConfig:
     admin_user: str = 'root'
     socket_path: str = ''
     version: Optional[str] = None   # e.g. "10.6", "11.4"
+    instance: str = ''              # '' = shared server; else this bench's own mariadb@<instance>
+    data_dir: str = ''              # instance datadir; defaults to /var/lib/mysql-<instance>
 ```
+
+When `instance` is set the bench runs its own MariaDB server rather than the
+shared one — see [Per-bench MariaDB instances](#per-bench-mariadb-instances).
 
 ### `RedisConfig`
 
@@ -316,21 +324,95 @@ class MariaDBManager:
 
     def start(self) -> None:
         """
-        Start the MariaDB service.
-        Ubuntu: systemctl start mariadb  (service name is version-independent on Linux)
+        Start the MariaDB service (service_unit(): "mariadb" shared, or
+        "mariadb@<instance>" when the bench owns an instance).
+        Ubuntu: systemctl start <service_unit>
         macOS:  brew services start mariadb[@<version>]  — uses the versioned formula name
                 so the correct service is started when a non-default version is installed.
         """
 
-    def create_database(self, db_name: str) -> None:
-        """CREATE DATABASE IF NOT EXISTS."""
+    def is_dedicated(self) -> bool:
+        """True when config.instance is set (this bench runs its own server)."""
 
-    def create_user(self, username: str, password: str, db_name: str) -> None:
-        """CREATE USER and GRANT ALL on db_name."""
+    def provision_instance(self, staging_dir: Path) -> None:
+        """Linux only. Create/start/secure this bench's own MariaDB instance:
+        stage the [mariadbd.<instance>] option group into mariadb.conf.d/, create
+        the mysql-owned datadir, then `systemctl enable --now mariadb@<instance>`
+        (the packaged template runs mariadb-install-db), and set the root
+        password. See Per-bench MariaDB instances below.
+        """
 
     def _connect(self) -> 'MySQLConnection':
-        """Return an authenticated root connection."""
+        """Return an authenticated root connection (via the instance socket/port
+        when dedicated, otherwise the shared server)."""
 ```
+
+---
+
+## Per-bench MariaDB instances
+
+By default a bench uses the **shared system MariaDB** — one server on `:3306`
+that every bench and site connects to. This is the legacy behaviour and remains
+the default for any bench whose `bench.toml` does not set `mariadb.instance`.
+
+`bench new` (on Linux) instead provisions each new bench its **own** MariaDB
+server: `mariadb.instance = <bench-name>`, run as the systemd template unit
+`mariadb@<instance>`, with its own datadir, socket, and TCP port.
+
+### Why a server per bench, not just a database per bench
+
+The shared server already gives each *site* its own database and user, so the
+motivation is isolation at the **server** level:
+
+- **Independent snapshots & rollback.** ZFS snapshots and rollbacks operate on a
+  bench's own datadir. With one shared datadir under `/var/lib/mysql`, rolling
+  one bench's database back to a snapshot would roll back *every* bench's data.
+  A datadir per instance (`/var/lib/mysql-<instance>`) makes snapshot/restore
+  truly per-bench — the reason the datadir is a sibling path, never nested.
+- **Blast-radius containment.** A runaway query, a crash, a corrupted table, or a
+  `DROP`/restore in one bench cannot affect another. Resource limits
+  (buffer pool, connections) are per server.
+- **Independent lifecycle & config.** Each bench can run a different server
+  config, be started/stopped/upgraded on its own, and be torn down by simply
+  removing its instance — without coordinating with other tenants of a shared
+  server.
+- **Parity with production multitenancy.** Each bench is a self-contained unit
+  (apps, sites, redis, processes — and now its database), which matches how
+  benches are otherwise isolated on disk and in the process manager.
+
+The trade-off is higher memory use (each server has its own InnoDB buffer pool),
+so the shared mode stays fully supported for small or single-bench hosts.
+
+### How it works (Linux)
+
+1. **Config group.** `_write_instance_config` writes
+   `[mariadbd.<instance>]` (datadir, socket, port, pid-file, bind-address) to
+   `/etc/mysql/mariadb.conf.d/99-bench-<instance>.cnf`. The packaged
+   `mariadb@.service` starts `mariadbd --defaults-group-suffix=.<instance>`, so
+   only that instance reads this group; the shared server ignores it. The
+   `99-` prefix / `mariadb.conf.d/` location matters: that directory is included
+   **after** `conf.d/` and after `50-server.cnf`, whose base `[mariadbd]` sets a
+   `pid-file`. Read any earlier, the instance's `pid-file` would be silently
+   overridden back to the shared default and collide.
+2. **Datadir.** A mysql-owned datadir is created at `/var/lib/mysql-<instance>`
+   (a sibling of `/var/lib/mysql`, never nested — see above). When the bench's
+   `[volume]` is enabled, its ZFS `mariadb` dataset is mounted here first, so
+   the database lives on ZFS; otherwise it is a plain directory.
+3. **Start & secure.** `systemctl enable --now mariadb@<instance>` starts the
+   server (its `ExecStartPre` runs `mariadb-install-db` to initialise the
+   datadir), then the root password from `bench.toml` is set the same way a
+   fresh shared install is secured.
+
+During `bench init` the instance is provisioned **after** volume setup so a
+ZFS-backed datadir is mounted before initialisation; sites then connect to the
+instance over its socket, and the admin UI over its port.
+
+### Platform support
+
+Per-bench instances are **Linux only** — they rely on systemd template units.
+On macOS (a development-only platform with no systemd) `bench new` leaves
+`mariadb.instance` empty, so macOS benches use the shared Homebrew MariaDB;
+per-site database isolation still applies.
 
 ### `RedisManager`
 
@@ -462,24 +544,91 @@ class UpdateCommand:
 
 ---
 
-## CLI entry point (`bench_cli/cli.py`)
+## CLI entry point and command registry
 
-Built with `argparse` (stdlib). Zero Python dependencies. Responsibilities:
-1. Find the bench root — locate `bench.toml` by name under `benches/`, or use `-b/--bench NAME`.
-2. Parse and validate it into a `BenchConfig` via `tomllib` (stdlib).
-3. Construct a `Bench`.
-4. Instantiate and call the appropriate command class.
+Built with `argparse` (stdlib). Zero Python dependencies. The wiring is split into
+three small modules so that **a command owns everything about itself in one file** —
+adding or changing a command never touches the CLI layer.
 
-Also handles `bench frappe ...` passthrough: unknown sub-commands are forwarded to `env/bin/bench` inside the active bench.
+### `commands/base.py` — the `Command` base class
+
+Every command subclasses `Command` and declares its own metadata, arguments, and
+execution. Subclasses keep their own `__init__` (used directly in tests and by other
+commands); the registry builds an instance through `from_args`.
 
 ```python
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-b', '--bench', ...)   # bench name under benches/
-    subparsers = parser.add_subparsers(dest='command')
-    # new, init, start, stop, get-app, new-site, build, update, update-config,
-    # admin, start-admin, stop-admin, setup nginx, setup letsencrypt, setup production
+class Command:
+    name: ClassVar[str]                  # CLI name, e.g. "remove-app"
+    help: ClassVar[str] = ""
+    group: ClassVar[str | None] = None   # subcommand group: "setup" | "volume" | None
+    requires_bench: ClassVar[bool] = True # registry loads the Bench and passes it in
+
+    def __init__(self, bench=None): ...
+
+    @classmethod
+    def add_arguments(cls, parser): ...           # declare argparse arguments
+
+    @classmethod
+    def from_args(cls, args, bench): ...          # map parsed args → constructor
+
+    def run(self) -> None: ...                    # do the work
 ```
+
+### `registry.py` — discovery, parser, dispatch
+
+1. **Discover** — imports every module under `commands/` and collects all `Command`
+   subclasses that set a `name`. No hand-maintained list.
+2. **`build_parser()`** — adds the global flags (`--verbose`, `--yes`, `--bench`) once,
+   then one sub-parser per command (and a parent parser per `group`). Each command's
+   `add_arguments()` populates its own sub-parser, and `set_defaults(_command_cls=…)`
+   records which class owns it.
+3. **`dispatch(args)`** — reads `_command_cls`, loads the `Bench` when
+   `requires_bench` is set, then runs `cls.from_args(args, bench).run()`. No `elif`
+   chain.
+
+### `cli.py` — the thin entry point
+
+Resolves global flags, then either forwards to the registry or handles the one special
+case: `bench frappe …` / unknown sub-commands are passed through to `env/bin/bench`
+inside the active bench (handled before argparse so flags like `--site` aren't consumed).
+
+### Adding a command
+
+Create one file under `commands/` — nothing else:
+
+```python
+# bench_cli/commands/list_apps.py
+from bench_cli.commands.base import Command
+
+
+class ListAppsCommand(Command):
+    name = "list-apps"
+    help = "List apps installed in the bench."
+
+    def run(self) -> None:
+        for line in (self.bench.sites_path / "apps.txt").read_text().splitlines():
+            print(line)
+```
+
+For arguments and grouping:
+
+```python
+class RemoveAppCommand(Command):
+    name = "remove-app"
+    help = "Remove an app from the bench."
+
+    @classmethod
+    def add_arguments(cls, parser):
+        parser.add_argument("app", help="App name to remove.")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, args.app, skip_confirm=args.yes)
+```
+
+Set `group = "setup"` (or `"volume"`) on the class to nest it as `bench setup <name>`.
+Set `requires_bench = False` for commands that don't operate on a bench (e.g. `new`,
+`build-admin`).
 
 ---
 

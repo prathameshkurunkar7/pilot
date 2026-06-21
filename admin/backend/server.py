@@ -18,6 +18,7 @@ def main() -> None:
     parser.add_argument("--timeout", type=int, default=900, help="Inactivity timeout in seconds")
     parser.add_argument("--no-timeout", action="store_true", help="Disable inactivity watchdog (used when managed by procfile)")
     parser.add_argument("--dev", action="store_true", help="Enable auto-reload on code changes (development only)")
+    parser.add_argument("--wizard", action="store_true", help="Running as the standalone setup-wizard server")
     args = parser.parse_args()
 
     from admin.backend.app import create_app
@@ -25,6 +26,7 @@ def main() -> None:
 
     bench_root = Path(args.bench_root)
     app = create_app(bench_root)
+    app.config["WIZARD_SERVER"] = args.wizard
 
     skip_watchdog = args.no_timeout or args.dev
     if not skip_watchdog:
@@ -54,7 +56,9 @@ def main() -> None:
     if args.dev and not os.environ.get("WERKZEUG_RUN_MAIN"):
         _start_vite_watch()
 
-    app.run(host="0.0.0.0", port=args.port, threaded=True, use_reloader=args.dev)
+    # "::" makes Werkzeug bind a dual-stack socket, so the admin is reachable
+    # over both IPv4 and IPv6 in dev (where there is no nginx in front).
+    app.run(host="::", port=args.port, threaded=True, use_reloader=args.dev)
 
 
 def _start_vite_watch() -> None:
@@ -63,7 +67,7 @@ def _start_vite_watch() -> None:
         return
 
     def _run() -> None:
-        subprocess.run(["node_modules/.bin/vite", "build", "--watch"], cwd=str(frontend_dir))
+        subprocess.run(["node_modules/.bin/vite", "build", "--watch", "--mode", "development"], cwd=str(frontend_dir))
 
     threading.Thread(target=_run, daemon=True).start()
 

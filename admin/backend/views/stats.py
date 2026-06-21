@@ -24,8 +24,11 @@ def _directory_size(path: str) -> int:
 
 
 def _path_sizes(bench_root: Path, config: BenchConfig) -> list[dict]:
+    from bench_cli.managers.mariadb_manager import MariaDBManager
+
     benches_dir = str(bench_root)
-    mariadb_dir = config.volume.mariadb.data_dir
+    mariadb = MariaDBManager(config.mariadb)
+    mariadb_dir = mariadb.data_dir() if mariadb.is_dedicated else "/var/lib/mysql"
     return [
         {"label": "Benches", "path": benches_dir, "used_bytes": _directory_size(benches_dir)},
         {"label": "MariaDB", "path": mariadb_dir, "used_bytes": _directory_size(mariadb_dir)},
@@ -44,7 +47,7 @@ def stats():
         {
             "cpu_percent": psutil.cpu_percent(),
             "memory_percent": mem.percent,
-            "memory_used": mem.used,
+            "memory_used": mem.total - mem.available,
             "memory_total": mem.total,
             "disk_percent": disk.percent,
             "disk_used": disk.used,

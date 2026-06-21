@@ -4,11 +4,16 @@ import shutil
 import subprocess
 from typing import TYPE_CHECKING
 
+from bench_cli.commands.base import Command
+
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
 
 
-class StatusCommand:
+class StatusCommand(Command):
+    name = "status"
+    help = "Show bench status summary."
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
 
@@ -22,15 +27,11 @@ class StatusCommand:
         self._row("Path", str(self.bench.path))
 
         if not prod.enabled:
-            self._row("Mode", "development (Procfile)")
+            self._row("Mode", "development")
+            self._row("Manager", "foreground (Procfile)")
             self._print_processes_dev()
         else:
-            mode = {
-                "systemd": "systemd (--user)",
-                "openrc": "openrc",
-                "supervisor": "supervisor (bench-local)",
-            }.get(prod.process_manager, prod.process_manager)
-            self._row("Mode", f"production  [{mode}]")
+            self._row("Mode", "production")
             self._print_processes_prod()
 
         self._section("Sites")
@@ -50,7 +51,7 @@ class StatusCommand:
         else:
             print("  (no apps cloned)")
 
-        if prod.enabled and prod.nginx:
+        if prod.enabled:
             self._section("Nginx")
             nginx_status = self._service_status("nginx")
             self._row("Status", nginx_status)
@@ -59,19 +60,19 @@ class StatusCommand:
 
         self._section("Redis")
         redis = cfg.redis
-        if redis.is_single_instance:
-            self._row("Port", str(redis.cache_port))
-        else:
-            self._row("Cache port", str(redis.cache_port))
-            self._row("Queue port", str(redis.queue_port))
-            self._row("SocketIO port", str(redis.socketio_port))
+        self._row("Cache port", str(redis.cache_port))
+        self._row("Queue port", str(redis.queue_port))
 
         if cfg.admin.enabled:
+            from bench_cli.admin_url import admin_url
+
             self._section("Admin")
-            self._row("URL", f"http://localhost:{cfg.admin.port}")
+            self._row("URL", admin_url(cfg))
             self._row("Auth", "enabled" if cfg.admin.password else "no password set")
 
-        if cfg.volume.enabled:
+        from bench_cli.platform import is_linux
+
+        if is_linux():
             self._section("Volume (ZFS)")
             self._print_zfs()
 
@@ -85,17 +86,25 @@ class StatusCommand:
 
     def _print_processes_prod(self) -> None:
         from bench_cli.managers.process_manager import ProcessManagerFactory
+        cfg = self.bench.config
         mgr = ProcessManagerFactory.create(self.bench)
         configured = mgr.is_configured()
-        running = mgr.is_running() if configured else False
-        self._row("Configured", _ok("yes") if configured else _warn("no  (run: bench setup production)"))
-        self._row("Processes", _ok("running") if running else _dim("stopped"))
+        self._row("Configured manager", cfg.production.process_manager)
+        if not configured:
+            self._row("Installed manager", _warn("missing"))
+            self._row("State", _warn("incomplete deployment"))
+            print(f"\n  Repair:\n    bench -b {cfg.name} setup production")
+            return
+        self._row("Installed manager", _ok(cfg.production.process_manager))
+        workload = mgr.is_running()
+        admin = mgr.admin_is_running()
+        self._row("Workload", _ok("running") if workload else _dim("stopped"))
+        self._row("Admin", _ok("running") if admin else _dim("stopped"))
 
     def _print_zfs(self) -> None:
         vol = self.bench.config.volume
         self._row("Pool", vol.pool)
-        self._row("Device", vol.device)
-        self._row("Snapshots", "enabled" if vol.snapshots.enabled else "disabled")
+        self._row("Backing", vol.device if vol.backing == "device" else vol.image_path if vol.backing == "image" else "auto (resolved at init)")
 
         if not shutil.which("zfs"):
             self._row("ZFS data", _warn("zfs binary not found"))
@@ -117,9 +126,13 @@ class StatusCommand:
                 self._row(label, _warn("not found"))
 
     def _service_status(self, service: str) -> str:
-        from bench_cli.platform import service_running
-
-        return _ok("active") if service_running(service) else _dim("inactive")
+        result = subprocess.run(
+            ["systemctl", "is-active", service],
+            capture_output=True,
+            text=True,
+        )
+        active = result.stdout.strip() == "active"
+        return _ok("active") if active else _dim(result.stdout.strip() or "inactive")
 
     def _section(self, title: str) -> None:
         print(f"\n\033[1m{title}\033[0m")

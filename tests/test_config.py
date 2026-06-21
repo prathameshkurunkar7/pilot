@@ -23,7 +23,8 @@ MINIMAL_VALID_DATA: dict = {
         {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
     ],
     "mariadb": {"root_password": "root"},
-    "redis": {"cache_port": 13000, "queue_port": 11000, "socketio_port": 12000},
+    "redis": {"cache_port": 13000, "queue_port": 11000},
+    "admin": {"domain": "admin.test.localhost"},
 }
 
 
@@ -44,7 +45,6 @@ def test_load_minimal_config() -> None:
 
     assert config.redis.cache_port == 13000
     assert config.redis.queue_port == 11000
-    assert config.redis.socketio_port == 12000
 
 
 def test_framework_app_is_first() -> None:
@@ -116,19 +116,20 @@ def test_rule_8_redis_ports_out_of_range() -> None:
     assert "redis.cache_port" in str(exc_info.value)
 
 
-def test_rule_8_redis_ports_not_distinct() -> None:
+def test_rule_8_redis_ports_must_be_distinct() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["redis"]["queue_port"] = 13000
-    config = load_from_dict(data)
-    assert config.redis.cache_port == config.redis.queue_port
+    data["redis"]["queue_port"] = 13000  # same as cache_port
+    with pytest.raises(ConfigError) as exc_info:
+        load_from_dict(data)
+    assert "redis.cache_port" in str(exc_info.value) or "redis.queue_port" in str(exc_info.value)
 
 
 def test_rule_9_worker_counts_must_be_positive() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["workers"] = {"default": 0, "short": 1, "long": 1}
+    data["workers"] = [{"queues": ["default"], "count": 0}]
     with pytest.raises(ConfigError) as exc_info:
         load_from_dict(data)
-    assert "workers.default_count" in str(exc_info.value)
+    assert "workers[0].count" in str(exc_info.value)
 
 
 def test_rule_11_invalid_letsencrypt_email() -> None:
@@ -137,14 +138,6 @@ def test_rule_11_invalid_letsencrypt_email() -> None:
     with pytest.raises(ConfigError) as exc_info:
         load_from_dict(data)
     assert "letsencrypt.email" in str(exc_info.value)
-
-
-def test_rule_13_nginx_ports_must_be_distinct() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["nginx"] = {"enabled": False, "http_port": 80, "https_port": 80}
-    with pytest.raises(ConfigError) as exc_info:
-        load_from_dict(data)
-    assert "nginx.http_port" in str(exc_info.value) or "nginx.https_port" in str(exc_info.value)
 
 
 # ── Dependency version tests ──────────────────────────────────────────────────
@@ -181,6 +174,50 @@ def test_invalid_mariadb_version() -> None:
     with pytest.raises(ConfigError) as exc_info:
         config.validate()
     assert "mariadb.version" in str(exc_info.value)
+
+
+def test_mariadb_instance_defaults_to_shared() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.mariadb.instance == ""
+    assert config.mariadb.data_dir == ""
+
+
+def test_mariadb_instance_and_data_dir_roundtrip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["mariadb"]["instance"] = "test-bench"
+    data["mariadb"]["data_dir"] = "/var/lib/mysql/test-bench"
+    config = load_from_dict(data)
+    assert config.mariadb.instance == "test-bench"
+    assert config.mariadb.data_dir == "/var/lib/mysql/test-bench"
+    # instance/data_dir survive serialization and only appear when set
+    toml = bench_config_to_toml(config)
+    assert 'instance = "test-bench"' in toml
+    assert 'data_dir = "/var/lib/mysql/test-bench"' in toml
+
+
+def test_mariadb_instance_omitted_from_toml_when_shared() -> None:
+    toml = bench_config_to_toml(load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA)))
+    assert "instance =" not in toml
+    assert "data_dir =" not in toml
+
+
+def test_invalid_mariadb_instance_name() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["mariadb"]["instance"] = "1bad name"
+    config = BenchConfig._from_dict(data)
+    with pytest.raises(ConfigError) as exc_info:
+        config.validate()
+    assert "mariadb.instance" in str(exc_info.value)
+
+
+def test_mariadb_data_dir_must_be_absolute() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["mariadb"]["instance"] = "test-bench"
+    data["mariadb"]["data_dir"] = "relative/path"
+    config = BenchConfig._from_dict(data)
+    with pytest.raises(ConfigError) as exc_info:
+        config.validate()
+    assert "mariadb.data_dir" in str(exc_info.value)
 
 
 def test_invalid_redis_version() -> None:
@@ -242,87 +279,209 @@ def test_branches_single_branch_no_list_is_valid() -> None:
 
 def test_production_defaults() -> None:
     p = ProductionConfig()
-    assert p.process_manager == "none"
-    assert p.nginx is False
-    assert p.enabled is False
-
-
-def test_production_enabled_when_supervisor() -> None:
-    p = ProductionConfig(process_manager="supervisor")
-    assert p.enabled is True
-
-
-def test_production_enabled_when_systemd() -> None:
-    p = ProductionConfig(process_manager="systemd")
-    assert p.enabled is True
-
-
-def test_production_not_enabled_when_none() -> None:
-    p = ProductionConfig(process_manager="none")
+    assert p.process_manager == ""
     assert p.enabled is False
 
 
 def test_production_parse_new_format_supervisor() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"process_manager": "supervisor", "nginx": False}
+    data["production"] = {"enabled": True, "process_manager": "supervisor"}
     config = load_from_dict(data)
     assert config.production.process_manager == "supervisor"
-    assert config.production.nginx is False
     assert config.production.enabled is True
 
 
-def test_production_parse_new_format_systemd_with_nginx() -> None:
+def test_production_parse_new_format_systemd() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"process_manager": "systemd", "nginx": True}
+    data["production"] = {"enabled": True, "process_manager": "systemd"}
     config = load_from_dict(data)
     assert config.production.process_manager == "systemd"
-    assert config.production.nginx is True
+    assert config.production.enabled is True
 
 
-def test_production_parse_new_format_none() -> None:
+def test_production_parse_new_format_disabled() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"process_manager": "none"}
+    data["production"] = {"enabled": False}
     config = load_from_dict(data)
-    assert config.production.process_manager == "none"
+    assert config.production.process_manager == ""
     assert config.production.enabled is False
 
 
-def test_production_legacy_enabled_supervisor() -> None:
+def test_production_supervisord_alias_normalized() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"enabled": True, "lightweight": False, "nginx": True}
+    data["production"] = {"enabled": True, "process_manager": "supervisord"}
     config = load_from_dict(data)
     assert config.production.process_manager == "supervisor"
-    assert config.production.nginx is True
 
 
-def test_production_legacy_enabled_systemd() -> None:
+def test_production_legacy_process_manager_implies_enabled() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"process_manager": "supervisor", "nginx": True}
+    config = load_from_dict(data)
+    assert config.production.process_manager == "supervisor"
+    assert config.production.enabled is True
+
+
+def test_production_legacy_process_manager_none_disables() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"process_manager": "none"}
+    config = load_from_dict(data)
+    assert config.production.process_manager == ""
+    assert config.production.enabled is False
+
+
+def test_production_legacy_lightweight_systemd() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["production"] = {"enabled": True, "lightweight": True}
     config = load_from_dict(data)
     assert config.production.process_manager == "systemd"
-
-
-def test_production_legacy_disabled() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"enabled": False}
-    config = load_from_dict(data)
-    assert config.production.process_manager == "none"
-    assert config.production.enabled is False
+    assert config.production.enabled is True
 
 
 def test_production_missing_section_defaults() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     config = load_from_dict(data)
-    assert config.production.process_manager == "none"
-    assert config.production.nginx is False
+    assert config.production.process_manager == ""
+    assert config.production.enabled is False
 
 
-def test_toml_writer_production_uses_process_manager() -> None:
+def test_production_enabled_requires_process_manager() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["production"] = {"process_manager": "supervisor", "nginx": True}
+    data["production"] = {"enabled": True}
+    data["admin"] = {"domain": "admin.example.com"}
+    with pytest.raises(ConfigError):
+        load_from_dict(data)
+
+
+def test_toml_writer_production_emits_enabled_and_pm() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["production"] = {"enabled": True, "process_manager": "supervisor"}
     config = load_from_dict(data)
     toml = bench_config_to_toml(config)
+    assert "enabled = true" in toml.split("[production]")[1].split("[")[0]
     assert 'process_manager = "supervisor"' in toml
-    assert "nginx = true" in toml
+    assert "nginx" not in toml.split("[production]")[1].split("[")[0]
     assert "lightweight" not in toml
-    assert "enabled" not in toml.split("[production]")[1].split("[")[0]
+
+
+def test_toml_writer_production_disabled_omits_pm() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    config = load_from_dict(data)
+    section = bench_config_to_toml(config).split("[production]")[1].split("[")[0]
+    assert "enabled = false" in section
+    assert "process_manager" not in section
+
+
+def test_admin_tls_roundtrip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["admin"] = {"domain": "admin.example.com", "tls": False}
+    config = load_from_dict(data)
+    assert config.admin.tls is False
+    assert "tls = false" in bench_config_to_toml(config)
+
+
+# ── volume backing ────────────────────────────────────────────────────────────
+
+
+def _data_with_volume(volume: dict) -> dict:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["volume"] = {"enabled": True, "pool": "bench-pool", **volume}
+    return data
+
+
+def test_volume_device_backing_valid() -> None:
+    config = load_from_dict(_data_with_volume({"device": "/dev/sdb"}))
+    assert config.volume.backing == "device"
+    assert config.volume.device == "/dev/sdb"
+
+
+def test_volume_device_backing_requires_device() -> None:
+    with pytest.raises(ConfigError, match="volume.device is required"):
+        load_from_dict(_data_with_volume({"backing": "device"}))
+
+
+def test_volume_backing_inferred_from_device() -> None:
+    config = load_from_dict(_data_with_volume({"device": "/dev/sdb"}))
+    assert config.volume.backing == "device"
+
+
+def test_volume_defaults_to_auto_backing() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    config = load_from_dict(data)  # no [volume] section at all
+    assert config.volume.pool == "bench-pool"
+    assert config.volume.backing == "auto"
+
+
+def test_volume_image_backing_valid() -> None:
+    config = load_from_dict(_data_with_volume({"backing": "image", "image": {"size": "60G"}}))
+    assert config.volume.image.size == "60G"
+    assert config.volume.image_path == "/var/lib/bench-zfs/bench-pool.img"
+
+
+def test_volume_image_backing_requires_size() -> None:
+    with pytest.raises(ConfigError, match="volume.image.size is required"):
+        load_from_dict(_data_with_volume({"backing": "image"}))
+
+
+def test_volume_image_path_must_be_absolute() -> None:
+    with pytest.raises(ConfigError, match="must be an absolute path"):
+        load_from_dict(_data_with_volume({"backing": "image", "image": {"size": "60G", "path": "relative/pool.img"}}))
+
+
+def test_volume_image_custom_path_used() -> None:
+    config = load_from_dict(_data_with_volume({"backing": "image", "image": {"size": "60G", "path": "/data/pool.img"}}))
+    assert config.volume.image_path == "/data/pool.img"
+
+
+def test_volume_auto_backing_requires_no_backing_fields() -> None:
+    config = load_from_dict(_data_with_volume({"backing": "auto"}))
+    assert config.volume.backing == "auto"
+
+
+def test_volume_invalid_backing_rejected() -> None:
+    with pytest.raises(ConfigError, match="Must be 'device', 'image', or 'auto'"):
+        load_from_dict(_data_with_volume({"backing": "loopback"}))
+
+
+def test_volume_reservation_cannot_exceed_quota() -> None:
+    with pytest.raises(ConfigError, match="cannot exceed quota"):
+        load_from_dict(_data_with_volume({"device": "/dev/sdb", "dataset": {"reservation": "20G", "quota": "10G"}}))
+
+
+def test_volume_skipped_when_not_configured() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)  # no [volume] section
+    config = BenchConfig._from_dict(data)
+    config.validate()  # must not raise — ZFS validation is skipped when volume not configured
+    assert not config.volume.enabled
+
+
+def test_toml_writer_omits_volume_when_not_configured() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    config = load_from_dict(data)
+    toml = bench_config_to_toml(config)
+    assert "[volume]" not in toml
+
+
+def test_toml_writer_volume_image_backing_round_trip() -> None:
+    config = load_from_dict(_data_with_volume({"backing": "image", "image": {"size": "60G", "path": "/data/pool.img"}}))
+    toml = bench_config_to_toml(config)
+    assert 'backing = "image"' in toml
+    assert '[volume.image]' in toml
+    assert 'size = "60G"' in toml
+    assert 'path = "/data/pool.img"' in toml
+    assert 'device = ' not in toml.split("[volume]")[1]
+
+
+def test_toml_writer_volume_device_backing() -> None:
+    config = load_from_dict(_data_with_volume({"device": "/dev/sdb"}))
+    toml = bench_config_to_toml(config)
+    assert 'backing = "device"' in toml
+    assert 'device = "/dev/sdb"' in toml
+    assert "[volume.image]" not in toml
+
+
+def test_admin_internal_port_is_port_plus_one() -> None:
+    from bench_cli.config.admin_config import AdminConfig
+
+    assert AdminConfig(port=8002).internal_port == 8003
+    assert AdminConfig(port=9100).internal_port == 9101

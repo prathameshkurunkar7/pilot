@@ -11,6 +11,9 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f'python = "{config.python_version}"')
     parts.append(f"http_port = {config.http_port}")
     parts.append(f"socketio_port = {config.socketio_port}")
+    parts.append(f'socketio_backend = "{config.socketio_backend}"')
+    if config.default_branch:
+        parts.append(f'default_branch = "{config.default_branch}"')
     parts.append("")
 
     for app in config.apps:
@@ -32,43 +35,44 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f'socket_path = "{m.socket_path}"')
     if m.version:
         parts.append(f'version = "{m.version}"')
+    if m.instance:
+        parts.append(f'instance = "{m.instance}"')
+    if m.data_dir:
+        parts.append(f'data_dir = "{m.data_dir}"')
     parts.append("")
 
     r = config.redis
     parts.append("[redis]")
     parts.append(f"cache_port = {r.cache_port}")
     parts.append(f"queue_port = {r.queue_port}")
-    parts.append(f"socketio_port = {r.socketio_port}")
     if r.version:
         parts.append(f'version = "{r.version}"')
     parts.append("")
 
-    w = config.workers
-    parts.append("[workers]")
-    parts.append(f"default = {w.default_count}")
-    parts.append(f"short = {w.short_count}")
-    parts.append(f"long = {w.long_count}")
-    for entry in w.custom:
+    for group in config.workers.groups:
+        parts.append("[[workers]]")
+        queues = ", ".join(f'"{q}"' for q in group.queues)
+        parts.append(f"queues = [{queues}]")
+        parts.append(f"count = {group.count}")
         parts.append("")
-        parts.append("[[workers.custom]]")
-        parts.append(f'queue = "{entry.queue}"')
-        parts.append(f"count = {entry.count}")
-        parts.append(f"timeout = {entry.timeout}")
-    parts.append("")
 
     p = config.production
     parts.append("[production]")
-    parts.append(f'process_manager = "{p.process_manager}"')
-    parts.append(f"nginx = {'true' if p.nginx else 'false'}")
+    parts.append(f"enabled = {'true' if p.enabled else 'false'}")
+    if p.process_manager:
+        parts.append(f'process_manager = "{p.process_manager}"')
+    parts.append(f"use_companion_manager = {'true' if p.use_companion_manager else 'false'}")
     parts.append("")
 
-    n = config.nginx
-    parts.append("[nginx]")
-    parts.append(f"http_port = {n.http_port}")
-    parts.append(f"https_port = {n.https_port}")
-    parts.append(f'config_dir = "{n.config_dir}"')
-    parts.append(f'worker_processes = "{n.worker_processes}"')
-    parts.append(f'client_max_body_size = "{n.client_max_body_size}"')
+    g = config.gunicorn
+    parts.append("[gunicorn]")
+    parts.append(f"workers = {g.workers}")
+    parts.append(f"threads = {g.threads}")
+    parts.append(f"timeout = {g.timeout}")
+    parts.append(f'worker_class = "{g.worker_class}"')
+    parts.append(f"malloc_arena_max = {g.malloc_arena_max or 2}")
+    parts.append(f"max_requests = {g.max_requests}")
+    parts.append(f"max_requests_jitter = {g.max_requests_jitter}")
     parts.append("")
 
     le = config.letsencrypt
@@ -84,26 +88,26 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f"enabled = {'true' if a.enabled else 'false'}")
     parts.append(f'password = "{a.password}"')
     parts.append(f'domain = "{a.domain}"')
+    parts.append(f"tls = {'true' if a.tls else 'false'}")
     parts.append("")
 
     v = config.volume
-    parts.append("[volume]")
-    parts.append(f"enabled = {'true' if v.enabled else 'false'}")
-    parts.append(f'pool = "{v.pool}"')
-    parts.append(f'device = "{v.device}"')
-    parts.append("")
-    parts.append("[volume.benches]")
-    parts.append(f'reservation = "{v.benches.reservation}"')
-    parts.append(f'quota = "{v.benches.quota}"')
-    parts.append(f'data_dir = "{v.benches.data_dir}"')
-    parts.append("")
-    parts.append("[volume.mariadb]")
-    parts.append(f'reservation = "{v.mariadb.reservation}"')
-    parts.append(f'quota = "{v.mariadb.quota}"')
-    parts.append(f'data_dir = "{v.mariadb.data_dir}"')
-    parts.append("")
-    parts.append("[volume.snapshots]")
-    parts.append(f"enabled = {'true' if v.snapshots.enabled else 'false'}")
-    parts.append("")
+    if v.enabled:
+        parts.append("[volume]")
+        parts.append(f'pool = "{v.pool}"')
+        parts.append(f'backing = "{v.backing}"')
+        if v.backing == "image":
+            parts.append("")
+            parts.append("[volume.image]")
+            parts.append(f'size = "{v.image.size}"')
+            parts.append(f'path = "{v.image_path}"')
+        elif v.backing == "device":
+            parts.append(f'device = "{v.device}"')
+        # backing = "auto" carries no device/image fields — resolved during bench init
+        parts.append("")
+        parts.append("[volume.dataset]")
+        parts.append(f'reservation = "{v.dataset.reservation}"')
+        parts.append(f'quota = "{v.dataset.quota}"')
+        parts.append("")
 
     return "\n".join(parts)

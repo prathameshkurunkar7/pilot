@@ -7,13 +7,14 @@ import LucideCamera from '~icons/lucide/camera'
 import LucideDatabase from '~icons/lucide/database'
 import LucideFileText from '~icons/lucide/file-text'
 import LucideGlobe from '~icons/lucide/globe'
-import LucideLayoutDashboard from '~icons/lucide/layout-dashboard'
 import LucideListTodo from '~icons/lucide/list-todo'
 import LucideLogOut from '~icons/lucide/log-out'
-import LucidePackage2 from '~icons/lucide/package-2'
+import LucideStore from '~icons/lucide/store'
 import LucideSettings from '~icons/lucide/settings'
+import LucideRepeat from '~icons/lucide/repeat'
+import LucidePlus from '~icons/lucide/plus'
 
-const emit = defineEmits(['logout', 'open-settings'])
+const emit = defineEmits(['logout', 'open-settings', 'change-bench', 'new-bench'])
 
 const route = useRoute()
 
@@ -22,33 +23,38 @@ const header = {
   logo: '/logos/frappe-icon.png',
   menuItems: [
     { label: 'Settings', icon: LucideSettings, onClick: () => emit('open-settings') },
+    { label: 'Change Bench', icon: LucideRepeat, onClick: () => emit('change-bench') },
+    { label: 'New Bench', icon: LucidePlus, onClick: () => emit('new-bench') },
     { label: 'Logout', icon: LucideLogOut, onClick: () => logout() },
   ],
 }
 
-const baseNavItems = [
-  { label: 'Dashboard', to: '/', icon: LucideLayoutDashboard },
-  { label: 'Apps', to: '/apps', icon: LucidePackage2 },
-  { label: 'Sites', to: '/sites', icon: LucideGlobe },
-  { label: 'Processes', to: '/processes', icon: LucideActivity },
-  { label: 'Logs', to: '/logs', icon: LucideFileText },
-  { label: 'Database', to: '/database', icon: LucideDatabase },
-  { label: 'Tasks', to: '/tasks', icon: LucideListTodo },
+const primaryNavItems = [
+  { label: 'Sites', to: '/', icon: LucideGlobe },
+  { label: 'Marketplace', to: '/marketplace', icon: LucideStore },
 ]
 
 const snapshotsEnabled = ref(false)
 const runningCount = ref(0)
 let pollTimer = null
 
-const navItems = computed(() => [
-  ...baseNavItems,
-  ...(snapshotsEnabled.value ? [{ label: 'Snapshots', to: '/snapshots', icon: LucideCamera }] : []),
+const sections = computed(() => [
+  { items: primaryNavItems },
+  {
+    label: 'System',
+    collapsible: true,
+    items: [
+      { label: 'Monitor', to: '/monitor', icon: LucideActivity },
+      { label: 'Logs', to: '/logs', icon: LucideFileText },
+      { label: 'Tasks', to: '/tasks', icon: LucideListTodo },
+      { label: 'Database', to: '/database', icon: LucideDatabase },
+      ...(snapshotsEnabled.value ? [{ label: 'Snapshots', to: '/snapshots', icon: LucideCamera }] : []),
+    ],
+  },
 ])
 
-const sections = computed(() => [{ items: navItems.value }])
-
 function isActive(to) {
-  if (to === '/') return route.path === '/'
+  if (to === '/') return route.path === '/' || route.path.startsWith('/sites')
   return route.path.startsWith(to)
 }
 
@@ -86,17 +92,19 @@ onUnmounted(() => clearInterval(pollTimer))
 </script>
 
 <template>
-  <Sidebar :header="header" :sections="sections" disableCollapse>
-    <template #sidebar-item="{ item }">
-      <SidebarItem :label="item.label" :icon="item.icon" :to="item.to" :isActive="isActive(item.to)">
-        <template v-if="item.to === '/tasks' && runningCount > 0" #suffix>
-          <span
-            class="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-ink-gray-8 px-1 text-[10px] font-bold text-surface-white">
-            {{ runningCount }}
-          </span>
-        </template>
-      </SidebarItem>
-    </template>
-    <template #footer-items />
-  </Sidebar>
+  <div>
+    <Sidebar :header="header" :sections="sections" disableCollapse>
+      <template #sidebar-item="{ item }">
+        <SidebarItem :label="item.label" :icon="item.icon" :to="item.to" :isActive="isActive(item.to)">
+          <template v-if="item.to === '/tasks' && runningCount > 0" #suffix>
+            <span
+              class="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-ink-gray-8 px-1 text-[10px] font-bold text-surface-white">
+              {{ runningCount }}
+            </span>
+          </template>
+        </SidebarItem>
+      </template>
+      <template #footer-items />
+    </Sidebar>
+  </div>
 </template>

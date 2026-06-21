@@ -1,13 +1,12 @@
 from dataclasses import dataclass
 
-VALID_PROCESS_MANAGERS = ("none", "supervisor", "systemd", "openrc")
+# Process managers usable in production. "none" is no longer a manager — an
+# undeployed bench has production.enabled = false and an empty process_manager.
+VALID_PROCESS_MANAGERS = ("systemd", "supervisor")
 
 
 @dataclass
 class ProductionConfig:
-    process_manager: str = "none"  # none | supervisor | systemd | openrc
-    nginx: bool = False
-
-    @property
-    def enabled(self) -> bool:
-        return self.process_manager != "none"
+    enabled: bool = False
+    process_manager: str = ""  # systemd | supervisor — required when enabled
+    use_companion_manager: bool = False

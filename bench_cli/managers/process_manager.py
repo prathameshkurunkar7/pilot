@@ -1,27 +1,53 @@
 from __future__ import annotations
 
 import os
-import re
 import signal
 import subprocess
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, List
 
 from bench_cli.exceptions import BenchError
 from bench_cli.managers.admin_env_manager import AdminEnvManager
+from bench_cli.managers.gunicorn_manager import GunicornManager
 
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
-
 
 def _cli_root() -> Path:
     import bench_cli as _pkg
 
     return Path(_pkg.__file__).parent.parent
+
+
+def _tcp_port_open(port: int, host: str = "127.0.0.1") -> bool:
+    """True if something is listening on host:port — a reliable liveness check
+    for a foreground process that binds a known port."""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _pids_listening(port: int) -> set[int]:
+    """PIDs of processes listening on ``port`` (this user), via ss. Empty on any
+    error or when nothing is bound."""
+    import re
+
+    try:
+        result = subprocess.run(
+            ["ss", "-H", "-ltnp", f"sport = :{port}"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return set()
+    return {int(m) for m in re.findall(r"pid=(\d+)", result.stdout)}
 
 
 _COLORS = ["\033[36m", "\033[32m", "\033[33m", "\033[35m", "\033[34m", "\033[96m", "\033[92m", "\033[93m"]
@@ -33,11 +59,16 @@ class ProcessDefinition:
     name: str
     command: str
     log_file: Path
+    # Extra environment variables for this process (and anything it forks).
+    env: dict = field(default_factory=dict)
 
 
 class ProcessManager:
-    def __init__(self, bench: "Bench") -> None:
+    def __init__(self, bench: "Bench", admin_dev: bool = False) -> None:
         self.bench = bench
+        # Off: admin backend serves the prebuilt UI from dist. On: also live-rebuild
+        # the UI and run the Vite dev server (for developing the admin frontend).
+        self.admin_dev = admin_dev
         self._procs: dict[str, subprocess.Popen] = {}
         self._stopping = False
 
@@ -53,8 +84,22 @@ class ProcessManager:
 
     def generate_config(self) -> None:
         AdminEnvManager(_cli_root()).ensure()
+        self._ensure_redis_config()
+        self._ensure_gunicorn_config()
         lines = [f"{pd.name}: {pd.command}\n" for pd in self._process_definitions()]
         self.procfile_path.write_text("".join(lines))
+
+    def _ensure_gunicorn_config(self) -> None:
+        GunicornManager(self.bench).generate_config()
+
+    def _ensure_redis_config(self) -> None:
+        # The generated process config (Procfile/supervisor/systemd) runs
+        # redis-server against config/redis_{cache,queue}.conf. Regenerate them
+        # here so an upgrade that changes the redis config layout self-heals on
+        # the next start, rather than failing with a missing config file.
+        from bench_cli.managers.redis_manager import RedisManager
+
+        RedisManager(self.bench.config.redis, self.bench).generate_configs()
 
     # ── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -64,54 +109,67 @@ class ProcessManager:
     def start(self) -> None:
         if not self.is_configured():
             raise BenchError(f"Procfile not found at {self.procfile_path}. Run 'bench init' first.")
+        self.generate_config()
         self.pid_file.write_text(str(os.getpid()))
         try:
-            self._run_procfile()
+            self._run_processes(self._process_definitions())
         finally:
             self.pid_file.unlink(missing_ok=True)
             self._cleanup_proc_pid_files()
 
     def stop(self) -> None:
-        if not self.pid_file.exists():
-            raise BenchError("Bench is not running (no PID file found at pids/bench.pid).")
-        pid = int(self.pid_file.read_text().strip())
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
+        # The full foreground runner writes bench.pid and runs everything in its
+        # process group, so SIGTERM there stops the lot.
+        if self.pid_file.exists():
+            pid = int(self.pid_file.read_text().strip())
             self.pid_file.unlink(missing_ok=True)
-            raise BenchError(f"Process {pid} is not running. Removed stale PID file.")
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                raise BenchError(f"Process {pid} is not running. Removed stale PID file.")
+            return
+
+        # No pid file: e.g. the pre-init setup wizard, which doesn't write one.
+        # Stop whatever is actually bound to this bench's ports.
+        config = self.bench.config
+        pids = set()
+        for port in (config.admin.port, config.http_port):
+            pids |= _pids_listening(port)
+        if not pids:
+            raise BenchError("Bench is not running.")
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
 
     def is_running(self) -> bool:
-        process_names = [pd.name for pd in self._process_definitions()]
-        pattern = "|".join(process_names)
-        result = subprocess.run(["pgrep", "-f", pattern], capture_output=True)
-        return bool(result.stdout.strip())
+        # The foreground runner writes its own pid to bench.pid and removes it on
+        # exit — a live pid there is a reliable signal (pgrep on process names
+        # matched unrelated processes system-wide).
+        if not self.pid_file.exists():
+            return False
+        try:
+            os.kill(int(self.pid_file.read_text().strip()), 0)
+            return True
+        except (ValueError, ProcessLookupError, PermissionError, OSError):
+            return False
+
+    def stop_admin(self) -> None:
+        # Dev admin runs in the foreground Procfile group; stop() already ends it.
+        pass
+
+    def admin_is_running(self) -> bool:
+        # In development the admin is served on admin.port by the foreground
+        # runner; a bound port is the truth (not whether the runner pid is alive).
+        return _tcp_port_open(self.bench.config.admin.port)
 
     def reload_web(self) -> None:
         pass
 
-    @staticmethod
-    def _split_command(command: str) -> tuple[list[tuple[str, str]], str, str]:
-        """Split a Procfile command into env assignments, working dir, and command.
-
-        Leading ``VAR=value`` pairs and a ``cd <dir> &&`` prefix are peeled off so
-        each process manager can map them onto its own config format.
-        """
-        env: list[tuple[str, str]] = []
-        while m := re.match(r"^([A-Z_][A-Z0-9_]*)=(\S+)\s+", command):
-            env.append((m.group(1), m.group(2)))
-            command = command[m.end():]
-        working_dir = ""
-        if m := re.match(r"^cd\s+(\S+)\s*&&\s*", command):
-            working_dir = m.group(1)
-            command = command[m.end():]
-        return env, working_dir, command
-
     # ── Procfile runner ─────────────────────────────────────────────────────
 
-    def _run_procfile(self) -> None:
-        entries = self._parse_procfile()
-
+    def _run_processes(self, defs: List[ProcessDefinition]) -> None:
         original_sigterm = signal.getsignal(signal.SIGTERM)
         original_sigint = signal.getsignal(signal.SIGINT)
 
@@ -122,18 +180,19 @@ class ProcessManager:
         signal.signal(signal.SIGTERM, _stop)
         signal.signal(signal.SIGINT, _stop)
 
-        for i, (name, command) in enumerate(entries):
+        for i, pd in enumerate(defs):
             proc = subprocess.Popen(
-                command,
+                pd.command,
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 preexec_fn=os.setsid,
+                env={**os.environ, **pd.env} if pd.env else None,
             )
             color = _COLORS[i % len(_COLORS)]
-            self._procs[name] = proc
-            (self.bench.pids_path / f"{name}.pid").write_text(str(proc.pid))
-            threading.Thread(target=self._stream, args=(name, proc, color), daemon=True).start()
+            self._procs[pd.name] = proc
+            (self.bench.pids_path / f"{pd.name}.pid").write_text(str(proc.pid))
+            threading.Thread(target=self._stream, args=(pd.name, proc, color), daemon=True).start()
 
         while not self._stopping:
             for name, proc in list(self._procs.items()):
@@ -147,16 +206,6 @@ class ProcessManager:
         self._stop_all()
         signal.signal(signal.SIGTERM, original_sigterm)
         signal.signal(signal.SIGINT, original_sigint)
-
-    def _parse_procfile(self) -> list[tuple[str, str]]:
-        entries = []
-        for line in self.procfile_path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            name, _, command = line.partition(":")
-            entries.append((name.strip(), command.strip()))
-        return entries
 
     def _stream(self, name: str, proc: subprocess.Popen, color: str) -> None:
         assert proc.stdout is not None
@@ -187,51 +236,86 @@ class ProcessManager:
     # ── Process definitions ─────────────────────────────────────────────────
 
     def _prod_process_definitions(self) -> List[ProcessDefinition]:
-        if self.bench.config.production.process_manager == "systemd":
-            num_workers = self.bench.config.workers.default_count + self.bench.config.workers.short_count + self.bench.config.workers.long_count
-            worker_defs: List[ProcessDefinition] = [self._worker_pool_definition("long,default,short", num_workers)]
+        if self.bench.config.production.use_companion_manager:
+            defs = [self._web_definition(), self._admin_definition()]
+        elif self.bench.config.production.process_manager == "systemd":
+            all_queues = ",".join(q for group in self.bench.config.workers.groups for q in group.queues)
+            num_workers = sum(group.count for group in self.bench.config.workers.groups)
+            worker_defs: List[ProcessDefinition] = [self._worker_pool_definition(all_queues, num_workers)]
+            defs = [
+                self._web_definition(),
+                self._socketio_definition(),
+                self._admin_definition(),
+                *worker_defs,
+            ]
         else:
             worker_defs = [
-                *self._worker_definitions("default", self.bench.config.workers.default_count),
-                *self._worker_definitions("short", self.bench.config.workers.short_count),
-                *self._worker_definitions("long", self.bench.config.workers.long_count),
+                pd
+                for group in self.bench.config.workers.groups
+                for pd in self._worker_definitions(",".join(group.queues), group.count)
             ]
-        defs = [
-            self._web_definition(),
-            self._socketio_definition(),
-            self._admin_definition(),
-            *worker_defs,
-            *[pd for entry in self.bench.config.workers.custom for pd in self._worker_definitions(entry.queue, entry.count)],
-        ]
-        if self.bench.config.redis.is_single_instance:
-            defs.append(self._redis_definition("redis", "redis.conf"))
-        else:
-            defs.append(self._redis_definition("redis_cache", "redis_cache.conf"))
-            defs.append(self._redis_definition("redis_queue", "redis_queue.conf"))
-            defs.append(self._redis_definition("redis_socketio", "redis_socketio.conf"))
+            defs = [
+                self._web_definition(),
+                self._socketio_definition(),
+                self._admin_definition(),
+                *worker_defs,
+            ]
+        defs.append(self._redis_definition("redis_cache", "redis_cache.conf"))
+        defs.append(self._redis_definition("redis_queue", "redis_queue.conf"))
         return defs
 
     def _process_definitions(self) -> List[ProcessDefinition]:
-        defs = [self._admin_dev_definition() if pd.name == "admin" else pd for pd in self._prod_process_definitions()]
-        defs.append(self._admin_frontend_dev_definition())
+        defs = [self._to_dev(pd) for pd in self._prod_process_definitions()]
+        if self.admin_dev:
+            defs.append(self._admin_frontend_dev_definition())
         return defs
 
-    def _web_definition(self) -> ProcessDefinition:
-        port = self.bench.config.http_port
+    def _to_dev(self, pd: ProcessDefinition) -> ProcessDefinition:
+        """Map a production process definition to its dev-mode variant."""
+        if pd.name == "admin" and self.admin_dev:
+            return self._admin_dev_definition()
+        if pd.name == "web":
+            return self._web_definition(dev=True)
+        return pd
+
+    def _py_memory_env(self) -> dict:
+        """Cap glibc malloc arenas for the Python procs to keep idle RSS down."""
+        arenas = self.bench.config.gunicorn.malloc_arena_max
+        if arenas and arenas > 0:
+            return {"MALLOC_ARENA_MAX": str(arenas)}
+        return {}
+
+    def _web_definition(self, dev: bool = False) -> ProcessDefinition:
         sites = self.bench.sites_path
         python = self.bench.env_path / "bin" / "python"
+        if dev:
+            port = self.bench.config.http_port
+            return ProcessDefinition(
+                name="web",
+                command=f"cd {sites} && DEV_SERVER=1 {python} -m frappe.utils.bench_helper frappe serve --port {port} --noreload",
+                log_file=self.bench.logs_path / "web.log",
+            )
+        gunicorn = self.bench.env_path / "bin" / "gunicorn"
         return ProcessDefinition(
             name="web",
-            command=f"cd {sites} && {python} -m frappe.utils.bench_helper frappe serve --port {port} --noreload",
+            command=f"cd {sites} && {gunicorn} -c ../config/gunicorn.conf.py frappe.app:application",
             log_file=self.bench.logs_path / "web.log",
+            env=self._py_memory_env(),
         )
 
     def _socketio_definition(self) -> ProcessDefinition:
-        sites = self.bench.sites_path
+        if self.bench.config.socketio_backend == "python":
+            python = self.bench.env_path / "bin" / "python"
+            command = f"cd {self.bench.path} && {python} -m frappe.realtime.server"
+            backend_env = self._py_memory_env()
+        else:
+            command = f"cd {self.bench.sites_path} && node {self.bench.apps_path}/frappe/socketio.js"
+            backend_env = {}
         return ProcessDefinition(
             name="socketio",
-            command=f"cd {sites} && node {self.bench.apps_path}/frappe/socketio.js",
+            command=command,
             log_file=self.bench.logs_path / "socketio.log",
+            env=backend_env,
         )
 
     def _worker_pool_definition(self, queues: str, num_workers: int) -> ProcessDefinition:
@@ -240,15 +324,24 @@ class ProcessManager:
             name="worker_pool",
             command=f"cd {sites} && {self.bench.env_path}/bin/python -m frappe.utils.bench_helper frappe worker-pool --num-workers {num_workers} --queue {queues}",
             log_file=self.bench.logs_path / "worker_pool.log",
+            env=self._py_memory_env(),
         )
 
     def _worker_definitions(self, queue: str, count: int) -> List[ProcessDefinition]:
         sites = self.bench.sites_path
+        # `queue` may be a comma-separated list (a worker group can serve several
+        # queues). Commas are illegal in a process/unit name — they break
+        # supervisor's comma-delimited `programs=` list — so slug them for the
+        # name and log file while keeping the real list in the --queue argument.
+        import re
+
+        slug = re.sub(r"[^A-Za-z0-9]+", "_", queue).strip("_") or "default"
         return [
             ProcessDefinition(
-                name=f"worker_{queue}_{i}",
+                name=f"worker_{slug}_{i}",
                 command=f"cd {sites} && {self.bench.env_path}/bin/python -m frappe.utils.bench_helper frappe worker --queue {queue}",
-                log_file=self.bench.logs_path / f"worker_{queue}_{i}.log",
+                log_file=self.bench.logs_path / f"worker_{slug}_{i}.log",
+                env=self._py_memory_env(),
             )
             for i in range(1, count + 1)
         ]
@@ -297,11 +390,6 @@ class ProcessManagerFactory:
         if not bench.config.production.enabled:
             return ProcessManager(bench)
 
-        if bench.config.production.process_manager == "openrc":
-            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
-
-            return OpenRCProcessManager(bench)
-
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
 
@@ -320,10 +408,6 @@ class ProcessManagerFactory:
         Falls back to create() when nothing is detected as running, so callers
         still get the appropriate "not running" error for the configured manager.
         """
-        if bench.config.production.process_manager == "openrc":
-            # Alpine has only OpenRC; skip the systemd/supervisor probes.
-            return cls.create(bench)
-
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
 

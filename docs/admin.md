@@ -59,7 +59,10 @@ admin/
     │   ├── processes.py         # GET /processes, POST /processes/<name>/restart
     │   ├── logs.py              # GET /logs, /logs/<filename>
     │   ├── database.py          # GET /database/binlogs, /database/slow-queries
-    │   └── tasks.py             # GET /tasks, /tasks/<id>, POST /tasks/run, /tasks/<id>/kill
+    │   ├── tasks.py             # GET /tasks, /tasks/<id>, POST /tasks/run, /tasks/<id>/kill
+    │   ├── settings.py          # GET /api/settings/, PATCH /api/settings/
+    │   ├── updates.py           # GET /api/updates/, POST /api/updates/apply
+    │   └── volume.py            # GET /api/volume/snapshots, POST /api/volume/snapshot
     │
     └── tasks/
         ├── manager/             # Task infrastructure
@@ -377,6 +380,98 @@ See [specs/tasks.md](tasks.md). Lists all tasks, most recent first, with status 
 
 See [specs/tasks.md](tasks.md). Shows task metadata, live-streaming output while running, and a kill button for running tasks.
 
+### `GET /api/settings/` — Read current settings
+
+Returns the full settings payload as JSON. The frontend uses this to populate the Settings modal.
+
+```json
+{
+  "is_linux": true,
+  "bench": { "name": "my-bench", "python": "3.14", "http_port": 8000, "socketio_port": 9000 },
+  "mariadb": { "host": "localhost", "port": 3306, "admin_user": "root", "socket_path": "", "version": "10.6" },
+  "redis": { "cache_port": 13000, "queue_port": 11000, "socketio_port": 12000, "version": "7" },
+  "workers": [{ "queues": ["default", "short", "long"], "count": 1 }],
+  "nginx": { "http_port": 80, "https_port": 443, "config_dir": "/etc/nginx/conf.d", "worker_processes": "auto", "client_max_body_size": "50m" },
+  "letsencrypt": { "email": "", "webroot_path": "/var/www/letsencrypt" },
+  "production": { "process_manager": "none", "nginx": false },
+  "volume": {
+    "enabled": true,
+    "pool": "bench-pool",
+    "device": "/dev/sdb",
+    "quota": "60G",
+    "reservation": "15G",
+    "snapshots_enabled": true
+  }
+}
+```
+
+`is_linux` gates the ZFS Volume tab in the frontend — the tab is only shown on Linux.
+
+### `PATCH /api/settings/` — Update settings
+
+Accepts a JSON body with any subset of the settings sections. Only keys present in the body are updated; omitted keys keep their current values.
+
+```json
+{
+  "bench": { "http_port": 8080 },
+  "workers": [
+    { "queues": ["default"], "count": 4 },
+    { "queues": ["short", "long"], "count": 1 }
+  ]
+}
+```
+
+**Response:**
+```json
+{ "ok": true, "restarted": true, "restart_error": null, "zfs_error": null }
+```
+
+**Process restart:** If any value in `bench.http_port`, `bench.socketio_port`, `redis.*_port`, `workers.*`, or `production.process_manager` changed, bench regenerates config files and restarts the running process manager (supervisor or systemd) automatically — excluding the admin process itself so the response is delivered before the restart.
+
+**ZFS quota/reservation:** If `volume.quota` or `volume.reservation` changed, the new values are applied to the bench's dataset via `zfs set` after writing `bench.toml`. Quota changes are validated before saving: if the new quota is less than the dataset's current used size, the request is rejected with HTTP 400 and the config is not modified.
+
+**Error responses:**
+
+| Condition | HTTP | Body |
+|-----------|------|------|
+| JSON parse error | 400 | `{"ok": false, "error": "..."}` |
+| Validation failure (port out of range, etc.) | 400 | `{"ok": false, "error": "..."}` |
+| ZFS quota below current used size | 400 | `{"ok": false, "error": "Quota 5G is less than current used size (12.4G) for shop dataset"}` |
+| bench.toml write failure | 500 | `{"ok": false, "error": "Failed to write config: ..."}` |
+| ZFS set failure (post-save) | 200 | `{"ok": true, ..., "zfs_error": "..."}` |
+
+Note: ZFS errors are reported in the response body (not HTTP 5xx) because `bench.toml` has already been written at that point.
+
+---
+
+## Settings modal
+
+The frontend presents settings as a tabbed modal dialog. Tabs are:
+
+| Tab | Editable fields | Read-only fields |
+|-----|----------------|-----------------|
+| **Bench** | HTTP Port, SocketIO Port | Name, Python version |
+| **Appearance** | Theme (light/dark/auto) | — |
+| **MariaDB** | — | Host, Port, Admin User, Version, Socket Path |
+| **Redis** | Cache Port, Queue Port, SocketIO Port | — |
+| **Workers** | Default, Short, Long worker counts | — |
+| **Nginx** | Worker Processes, Client Max Body Size, Config Directory | HTTP Port, HTTPS Port |
+| **HTTPS** | Enable HTTPS toggle (`admin.tls`), Let's Encrypt email; "Enable HTTPS & issue certificate" action | — |
+| **Let's Encrypt** | Email, Webroot Path | — |
+| **Production** | Process Manager (none/supervisor/systemd) | — |
+| **Updates** | — | Current version, update availability badge; Update button |
+| **ZFS Volume** *(Linux only, dedicated DB only)* | Quota, Reservation | Pool Name, Block Device |
+
+MariaDB fields are read-only because the host, port, credentials, and socket path are set once during `bench init` and cannot be meaningfully changed by editing `bench.toml` after the fact — the database server itself is not reconfigured.
+
+The **ZFS Volume** tab and the **Snapshots** page in the sidebar are only shown for benches that use a dedicated MariaDB instance with `volume.enabled = true`. Shared-DB benches hide both.
+
+The Process Manager dropdown lets you switch between `none`, `supervisor`, and `systemd`. A change here writes to `bench.toml` and triggers a process restart.
+
+The **HTTPS** toggle sets the server-wide `admin.tls` flag. Enabling it (with a Let's Encrypt email) persists the choice and runs `setup-letsencrypt` to obtain certificates and rewrite nginx with the HTTP→HTTPS redirect; disabling it runs `setup-nginx` to fall back to plain HTTP. `admin.tls` governs HTTPS for both the admin domain and all SSL-enabled sites — per-site SSL is hidden while it is off.
+
+Theme changes are local to the browser session (stored in `localStorage`) and do not touch `bench.toml`.
+
 ---
 
 ## Log streaming (live tail)
@@ -414,6 +509,88 @@ Views catch `ConfigError`, `FileNotFoundError`, and database connection errors a
 - Command execution uses `TaskRunner._build_argv`, which only accepts whitelisted commands. No user-supplied string is passed to a shell.
 - `task_id` values are validated against `^\d{8}-\d{6}-[0-9a-f]{6}$` before being used as directory names.
 - Root MariaDB credentials come from `bench.toml` — the admin must be run by a user who can read that file.
+
+---
+
+## Marketplace
+
+`GET /api/apps/registry` returns the full `registry/apps.json` array. The Marketplace page reads this endpoint alongside `GET /api/apps/` (installed apps) to render the app list.
+
+Each registry entry has:
+
+```json
+{
+  "name": "erpnext",
+  "title": "ERPNext",
+  "description": "Open source ERP",
+  "repo": "https://github.com/frappe/erpnext",
+  "branch": "version-16",
+  "branches": ["version-15", "version-16"],
+  "logo_url": "https://cloud.frappe.io/files/erpnext-blue.png",
+  "website": "https://frappe.io/erpnext",
+  "documentation": "https://docs.frappe.io/erpnext",
+  "categories": ["Accounting", "Business", "Featured"],
+  "category": "Applications",
+  "stars": 35439
+}
+```
+
+**`category`** is one of six values: `Applications`, `Extensions`, `Integrations`, `Compliance`, `Developer Tools`, `Utilities`. The frontend sidebar filters by this field.
+
+Apps whose `repo` is under `github.com/frappe/` are sorted to the top by `stars` and labelled "From Frappe". All others appear below under "Community".
+
+Clicking **Add** on an app with a `repo` posts to `POST /api/apps/add` with `{ name, repo, branch }` and redirects to the resulting task.
+
+---
+
+## Setup wizard API
+
+When a bench has not been initialized (`config/Procfile` is missing), `bench start` launches a standalone wizard server instead of the normal admin. The wizard exposes these endpoints:
+
+### `GET /api/setup/config`
+
+Returns the current `bench.toml` values pre-populated in the wizard form, plus environment metadata:
+
+```json
+{
+  "bench_name": "my-bench",
+  "is_linux": true,
+  "available_devices": [{ "path": "/dev/sdb", "size_bytes": 107374182400 }],
+  "rootfs_free_bytes": 42949672960,
+  "mariadb_instance": "my-bench",
+  "mariadb_admin_user": "root",
+  "volume_enabled": false,
+  ...
+}
+```
+
+### `POST /api/setup/validate-mariadb`
+
+Checks whether the supplied credentials will work before the wizard proceeds.
+
+**Request body:**
+```json
+{
+  "mariadb_password": "secret",
+  "mariadb_admin_user": "root",
+  "dedicated_db": false
+}
+```
+
+**Behaviour:**
+- `dedicated_db: true` (dedicated instance) — if the instance is not yet provisioned, returns `will_install` without attempting a connection; init will create the instance with the supplied password.
+- `dedicated_db: false` (shared system MariaDB) — always attempts a connection using the system socket; returns `valid` or `invalid`.
+- If MariaDB is not installed at all, returns `will_install`.
+
+**Response:** `{ "state": "valid" | "invalid" | "will_install" }`
+
+### `POST /api/setup/save`
+
+Writes the wizard form data to `bench.toml`. The wizard sends the final payload after the last configuration step. Unknown keys are ignored; existing keys not in the payload are preserved.
+
+### `POST /api/setup/init`
+
+Kicks off `bench init` as a background task. Returns `{ "ok": true, "task_id": "..." }`. Progress is streamed via `GET /api/setup/stream/<task_id>` (SSE).
 
 ---
 

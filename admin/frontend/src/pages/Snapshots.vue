@@ -1,13 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { Button, Dialog, ErrorMessage, ListView, LoadingText, Tabs } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, ListView, LoadingText } from 'frappe-ui'
 
-const tabs = [
-  { label: 'Benches', dataset: 'benches' },
-  { label: 'MariaDB', dataset: 'mariadb' },
-]
-
-const activeTab = ref(0)
 const allSnapshots = ref([])
 const snapshotsEnabled = ref(true)
 const loading = ref(false)
@@ -20,9 +14,6 @@ const rollbackRow = ref(null)
 const rollbackLoading = ref(false)
 const rollbackError = ref('')
 
-const currentDataset = computed(() => tabs[activeTab.value].dataset)
-const isMariadbTab = computed(() => currentDataset.value === 'mariadb')
-
 const columns = [
   { label: 'Snapshot Tag', key: 'tag' },
   { label: 'Created', key: 'formattedDate', width: '180px' },
@@ -32,13 +23,11 @@ const columns = [
 ]
 
 const rows = computed(() =>
-  allSnapshots.value
-    .filter(snapshot => snapshot.dataset.endsWith(currentDataset.value))
-    .map(snapshot => ({
-      ...snapshot,
-      formattedDate: formatDate(snapshot.created_at),
-      formattedSize: formatBytes(snapshot.used_bytes),
-    }))
+  allSnapshots.value.map(snapshot => ({
+    ...snapshot,
+    formattedDate: formatDate(snapshot.created_at),
+    formattedSize: formatBytes(snapshot.used_bytes),
+  }))
 )
 
 function formatDate(isoString) {
@@ -74,7 +63,7 @@ async function createSnapshot() {
     const response = await fetch('/api/volume/snapshots', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataset: currentDataset.value }),
+      body: JSON.stringify({}),
     })
     const data = await response.json()
     if (!response.ok) throw new Error(data.error || response.statusText)
@@ -90,7 +79,7 @@ async function deleteSnapshot(row) {
   deletingTag.value = row.tag
   loadError.value = ''
   try {
-    const response = await fetch(`/api/volume/snapshots/${currentDataset.value}/${row.tag}`, {
+    const response = await fetch(`/api/volume/snapshots/${row.tag}`, {
       method: 'DELETE',
     })
     const data = await response.json()
@@ -114,7 +103,7 @@ async function confirmRollback() {
   rollbackError.value = ''
   try {
     const response = await fetch(
-      `/api/volume/snapshots/${currentDataset.value}/${rollbackRow.value.tag}/rollback`,
+      `/api/volume/snapshots/${rollbackRow.value.tag}/rollback`,
       { method: 'POST' },
     )
     const data = await response.json()
@@ -133,93 +122,75 @@ onMounted(loadSnapshots)
 </script>
 
 <template>
-  <Tabs :tabs="tabs" v-model="activeTab" @update:modelValue="loadSnapshots">
-    <template #tab-panel>
-      <div class="pt-4">
+  <div class="pt-4">
 
-        <div class="mb-3 flex items-center justify-between gap-3">
-          <div class="flex-1 text-sm">
-            <ErrorMessage v-if="createError" :message="createError" />
-            <span v-else-if="!snapshotsEnabled" class="text-ink-gray-4">
-              Snapshots are disabled — set <code>volume.snapshots.enabled = true</code> in bench.toml to create snapshots.
-            </span>
-            <span v-else class="text-ink-gray-5">
-              {{ rows.length }} snapshot{{ rows.length !== 1 ? 's' : '' }}
-            </span>
-          </div>
-          <Button variant="subtle" :loading="createLoading" @click="createSnapshot">
-            Create Snapshot
-          </Button>
-        </div>
-
-        <ErrorMessage v-if="loadError" :message="loadError" />
-        <LoadingText v-else-if="loading" />
-        <ListView
-          v-else
-          :columns="columns"
-          :rows="rows"
-          row-key="tag"
-          :options="{ selectable: false, showTooltip: false }"
-        >
-          <template #cell="{ column, row }">
-            <Button
-              v-if="column.key === '_rollback'"
-              variant="ghost"
-              size="sm"
-              @click="openRollbackDialog(row)"
-            >
-              Rollback
-            </Button>
-            <Button
-              v-else-if="column.key === '_delete'"
-              variant="ghost"
-              theme="red"
-              size="sm"
-              :loading="deletingTag === row.tag"
-              @click="deleteSnapshot(row)"
-            >
-              Delete
-            </Button>
-            <span v-else class="block truncate">{{ row[column.key] }}</span>
-          </template>
-        </ListView>
-
+    <div class="mb-3 flex items-center justify-between gap-3">
+      <div class="flex-1 text-sm">
+        <ErrorMessage v-if="createError" :message="createError" />
+        <span v-else-if="!snapshotsEnabled" class="text-ink-gray-4">
+          Snapshots are unavailable — enable a ZFS volume for this bench to create snapshots.
+        </span>
+        <span v-else class="text-ink-gray-5">
+          {{ rows.length }} snapshot{{ rows.length !== 1 ? 's' : '' }}
+        </span>
       </div>
-    </template>
-  </Tabs>
+      <Button variant="subtle" :loading="createLoading" @click="createSnapshot">
+        Create Snapshot
+      </Button>
+    </div>
+
+    <ErrorMessage v-if="loadError" :message="loadError" />
+    <LoadingText v-else-if="loading" />
+    <ListView
+      v-else
+      :columns="columns"
+      :rows="rows"
+      row-key="tag"
+      :options="{ selectable: false, showTooltip: false }"
+    >
+      <template #cell="{ column, row }">
+        <Button
+          v-if="column.key === '_rollback'"
+          variant="ghost"
+          size="sm"
+          @click="openRollbackDialog(row)"
+        >
+          Rollback
+        </Button>
+        <Button
+          v-else-if="column.key === '_delete'"
+          variant="ghost"
+          theme="red"
+          size="sm"
+          :loading="deletingTag === row.tag"
+          @click="deleteSnapshot(row)"
+        >
+          Delete
+        </Button>
+        <span v-else class="block truncate">{{ row[column.key] }}</span>
+      </template>
+    </ListView>
+  </div>
 
   <Dialog v-model="showRollbackDialog" :options="{ title: 'Rollback Snapshot', size: 'md' }">
     <template #body-content>
       <div class="space-y-3 text-sm text-ink-gray-7">
         <p>
-          Roll back <strong>{{ currentDataset }}</strong> to snapshot
+          Roll back this bench to snapshot
           <code class="rounded bg-surface-gray-2 px-1 py-0.5 text-ink-gray-9">{{ rollbackRow?.tag }}</code>?
         </p>
-        <p class="text-red-600">
-          All data written after this snapshot was taken will be permanently lost.
-          Any snapshots newer than this one will also be destroyed.
+        <p class="text-ink-red-4">
+          All data written after this snapshot was taken — both bench files and the database —
+          will be permanently lost. Any snapshots newer than this one will also be destroyed.
         </p>
-        <div
-          v-if="isMariadbTab"
-          class="rounded border border-amber-200 bg-amber-50 p-3 text-amber-900"
-        >
-          <p class="font-medium">MariaDB will be stopped and restarted</p>
-          <p class="mt-1 text-amber-700">The following commands will run in order:</p>
-          <pre class="mt-2 rounded bg-white px-3 py-2 font-mono text-xs text-ink-gray-9">sudo systemctl stop mariadb
+        <div class="rounded border border-outline-amber-1 bg-surface-amber-1 p-3 text-ink-amber-3">
+          <p class="font-medium">MariaDB will be stopped and sites put into maintenance mode</p>
+          <p class="mt-1 text-ink-amber-2">The following commands will run in order:</p>
+          <pre class="mt-2 rounded bg-surface-white px-3 py-2 font-mono text-xs text-ink-gray-9">sudo systemctl stop mariadb
 sudo zfs rollback -r {{ rollbackRow?.tag }}
 sudo systemctl start mariadb</pre>
-          <p class="mt-2 text-amber-700">
+          <p class="mt-2 text-ink-amber-2">
             Ensure no critical database operations are in progress before proceeding.
-          </p>
-        </div>
-        <div
-          v-else
-          class="rounded border border-amber-200 bg-amber-50 p-3 text-amber-900"
-        >
-          <p class="font-medium">Sites will be put into maintenance mode</p>
-          <p class="mt-1 text-amber-700">
-            All sites on this bench will be unavailable during the restore. They will be brought
-            back online automatically once the rollback completes.
           </p>
         </div>
         <ErrorMessage v-if="rollbackError" :message="rollbackError" />

@@ -1,33 +1,83 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, Badge, Dialog, FormControl, LoadingText, ErrorMessage, Tabs } from 'frappe-ui'
-import LucideDatabase from '~icons/lucide/database'
+import { Button, Badge, Dialog, Dropdown, FormControl, ListView, LoadingText, ErrorMessage, Tabs, TextInput } from 'frappe-ui'
+import { useTaskProgress } from '../composables/useTaskProgress.js'
 import LucideServer from '~icons/lucide/server'
+import LucideMoreVertical from '~icons/lucide/more-vertical'
+import LucideDownload from '~icons/lucide/download'
+import LucideTrash2 from '~icons/lucide/trash-2'
+import LucideTriangleAlert from '~icons/lucide/triangle-alert'
+import LucideRefreshCw from '~icons/lucide/refresh-cw'
+import LucidePlus from '~icons/lucide/plus'
 
 const route = useRoute()
 const router = useRouter()
 const siteName = route.params.name
+const { watchTask } = useTaskProgress()
 
 const site = ref(null)
 const httpPort = ref(8000)
 const nginxEnabled = ref(false)
+const adminTls = ref(false)
 const installable = ref([])
 const registry = ref([])
 const loading = ref(true)
 const error = ref('')
 
 const logoMap = computed(() => Object.fromEntries(registry.value.map(a => [a.name, a.logo_url])))
+const titleMap = computed(() => Object.fromEntries(registry.value.map(a => [a.name, a.title])))
 
 const actionLoading = ref('')
 const actionError = ref('')
 
 const showInstall = ref(false)
-const selectedInstallApp = ref('')
+const installSearch = ref('')
+const installCategory = ref('All')
+const installPending = ref(null)
+const installPendingBranch = ref('')
 const installLoading = ref(false)
 const installError = ref('')
 
+const INSTALL_CATEGORIES = ['All', 'Applications', 'Extensions', 'Integrations', 'Compliance', 'Developer Tools', 'Utilities']
+
+function isFrappe(app) {
+  return Boolean(app.repo?.includes('github.com/frappe/'))
+}
+
+const installableSet = computed(() => new Set(installable.value))
+const installedSet = computed(() => new Set(site.value?.installed_apps || []))
+const registryNames = computed(() => new Set(registry.value.map(a => a.name)))
+const extraInstallable = computed(() => installable.value.filter(name => !registryNames.value.has(name)))
+
+const sortedInstallRegistry = computed(() =>
+  [...registry.value].sort((a, b) => {
+    const af = isFrappe(a), bf = isFrappe(b)
+    if (af !== bf) return af ? -1 : 1
+    return (a.title || a.name).localeCompare(b.title || b.name)
+  })
+)
+
+const filteredInstallRegistry = computed(() => {
+  let apps = sortedInstallRegistry.value
+  if (installCategory.value !== 'All') apps = apps.filter(a => a.category === installCategory.value)
+  const q = installSearch.value.toLowerCase().trim()
+  if (q) apps = apps.filter(a =>
+    (a.title || a.name).toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q)
+  )
+  return apps
+})
+
+const installBranchOptions = computed(() =>
+  (installPending.value?.branches ?? []).map(b => ({ label: b, value: b }))
+)
+
+const showReinstall = ref(false)
+const reinstallConfirmText = ref('')
+const reinstallAdminPassword = ref('')
+
 const showDrop = ref(false)
+const dropConfirmText = ref('')
 const showForceDrop = ref(false)
 const forceDropLoading = ref(false)
 const forceDropError = ref('')
@@ -43,17 +93,34 @@ const loginError = ref('')
 
 const sslLoading = ref(false)
 const sslError = ref('')
+const showSslEmail = ref(false)
+const sslEmail = ref('')
+const sslEmailError = ref('')
 
-async function enableSsl() {
+async function enableSsl(email) {
   sslError.value = ''
+  sslEmailError.value = ''
   sslLoading.value = true
   try {
-    const res = await fetch(`/api/sites/${siteName}/enable-ssl`, { method: 'POST' })
+    const res = await fetch(`/api/sites/${siteName}/enable-ssl`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(email ? { email } : {}),
+    })
     const d = await res.json()
-    if (d.ok) router.push(`/tasks/${d.task_id}`)
-    else sslError.value = d.error
+    if (d.ok) {
+      showSslEmail.value = false
+      watchTask(d.task_id)
+    } else if (d.needs_email) {
+      // No Let's Encrypt email on file yet — prompt for one, then retry.
+      showSslEmail.value = true
+      if (email) sslEmailError.value = d.error
+    } else {
+      sslError.value = d.error
+    }
   } catch (e) {
-    sslError.value = e.message
+    if (showSslEmail.value) sslEmailError.value = e.message
+    else sslError.value = e.message
   } finally {
     sslLoading.value = false
   }
@@ -83,54 +150,125 @@ async function loginToSite() {
   }
 }
 
-const showEditConfig = ref(false)
-const editConfigText = ref('')
-const editConfigError = ref('')
-const editConfigLoading = ref(false)
+// ── Config tab ─────────────────────────────────────────────────────────────
+const showConfigEntry = ref(false)
+const configEntryKey = ref('')
+const configEntryValue = ref('')
+const configEntryIsNew = ref(true)
+const configEntryError = ref('')
+const configSaving = ref(false)
 
-function openEditConfig() {
-  editConfigText.value = JSON.stringify(site.value.site_config, null, 2)
-  editConfigError.value = ''
-  showEditConfig.value = true
+const showDeleteConfig = ref(false)
+const deleteConfigKey = ref('')
+const deletingConfig = ref(false)
+const deleteConfigError = ref('')
+
+const configColumns = [
+  { label: 'Key', key: 'key', align: 'left', width: 2 },
+  { label: 'Value', key: 'value', align: 'left', width: 3 },
+  { label: '', key: 'actions', align: 'right', width: '3rem' },
+]
+
+const configRows = computed(() => {
+  const rows = Object.entries(site.value?.site_config || {}).map(([key, value]) => ({
+    name: key,
+    key,
+    value: typeof value === 'string' ? value : JSON.stringify(value),
+  }))
+  if (site.value?.db_name) {
+    rows.unshift({ name: '__db_name', key: 'db_name', value: site.value.db_name, readonly: true })
+  }
+  return rows
+})
+
+function configMenuOptions(key) {
+  return [
+    { label: 'Edit', onClick: () => openConfigEntry(key) },
+    {
+      label: 'Delete',
+      icon: LucideTrash2,
+      theme: 'red',
+      onClick: () => { deleteConfigKey.value = key; deleteConfigError.value = ''; showDeleteConfig.value = true },
+    },
+  ]
 }
 
-async function saveConfig() {
-  editConfigError.value = ''
-  let parsed
-  try {
-    parsed = JSON.parse(editConfigText.value)
-  } catch {
-    editConfigError.value = 'Invalid JSON — please fix the syntax before saving.'
+// Parse a value as JSON (numbers, booleans, arrays, objects); fall back to raw text.
+function parseConfigValue(raw) {
+  const t = raw.trim()
+  if (t === '') return ''
+  try { return JSON.parse(t) } catch { return raw }
+}
+
+function openConfigEntry(key = null) {
+  configEntryError.value = ''
+  configEntryIsNew.value = key === null
+  configEntryKey.value = key || ''
+  if (key !== null) {
+    const v = site.value.site_config[key]
+    configEntryValue.value = typeof v === 'string' ? v : JSON.stringify(v)
+  } else {
+    configEntryValue.value = ''
+  }
+  showConfigEntry.value = true
+}
+
+async function patchConfig(next) {
+  const res = await fetch(`/api/sites/${siteName}/config`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(next),
+  })
+  const d = await res.json()
+  if (!d.ok) throw new Error(d.error || 'Failed to update config.')
+}
+
+async function saveConfigEntry() {
+  const key = configEntryKey.value.trim()
+  if (!key) { configEntryError.value = 'Key is required.'; return }
+  if (configEntryIsNew.value && key in (site.value.site_config || {})) {
+    configEntryError.value = 'That key already exists.'
     return
   }
-  editConfigLoading.value = true
+  configEntryError.value = ''
+  configSaving.value = true
   try {
-    const res = await fetch(`/api/sites/${siteName}/config`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(parsed),
-    })
-    const d = await res.json()
-    if (d.ok) {
-      showEditConfig.value = false
-      await load()
-    } else {
-      editConfigError.value = d.error
-    }
+    await patchConfig({ ...site.value.site_config, [key]: parseConfigValue(configEntryValue.value) })
+    showConfigEntry.value = false
+    await load()
   } catch (e) {
-    editConfigError.value = e.message
+    configEntryError.value = e.message
   } finally {
-    editConfigLoading.value = false
+    configSaving.value = false
   }
 }
 
-const activeTab = ref(0)
+async function deleteConfigEntry() {
+  deletingConfig.value = true
+  deleteConfigError.value = ''
+  try {
+    const next = { ...site.value.site_config }
+    delete next[deleteConfigKey.value]
+    await patchConfig(next)
+    showDeleteConfig.value = false
+    await load()
+  } catch (e) {
+    deleteConfigError.value = e.message
+  } finally {
+    deletingConfig.value = false
+  }
+}
+
+const TAB_SLUGS = ['apps', 'config', 'backups', 'actions']
 const tabs = [
   { label: 'Apps' },
   { label: 'Config' },
   { label: 'Backups' },
-  { label: 'Danger Zone' },
+  { label: 'Actions' },
 ]
+const initialHash = route.hash.slice(1).toLowerCase()
+const initialIdx = TAB_SLUGS.indexOf(initialHash)
+const activeTab = ref(initialIdx >= 0 ? initialIdx : 0)
 
 // ── Backups tab ──────────────────────────────────────────────────────────────
 const backups = ref([])
@@ -139,11 +277,83 @@ const backupsError = ref('')
 const backupsTabLoaded = ref(false)
 
 const currentSchedule = ref(null)
-const scheduleInput = ref('')
 const scheduleLoading = ref(false)
 const scheduleSaving = ref(false)
 const scheduleRemoving = ref(false)
 const scheduleError = ref('')
+const showSchedule = ref(false)
+
+function openSchedule() {
+  scheduleError.value = ''
+  if (currentSchedule.value) {
+    parseCronToState(currentSchedule.value)
+  } else {
+    schedFrequency.value = 'daily'
+    schedHour.value = 2
+    schedWeekday.value = 0
+    schedMonthDay.value = 1
+  }
+  showSchedule.value = true
+}
+
+const schedFrequency = ref('daily')
+const schedHour = ref(2)
+const schedWeekday = ref(0)
+const schedMonthDay = ref(1)
+
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+const hourOptions = Array.from({ length: 24 }, (_, i) => ({
+  label: i === 0 ? '12:00 AM' : i < 12 ? `${i}:00 AM` : i === 12 ? '12:00 PM' : `${i - 12}:00 PM`,
+  value: i,
+}))
+
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
+
+const monthDayOptions = Array.from({ length: 28 }, (_, i) => ({
+  label: ordinal(i + 1),
+  value: i + 1,
+}))
+
+const schedCron = computed(() => {
+  const h = Number(schedHour.value)
+  if (schedFrequency.value === 'weekly') return `0 ${h} * * ${schedWeekday.value}`
+  if (schedFrequency.value === 'monthly') return `0 ${h} ${Number(schedMonthDay.value)} * *`
+  return `0 ${h} * * *`
+})
+
+// Human-readable label for the current picker state (independent of whether a schedule is active yet).
+const scheduleLabel = computed(() => {
+  const h = Number(schedHour.value)
+  const ampm = h === 0 ? '12:00 AM' : h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`
+  if (schedFrequency.value === 'weekly') return `Every ${WEEKDAY_LABELS[schedWeekday.value]} at ${ampm}`
+  if (schedFrequency.value === 'monthly') return `Monthly on the ${ordinal(Number(schedMonthDay.value))} at ${ampm}`
+  return `Daily at ${ampm}`
+})
+
+// Label shown on the status bar — only meaningful when a schedule is active.
+const currentScheduleLabel = computed(() => (currentSchedule.value ? scheduleLabel.value : null))
+
+function parseCronToState(expr) {
+  const parts = expr.trim().split(/\s+/)
+  if (parts.length !== 5) return
+  const [, hour, dom, , dow] = parts
+  const h = parseInt(hour)
+  schedHour.value = isNaN(h) ? 0 : h
+  if (dom !== '*' && dom !== '?') {
+    schedFrequency.value = 'monthly'
+    schedMonthDay.value = parseInt(dom) || 1
+  } else if (dow !== '*' && dow !== '?') {
+    schedFrequency.value = 'weekly'
+    schedWeekday.value = parseInt(dow) || 0
+  } else {
+    schedFrequency.value = 'daily'
+  }
+}
 
 const showDeleteBackup = ref(false)
 const deleteBackupTarget = ref(null)
@@ -161,7 +371,7 @@ async function deleteBackupSet() {
       body: JSON.stringify({ command: 'delete-backup', site: siteName, filenames }),
     })
     const d = await res.json()
-    if (d.ok) { showDeleteBackup.value = false; router.push(`/tasks/${d.task_id}`) }
+    if (d.ok) { showDeleteBackup.value = false; watchTask(d.task_id) }
     else deleteBackupError.value = d.error
   } catch (e) {
     deleteBackupError.value = e.message
@@ -170,14 +380,8 @@ async function deleteBackupSet() {
   }
 }
 
-const schedulePresets = [
-  { label: 'Daily midnight', value: '0 0 * * *' },
-  { label: 'Daily 2am', value: '0 2 * * *' },
-  { label: 'Weekly (Sun 2am)', value: '0 2 * * 0' },
-  { label: 'Monthly (1st 2am)', value: '0 2 1 * *' },
-]
-
 watch(activeTab, (idx) => {
+  router.replace({ hash: `#${TAB_SLUGS[idx]}` })
   if (tabs[idx]?.label === 'Backups' && !backupsTabLoaded.value) {
     backupsTabLoaded.value = true
     loadBackups()
@@ -206,34 +410,28 @@ async function loadSchedule() {
     const res = await fetch(`/api/sites/${siteName}/backup-schedule`)
     const d = await res.json()
     currentSchedule.value = d.schedule ?? null
-    scheduleInput.value = d.schedule ?? ''
+    if (d.schedule) parseCronToState(d.schedule)
   } finally {
     scheduleLoading.value = false
   }
 }
 
-const CRON_RE = /^(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)\s+(\*|[0-9,\-*/]+)$/
-
 async function saveSchedule() {
   scheduleError.value = ''
-  if (!scheduleInput.value.trim()) {
-    scheduleError.value = 'Schedule expression is required.'
-    return
-  }
-  if (!CRON_RE.test(scheduleInput.value.trim())) {
-    scheduleError.value = "Invalid cron expression. Expected 5 fields like '0 2 * * *' (minute hour day month weekday)."
-    return
-  }
   scheduleSaving.value = true
   try {
     const res = await fetch(`/api/sites/${siteName}/backup-schedule`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ schedule: scheduleInput.value }),
+      body: JSON.stringify({ schedule: schedCron.value }),
     })
     const d = await res.json()
-    if (d.ok) await loadSchedule()
-    else scheduleError.value = d.error
+    if (d.ok) {
+      await loadSchedule()
+      showSchedule.value = false
+    } else {
+      scheduleError.value = d.error
+    }
   } catch (e) {
     scheduleError.value = e.message
   } finally {
@@ -247,8 +445,16 @@ async function removeSchedule() {
   try {
     const res = await fetch(`/api/sites/${siteName}/backup-schedule`, { method: 'DELETE' })
     const d = await res.json()
-    if (d.ok) { currentSchedule.value = null; scheduleInput.value = '' }
-    else scheduleError.value = d.error
+    if (d.ok) {
+      currentSchedule.value = null
+      schedFrequency.value = 'daily'
+      schedHour.value = 2
+      schedWeekday.value = 0
+      schedMonthDay.value = 1
+      showSchedule.value = false
+    } else {
+      scheduleError.value = d.error
+    }
   } catch (e) {
     scheduleError.value = e.message
   } finally {
@@ -266,6 +472,61 @@ function formatBackupDate(iso) {
   return new Date(iso).toLocaleString()
 }
 
+// Backup file kinds: 'public-file' | 'private-file' | 'database' | 'site_config'
+function backupFile(set, kind) {
+  return set.files.find(f => f.kind === kind) || null
+}
+
+function backupFileSize(set, kind) {
+  const f = backupFile(set, kind)
+  return f ? formatSize(f.size_bytes) : '—'
+}
+
+function downloadBackupFile(set, kind) {
+  const f = backupFile(set, kind)
+  if (!f) return
+  window.location.href = `/api/sites/${siteName}/backups/download?filename=${encodeURIComponent(f.filename)}`
+}
+
+function backupMenuOptions(set) {
+  const opts = []
+  const downloads = [
+    ['public-file', 'Download Public'],
+    ['private-file', 'Download Private'],
+    ['database', 'Download Database'],
+    ['site_config', 'Download Config'],
+  ]
+  for (const [kind, label] of downloads) {
+    if (backupFile(set, kind)) {
+      opts.push({ label, icon: LucideDownload, onClick: () => downloadBackupFile(set, kind) })
+    }
+  }
+  opts.push({
+    label: 'Delete backup',
+    icon: LucideTrash2,
+    theme: 'red',
+    onClick: () => { deleteBackupTarget.value = set; showDeleteBackup.value = true },
+  })
+  return opts
+}
+
+const backupColumns = [
+  { label: 'Timestamp', key: 'timestamp', align: 'left', width: 2 },
+  { label: 'Private', key: 'private', align: 'center', width: 1 },
+  { label: 'Public', key: 'public', align: 'center', width: 1 },
+  { label: 'Database', key: 'database', align: 'center', width: 1 },
+  { label: '', key: 'actions', align: 'right', width: '3rem' },
+]
+
+const backupRows = computed(() => backups.value.map(set => ({
+  name: set.timestamp,
+  timestamp: formatBackupDate(set.created_at),
+  private: backupFileSize(set, 'private-file'),
+  public: backupFileSize(set, 'public-file'),
+  database: backupFileSize(set, 'database'),
+  set,
+})))
+
 const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
 function hashColor(name) {
   let h = 0
@@ -281,6 +542,7 @@ async function load() {
     site.value = d.site
     httpPort.value = d.http_port ?? 8000
     nginxEnabled.value = d.nginx_enabled ?? false
+    adminTls.value = d.admin_tls ?? false
     installable.value = d.installable_apps
   } catch (e) {
     error.value = e.message
@@ -306,7 +568,7 @@ async function doAction(path, body = {}) {
       body: JSON.stringify(body),
     })
     const d = await res.json()
-    if (d.ok) router.push(`/tasks/${d.task_id}`)
+    if (d.ok) watchTask(d.task_id)
     else actionError.value = d.error
   } catch (e) {
     actionError.value = e.message
@@ -315,18 +577,63 @@ async function doAction(path, body = {}) {
   }
 }
 
-async function installApp() {
-  if (!selectedInstallApp.value) return
+function openInstallModal() {
+  installSearch.value = ''
+  installCategory.value = 'All'
+  installPending.value = null
+  installPendingBranch.value = ''
+  installError.value = ''
+  showInstall.value = true
+}
+
+function selectInstallApp(app) {
+  const branches = app.branches ?? (app.branch ? [app.branch] : [])
+  installPendingBranch.value = branches[0] ?? ''
+  installPending.value = app
+  installError.value = ''
+}
+
+async function confirmInstall() {
+  if (!installPending.value) return
+  installLoading.value = true
+  installError.value = ''
+  try {
+    const inBench = installableSet.value.has(installPending.value.name)
+    let res
+    if (inBench) {
+      res = await fetch(`/api/sites/${siteName}/install-app`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ app: installPending.value.name }),
+      })
+    } else {
+      res = await fetch(`/api/sites/${siteName}/get-and-install-app`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ app: installPending.value.name, repo: installPending.value.repo, branch: installPendingBranch.value }),
+      })
+    }
+    const d = await res.json()
+    if (d.ok) { showInstall.value = false; watchTask(d.task_id) }
+    else installError.value = d.error
+  } catch (e) {
+    installError.value = e.message
+  } finally {
+    installLoading.value = false
+  }
+}
+
+async function installBenchApp(appName) {
   installLoading.value = true
   installError.value = ''
   try {
     const res = await fetch(`/api/sites/${siteName}/install-app`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ app: selectedInstallApp.value }),
+      body: JSON.stringify({ app: appName }),
     })
     const d = await res.json()
-    if (d.ok) { showInstall.value = false; router.push(`/tasks/${d.task_id}`) }
+    if (d.ok) { showInstall.value = false; watchTask(d.task_id) }
     else installError.value = d.error
   } catch (e) {
     installError.value = e.message
@@ -379,234 +686,421 @@ async function forceDrop() {
   }
 }
 
-onMounted(() => { load(); loadRegistry() })
+onMounted(() => {
+  load()
+  loadRegistry()
+  if (tabs[activeTab.value]?.label === 'Backups') {
+    backupsTabLoaded.value = true
+    loadBackups()
+    loadSchedule()
+  }
+})
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
+  <div class="mx-auto max-w-4xl mt-4">
     <LoadingText v-if="loading" />
     <ErrorMessage v-else-if="error" :message="error" />
 
     <template v-else-if="site">
-      <!-- Site header -->
-      <div class="flex items-start justify-between gap-4">
-        <div class="flex flex-col gap-1.5">
-          <div class="flex items-center gap-2">
-            <h1 class="text-2xl font-semibold text-ink-gray-9">{{ siteName }}</h1>
-            <Badge
-              :label="!site.exists ? 'Offline' : site.broken ? 'Broken' : 'Online'"
-              :theme="!site.exists ? 'gray' : site.broken ? 'red' : 'green'"
-            />
-            <Badge v-if="site.site_config?.ssl" label="SSL" theme="blue" />
-          </div>
-          <div class="flex items-center gap-4 text-sm text-ink-gray-5">
-            <span v-if="site.db_name" class="flex items-center gap-1.5">
-              <LucideDatabase class="h-3.5 w-3.5" />
-              {{ site.db_name }}
-            </span>
-            <span v-if="site.db_host" class="flex items-center gap-1.5">
-              <LucideServer class="h-3.5 w-3.5" />
-              {{ site.db_host }}
-            </span>
-            <span class="flex items-center gap-1.5">
-              :{{ httpPort }}
-            </span>
-          </div>
-        </div>
-        <div class="flex shrink-0 items-center gap-2">
-          <Button variant="outline" @click="showLogin = true">
-            Login to Site
-          </Button>
-          <Button variant="outline" :loading="actionLoading === 'backup'" @click="doAction('backup')">
-            Backup
-          </Button>
-          <Button v-if="nginxEnabled && !site.site_config?.ssl" variant="outline" :loading="sslLoading" @click="enableSsl">
-            Enable SSL
-          </Button>
-          <Button v-if="installable.length" variant="solid" @click="showInstall = true">
-            Install App
-          </Button>
-        </div>
-      </div>
-
-      <ErrorMessage :message="actionError" />
-      <ErrorMessage :message="sslError" />
-
-      <!-- Tabs -->
-      <Tabs :tabs="tabs" v-model="activeTab">
-        <template #tab-panel="{ tab }">
-          <!-- Apps -->
-          <div v-if="tab.label === 'Apps'" class="pt-4">
-            <div v-if="!site.installed_apps.length" class="py-10 text-center text-sm text-ink-gray-4">
-              No apps installed on this site.
+      <div class="overflow-hidden rounded-lg border border-outline-gray-1">
+        <!-- Site header -->
+        <div class="flex items-start justify-between gap-4 px-5 py-4">
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center gap-2">
+              <h1 class="flex items-center gap-1.5 font-semibold text-ink-gray-9">
+                {{ siteName }}
+                <span class="group relative inline-flex h-2 w-2 shrink-0 rounded-full"
+                  :class="!site.exists ? 'bg-ink-gray-3' : site.broken ? 'bg-surface-red-4' : 'bg-surface-green-3'">
+                  <span
+                    class="pointer-events-none absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded bg-ink-gray-9 px-1.5 py-0.5 text-[10px] text-surface-white opacity-0 transition-opacity group-hover:opacity-100">
+                    {{ !site.exists ? 'Offline' : site.broken ? 'Broken' : 'Online' }}
+                  </span>
+                </span>
+              </h1>
+              <Badge v-if="site.ssl" label="SSL" theme="blue" />
             </div>
-            <div v-else class="divide-y rounded border">
-              <div
-                v-for="app in site.installed_apps"
-                :key="app"
-                class="flex items-center justify-between px-4 py-3"
-              >
-                <div class="flex items-center gap-3">
-                  <div
-                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
-                    :style="logoMap[app] ? {} : { background: hashColor(app) }"
-                  >
-                    <img v-if="logoMap[app]" :src="logoMap[app]" :alt="app" class="h-full w-full object-contain" />
-                    <span v-else class="text-sm font-bold text-white">{{ app[0].toUpperCase() }}</span>
-                  </div>
-                  <span class="text-sm font-medium text-ink-gray-8">{{ app }}</span>
-                </div>
-                <Button variant="ghost" theme="red" size="sm" @click="confirmUninstall(app)">
-                  Uninstall
+            <div class="flex items-center gap-4 text-sm text-ink-gray-5">
+              <span v-if="site.db_host" class="flex items-center gap-1.5">
+                <LucideServer class="h-3.5 w-3.5" />
+                {{ site.db_host }}
+              </span>
+              <span class="flex items-center gap-1.5">
+                :{{ httpPort }}
+              </span>
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <Button variant="outline" @click="showLogin = true">
+              Login
+            </Button>
+          </div>
+        </div>
+
+        <ErrorMessage v-if="actionError" :message="actionError" class="mx-5 mb-3" />
+
+        <!-- Divider between header and tabs -->
+        <div class="border-t border-outline-gray-1" />
+
+        <!-- Tabs -->
+        <Tabs :tabs="tabs" v-model="activeTab">
+          <template #tab-panel="{ tab }">
+            <!-- Apps -->
+            <div v-if="tab.label === 'Apps'">
+              <div class="flex items-center justify-between px-4 py-2.5">
+                <h3 class="text-sm font-semibold text-ink-gray-9">Installed Apps</h3>
+                <Button variant="ghost" size="sm" @click="openInstallModal">
+                  <template #prefix><LucidePlus class="h-4 w-4" /></template>
+                  Install App
                 </Button>
               </div>
-            </div>
-          </div>
-
-          <!-- Config -->
-          <div v-else-if="tab.label === 'Config'" class="pt-4">
-            <div class="rounded border bg-surface-gray-1 p-4">
-              <div class="mb-2 flex items-center justify-between">
-                <p class="text-xs font-medium text-ink-gray-5">site_config.json</p>
-                <Button variant="ghost" size="sm" @click="openEditConfig">Edit</Button>
+              <div class="mx-4 border-b border-outline-gray-1" />
+              <div v-if="!site.installed_apps.length" class="py-12 text-center text-sm text-ink-gray-4">
+                No apps installed on this site.
               </div>
-              <pre class="overflow-x-auto font-mono text-sm text-ink-gray-8">{{ JSON.stringify(site.site_config, null, 2) }}</pre>
-            </div>
-          </div>
-
-          <!-- Backups -->
-          <div v-else-if="tab.label === 'Backups'" class="pt-4 flex flex-col gap-4">
-            <!-- Schedule -->
-            <div class="rounded border p-4">
-              <h3 class="mb-3 text-sm font-semibold text-ink-gray-9">Backup Schedule</h3>
-              <div v-if="scheduleLoading" class="text-sm text-ink-gray-5">Loading…</div>
-              <div v-else class="flex flex-col gap-3">
-                <p class="text-sm text-ink-gray-7">
-                  <span v-if="currentSchedule">
-                    Active:
-                    <code class="rounded bg-surface-gray-2 px-1 py-0.5 font-mono text-xs">{{ currentSchedule }}</code>
-                  </span>
-                  <span v-else class="text-ink-gray-5">No scheduled backups.</span>
-                </p>
-                <div class="flex flex-wrap gap-1.5">
-                  <button
-                    v-for="p in schedulePresets"
-                    :key="p.value"
-                    class="rounded bg-surface-gray-2 px-2 py-1 text-xs text-ink-gray-7 hover:bg-surface-gray-3"
-                    @click="scheduleInput = p.value"
-                  >{{ p.label }}</button>
+              <div v-else class="divide-y divide-outline-gray-1 px-4">
+                <div v-for="app in site.installed_apps" :key="app" class="flex items-center justify-between py-3">
+                  <div class="flex items-center gap-3">
+                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
+                      :style="logoMap[app] ? {} : { background: hashColor(app) }">
+                      <img v-if="logoMap[app]" :src="logoMap[app]" :alt="app" class="h-full w-full object-contain" />
+                      <span v-else class="text-sm font-bold text-white">{{ app[0].toUpperCase() }}</span>
+                    </div>
+                    <span class="text-sm font-medium text-ink-gray-8">{{ titleMap[app] || app }}</span>
+                  </div>
+                  <Button v-if="app !== 'frappe'" variant="ghost" theme="red" size="sm" @click="confirmUninstall(app)">
+                    Uninstall
+                  </Button>
                 </div>
-                <div class="flex gap-2">
-                  <input
-                    v-model="scheduleInput"
-                    placeholder="e.g. 0 2 * * *"
-                    class="flex-1 rounded border px-2 py-1.5 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-gray-400"
-                  />
-                  <Button variant="outline" size="sm" :loading="scheduleSaving" :disabled="!scheduleInput" @click="saveSchedule">Save</Button>
-                  <Button v-if="currentSchedule" variant="ghost" size="sm" theme="red" :loading="scheduleRemoving" @click="removeSchedule">Remove</Button>
-                </div>
-                <ErrorMessage :message="scheduleError" />
               </div>
             </div>
 
-            <!-- History -->
-            <div class="rounded border p-4">
-              <div class="mb-3 flex items-center justify-between">
-                <h3 class="text-sm font-semibold text-ink-gray-9">Backup History</h3>
-                <Button variant="ghost" size="sm" @click="loadBackups">Refresh</Button>
+            <!-- Config -->
+            <div v-else-if="tab.label === 'Config'" class="flex flex-col">
+              <div class="flex items-center justify-between px-4 py-2.5">
+                <h3 class="text-sm font-semibold text-ink-gray-9">Site Config</h3>
+                <Button variant="ghost" size="sm" @click="openConfigEntry()">
+                  <template #prefix>
+                    <LucidePlus class="h-4 w-4" />
+                  </template>
+                  Add Key
+                </Button>
               </div>
-              <div v-if="backupsLoading" class="py-6 text-center text-sm text-ink-gray-5">Loading…</div>
+              <div class="mx-4 border-b border-outline-gray-1" />
+              <div v-if="!configRows.length" class="py-12 text-center text-sm text-ink-gray-4">
+                No editable config keys.
+              </div>
+              <ListView v-else class="px-2 pb-2" :columns="configColumns" :rows="configRows" row-key="name"
+                :options="{ selectable: false, showTooltip: false, rowHeight: 44 }">
+                <template #cell="{ column, row, item }">
+                  <div v-if="column.key === 'actions'" class="flex w-full justify-end">
+                    <Dropdown v-if="!row.readonly" :options="configMenuOptions(row.key)" placement="left">
+                      <template #default="{ open }">
+                        <Button variant="ghost" size="sm" :active="open">
+                          <template #icon>
+                            <LucideMoreVertical class="h-4 w-4" />
+                          </template>
+                        </Button>
+                      </template>
+                    </Dropdown>
+                  </div>
+                  <div v-else class="w-full truncate text-sm"
+                    :class="column.key === 'key'
+                      ? (row.readonly ? 'font-medium text-ink-gray-5' : 'font-medium text-ink-gray-8')
+                      : 'font-mono text-ink-gray-6'">{{ item }}</div>
+                </template>
+              </ListView>
+              <div class="mx-4 border-t border-outline-gray-1" />
+              <p class="px-4 py-2.5 text-xs text-ink-gray-4">
+                Database credentials, installed apps and SSL are managed by the system and aren't shown or editable here.
+              </p>
+            </div>
+
+            <!-- Backups -->
+            <div v-else-if="tab.label === 'Backups'" class="flex flex-col gap-4 p-4">
+              <!-- Automatic backup status — click to configure -->
+              <button type="button" @click="openSchedule"
+                class="group flex items-center gap-2.5 rounded-lg border border-outline-gray-2 px-3.5 py-2.5 text-left transition-colors hover:border-outline-gray-3 hover:bg-surface-gray-1">
+                <span class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                  :class="currentSchedule ? 'bg-surface-green-3' : 'bg-ink-gray-4'"></span>
+                <span class="text-sm font-medium text-ink-gray-8">Automatic backups</span>
+                <span class="text-sm text-ink-gray-5">
+                  <template v-if="scheduleLoading">Loading…</template>
+                  <template v-else-if="currentSchedule">· {{ currentScheduleLabel }}</template>
+                  <template v-else>· Off</template>
+                </span>
+                <span class="ml-auto shrink-0 text-sm font-medium text-ink-gray-5 group-hover:text-ink-gray-8">
+                  {{ currentSchedule ? 'Configure' : 'Enable' }}
+                </span>
+              </button>
+
+              <!-- Backups list header -->
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-ink-gray-9">Backups</h3>
+                <div class="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" :loading="actionLoading === 'backup'" @click="doAction('backup')">
+                    Backup now
+                  </Button>
+                  <Button variant="ghost" size="sm" :loading="backupsLoading" @click="loadBackups" title="Refresh">
+                    <template #icon>
+                      <LucideRefreshCw class="h-4 w-4" />
+                    </template>
+                  </Button>
+                </div>
+              </div>
+              <div v-if="backupsLoading" class="py-8 text-center text-sm text-ink-gray-5">Loading…</div>
               <div v-else-if="backupsError">
                 <ErrorMessage :message="backupsError" />
               </div>
-              <div v-else-if="!backups.length" class="py-10 text-center text-sm text-ink-gray-4">
-                No backups found.
+              <div v-else-if="!backups.length" class="py-8 text-center text-sm text-ink-gray-4">
+                No backups yet.
               </div>
-              <div v-else class="flex flex-col gap-2">
-                <div v-for="set in backups" :key="set.timestamp" class="rounded border p-3">
-                  <div class="mb-2 flex items-center justify-between">
-                    <p class="text-sm font-medium text-ink-gray-8">{{ formatBackupDate(set.created_at) }}</p>
-                    <Button variant="ghost" theme="red" size="sm"
-                      @click="deleteBackupTarget = set; showDeleteBackup = true">Delete</Button>
+              <ListView v-else :columns="backupColumns" :rows="backupRows" row-key="name"
+                :options="{ selectable: false, showTooltip: false, rowHeight: 44 }">
+                <template #cell="{ column, row, item }">
+                  <div v-if="column.key === 'actions'" class="flex w-full justify-end">
+                    <Dropdown :options="backupMenuOptions(row.set)" placement="left">
+                      <template #default="{ open }">
+                        <Button variant="ghost" size="sm" :active="open">
+                          <template #icon>
+                            <LucideMoreVertical class="h-4 w-4" />
+                          </template>
+                        </Button>
+                      </template>
+                    </Dropdown>
                   </div>
-                  <div class="flex flex-col gap-1">
-                    <div
-                      v-for="file in set.files"
-                      :key="file.filename"
-                      class="flex items-center justify-between gap-2 text-xs"
-                    >
-                      <span class="truncate font-mono text-ink-gray-7">{{ file.filename }}</span>
-                      <span class="shrink-0 text-ink-gray-4">{{ formatSize(file.size_bytes) }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                  <div v-else class="w-full truncate text-sm"
+                    :class="column.key === 'timestamp' ? 'text-left text-ink-gray-8' : 'text-center font-mono text-ink-gray-6'">
+                    {{ item }}</div>
+                </template>
+              </ListView>
             </div>
-          </div>
 
-          <!-- Danger Zone -->
-          <div v-else-if="tab.label === 'Danger Zone'" class="pt-4 flex flex-col gap-3">
-            <div class="rounded border border-red-200 p-4">
-              <div class="flex items-center justify-between gap-4">
-                <div>
-                  <p class="text-sm font-medium text-ink-gray-9">Drop Site</p>
-                  <p class="mt-0.5 text-sm text-ink-gray-5">
-                    Permanently delete <strong>{{ siteName }}</strong> and all its data. This cannot be undone.
-                  </p>
+            <!-- Actions -->
+            <div v-else-if="tab.label === 'Actions'" class="flex flex-col gap-5 p-4">
+              <!-- Regular actions -->
+              <div class="divide-y divide-outline-gray-1">
+                <!-- Backup -->
+                <div class="flex items-center justify-between gap-4 py-3.5">
+                  <div>
+                    <p class="text-sm font-medium text-ink-gray-8">Backup Site</p>
+                    <p class="mt-0.5 text-sm text-ink-gray-5">Create an on-demand backup of the database and files.</p>
+                  </div>
+                  <Button variant="outline" class="shrink-0" :loading="actionLoading === 'backup'"
+                    @click="doAction('backup')">
+                    Backup
+                  </Button>
                 </div>
-                <Button variant="solid" theme="red" class="shrink-0" @click="showDrop = true">
-                  Drop Site
-                </Button>
+
+                <!-- Enable SSL -->
+                <div v-if="adminTls" class="flex items-center justify-between gap-4 py-3.5">
+                  <div>
+                    <p class="text-sm font-medium text-ink-gray-8">Enable SSL</p>
+                    <p class="mt-0.5 text-sm text-ink-gray-5">
+                      <template v-if="site.ssl">A Let's Encrypt certificate is already active for this site.</template>
+                      <template v-else-if="!nginxEnabled">Available once this bench is live (deployed to production).</template>
+                      <template v-else>Issue a Let's Encrypt certificate and serve this site over HTTPS.</template>
+                    </p>
+                  </div>
+                  <Badge v-if="site.ssl" label="Enabled" theme="green" class="shrink-0" />
+                  <Button v-else variant="outline" class="shrink-0" :disabled="!nginxEnabled" :loading="sslLoading"
+                    @click="enableSsl()">
+                    Enable SSL
+                  </Button>
+                </div>
+              </div>
+              <ErrorMessage :message="sslError" />
+
+              <!-- Danger zone -->
+              <div class="overflow-hidden rounded-lg border border-outline-red-2">
+                <div class="border-b border-outline-red-2 bg-surface-red-1 px-4 py-2.5">
+                  <p class="text-sm font-semibold text-ink-red-4">Danger Zone</p>
+                </div>
+                <div class="divide-y divide-outline-red-1">
+                  <!-- Reinstall Site -->
+                  <div class="flex items-center justify-between gap-4 px-4 py-3.5">
+                    <div>
+                      <p class="text-sm font-medium text-ink-gray-8">Reinstall Site</p>
+                      <p class="mt-0.5 text-sm text-ink-gray-5">
+                        Wipe all data and reinstall frappe from scratch. Installed apps are preserved but all records are lost.
+                      </p>
+                    </div>
+                    <Button variant="subtle" theme="red" class="shrink-0" @click="reinstallConfirmText = ''; showReinstall = true">
+                      Reinstall
+                    </Button>
+                  </div>
+
+                  <!-- Drop Site -->
+                  <div class="flex items-center justify-between gap-4 px-4 py-3.5">
+                    <div>
+                      <p class="text-sm font-medium text-ink-gray-8">Drop Site</p>
+                      <p class="mt-0.5 text-sm text-ink-gray-5">
+                        Permanently delete <strong>{{ siteName }}</strong> and all its data. This cannot be undone.
+                      </p>
+                    </div>
+                    <Button variant="subtle" theme="red" class="shrink-0" @click="showDrop = true">
+                      Drop Site
+                    </Button>
+                  </div>
+
+                  <!-- Force Delete -->
+                  <div v-if="site.broken" class="flex items-center justify-between gap-4 px-4 py-3.5">
+                    <div>
+                      <p class="text-sm font-medium text-ink-gray-8">Force Delete</p>
+                      <p class="mt-0.5 text-sm text-ink-gray-5">
+                        This site is broken (database unreachable). Remove the site directory without running frappe
+                        cleanup.
+                      </p>
+                    </div>
+                    <Button variant="solid" theme="red" class="shrink-0" @click="showForceDrop = true">
+                      Force Delete
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
-            <div v-if="site.broken" class="rounded border border-red-200 p-4">
-              <div class="flex items-center justify-between gap-4">
-                <div>
-                  <p class="text-sm font-medium text-ink-gray-9">Force Delete</p>
-                  <p class="mt-0.5 text-sm text-ink-gray-5">
-                    This site is broken (database unreachable). Remove the site directory without running frappe cleanup.
-                  </p>
-                </div>
-                <Button variant="solid" theme="red" class="shrink-0" @click="showForceDrop = true">
-                  Force Delete
-                </Button>
-              </div>
-            </div>
-          </div>
-        </template>
-      </Tabs>
+          </template>
+        </Tabs>
+      </div>
     </template>
 
     <!-- Install App dialog -->
-    <Dialog v-model="showInstall" :options="{ title: 'Install App' }">
+    <Dialog v-model="showInstall" :options="{ title: installPending ? (titleMap[installPending.name] || installPending.name) : 'Install App', size: 'xl' }">
       <template #body-content>
         <div @pointerdown.stop>
-          <FormControl
-            label="App to install"
-            type="select"
-            v-model="selectedInstallApp"
-            :options="[{ label: 'Select an app…', value: '' }, ...installable.map(a => ({ label: a, value: a }))]"
-          />
-          <ErrorMessage :message="installError" class="mt-2" />
+          <!-- Confirmation view -->
+          <template v-if="installPending">
+            <div class="flex flex-col gap-4">
+              <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg overflow-hidden"
+                  :style="installPending.logo_url ? {} : { background: hashColor(installPending.name) }">
+                  <img v-if="installPending.logo_url" :src="installPending.logo_url" class="h-full w-full object-contain" :alt="installPending.title" />
+                  <span v-else class="text-sm font-bold text-white leading-none">{{ installPending.title?.[0]?.toUpperCase() }}</span>
+                </div>
+                <div class="min-w-0">
+                  <p class="font-medium text-ink-gray-9">{{ installPending.title || installPending.name }}</p>
+                  <p v-if="installPending.description" class="text-sm text-ink-gray-5 line-clamp-2">{{ installPending.description }}</p>
+                </div>
+              </div>
+              <FormControl v-if="installBranchOptions.length > 1" label="Branch" type="select"
+                v-model="installPendingBranch" :options="installBranchOptions" />
+              <p v-else-if="installPendingBranch" class="text-sm text-ink-gray-6">
+                Branch: <span class="font-medium text-ink-gray-9">{{ installPendingBranch }}</span>
+              </p>
+              <ErrorMessage v-if="installError" :message="installError" />
+              <div class="flex items-center justify-between gap-2">
+                <Button variant="ghost" @click="installPending = null">← Back</Button>
+                <div class="flex gap-2">
+                  <Button variant="ghost" @click="showInstall = false">Cancel</Button>
+                  <Button variant="solid" :loading="installLoading" @click="confirmInstall">Install</Button>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Browse view -->
+          <template v-else>
+            <div class="flex flex-col gap-3">
+              <TextInput v-model="installSearch" placeholder="Search apps…" />
+              <div class="flex gap-1.5 overflow-x-auto pb-1">
+                <button v-for="cat in INSTALL_CATEGORIES" :key="cat"
+                  @click="installCategory = cat"
+                  :class="[
+                    'shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors whitespace-nowrap',
+                    installCategory === cat
+                      ? 'border-outline-gray-4 bg-surface-gray-3 text-ink-gray-9'
+                      : 'border-outline-gray-2 bg-surface-white text-ink-gray-6 hover:border-outline-gray-3',
+                  ]">{{ cat }}</button>
+              </div>
+              <div class="max-h-80 overflow-y-auto flex flex-col gap-2 pr-1">
+                <p v-if="!registry.length" class="py-8 text-center text-sm text-ink-gray-4">Loading apps…</p>
+                <p v-else-if="!filteredInstallRegistry.length && !extraInstallable.length" class="py-8 text-center text-sm text-ink-gray-4">No apps found.</p>
+                <template v-else>
+                  <div v-for="app in filteredInstallRegistry" :key="app.name"
+                    class="flex items-center gap-3 rounded-lg border border-outline-gray-1 px-3 py-2.5">
+                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
+                      :style="app.logo_url ? {} : { background: hashColor(app.name) }">
+                      <img v-if="app.logo_url" :src="app.logo_url" :alt="app.title" class="h-full w-full object-contain" />
+                      <span v-else class="text-xs font-bold text-white leading-none">{{ app.title?.[0]?.toUpperCase() }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-ink-gray-9">{{ app.title || app.name }}</p>
+                      <p v-if="app.description" class="text-xs text-ink-gray-5 truncate">{{ app.description }}</p>
+                    </div>
+                    <div class="shrink-0">
+                      <Badge v-if="installedSet.has(app.name)" label="Installed" theme="green" size="sm" />
+                      <Button v-else-if="app.repo" variant="outline" size="sm" @click="selectInstallApp(app)">Add</Button>
+                    </div>
+                  </div>
+                  <template v-if="!installSearch && installCategory === 'All' && extraInstallable.length">
+                    <p class="mt-2 text-xs font-medium uppercase tracking-wide text-ink-gray-4">Other (in bench)</p>
+                    <div v-for="appName in extraInstallable" :key="appName"
+                      class="flex items-center gap-3 rounded-lg border border-outline-gray-1 px-3 py-2.5">
+                      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
+                        :style="{ background: hashColor(appName) }">
+                        <span class="text-xs font-bold text-white leading-none">{{ appName[0].toUpperCase() }}</span>
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-ink-gray-9">{{ appName }}</p>
+                      </div>
+                      <Button variant="outline" size="sm" :loading="installLoading" @click="installBenchApp(appName)">Add</Button>
+                    </div>
+                  </template>
+                </template>
+              </div>
+              <ErrorMessage v-if="installError" :message="installError" />
+            </div>
+          </template>
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- Reinstall Site dialog -->
+    <Dialog v-model="showReinstall" :options="{ title: 'Reinstall Site', size: 'sm' }"
+      @close="reinstallConfirmText = ''; reinstallAdminPassword = ''">
+      <template #body-content>
+        <div @pointerdown.stop>
+          <div class="flex items-start gap-3 rounded-md border border-outline-red-2 bg-surface-red-1 p-3">
+            <LucideTriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-ink-red-4" />
+            <p class="text-sm leading-relaxed text-ink-gray-7">
+              This will wipe <strong>all data</strong> from <strong>{{ siteName }}</strong> and reinstall frappe from scratch.
+              Installed apps will be preserved but all records, users, and configuration will be lost.
+              This action <strong>cannot be undone</strong>.
+            </p>
+          </div>
+          <FormControl class="mt-4" type="password" label="New Administrator password" v-model="reinstallAdminPassword"
+            placeholder="admin" autocomplete="new-password" />
+          <FormControl class="mt-3" type="text" label="Type the site name to confirm" v-model="reinstallConfirmText"
+            :placeholder="siteName" autocomplete="off" />
           <div class="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" @click="showInstall = false">Cancel</Button>
-            <Button variant="solid" :loading="installLoading" :disabled="!selectedInstallApp" @click="installApp">Install</Button>
+            <Button variant="ghost" @click="showReinstall = false">Cancel</Button>
+            <Button variant="solid" theme="red" :loading="actionLoading === 'reinstall'"
+              :disabled="reinstallConfirmText !== siteName || !reinstallAdminPassword"
+              @click="showReinstall = false; doAction('reinstall', { admin_password: reinstallAdminPassword })">Reinstall</Button>
           </div>
         </div>
       </template>
     </Dialog>
 
     <!-- Drop Site dialog -->
-    <Dialog v-model="showDrop" :options="{ title: 'Drop Site', size: 'sm' }">
+    <Dialog v-model="showDrop" :options="{ title: 'Drop Site', size: 'sm' }" @close="dropConfirmText = ''">
       <template #body-content>
-        <p class="text-sm text-ink-gray-7">
-          Are you sure you want to permanently drop <strong>{{ siteName }}</strong>?
-          All data will be lost and this cannot be undone.
-        </p>
-        <div class="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" @click="showDrop = false">Cancel</Button>
-          <Button variant="solid" theme="red" :loading="actionLoading === 'drop'"
-            @click="showDrop = false; doAction('drop')">Drop Site</Button>
+        <div @pointerdown.stop>
+          <div class="flex items-start gap-3 rounded-md border border-outline-red-2 bg-surface-red-1 p-3">
+            <LucideTriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-ink-red-4" />
+            <p class="text-sm leading-relaxed text-ink-gray-7">
+              This permanently deletes <strong>{{ siteName }}</strong>, including its database and all files.
+              This action <strong>cannot be undone</strong>.
+            </p>
+          </div>
+          <FormControl class="mt-4" type="text" :label="`Type the site name to confirm`" v-model="dropConfirmText"
+            :placeholder="siteName" autocomplete="off"
+            @keydown.enter="dropConfirmText === siteName && (showDrop = false, doAction('drop'))" />
+          <div class="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" @click="showDrop = false">Cancel</Button>
+            <Button variant="solid" theme="red" :loading="actionLoading === 'drop'"
+              :disabled="dropConfirmText !== siteName" @click="showDrop = false; doAction('drop')">Drop Site</Button>
+          </div>
         </div>
       </template>
     </Dialog>
@@ -615,7 +1109,8 @@ onMounted(() => { load(); loadRegistry() })
     <Dialog v-model="showForceDrop" :options="{ title: 'Force Delete Site', size: 'sm' }">
       <template #body-content>
         <p class="text-sm text-ink-gray-7">
-          Force delete <strong>{{ siteName }}</strong>? The site directory will be removed immediately without frappe cleanup. The database will <strong>not</strong> be dropped.
+          Force delete <strong>{{ siteName }}</strong>? The site directory will be removed immediately without frappe
+          cleanup. The database will <strong>not</strong> be dropped.
         </p>
         <ErrorMessage v-if="forceDropError" :message="forceDropError" class="mt-2" />
         <div class="mt-4 flex justify-end gap-2">
@@ -627,16 +1122,32 @@ onMounted(() => { load(); loadRegistry() })
     </Dialog>
 
     <!-- Login dialog -->
+    <Dialog v-model="showSslEmail" title="Enable SSL" size="md" :showCloseButton="true">
+      <template #default>
+        <div @pointerdown.stop>
+          <p class="text-sm text-ink-gray-6">
+            A Let's Encrypt email is required to issue and renew certificates.
+          </p>
+          <FormControl class="mt-3" label="Let's Encrypt email" type="email" v-model="sslEmail"
+            placeholder="you@example.com" @keydown.enter="enableSsl(sslEmail)" />
+          <ErrorMessage :message="sslEmailError" class="mt-2" />
+        </div>
+      </template>
+      <template #actions>
+        <div class="flex justify-end gap-2">
+          <Button variant="ghost" @click="showSslEmail = false">Cancel</Button>
+          <Button variant="solid" :loading="sslLoading" :disabled="!sslEmail" @click="enableSsl(sslEmail)">
+            Enable SSL
+          </Button>
+        </div>
+      </template>
+    </Dialog>
+
     <Dialog v-model="showLogin" :options="{ title: 'Login to Site', size: 'sm' }">
       <template #body-content>
         <div @pointerdown.stop>
-          <FormControl
-            label="Administrator password"
-            type="password"
-            v-model="loginPassword"
-            placeholder="admin"
-            @keydown.enter="loginToSite"
-          />
+          <FormControl label="Administrator password" type="password" v-model="loginPassword" placeholder="admin"
+            @keydown.enter="loginToSite" />
           <ErrorMessage :message="loginError" class="mt-2" />
           <div class="mt-4 flex justify-end gap-2">
             <Button variant="ghost" @click="showLogin = false">Cancel</Button>
@@ -648,21 +1159,37 @@ onMounted(() => { load(); loadRegistry() })
       </template>
     </Dialog>
 
-    <!-- Edit Config dialog -->
-    <Dialog v-model="showEditConfig" :options="{ title: 'Edit site_config.json', size: 'lg' }">
+    <!-- Add / Edit config key dialog -->
+    <Dialog v-model="showConfigEntry"
+      :options="{ title: configEntryIsNew ? 'Add Config Key' : 'Edit Config Key', size: 'sm' }">
       <template #body-content>
-        <div @pointerdown.stop>
-          <textarea
-            v-model="editConfigText"
-            rows="20"
-            class="w-full rounded border bg-surface-gray-1 p-3 font-mono text-sm text-ink-gray-8 focus:outline-none focus:ring-1 focus:ring-gray-400"
-            spellcheck="false"
-          />
-          <ErrorMessage :message="editConfigError" class="mt-2" />
-          <div class="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" @click="showEditConfig = false">Cancel</Button>
-            <Button variant="solid" :loading="editConfigLoading" @click="saveConfig">Save</Button>
+        <div @pointerdown.stop class="flex flex-col gap-3">
+          <FormControl label="Key" type="text" v-model="configEntryKey" :disabled="!configEntryIsNew"
+            placeholder="key_name" />
+          <FormControl label="Value" type="textarea" v-model="configEntryValue" :rows="3"
+            placeholder='"text", 42, true, ["a", "b"]' />
+          <p class="text-xs text-ink-gray-4">
+            Parsed as JSON when possible (numbers, booleans, arrays, objects); otherwise stored as text.
+          </p>
+          <ErrorMessage :message="configEntryError" />
+          <div class="mt-1 flex justify-end gap-2">
+            <Button variant="ghost" @click="showConfigEntry = false">Cancel</Button>
+            <Button variant="solid" :loading="configSaving" @click="saveConfigEntry">Save</Button>
           </div>
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- Delete config key dialog -->
+    <Dialog v-model="showDeleteConfig" :options="{ title: 'Delete Config Key', size: 'sm' }">
+      <template #body-content>
+        <p class="text-sm text-ink-gray-7">
+          Remove <strong>{{ deleteConfigKey }}</strong> from <strong>site_config.json</strong>?
+        </p>
+        <ErrorMessage v-if="deleteConfigError" :message="deleteConfigError" class="mt-2" />
+        <div class="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" @click="showDeleteConfig = false">Cancel</Button>
+          <Button variant="solid" theme="red" :loading="deletingConfig" @click="deleteConfigEntry">Delete</Button>
         </div>
       </template>
     </Dialog>
@@ -671,12 +1198,76 @@ onMounted(() => { load(); loadRegistry() })
     <Dialog v-model="showDeleteBackup" :options="{ title: 'Delete Backup', size: 'sm' }">
       <template #body-content>
         <p class="text-sm leading-relaxed text-ink-gray-7">
-          Delete the backup from <strong>{{ deleteBackupTarget ? formatBackupDate(deleteBackupTarget.created_at) : '' }}</strong>? This cannot be undone.
+          Delete the backup from <strong>{{ deleteBackupTarget ? formatBackupDate(deleteBackupTarget.created_at) : ''
+          }}</strong>? This cannot be undone.
         </p>
         <ErrorMessage v-if="deleteBackupError" :message="deleteBackupError" class="mt-2" />
         <div class="mt-4 flex justify-end gap-2">
           <Button variant="ghost" @click="showDeleteBackup = false">Cancel</Button>
           <Button variant="solid" theme="red" :loading="deletingBackup" @click="deleteBackupSet">Delete</Button>
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- Backup Schedule dialog -->
+    <Dialog v-model="showSchedule" :options="{ title: 'Automatic Backups', size: 'sm' }">
+      <template #body-content>
+        <div @pointerdown.stop class="flex flex-col gap-4">
+          <!-- Frequency picker -->
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-ink-gray-6">Frequency</span>
+            <div class="flex gap-1.5">
+              <button v-for="f in ['daily', 'weekly', 'monthly']" :key="f"
+                class="rounded-md border px-3 py-1.5 text-sm capitalize transition-colors"
+                :class="schedFrequency === f
+                  ? 'border-outline-gray-4 bg-surface-gray-3 text-ink-gray-9'
+                  : 'border-outline-gray-2 bg-surface-white text-ink-gray-6 hover:border-outline-gray-3 hover:text-ink-gray-8'" @click="schedFrequency = f">{{ f }}</button>
+            </div>
+          </div>
+
+          <!-- Weekday picker (weekly only) -->
+          <div v-if="schedFrequency === 'weekly'" class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-ink-gray-6">Day of week</span>
+            <div class="flex gap-1">
+              <button v-for="(day, idx) in WEEKDAY_LABELS" :key="idx"
+                class="w-10 rounded-md border py-1.5 text-xs font-medium transition-colors"
+                :class="schedWeekday === idx
+                  ? 'border-outline-gray-4 bg-surface-gray-3 text-ink-gray-9'
+                  : 'border-outline-gray-2 bg-surface-white text-ink-gray-6 hover:border-outline-gray-3 hover:text-ink-gray-8'" @click="schedWeekday = idx">{{ day }}</button>
+            </div>
+          </div>
+
+          <!-- Month day picker (monthly only) -->
+          <div v-if="schedFrequency === 'monthly'" class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-ink-gray-6">Day of month</span>
+            <FormControl type="select" v-model="schedMonthDay" :options="monthDayOptions" class="w-40" />
+          </div>
+
+          <!-- Time picker -->
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-ink-gray-6">Time</span>
+            <FormControl type="select" v-model="schedHour" :options="hourOptions" class="w-40" />
+          </div>
+
+          <p class="text-sm text-ink-gray-5">
+            Backups will run <strong class="text-ink-gray-7">{{ scheduleLabel.toLowerCase() }}</strong>.
+          </p>
+
+          <ErrorMessage :message="scheduleError" />
+
+          <div class="flex items-center justify-between gap-2 pt-1">
+            <Button v-if="currentSchedule" variant="subtle" theme="red" :loading="scheduleRemoving"
+              @click="removeSchedule">
+              Disable
+            </Button>
+            <span v-else></span>
+            <div class="flex items-center gap-2">
+              <Button variant="ghost" @click="showSchedule = false">Cancel</Button>
+              <Button variant="solid" :loading="scheduleSaving" @click="saveSchedule">
+                {{ currentSchedule ? 'Save' : 'Enable' }}
+              </Button>
+            </div>
+          </div>
         </div>
       </template>
     </Dialog>
@@ -693,7 +1284,8 @@ onMounted(() => { load(); loadRegistry() })
             @click="showUninstall = false; doAction('uninstall-app', { app: uninstallTarget })">Uninstall</Button>
         </div>
         <div class="mt-4 border-t border-outline-gray-1 pt-3">
-          <p class="mb-2 text-xs text-ink-gray-4">If the app is broken and normal uninstall fails, force-remove it from the site's app list without running any app scripts.</p>
+          <p class="mb-2 text-xs text-ink-gray-4">If the app is broken and normal uninstall fails, force-remove it from
+            the site's app list without running any app scripts.</p>
           <ErrorMessage :message="forceUninstallError" class="mb-2" />
           <Button variant="outline" theme="red" size="sm" :loading="forceUninstallLoading" @click="doForceUninstall">
             Force Remove

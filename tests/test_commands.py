@@ -1,6 +1,7 @@
 """Unit tests for bench-cli command classes."""
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -10,7 +11,7 @@ from bench_cli.config.app_config import AppConfig
 from bench_cli.config.bench_config import BenchConfig
 from bench_cli.config.mariadb_config import MariaDBConfig
 from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.worker_config import WorkerConfig
+from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
 from bench_cli.core.bench import Bench
 from bench_cli.exceptions import BenchError
 
@@ -21,8 +22,12 @@ def make_bench(tmp_path: Path) -> Bench:
         python_version="3.14",
         apps=[AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")],
         mariadb=MariaDBConfig(root_password="root"),
-        redis=RedisConfig(cache_port=13000, queue_port=11000, socketio_port=12000),
-        workers=WorkerConfig(default_count=2, short_count=1, long_count=1),
+        redis=RedisConfig(cache_port=13000, queue_port=11000),
+        workers=WorkerConfig(groups=[
+            WorkerGroup(queues=["default"], count=2),
+            WorkerGroup(queues=["short"], count=1),
+            WorkerGroup(queues=["long"], count=1),
+        ]),
     )
     return Bench(config, tmp_path)
 
@@ -30,9 +35,10 @@ def make_bench(tmp_path: Path) -> Bench:
 # ── NewCommand ────────────────────────────────────────────────────────────────
 
 
-def test_new_command_creates_directory_and_toml(tmp_path: Path) -> None:
+def test_new_command_creates_directory_and_toml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from bench_cli.commands.new import NewCommand
 
+    monkeypatch.setattr("builtins.input", lambda _: "")
     target = tmp_path / "benches" / "my-bench"
     NewCommand(target, "my-bench").run()
 
@@ -52,13 +58,130 @@ def test_new_command_raises_if_bench_already_exists(tmp_path: Path) -> None:
         NewCommand(target, "my-bench").run()
 
 
-def test_new_command_creates_benches_dir_if_missing(tmp_path: Path) -> None:
+def test_new_command_creates_benches_dir_if_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from bench_cli.commands.new import NewCommand
 
+    monkeypatch.setattr("builtins.input", lambda _: "")
     target = tmp_path / "benches" / "fresh"
     assert not target.parent.exists()
     NewCommand(target, "fresh").run()
     assert target.parent.is_dir()
+
+
+def test_new_command_first_bench_uses_default_ports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench_cli.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    target = tmp_path / "benches" / "my-bench"
+    NewCommand(target, "my-bench").run()
+
+    with open(target / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["bench"]["http_port"] == 8000
+    assert data["admin"]["port"] == 7000
+
+
+def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every port field must shift by the same offset — a regression guard
+    for a bug where admin_port got the offset applied twice."""
+    from bench_cli.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    benches_dir = tmp_path / "benches"
+    NewCommand(benches_dir / "first", "first").run()
+    NewCommand(benches_dir / "second", "second").run()
+
+    with open(benches_dir / "second" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["bench"]["http_port"] == 8001
+    assert data["bench"]["socketio_port"] == 9001
+    assert data["redis"]["cache_port"] == 13001
+    assert data["redis"]["queue_port"] == 11001
+    assert data["admin"]["port"] == 7001
+
+
+def test_new_command_writes_dedicated_mariadb_instance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """New benches default to their own MariaDB instance with an isolated
+    socket/datadir and an offset port."""
+    from bench_cli.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("bench_cli.commands.new.is_linux", lambda: True)
+    benches_dir = tmp_path / "benches"
+    NewCommand(benches_dir / "first", "first").run()
+    NewCommand(benches_dir / "second", "second").run()
+
+    with open(benches_dir / "second" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["mariadb"]["instance"] == "second"
+    assert data["mariadb"]["socket_path"] == "/run/mysqld/mysqld-second.sock"
+    assert data["mariadb"]["data_dir"] == "/var/lib/mysql-second"
+    assert data["mariadb"]["port"] == 3307  # base 3306 + offset 1
+
+
+def test_volume_setup_binds_mariadb_to_instance_datadir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """For an instance bench, the dataset's mariadb subdir bind-mounts onto the
+    instance's sibling datadir (not the shared /var/lib/mysql)."""
+    from bench_cli.commands import volume as volume_cmd
+    from bench_cli.commands.volume import VolumeSetupCommand
+
+    data = {
+        "bench": {"name": "shop", "python": "3.14"},
+        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
+        "mariadb": {
+            "root_password": "root",
+            "instance": "shop",
+            "data_dir": "/var/lib/mysql-shop",
+            "socket_path": "/run/mysqld/mysqld-shop.sock",
+        },
+        "redis": {"cache_port": 13000, "queue_port": 11000},
+        "volume": {"enabled": True, "pool": "shop-pool"},
+    }
+    config = BenchConfig._from_dict(data)
+    cmd = VolumeSetupCommand(config.volume, tmp_path / "shop", bench_config=config)
+
+    monkeypatch.setattr(volume_cmd, "run_command", MagicMock())
+    manager = MagicMock()
+    cmd._bind_mariadb(manager, Path("/shop-pool/shop"))
+
+    manager.bind_mount.assert_called_once()
+    source, target = manager.bind_mount.call_args[0]
+    assert source == Path("/shop-pool/shop/mariadb")
+    assert str(target) == "/var/lib/mysql-shop"
+    manager.persist_bind_mount.assert_called_once()
+
+
+def test_volume_config_dataset_path_is_per_bench() -> None:
+    """Each bench gets one dataset named after it inside the shared pool."""
+    data = {
+        "bench": {"name": "shop", "python": "3.14"},
+        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
+        "mariadb": {"root_password": "root"},
+        "redis": {"cache_port": 13000, "queue_port": 11000},
+        "volume": {"enabled": True, "pool": "bench-pool"},
+    }
+    config = BenchConfig._from_dict(data)
+    assert config.volume.name == "shop"
+    assert config.volume.dataset_path == "bench-pool/shop"
+
+
+def test_new_command_skips_offset_with_live_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An orphaned process holding a port with no matching bench.toml must
+    also be avoided, not just offsets already on disk."""
+    from bench_cli.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: port == 8000))
+
+    target = tmp_path / "benches" / "my-bench"
+    NewCommand(target, "my-bench").run()
+
+    with open(target / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["bench"]["http_port"] == 8001
 
 
 # ── NewSiteCommand ────────────────────────────────────────────────────────────
@@ -341,7 +464,7 @@ def test_requirements_skips_app_without_python_setup_files(tmp_path: Path) -> No
     # No pyproject.toml or setup.py
 
     with patch("bench_cli.managers.python_env_manager.PythonEnvManager._ensure_uv", return_value="uv"), \
-         patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
+         patch("bench_cli.utils.run_command") as mock_rc:
         SetupRequirementsCommand(bench)._install_python()
         mock_rc.assert_not_called()
 
@@ -357,7 +480,7 @@ def test_requirements_installs_app_with_pyproject_toml(tmp_path: Path) -> None:
     (app_dir / "pyproject.toml").write_text("[project]\nname = 'myapp'\n")
 
     with patch("bench_cli.managers.python_env_manager.PythonEnvManager._ensure_uv", return_value="uv"), \
-         patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
+         patch("bench_cli.utils.run_command") as mock_rc:
         SetupRequirementsCommand(bench)._install_python()
         mock_rc.assert_called_once()
 
@@ -373,7 +496,7 @@ def test_requirements_installs_app_with_setup_py(tmp_path: Path) -> None:
     (app_dir / "setup.py").write_text("from setuptools import setup; setup()\n")
 
     with patch("bench_cli.managers.python_env_manager.PythonEnvManager._ensure_uv", return_value="uv"), \
-         patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
+         patch("bench_cli.utils.run_command") as mock_rc:
         SetupRequirementsCommand(bench)._install_python()
         mock_rc.assert_called_once()
 
@@ -388,7 +511,7 @@ def test_requirements_skips_js_for_app_without_package_json(tmp_path: Path) -> N
     (app_dir / ".git").mkdir()
     # No package.json
 
-    with patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
+    with patch("bench_cli.utils.run_command") as mock_rc:
         SetupRequirementsCommand(bench)._install_js()
         mock_rc.assert_not_called()
 
@@ -403,8 +526,8 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
     (app_dir / ".git").mkdir()
     (app_dir / "package.json").write_text('{"name": "myapp"}\n')
 
-    with patch("bench_cli.commands.setup.requirements.get_yarn_bin", return_value="yarn"):
-        with patch("bench_cli.commands.setup.requirements.run_command") as mock_rc:
+    with patch("bench_cli.utils.get_yarn_bin", return_value="yarn"):
+        with patch("bench_cli.utils.run_command") as mock_rc:
             SetupRequirementsCommand(bench)._install_js()
             mock_rc.assert_called_once()
             assert mock_rc.call_args[0][0] == ["yarn", "install"]
@@ -487,7 +610,7 @@ def test_drop_site_removes_site_from_bench_toml(tmp_path: Path) -> None:
         "[[sites]]\nname = \"site2.localhost\"\n\n"
         "[mariadb]\nhost = \"localhost\"\nport = 3306\nroot_password = \"root\"\n\n"
         "[redis]\nport = 13000\n\n"
-        "[workers]\ndefault = 2\nshort = 1\nlong = 1\n"
+        '[[workers]]\nqueues = ["default", "short", "long"]\ncount = 1\n'
     )
 
     cmd = DropSiteCommand(bench, "site1.localhost")
@@ -510,8 +633,167 @@ def test_drop_site_removes_from_toml_when_no_sites_key(tmp_path: Path) -> None:
         "[[apps]]\nname = \"frappe\"\nrepo = \"...\"\nbranch = \"version-16\"\n\n"
         "[mariadb]\nhost = \"localhost\"\nport = 3306\nroot_password = \"root\"\n\n"
         "[redis]\nport = 13000\n\n"
-        "[workers]\ndefault = 2\nshort = 1\nlong = 1\n"
+        '[[workers]]\nqueues = ["default", "short", "long"]\ncount = 1\n'
     )
 
     cmd = DropSiteCommand(bench, "nonexistent")
     cmd._remove_from_bench_toml()  # no raise
+
+
+# ── RestartCommand / StartCommand routing ───────────────────────────────────────
+
+
+def test_restart_dev_bench_prints_guidance(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    from bench_cli.commands.restart import RestartCommand
+
+    bench = make_bench(tmp_path)  # production disabled by default
+    RestartCommand(bench).run()
+    out = capsys.readouterr().out
+    assert "only for production benches" in out
+
+
+def test_restart_production_incomplete_prints_repair(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    from bench_cli.commands.restart import RestartCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = True
+    bench.config.production.process_manager = "systemd"
+    with patch("bench_cli.managers.process_manager.ProcessManagerFactory.create") as create:
+        mgr = MagicMock()
+        mgr.is_configured.return_value = False
+        create.return_value = mgr
+        RestartCommand(bench).run()
+    out = capsys.readouterr().out
+    assert "deployment is incomplete" in out
+    mgr.restart.assert_not_called()
+
+
+def test_restart_production_restarts_when_configured(tmp_path: Path) -> None:
+    from bench_cli.commands.restart import RestartCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.production.enabled = True
+    bench.config.production.process_manager = "supervisor"
+    with patch("bench_cli.managers.process_manager.ProcessManagerFactory.create") as create:
+        mgr = MagicMock()
+        mgr.is_configured.return_value = True
+        create.return_value = mgr
+        RestartCommand(bench).run()
+    mgr.generate_config.assert_called_once()
+    mgr.restart.assert_called_once()
+
+
+def test_ls_lists_benches_with_mode_and_address(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    from bench_cli.commands.ls import ListCommand
+
+    benches = tmp_path / "benches"
+    (benches / "alpha").mkdir(parents=True)
+    (benches / "alpha" / "bench.toml").write_text(
+        '[bench]\nname = "alpha"\n\n[production]\nenabled = true\nprocess_manager = "systemd"\n\n'
+        '[admin]\ndomain = "alpha-admin.example.com"\n'
+    )
+    (benches / "beta").mkdir(parents=True)
+    (benches / "beta" / "bench.toml").write_text('[bench]\nname = "beta"\n\n[admin]\nport = 7005\n')
+
+    with patch("bench_cli.loader.cli_root", return_value=tmp_path), \
+         patch("bench_cli.commands.ls.ListCommand._is_running", return_value=False):
+        ListCommand().run()
+
+    out = capsys.readouterr().out
+    assert "alpha" in out and "production" in out and "alpha-admin.example.com" in out
+    assert "beta" in out and "development" in out and "http://localhost:7005" in out
+
+
+def test_ls_empty_when_no_benches(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    from bench_cli.commands.ls import ListCommand
+
+    (tmp_path / "benches").mkdir()
+    with patch("bench_cli.loader.cli_root", return_value=tmp_path):
+        ListCommand().run()
+    assert "No benches yet" in capsys.readouterr().out
+
+
+def _mark_initialized(bench: Bench) -> None:
+    (bench.path / "env" / "bin").mkdir(parents=True, exist_ok=True)
+    (bench.path / "env" / "bin" / "python").write_text("")
+
+
+def test_start_dev_uninitialized_runs_wizard(tmp_path: Path) -> None:
+    from bench_cli.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)  # no process manager → dev
+    with patch.object(RunCommand, "_start_wizard") as wizard, \
+         patch("bench_cli.managers.process_manager.ProcessManager.stop"):
+        RunCommand(bench).run()
+    wizard.assert_called_once()
+
+
+def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
+    from bench_cli.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)  # dev
+    _mark_initialized(bench)
+    with patch("bench_cli.managers.process_manager.ProcessManager.stop") as stop, \
+         patch("bench_cli.managers.process_manager.ProcessManager.start") as start:
+        RunCommand(bench).run()
+    stop.assert_called_once()
+    start.assert_called_once()
+
+
+def test_start_production_uninitialized_brings_up_admin(tmp_path: Path) -> None:
+    # A systemd bench that isn't initialized yet runs its admin under systemd
+    # (to serve the wizard), not a foreground wizard server.
+    from bench_cli.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.production.process_manager = "systemd"
+    bench.config.admin.domain = "admin.example.com"
+    with patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.setup_admin") as setup_admin, \
+         patch.object(RunCommand, "_start_wizard") as wizard:
+        RunCommand(bench).run()
+    setup_admin.assert_called_once()
+    wizard.assert_not_called()
+
+
+def test_start_production_initialized_starts_manager(tmp_path: Path) -> None:
+    from bench_cli.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.production.process_manager = "systemd"
+    _mark_initialized(bench)
+    with patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.is_configured", return_value=True), \
+         patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.start") as start:
+        RunCommand(bench).run()
+    start.assert_called_once()
+
+
+# ── snapshot orchestrator (single global dataset) ─────────────────────────────
+
+
+def test_orchestrator_create_snapshot_quiesces_mariadb() -> None:
+    from bench_cli.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume = MagicMock()
+    volume.config.dataset_path = "bench-pool/shop"
+    mariadb = MagicMock()
+    SnapshotOrchestrator(volume, mariadb, None).create_snapshot("tag1")
+
+    mariadb.snapshot_lock.assert_called_once()
+    volume.snapshot.assert_called_once_with("bench-pool/shop", "tag1")
+
+
+def test_orchestrator_rollback_stops_mariadb_and_sets_maintenance() -> None:
+    from unittest.mock import call
+
+    from bench_cli.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume = MagicMock()
+    volume.config.dataset_path = "bench-pool/shop"
+    mariadb = MagicMock()
+    bench = MagicMock()
+    SnapshotOrchestrator(volume, mariadb, bench).rollback_snapshot("tag1")
+
+    mariadb.stop.assert_called_once()
+    mariadb.start.assert_called_once()
+    volume.rollback_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
+    assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]

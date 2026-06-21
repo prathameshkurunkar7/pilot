@@ -1,12 +1,14 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, FormControl, ErrorMessage, LoadingText, Switch, Select, Badge, useTheme, Dialog } from 'frappe-ui'
+import { Button, FormControl, ErrorMessage, LoadingText, Select, Badge, useTheme, Dialog, TextInput } from 'frappe-ui'
 import LucideX from '~icons/lucide/x'
+import { useTaskProgress } from '../composables/useTaskProgress.js'
 
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue'])
 const router = useRouter()
+const { watchTask } = useTaskProgress()
 
 const show = computed({
   get: () => props.modelValue,
@@ -24,19 +26,28 @@ const THEME_OPTIONS = [
   { label: 'Auto (System)', value: 'system' },
 ]
 
-const TABS = [
+const BASE_TABS = [
   { key: 'bench', label: 'Bench' },
+  { key: 'apps', label: 'Apps' },
   { key: 'appearance', label: 'Appearance' },
   { key: 'mariadb', label: 'MariaDB' },
   { key: 'redis', label: 'Redis' },
   { key: 'workers', label: 'Workers' },
-  { key: 'nginx', label: 'Nginx' },
-  { key: 'letsencrypt', label: "Let's Encrypt" },
   { key: 'updates', label: 'Updates' },
 ]
+const isLinux = ref(false)
+const TABS = computed(() => {
+  let tabs = isLinux.value
+    ? [...BASE_TABS, { key: 'volume', label: 'ZFS Volume' }]
+    : BASE_TABS
+
+    return tabs
+}
+)
+
 const activeTab = ref('bench')
 
-const loading = ref(false)
+const loading = ref(true)
 const loadError = ref('')
 const saving = ref(false)
 const saveError = ref('')
@@ -48,15 +59,7 @@ const PROCESS_MANAGER_OPTIONS = [
   { label: 'Systemd', value: 'systemd' },
 ]
 
-const form = ref({
-  bench: { name: '', python: '', http_port: 8000, socketio_port: 9000 },
-  mariadb: { host: 'localhost', port: 3306, admin_user: 'root', socket_path: '', version: '' },
-  redis: { cache_port: 13000, queue_port: 11000, socketio_port: 12000, version: '' },
-  workers: { default: 2, short: 1, long: 1 },
-  nginx: { http_port: 80, https_port: 443, config_dir: '/etc/nginx/conf.d', worker_processes: 'auto', client_max_body_size: '50m' },
-  letsencrypt: { email: '', webroot_path: '/var/www/letsencrypt' },
-  production: { process_manager: 'none', nginx: false },
-})
+const form = ref(null)
 
 async function load() {
   loading.value = true
@@ -64,7 +67,11 @@ async function load() {
   try {
     const res = await fetch('/api/settings/')
     if (!res.ok) throw new Error(`${res.status}`)
-    form.value = await res.json()
+    const data = await res.json()
+    isLinux.value = data.is_linux === true
+    if (Array.isArray(data.workers))
+      data.workers = data.workers.map(g => ({ queues: (g.queues || []).join(', '), count: g.count }))
+    form.value = data
   } catch (e) {
     loadError.value = e.message
   } finally {
@@ -72,30 +79,40 @@ async function load() {
   }
 }
 
+function queueList(q) {
+  if (Array.isArray(q)) return q.map(s => String(s).trim()).filter(Boolean)
+  return String(q || '').split(',').map(s => s.trim()).filter(Boolean)
+}
+
+function addWorkerGroup() {
+  form.value.workers.push({ queues: '', count: 1 })
+}
+
+function removeWorkerGroup(i) {
+  form.value.workers.splice(i, 1)
+}
+
 function validateSettings() {
   const ports = [
     [form.value.bench.http_port, 'HTTP Port'],
     [form.value.bench.socketio_port, 'SocketIO Port'],
-    [form.value.mariadb.port, 'MariaDB Port'],
     [form.value.redis.cache_port, 'Redis Cache Port'],
     [form.value.redis.queue_port, 'Redis Queue Port'],
-    [form.value.redis.socketio_port, 'Redis SocketIO Port'],
-    [form.value.nginx.http_port, 'Nginx HTTP Port'],
-    [form.value.nginx.https_port, 'Nginx HTTPS Port'],
   ]
   for (const [port, name] of ports) {
     const n = Number(port)
     if (!Number.isInteger(n) || n < 1 || n > 65535)
       return `${name} must be between 1 and 65535.`
   }
-  for (const [key, label] of [['default', 'Default'], ['short', 'Short'], ['long', 'Long']]) {
-    const n = Number(form.value.workers[key])
+  if (!Array.isArray(form.value.workers) || form.value.workers.length === 0)
+    return 'Add at least one worker group.'
+  for (const [i, group] of form.value.workers.entries()) {
+    if (!queueList(group.queues).length)
+      return `Worker group ${i + 1} needs at least one queue.`
+    const n = Number(group.count)
     if (!Number.isInteger(n) || n < 1)
-      return `${label} workers must be at least 1.`
+      return `Worker group ${i + 1} count must be at least 1.`
   }
-  const email = (form.value.letsencrypt.email || '').trim()
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-    return "Invalid email address for Let's Encrypt."
   return null
 }
 
@@ -115,8 +132,7 @@ async function save() {
     if (!d.ok) { saveError.value = d.error; return }
 
     const pm = form.value.production.process_manager
-    const nginxEnabled = form.value.production.nginx
-    const setupCommand = pm !== 'none' ? 'setup-production' : nginxEnabled ? 'setup-nginx' : null
+    const setupCommand = pm !== 'none' ? 'setup-production' : null
 
     if (setupCommand) {
       const taskRes = await fetch('/api/tasks/run', {
@@ -127,7 +143,7 @@ async function save() {
       const taskData = await taskRes.json()
       if (taskData.ok) {
         show.value = false
-        router.push(`/tasks/${taskData.task_id}`)
+        watchTask(taskData.task_id)
         return
       }
       saveError.value = taskData.error || 'Setup failed to start'
@@ -173,7 +189,7 @@ async function updateCli() {
     const d = await res.json()
     if (d.ok) {
       show.value = false
-      router.push(`/tasks/${d.task_id}`)
+      watchTask(d.task_id)
     } else {
       checkUpdateError.value = d.error
     }
@@ -182,6 +198,60 @@ async function updateCli() {
   }
 }
 
+// Apps tab
+const benchApps = ref([])
+const appRegistry = ref([])
+const appsLoading = ref(false)
+const appsError = ref('')
+const appSearch = ref('')
+
+const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
+function hashColor(name) {
+  let h = 0
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0
+  return COLORS[Math.abs(h) % COLORS.length]
+}
+
+const appLogoMap = computed(() =>
+  Object.fromEntries(appRegistry.value.filter(a => a?.name).map(a => [a.name, a.logo_url]))
+)
+const appTitleMap = computed(() =>
+  Object.fromEntries(appRegistry.value.filter(a => a?.name).map(a => [a.name, a.title]))
+)
+
+const filteredApps = computed(() => {
+  const q = appSearch.value.toLowerCase().trim()
+  const apps = benchApps.value.filter(a => a?.name)
+  if (!q) return apps
+  return apps.filter(a =>
+    a.name.toLowerCase().includes(q) ||
+    (appTitleMap.value[a.name] || '').toLowerCase().includes(q)
+  )
+})
+
+async function loadBenchApps() {
+  appsLoading.value = true
+  appsError.value = ''
+  try {
+    const [appsRes, regRes] = await Promise.all([
+      fetch('/api/apps/'),
+      fetch('/api/apps/registry'),
+    ])
+    const appsData = await appsRes.json()
+    const regData = await regRes.json()
+    benchApps.value = Array.isArray(appsData) ? appsData : []
+    appRegistry.value = Array.isArray(regData) ? regData : []
+  } catch (e) {
+    appsError.value = e.message
+  } finally {
+    appsLoading.value = false
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'apps') loadBenchApps()
+})
+
 watch(() => props.modelValue, (val) => {
   if (val) {
     activeTab.value = 'bench'
@@ -189,6 +259,7 @@ watch(() => props.modelValue, (val) => {
     saveSuccess.value = ''
     cliUpdate.value = null
     showUpdateDetails.value = false
+    benchApps.value = []
     load()
   }
 })
@@ -197,10 +268,10 @@ watch(() => props.modelValue, (val) => {
 <template>
   <Dialog v-model="show" :options="{ size: '3xl' }">
     <template #body>
-      <div class="flex h-[calc(100vh-8rem)] bg-surface-menu-bar">
+      <div class="flex h-[calc(100vh-8rem)] bg-surface-menu-bar" @pointerdown.stop>
         <!-- Left sidebar - full height, same bg as outer, no border -->
         <div class="flex flex-col m-1 w-48 shrink-0 rounded-l-lg bg-surface-menu-bar overflow-y-auto">
-          <h3 class="px-3 py-3 text-sm font-semibold text-ink-gray-9 sticky top-0 bg-surface-menu-bar">
+          <h3 class="px-3 py-3 font-semibold text-ink-gray-9 sticky top-0 bg-surface-menu-bar">
             Settings
           </h3>
           <nav class="space-y-0.5 px-1">
@@ -222,7 +293,7 @@ watch(() => props.modelValue, (val) => {
         <div class="flex flex-col flex-1 overflow-hidden bg-surface-modal rounded-r-xl">
           <!-- Header with close button -->
           <div class="flex items-center justify-between px-6 py-4 border-b border-outline-gray-1 flex-shrink-0">
-            <h3 class="text-base font-semibold text-ink-gray-9">
+            <h3 class="font-semibold text-ink-gray-9">
               {{ TABS.find(t => t.key === activeTab)?.label }}
             </h3>
             <Button variant="ghost" @click="show = false">
@@ -237,11 +308,43 @@ watch(() => props.modelValue, (val) => {
             <LoadingText v-if="loading" />
             <ErrorMessage v-else-if="loadError" :message="loadError" />
 
-            <template v-else>
+            <template v-else-if="form">
+              <!-- Apps -->
+              <div v-if="activeTab === 'apps'" class="flex flex-col gap-3">
+                <TextInput v-model="appSearch" placeholder="Search apps…" />
+                <LoadingText v-if="appsLoading" />
+                <ErrorMessage v-else-if="appsError" :message="appsError" />
+                <p v-else-if="!benchApps.length" class="py-8 text-center text-sm text-ink-gray-4">No apps installed on this bench.</p>
+                <div v-else-if="!filteredApps.length" class="py-8 text-center text-sm text-ink-gray-4">No apps match your search.</div>
+                <div v-else class="flex flex-col gap-2">
+                  <div
+                    v-for="app in filteredApps"
+                    :key="app.name"
+                    class="flex items-center gap-3 rounded-lg border border-outline-gray-1 px-4 py-3"
+                  >
+                    <div
+                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md overflow-hidden"
+                      :style="appLogoMap[app.name] ? {} : { background: hashColor(app.name) }"
+                    >
+                      <img v-if="appLogoMap[app.name]" :src="appLogoMap[app.name]" :alt="app.name" class="h-full w-full object-contain" />
+                      <span v-else class="text-xs font-bold text-white leading-none">{{ app.name[0].toUpperCase() }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-sm font-medium text-ink-gray-9">{{ appTitleMap[app.name] || app.name }}</span>
+                        <Badge v-if="app.branch" :label="app.branch" theme="gray" size="sm" />
+                        <Badge v-if="app.uncommitted_changes" label="Modified" theme="orange" size="sm" />
+                      </div>
+                      <p class="text-xs text-ink-gray-4 font-mono mt-0.5">{{ app.name }}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- Bench -->
-              <div v-if="activeTab === 'bench'" class="flex flex-col gap-4">
-                <h4 class="text-sm font-semibold text-ink-gray-8">Process Manager</h4>
-                <Select label="Process Manager" :options="PROCESS_MANAGER_OPTIONS" v-model="form.production.process_manager" class="w-64" />
+              <div v-else-if="activeTab === 'bench'" class="flex flex-col gap-4">
+                <h4 class="font-semibold text-ink-gray-8">Process Manager</h4>
+                <Select :options="PROCESS_MANAGER_OPTIONS" v-model="form.production.process_manager" class="w-64" />
                 <div class="border-t border-outline-gray-1" />
                 <div class="grid grid-cols-2 gap-4">
                   <FormControl label="Name" :modelValue="form.bench.name" disabled />
@@ -258,12 +361,15 @@ watch(() => props.modelValue, (val) => {
 
               <!-- MariaDB -->
               <div v-else-if="activeTab === 'mariadb'" class="flex flex-col gap-4">
+                <p class="rounded-md bg-surface-gray-2 px-3 py-2 text-xs text-ink-gray-5">
+                  MariaDB connection settings are set during bench initialization and cannot be changed here.
+                </p>
                 <div class="grid grid-cols-2 gap-4">
-                  <FormControl label="Host" v-model="form.mariadb.host" />
-                  <FormControl type="number" label="Port" v-model="form.mariadb.port" />
-                  <FormControl label="Admin User" v-model="form.mariadb.admin_user" />
-                  <FormControl label="Version" v-model="form.mariadb.version" placeholder="e.g. 10.6" />
-                  <FormControl class="col-span-2" label="Socket Path" v-model="form.mariadb.socket_path" placeholder="Leave empty to use TCP" />
+                  <FormControl label="Host" :modelValue="form.mariadb.host" disabled />
+                  <FormControl type="number" label="Port" :modelValue="form.mariadb.port" disabled />
+                  <FormControl label="Admin User" :modelValue="form.mariadb.admin_user" disabled />
+                  <FormControl label="Version" :modelValue="form.mariadb.version" disabled />
+                  <FormControl class="col-span-2" label="Socket Path" :modelValue="form.mariadb.socket_path" disabled />
                 </div>
               </div>
 
@@ -272,37 +378,53 @@ watch(() => props.modelValue, (val) => {
                 <div class="grid grid-cols-2 gap-4">
                   <FormControl type="number" label="Cache Port" v-model="form.redis.cache_port" />
                   <FormControl type="number" label="Queue Port" v-model="form.redis.queue_port" />
-                  <FormControl type="number" label="SocketIO Port" v-model="form.redis.socketio_port" />
-                  <FormControl label="Version" v-model="form.redis.version" placeholder="e.g. 7" />
+                  <FormControl label="Version" v-model="form.redis.version" disabled placeholder="not installed" />
                 </div>
               </div>
 
               <!-- Workers -->
               <div v-else-if="activeTab === 'workers'" class="flex flex-col gap-4">
-                <div class="grid grid-cols-3 gap-4">
-                  <FormControl type="number" label="Default Workers" v-model="form.workers.default" />
-                  <FormControl type="number" label="Short Workers" v-model="form.workers.short" />
-                  <FormControl type="number" label="Long Workers" v-model="form.workers.long" />
+                <p class="text-sm text-ink-gray-6">
+                  Each group spawns <span class="font-medium">count</span> workers listening to the listed queues.
+                </p>
+                <div
+                  v-for="(group, i) in form.workers"
+                  :key="i"
+                  class="grid grid-cols-[1fr_7rem_auto] items-end gap-3"
+                >
+                  <FormControl
+                    :label="i === 0 ? 'Queues' : undefined"
+                    v-model="group.queues"
+                    placeholder="default, short, long"
+                  />
+                  <FormControl type="number" :min="1" :label="i === 0 ? 'Count' : undefined" v-model.number="group.count" />
+                  <Button
+                    variant="ghost"
+                    icon="trash-2"
+                    :disabled="form.workers.length === 1"
+                    @click="removeWorkerGroup(i)"
+                  />
+                </div>
+                <div>
+                  <Button variant="subtle" icon-left="plus" label="Add group" @click="addWorkerGroup" />
                 </div>
               </div>
 
-              <!-- Nginx -->
-              <div v-else-if="activeTab === 'nginx'" class="flex flex-col gap-4">
-                <Switch v-model="form.production.nginx" label="Manage Nginx" />
+              <!-- ZFS Volume -->
+              <div v-else-if="activeTab === 'volume'" class="flex flex-col gap-4">
                 <div class="grid grid-cols-2 gap-4">
-                  <FormControl type="number" label="HTTP Port" v-model="form.nginx.http_port" />
-                  <FormControl type="number" label="HTTPS Port" v-model="form.nginx.https_port" />
-                  <FormControl label="Worker Processes" v-model="form.nginx.worker_processes" placeholder="auto" />
-                  <FormControl label="Client Max Body Size" v-model="form.nginx.client_max_body_size" placeholder="50m" />
-                  <FormControl class="col-span-2" label="Config Directory" v-model="form.nginx.config_dir" />
+                  <FormControl label="Pool Name" :modelValue="form.volume.pool" disabled />
+                  <FormControl
+                    v-if="form.volume.backing === 'image'"
+                    label="Disk Image"
+                    :modelValue="`${form.volume.image_path} (${form.volume.image_size})`"
+                    disabled
+                  />
+                  <FormControl v-else label="Block Device" :modelValue="form.volume.device" disabled />
                 </div>
-              </div>
-
-              <!-- Let's Encrypt -->
-              <div v-else-if="activeTab === 'letsencrypt'" class="flex flex-col gap-4">
                 <div class="grid grid-cols-2 gap-4">
-                  <FormControl label="Email" v-model="form.letsencrypt.email" placeholder="you@example.com" />
-                  <FormControl label="Webroot Path" v-model="form.letsencrypt.webroot_path" />
+                  <FormControl label="Reservation" v-model="form.volume.reservation" />
+                  <FormControl label="Quota" v-model="form.volume.quota" />
                 </div>
               </div>
 
@@ -336,9 +458,9 @@ watch(() => props.modelValue, (val) => {
           </div>
 
           <!-- Footer -->
-          <div v-if="activeTab !== 'appearance' && activeTab !== 'updates'" class="flex items-center justify-end gap-3 px-6 py-3 border-t border-outline-gray-1 flex-shrink-0">
+          <div v-if="activeTab !== 'appearance' && activeTab !== 'updates' && activeTab !== 'apps'" class="flex items-center justify-end gap-3 px-6 py-3 border-t border-outline-gray-1 flex-shrink-0">
             <ErrorMessage :message="saveError" />
-            <span v-if="saveSuccess" class="text-sm text-green-600 font-medium">{{ saveSuccess }}</span>
+            <span v-if="saveSuccess" class="text-sm text-ink-green-2 font-medium">{{ saveSuccess }}</span>
             <Button @click="show = false">Cancel</Button>
             <Button variant="solid" :loading="saving" @click="save">Save</Button>
           </div>

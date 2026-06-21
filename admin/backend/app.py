@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import os
+import re
 import secrets
+import socket
+import subprocess
+import tomllib
+import signal
+import threading
+import time
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_file, session
@@ -17,15 +25,41 @@ from .views.sites import sites_bp
 from .views.tasks import tasks_bp
 from .views.updates import updates_bp
 from .views.volume import volume_bp
+from bench_cli.commands.admin import _cli_root
+from bench_cli.commands.new import NewCommand
 from bench_cli.config.bench_config import BenchConfig
-from bench_cli.exceptions import ConfigError
+from bench_cli.exceptions import BenchError, ConfigError
 
 _STATIC_DIR = Path(__file__).parent / "static"
 _OPEN_PATHS = {"/api/status", "/api/login", "/api/logout"}
+_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+# Lenient hostname: dotted alphanumeric/hyphen labels (allows admin.example.com
+# and dev names like my-admin.localhost).
+_ADMIN_DOMAIN_RE = re.compile(
+    r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+)
+
+
+def _port_open(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _persist_toml(bench_dir: Path, updates: dict) -> None:
+    """Merge ``updates`` into a bench's bench.toml in place, preserving other keys."""
+    from bench_cli.utils import write_toml
+
+    toml_path = bench_dir / "bench.toml"
+    data = tomllib.loads(toml_path.read_text())
+    for section, values in updates.items():
+        data.setdefault(section, {}).update(values)
+    write_toml(toml_path, data)
 
 
 def _wizard_status(bench_root: Path) -> dict:
-    import tomllib
     name = bench_root.name
     try:
         with open(bench_root / "bench.toml", "rb") as f:
@@ -35,11 +69,51 @@ def _wizard_status(bench_root: Path) -> dict:
     return {"wizard": True, "name": name, "enabled": True, "authenticated": True}
 
 
+def _install_idle_watchdog(app: Flask) -> None:
+    """Stop the admin after a period of inactivity when socket-activated.
+
+    Enabled only when BENCH_ADMIN_IDLE_TIMEOUT is set, which the systemd service
+    unit does. Under gunicorn (workers=1, preload_app=False) this runs in the
+    worker, so os.getppid() is the gunicorn arbiter — SIGTERM to it triggers a
+    graceful shutdown and the service stops. systemd keeps the .socket listening,
+    so the next request re-activates the service.
+    """
+    raw = os.environ.get("BENCH_ADMIN_IDLE_TIMEOUT")
+    if not raw:
+        return
+    timeout = int(raw)
+    if timeout <= 0:
+        return
+
+    last_request = time.monotonic()
+    lock = threading.Lock()
+
+    @app.before_request
+    def _touch() -> None:
+        nonlocal last_request
+        with lock:
+            last_request = time.monotonic()
+
+    def _watchdog() -> None:
+        while True:
+            time.sleep(min(timeout, 30))
+            with lock:
+                idle = time.monotonic() - last_request
+            if idle > timeout:
+                os.kill(os.getppid(), signal.SIGTERM)
+                return
+
+    threading.Thread(target=_watchdog, daemon=True).start()
+
+
 def create_app(bench_root: Path) -> Flask:
     app = Flask(__name__, static_folder=str(_STATIC_DIR), static_url_path="/static")
     app.config["BENCH_ROOT"] = bench_root
     app.config["TEMPLATES_AUTO_RELOAD"] = False
     app.secret_key = secrets.token_hex(32)
+    app.config["SESSION_COOKIE_NAME"] = f"bench_session_{bench_root.name}"
+
+    _install_idle_watchdog(app)
 
     def _load_config():
         return BenchConfig.from_file(bench_root / "bench.toml")
@@ -75,14 +149,13 @@ def create_app(bench_root: Path) -> Flask:
             config = BenchConfig.from_file(bench_root / "bench.toml")
         except Exception as exc:
             return jsonify({"enabled": False, "error": str(exc)}), 503
-        # Show wizard when bench was never initialized, or when init was
-        # interrupted before an admin password was saved.
         if not initialized or not config.admin.password:
             return jsonify(_wizard_status(bench_root))
         return jsonify(
             {
                 "enabled": config.admin.enabled,
                 "name": config.name,
+                "production": config.production.enabled,
                 "authenticated": bool(session.get("authenticated")),
             }
         )
@@ -105,6 +178,174 @@ def create_app(bench_root: Path) -> Flask:
     def api_logout():
         session.clear()
         return jsonify({"ok": True})
+
+    @app.route("/api/benches/")
+    def api_benches():
+        benches_dir = bench_root.parent
+        running = []
+        for bench_dir in sorted(benches_dir.iterdir()):
+            if not bench_dir.is_dir():
+                continue
+            toml_path = bench_dir / "bench.toml"
+            if not toml_path.exists():
+                continue
+            try:
+                with open(toml_path, "rb") as f:
+                    config = tomllib.load(f)
+                admin = config.get("admin", {})
+                prod = config.get("production", {})
+                port = admin.get("port")
+                name = config.get("bench", {}).get("name", bench_dir.name)
+                if not port:
+                    continue
+                pm = str(prod.get("process_manager", "")).lower()
+                pm = "" if pm in ("", "none") else ("supervisor" if pm == "supervisord" else pm)
+                production = bool(prod.get("enabled", pm != ""))
+                domain = admin.get("domain", "")
+                tls = bool(admin.get("tls", False))
+                # The admin binds `port` directly in dev, but under socket
+                # activation gunicorn binds internal_port (port + 1) and nginx
+                # serves the public domain — nothing listens on `port` itself.
+                # A production admin stays reachable while its workload is
+                # stopped; a stopped dev bench is unavailable (dead port).
+                reachable = _port_open(port) or _port_open(port + 1)
+                if not reachable:
+                    continue
+                scheme = "https" if tls else "http"
+                admin_url = f"{scheme}://{domain}" if production and domain else ""
+                running.append({
+                    "name": name,
+                    "port": port,
+                    "domain": domain,
+                    "production": production,
+                    "process_manager": pm or None,
+                    "runtime_state": "running",
+                    "admin_url": admin_url,
+                })
+            except Exception:
+                continue
+        return jsonify(running)
+
+    @app.route("/api/benches/new", methods=["POST"])
+    def api_benches_new():
+        from bench_cli.utils import host_owner, normalize_host
+
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name or not _NAME_RE.match(name):
+            return jsonify({"error": "Bench name must contain only letters, numbers, '-' and '_'"}), 400
+
+        process_manager = (data.get("process_manager") or "").strip().lower()
+        if process_manager == "supervisord":
+            process_manager = "supervisor"
+        if process_manager not in ("systemd", "supervisor"):
+            return jsonify({"error": "Choose a process manager: systemd or supervisor."}), 400
+
+        admin_domain = (data.get("admin_domain") or "").strip()
+        if not admin_domain:
+            return jsonify({"error": "Admin domain is required so the bench is reachable in production."}), 400
+        if not _ADMIN_DOMAIN_RE.match(admin_domain):
+            return jsonify({"error": f"'{admin_domain}' is not a valid hostname."}), 400
+
+        new_dir = bench_root.parent / name
+        owner = host_owner(new_dir, admin_domain)
+        if owner:
+            return jsonify({"error": f"Admin domain '{admin_domain}' is already used by bench '{owner}'."}), 400
+        if normalize_host(admin_domain) == normalize_host(name):
+            return jsonify({"error": "Admin domain must differ from the bench/site name."}), 400
+
+        # New benches from the UI come up plain HTTP; the user enables HTTPS
+        # later from Settings (or the wizard). Never inherit a sibling's TLS here.
+        admin_tls = bool(data.get("admin_tls", False))
+
+        try:
+            NewCommand(new_dir, name, process_manager=process_manager,
+                       admin_domain=admin_domain, admin_tls=admin_tls).run()
+        except BenchError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        with open(new_dir / "bench.toml", "rb") as f:
+            new_toml = tomllib.load(f)
+        new_port = new_toml["admin"]["port"]
+
+        cli_root = _cli_root()
+        admin = new_toml.get("admin", {})
+
+        # A production parent brings up the new bench's OWN admin service (socket-
+        # activated, self-managing) and routes its domain to it. The admin serves
+        # the setup wizard until the bench is initialized; the user then runs
+        # `setup production` from it, which starts the workload. No standalone
+        # wizard server — the bench's admin handles its own lifecycle.
+        if _current_is_production():
+            try:
+                from bench_cli.config.bench_config import BenchConfig
+                from bench_cli.core.bench import Bench
+                from bench_cli.managers.nginx_manager import NginxManager
+                from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
+                from bench_cli.managers.systemd_process_manager import SystemdProcessManager
+
+                bench = Bench(BenchConfig.from_file(new_dir / "bench.toml"), new_dir)
+                # Not deployed yet (production.enabled is false at this point), so
+                # pick the manager by the configured process_manager rather than
+                # via the factory, which gates on enabled.
+                pm = (SystemdProcessManager if bench.config.production.process_manager == "systemd"
+                      else SupervisorProcessManager)
+                pm(bench).setup_admin()
+                nginx = NginxManager(bench)
+                nginx.generate_config()
+                nginx.install_config()
+                nginx.reload()
+                # The admin now runs under the chosen process manager, so record
+                # the bench as production — otherwise `bench status`/`stop` fall
+                # back to the foreground (Procfile) manager and misreport it. The
+                # workload simply stays stopped until the user finishes setup.
+                _persist_toml(new_dir, {"production": {"enabled": True}})
+            except Exception as exc:
+                return jsonify({"error": f"Failed to bring up the new bench: {exc}"}), 500
+            return jsonify({"name": name, "port": new_port, "wizard_at_domain": True,
+                            "domain": admin.get("domain", "")})
+
+        # Dev parent (no process manager): run a standalone wizard server on the
+        # bench's admin port and reach it on this host. Strip WERKZEUG_* so a
+        # dev-mode reloader's stale socket fd isn't inherited; strip BENCH_ADMIN_*
+        # so the admin's idle-timeout/root don't leak in.
+        spawn_env = {
+            k: v for k, v in os.environ.items()
+            if not k.startswith("WERKZEUG_") and not k.startswith("BENCH_ADMIN_")
+        }
+        spawn_env["PYTHONPATH"] = str(cli_root)
+        subprocess.Popen(
+            [str(cli_root / ".admin-venv" / "bin" / "python"), "-m", "admin.backend.server",
+             "--bench-root", str(new_dir), "--port", str(new_port), "--timeout", "7200", "--wizard"],
+            cwd=str(cli_root), env=spawn_env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+        )
+        return jsonify({"name": name, "port": new_port, "wizard_at_domain": False,
+                        "domain": admin.get("domain", "")})
+
+    def _current_is_production() -> bool:
+        # Read the flag straight from toml (no full validation) so a slightly
+        # incomplete current config can't block creating a new bench.
+        try:
+            with open(bench_root / "bench.toml", "rb") as f:
+                prod = tomllib.load(f).get("production", {})
+            pm = str(prod.get("process_manager", "")).lower()
+            return bool(prod.get("enabled", pm not in ("", "none")))
+        except Exception:
+            return False
+
+    @app.route("/api/benches/ready")
+    def api_benches_ready():
+        try:
+            port = int(request.args.get("port", ""))
+        except ValueError:
+            return jsonify({"ready": False}), 400
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                pass
+            return jsonify({"ready": True})
+        except OSError:
+            return jsonify({"ready": False})
 
     app.register_blueprint(setup_bp, url_prefix="/api/setup")
     app.register_blueprint(dashboard_bp, url_prefix="/api")

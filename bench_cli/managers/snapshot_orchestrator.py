@@ -10,6 +10,12 @@ if TYPE_CHECKING:
 
 
 class SnapshotOrchestrator:
+    """Snapshot/rollback the bench's single dataset (files + database).
+
+    Because the database lives on the same dataset, every snapshot quiesces
+    MariaDB (FLUSH TABLES WITH READ LOCK) for a consistent on-disk state, and
+    every rollback stops MariaDB and puts sites into maintenance mode."""
+
     def __init__(
         self,
         volume: VolumeManager,
@@ -20,33 +26,28 @@ class SnapshotOrchestrator:
         self._mariadb = mariadb
         self._bench = bench
 
-    def create_snapshot(self, dataset: str, tag: str) -> None:
-        if self._is_mariadb_dataset(dataset) and self._mariadb:
-            with self._mariadb.snapshot_lock():
-                self._volume.snapshot(dataset, tag)
-        else:
-            self._volume.snapshot(dataset, tag)
+    @property
+    def _dataset(self) -> str:
+        return self._volume.config.dataset_path
 
-    def rollback_snapshot(self, dataset: str, tag: str) -> None:
+    def create_snapshot(self, tag: str) -> None:
+        if self._mariadb:
+            with self._mariadb.snapshot_lock():
+                self._volume.snapshot(self._dataset, tag)
+        else:
+            self._volume.snapshot(self._dataset, tag)
+
+    def rollback_snapshot(self, tag: str) -> None:
         if self._bench:
             self._bench.set_maintenance_mode(True)
         try:
-            if self._is_mariadb_dataset(dataset):
-                self._rollback_mariadb(dataset, tag)
-            else:
-                self._volume.rollback_snapshot(dataset, tag)
+            if self._mariadb:
+                self._mariadb.stop()
+            try:
+                self._volume.rollback_snapshot(self._dataset, tag)
+            finally:
+                if self._mariadb:
+                    self._mariadb.start()
         finally:
             if self._bench:
                 self._bench.set_maintenance_mode(False)
-
-    def _rollback_mariadb(self, dataset: str, tag: str) -> None:
-        if self._mariadb:
-            self._mariadb.stop()
-        try:
-            self._volume.rollback_snapshot(dataset, tag)
-        finally:
-            if self._mariadb:
-                self._mariadb.start()
-
-    def _is_mariadb_dataset(self, dataset: str) -> bool:
-        return dataset == self._volume.config.mariadb_dataset

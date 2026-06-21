@@ -8,7 +8,7 @@ from bench_cli.config.app_config import AppConfig
 from bench_cli.config.bench_config import BenchConfig
 from bench_cli.config.mariadb_config import MariaDBConfig
 from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.worker_config import WorkerConfig
+from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
 from bench_cli.core.bench import Bench
 from bench_cli.managers.redis_manager import RedisManager
 
@@ -19,8 +19,12 @@ def make_bench(tmp_path: Path) -> Bench:
         python_version="3.14",
         apps=[AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")],
         mariadb=MariaDBConfig(root_password="root"),
-        redis=RedisConfig(cache_port=13000, queue_port=11000, socketio_port=12000),
-        workers=WorkerConfig(default_count=1, short_count=1, long_count=1),
+        redis=RedisConfig(cache_port=13000, queue_port=11000),
+        workers=WorkerConfig(groups=[
+            WorkerGroup(queues=["default"], count=1),
+            WorkerGroup(queues=["short"], count=1),
+            WorkerGroup(queues=["long"], count=1),
+        ]),
     )
     bench = Bench(config, tmp_path)
     bench.config_path.mkdir(parents=True, exist_ok=True)
@@ -31,55 +35,31 @@ def make_bench(tmp_path: Path) -> Bench:
 # ── RedisManager ──────────────────────────────────────────────────────────────
 
 
-def test_redis_manager_single_instance_writes_one_config(tmp_path: Path) -> None:
+def test_redis_manager_writes_two_configs(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    redis_cfg = RedisConfig(cache_port=13000, queue_port=13000, socketio_port=13000)
-    assert redis_cfg.is_single_instance
-
-    manager = RedisManager(redis_cfg, bench)
-    manager.generate_configs()
-
-    assert (bench.config_path / "redis.conf").exists()
-    assert not (bench.config_path / "redis_cache.conf").exists()
-
-
-def test_redis_manager_multi_instance_writes_three_configs(tmp_path: Path) -> None:
-    bench = make_bench(tmp_path)
-    redis_cfg = RedisConfig(cache_port=13000, queue_port=11000, socketio_port=12000)
-    assert not redis_cfg.is_single_instance
+    redis_cfg = RedisConfig(cache_port=13000, queue_port=11000)
 
     manager = RedisManager(redis_cfg, bench)
     manager.generate_configs()
 
     assert (bench.config_path / "redis_cache.conf").exists()
     assert (bench.config_path / "redis_queue.conf").exists()
-    assert (bench.config_path / "redis_socketio.conf").exists()
+    assert not (bench.config_path / "redis_socketio.conf").exists()
     assert not (bench.config_path / "redis.conf").exists()
-
-
-def test_redis_manager_single_config_content(tmp_path: Path) -> None:
-    bench = make_bench(tmp_path)
-    redis_cfg = RedisConfig(cache_port=13000, queue_port=13000, socketio_port=13000)
-    RedisManager(redis_cfg, bench).generate_configs()
-
-    content = (bench.config_path / "redis.conf").read_text()
-    assert "port 13000" in content
-    assert "bind 127.0.0.1" in content
 
 
 def test_redis_manager_multi_config_ports(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    redis_cfg = RedisConfig(cache_port=13000, queue_port=11000, socketio_port=12000)
+    redis_cfg = RedisConfig(cache_port=13000, queue_port=11000)
     RedisManager(redis_cfg, bench).generate_configs()
 
     assert "port 13000" in (bench.config_path / "redis_cache.conf").read_text()
     assert "port 11000" in (bench.config_path / "redis_queue.conf").read_text()
-    assert "port 12000" in (bench.config_path / "redis_socketio.conf").read_text()
 
 
 def test_redis_manager_cache_config_has_no_save(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    redis_cfg = RedisConfig(cache_port=13000, queue_port=11000, socketio_port=12000)
+    redis_cfg = RedisConfig(cache_port=13000, queue_port=11000)
     RedisManager(redis_cfg, bench).generate_configs()
 
     cache = (bench.config_path / "redis_cache.conf").read_text()
@@ -130,7 +110,7 @@ def test_supervisor_render_program_extracts_cd_prefix(tmp_path: Path) -> None:
     mgr = _make_supervisor_manager(tmp_path)
     pd = ProcessDefinition(
         name="web",
-        command=f"cd /sites && /env/bin/python -m frappe.utils.bench_helper frappe serve",
+        command="cd /sites && /env/bin/python -m frappe.utils.bench_helper frappe serve",
         log_file=tmp_path / "logs" / "web.log",
     )
     block = mgr._render_program(pd, "web")
@@ -175,6 +155,24 @@ def test_supervisor_render_conf_has_group_section(tmp_path: Path) -> None:
     with patch.object(mgr, "_prod_process_definitions", return_value=[]):
         conf = mgr._render_supervisord_conf()
     assert "[group:test-bench]" in conf
+
+
+def test_supervisor_render_conf_separates_admin_group(tmp_path: Path) -> None:
+    from bench_cli.managers.process_manager import ProcessDefinition
+
+    mgr = _make_supervisor_manager(tmp_path)
+    fake_defs = [
+        ProcessDefinition("web", "cmd_web", tmp_path / "logs" / "web.log"),
+        ProcessDefinition("admin", "cmd_admin", tmp_path / "logs" / "admin.log"),
+    ]
+    with patch.object(mgr, "_prod_process_definitions", return_value=fake_defs):
+        conf = mgr._render_supervisord_conf()
+    assert "[group:test-bench]" in conf
+    assert "[group:test-bench-admin]" in conf
+    # The workload group must not include the admin program.
+    workload_line = [ln for ln in conf.splitlines() if ln.startswith("programs=") ][0]
+    assert "test-bench-admin" not in workload_line
+    assert "test-bench-web" in workload_line
 
 
 def test_supervisor_render_conf_has_unix_http_server(tmp_path: Path) -> None:
@@ -354,3 +352,168 @@ def test_systemd_generate_config_writes_unit_files(tmp_path: Path) -> None:
             mgr.generate_config()
     assert (mgr.systemd_conf_dir / "test-bench-web.service").exists()
     assert (mgr.systemd_conf_dir / "test-bench.target").exists()
+
+
+def test_systemd_admin_socket_listens_on_internal_port(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    socket_unit = mgr._render_admin_socket()
+    internal = mgr.bench.config.admin.internal_port
+    assert "[Socket]" in socket_unit
+    assert f"ListenStream=127.0.0.1:{internal}" in socket_unit
+    # Independent of the workload target so the admin survives `bench stop`.
+    assert "WantedBy=default.target" in socket_unit
+    assert "PartOf=" not in socket_unit
+
+
+def test_systemd_admin_service_runs_gunicorn_with_idle_timeout(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    service = mgr._render_admin_service()
+    assert "admin.backend.wsgi:application" in service
+    assert "Environment=BENCH_ADMIN_IDLE_TIMEOUT=60" in service
+    assert "Requires=test-bench-admin.socket" in service
+    assert "After=test-bench-admin.socket" in service
+    # Re-activation is via the socket, not a systemd restart loop.
+    assert "Restart=no" in service
+    # Not PartOf the target — stopping the workload must not stop the admin.
+    assert "PartOf=" not in service
+
+
+def test_systemd_target_excludes_admin(tmp_path: Path) -> None:
+    from bench_cli.managers.process_manager import ProcessDefinition
+
+    mgr = _make_systemd_manager(tmp_path)
+    defs = [
+        ProcessDefinition("web", "x", tmp_path / "logs" / "web.log"),
+        ProcessDefinition("admin", "x", tmp_path / "logs" / "admin.log"),
+    ]
+    target = mgr._render_target(defs)
+    # The target groups the workload only; the admin is independent.
+    assert "test-bench-admin.socket" not in target
+    assert "test-bench-admin.service" not in target
+    assert "test-bench-web.service" in target
+
+
+def test_systemd_generate_config_writes_admin_socket(tmp_path: Path) -> None:
+    from bench_cli.managers.process_manager import ProcessDefinition
+
+    mgr = _make_systemd_manager(tmp_path)
+    mgr.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
+    fake_defs = [
+        ProcessDefinition("web", "/env/bin/python serve", tmp_path / "logs" / "web.log"),
+        ProcessDefinition("admin", "/env/bin/python -m admin", tmp_path / "logs" / "admin.log"),
+    ]
+    with patch("bench_cli.managers.admin_env_manager.AdminEnvManager"):
+        with patch.object(mgr, "_prod_process_definitions", return_value=fake_defs):
+            mgr.generate_config()
+    assert (mgr.systemd_conf_dir / "test-bench-admin.socket").exists()
+    assert (mgr.systemd_conf_dir / "test-bench-admin.service").exists()
+    assert (mgr.bench.config_path / "admin-gunicorn.conf.py").exists()
+
+
+def test_systemd_is_running_true_when_systemctl_exits_zero(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        assert mgr.is_running() is True
+
+
+def test_systemd_is_running_false_when_systemctl_exits_nonzero(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1)
+        assert mgr.is_running() is False
+
+
+def test_systemd_is_running_false_when_systemctl_not_installed(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        assert mgr.is_running() is False
+
+
+def test_systemd_is_configured_true_when_target_enabled(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        assert mgr.is_configured() is True
+
+
+def test_systemd_is_configured_false_when_target_not_enabled(tmp_path: Path) -> None:
+    mgr = _make_systemd_manager(tmp_path)
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1)
+        assert mgr.is_configured() is False
+
+
+# ── SupervisorProcessManager — runtime ────────────────────────────────────────
+
+
+def test_supervisor_is_alive_false_when_no_pid_file(tmp_path: Path) -> None:
+    mgr = _make_supervisor_manager(tmp_path)
+    assert mgr.is_alive() is False
+
+
+def test_supervisor_is_alive_true_when_process_running(tmp_path: Path) -> None:
+    import os
+    mgr = _make_supervisor_manager(tmp_path)
+    mgr.supervisor_pid.write_text(str(os.getpid()))
+    assert mgr.is_alive() is True
+
+
+def test_supervisor_is_alive_false_when_process_dead(tmp_path: Path) -> None:
+    mgr = _make_supervisor_manager(tmp_path)
+    mgr.supervisor_pid.write_text("999999")  # non-existent PID
+    assert mgr.is_alive() is False
+
+
+def test_supervisor_is_running_false_when_not_configured(tmp_path: Path) -> None:
+    mgr = _make_supervisor_manager(tmp_path)
+    # conf file absent — is_configured() short-circuits before any subprocess call
+    with patch("subprocess.run") as mock_run:
+        assert mgr.is_running() is False
+        mock_run.assert_not_called()
+
+
+def test_supervisor_is_running_false_when_not_alive(tmp_path: Path) -> None:
+    mgr = _make_supervisor_manager(tmp_path)
+    mgr.supervisor_conf_path.write_text("[supervisord]\n")
+    # no PID file → is_alive() returns False before subprocess
+    with patch("subprocess.run") as mock_run:
+        assert mgr.is_running() is False
+        mock_run.assert_not_called()
+
+
+def test_supervisor_is_running_true_when_running_in_output(tmp_path: Path) -> None:
+    import os
+    mgr = _make_supervisor_manager(tmp_path)
+    mgr.supervisor_conf_path.write_text("[supervisord]\n")
+    mgr.supervisor_pid.write_text(str(os.getpid()))
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(stdout="test-bench:test-bench-web  RUNNING  pid 123\n")
+        assert mgr.is_running() is True
+
+
+def test_supervisor_is_running_false_when_no_running_in_output(tmp_path: Path) -> None:
+    import os
+    mgr = _make_supervisor_manager(tmp_path)
+    mgr.supervisor_conf_path.write_text("[supervisord]\n")
+    mgr.supervisor_pid.write_text(str(os.getpid()))
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(stdout="test-bench:test-bench-web  STOPPED\n")
+        assert mgr.is_running() is False
+
+
+def test_supervisor_multiqueue_worker_name_has_no_commas(tmp_path: Path) -> None:
+    """A worker group serving several queues must not produce a comma in the
+    program name — commas break supervisor's `programs=` CSV (regression)."""
+    from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
+
+    mgr = _make_supervisor_manager(tmp_path)
+    mgr.bench.config.workers = WorkerConfig(groups=[WorkerGroup(queues=["default", "short", "long"], count=1)])
+    conf = mgr._render_supervisord_conf()
+    workload_line = [ln for ln in conf.splitlines() if ln.startswith("programs=")][0]
+    # Every program named in the group must exist as a [program:...] section.
+    named = workload_line.split("=", 1)[1].split(",")
+    for prog in named:
+        assert f"[program:{prog}]" in conf, f"{prog} has no matching section"
+    # The worker still serves all three queues via --queue.
+    assert "--queue default,short,long" in conf

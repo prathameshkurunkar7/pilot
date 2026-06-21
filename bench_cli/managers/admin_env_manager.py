@@ -20,6 +20,10 @@ class AdminEnvManager:
         return self.venv_path / "bin" / "python"
 
     @property
+    def gunicorn(self) -> Path:
+        return self.venv_path / "bin" / "gunicorn"
+
+    @property
     def uv(self) -> str:
         uv = shutil.which("uv")
         if not uv:
@@ -28,6 +32,10 @@ class AdminEnvManager:
 
     def ensure(self) -> None:
         """Create the admin venv and install admin dependencies if not already done."""
+        self._ensure_venv()
+        self._ensure_frontend_deps()
+
+    def _ensure_venv(self) -> None:
         if self.python.exists():
             return
         print("Setting up admin environment (one-time)...")
@@ -43,14 +51,24 @@ class AdminEnvManager:
         print(f"  Installing {', '.join(deps)}...", end=" ", flush=True)
         subprocess.run([self.uv, "pip", "install", "--python", str(self.python), "--quiet", *deps], check=True)
         print("done")
-        print("   Installing Node.js dependencies...")
-        subprocess.run(["npm", "install"], cwd=self.venv_path.parent / "admin" / "frontend", check=True)
-        print("done")
+
+    def _ensure_frontend_deps(self) -> None:
+        """
+        Install admin frontend Node.js dependencies (needed for the vite dev server).
+        """
+        frontend = self.venv_path.parent / "admin" / "frontend"
+        if not (frontend / "package.json").exists():
+            return  # not running from the bench-cli source tree
+        if (frontend / "node_modules").exists():
+            return
+        print("  Installing admin frontend Node.js dependencies...", flush=True)
+        subprocess.run(["npm", "install"], cwd=frontend, check=True)
+        print("  done")
 
     def _read_admin_deps(self) -> list[str]:
         pyproject = self.venv_path.parent / "pyproject.toml"
         if not pyproject.exists():
-            return ["flask>=3.0", "psutil>=5.9", "pymysql>=1.1"]
+            return ["flask>=3.0", "psutil>=5.9", "pymysql>=1.1", "gunicorn>=21.2"]
         with open(pyproject, "rb") as f:
             data = tomllib.load(f)
         return data.get("project", {}).get("optional-dependencies", {}).get("admin")

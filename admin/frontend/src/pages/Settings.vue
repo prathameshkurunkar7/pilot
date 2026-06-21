@@ -2,8 +2,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, FormControl, ErrorMessage, LoadingText, Switch, Select, useTheme } from 'frappe-ui'
+import { useTaskProgress } from '../composables/useTaskProgress.js'
 
 const router = useRouter()
+const { watchTask } = useTaskProgress()
 
 const { currentTheme, setTheme } = useTheme()
 const theme = computed({
@@ -23,13 +25,13 @@ const saveError = ref('')
 const saveSuccess = ref('')
 
 const form = ref({
-  bench: { name: '', python: '', http_port: 8000, socketio_port: 9000 },
+  bench: { name: '', python: '', http_port: 8000, socketio_port: 9000, default_branch: '' },
   mariadb: { host: 'localhost', port: 3306, admin_user: 'root', socket_path: '', version: '' },
-  redis: { cache_port: 13000, queue_port: 11000, socketio_port: 12000, version: '' },
-  workers: { default: 2, short: 1, long: 1 },
-  nginx: { http_port: 80, https_port: 443, config_dir: '/etc/nginx/conf.d', worker_processes: 'auto', client_max_body_size: '50m' },
-  letsencrypt: { email: '', webroot_path: '/var/www/letsencrypt' },
-  production: { enabled: false, nginx: false, lightweight: false },
+  redis: { cache_port: 13000, queue_port: 11000, version: '' },
+  workers: [{ queues: 'default, short, long', count: 1 }],
+  production: { enabled: false, lightweight: false },
+  admin: { domain: '', tls: false },
+  letsencrypt: { email: '' },
 })
 
 async function load() {
@@ -38,12 +40,28 @@ async function load() {
   try {
     const res = await fetch('/api/settings/')
     if (!res.ok) throw new Error(`${res.status}`)
-    form.value = await res.json()
+    const data = await res.json()
+    if (Array.isArray(data.workers))
+      data.workers = data.workers.map(g => ({ queues: (g.queues || []).join(', '), count: g.count }))
+    form.value = data
   } catch (e) {
     loadError.value = e.message
   } finally {
     loading.value = false
   }
+}
+
+function queueList(q) {
+  if (Array.isArray(q)) return q.map(s => String(s).trim()).filter(Boolean)
+  return String(q || '').split(',').map(s => s.trim()).filter(Boolean)
+}
+
+function addWorkerGroup() {
+  form.value.workers.push({ queues: '', count: 1 })
+}
+
+function removeWorkerGroup(i) {
+  form.value.workers.splice(i, 1)
 }
 
 function validateSettings() {
@@ -53,23 +71,21 @@ function validateSettings() {
     [form.value.mariadb.port, 'MariaDB Port'],
     [form.value.redis.cache_port, 'Redis Cache Port'],
     [form.value.redis.queue_port, 'Redis Queue Port'],
-    [form.value.redis.socketio_port, 'Redis SocketIO Port'],
-    [form.value.nginx.http_port, 'Nginx HTTP Port'],
-    [form.value.nginx.https_port, 'Nginx HTTPS Port'],
   ]
   for (const [port, name] of ports) {
     const n = Number(port)
     if (!Number.isInteger(n) || n < 1 || n > 65535)
       return `${name} must be between 1 and 65535.`
   }
-  for (const [key, label] of [['default', 'Default'], ['short', 'Short'], ['long', 'Long']]) {
-    const n = Number(form.value.workers[key])
+  if (!Array.isArray(form.value.workers) || form.value.workers.length === 0)
+    return 'Add at least one worker group.'
+  for (const [i, group] of form.value.workers.entries()) {
+    if (!queueList(group.queues).length)
+      return `Worker group ${i + 1} needs at least one queue.`
+    const n = Number(group.count)
     if (!Number.isInteger(n) || n < 1)
-      return `${label} workers must be at least 1.`
+      return `Worker group ${i + 1} count must be at least 1.`
   }
-  const email = (form.value.letsencrypt.email || '').trim()
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-    return "Invalid email address for Let's Encrypt."
   return null
 }
 
@@ -102,6 +118,37 @@ async function save() {
 
 const taskLoading = ref('')
 const taskError = ref('')
+const httpsApplying = ref(false)
+
+// Enabling HTTPS is a two-step action: persist the choice, then run the task
+// that actually obtains certificates (or, when disabling, regenerates plain
+// HTTP routing). Both stream their progress on the task page we route to.
+async function applyHttps() {
+  saveError.value = ''
+  saveSuccess.value = ''
+  if (form.value.admin.tls && !String(form.value.letsencrypt.email || '').trim()) {
+    saveError.value = "An email is required to issue Let's Encrypt certificates."
+    return
+  }
+  httpsApplying.value = true
+  try {
+    const res = await fetch('/api/settings/', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        admin: { tls: form.value.admin.tls },
+        letsencrypt: { email: form.value.letsencrypt.email },
+      }),
+    })
+    const d = await res.json()
+    if (!d.ok) { saveError.value = d.error; return }
+    await runTask(form.value.admin.tls ? 'setup-letsencrypt' : 'setup-nginx')
+  } catch (e) {
+    saveError.value = e.message
+  } finally {
+    httpsApplying.value = false
+  }
+}
 
 async function runTask(command) {
   taskError.value = ''
@@ -112,7 +159,7 @@ async function runTask(command) {
       body: JSON.stringify({ command }),
     })
     const d = await res.json()
-    if (d.ok) router.push(`/tasks/${d.task_id}`)
+    if (d.ok) watchTask(d.task_id)
     else taskError.value = d.error
   } catch (e) {
     taskError.value = e.message
@@ -126,8 +173,8 @@ onMounted(load)
 
 <template>
   <div class="max-w-2xl mx-auto flex flex-col gap-6">
-    <Teleport to="#header-actions">
-      <span v-if="saveSuccess" class="text-sm text-green-600 font-medium">{{ saveSuccess }}</span>
+    <Teleport defer to="#header-actions">
+      <span v-if="saveSuccess" class="text-sm text-ink-green-2 font-medium">{{ saveSuccess }}</span>
       <Button variant="solid" :loading="saving" @click="save">Save</Button>
     </Teleport>
     <ErrorMessage :message="saveError" />
@@ -138,7 +185,7 @@ onMounted(load)
     <template v-else>
       <!-- Appearance -->
       <div class="flex flex-col gap-4">
-        <h3 class="text-base font-semibold text-ink-gray-8">Appearance</h3>
+        <h3 class="font-semibold text-ink-gray-8">Appearance</h3>
         <Select label="Theme" :options="THEME_OPTIONS" v-model="theme" class="w-40" />
       </div>
 
@@ -146,7 +193,7 @@ onMounted(load)
 
       <!-- Mode -->
       <div class="flex flex-col gap-4">
-        <h3 class="text-base font-semibold text-ink-gray-8">Mode</h3>
+        <h3 class="font-semibold text-ink-gray-8">Mode</h3>
         <div class="flex flex-col gap-3">
           <Switch v-model="form.production.enabled" label="Production Mode" />
           <div v-if="form.production.enabled" class="flex flex-col gap-3 pl-4 border-l border-outline-gray-2">
@@ -157,12 +204,39 @@ onMounted(load)
 
       <div class="border-t border-outline-gray-1" />
 
+      <!-- HTTPS -->
+      <div class="flex flex-col gap-4">
+        <h3 class="font-semibold text-ink-gray-8">HTTPS</h3>
+        <p class="text-sm text-ink-gray-6">
+          The bench is served over plain HTTP by default. Enable HTTPS to obtain a
+          Let's Encrypt certificate for the admin and SSL sites; HTTP is then
+          redirected to HTTPS. Leave it off when a proxy in front terminates TLS.
+        </p>
+        <Switch v-model="form.admin.tls" label="Enable HTTPS (Let's Encrypt)" />
+        <FormControl
+          v-if="form.admin.tls"
+          type="email"
+          label="Let's Encrypt email"
+          v-model="form.letsencrypt.email"
+          placeholder="you@example.com"
+        />
+        <div>
+          <Button variant="outline" :loading="httpsApplying" @click="applyHttps">
+            {{ form.admin.tls ? 'Enable HTTPS & issue certificate' : 'Disable HTTPS' }}
+          </Button>
+        </div>
+      </div>
+
+      <div class="border-t border-outline-gray-1" />
+
       <!-- Bench -->
       <div class="flex flex-col gap-4">
-        <h3 class="text-base font-semibold text-ink-gray-8">Bench</h3>
+        <h3 class="font-semibold text-ink-gray-8">Bench</h3>
         <div class="grid grid-cols-2 gap-4">
           <FormControl label="Name" :modelValue="form.bench.name" disabled />
           <FormControl label="Python Version" :modelValue="form.bench.python" disabled />
+          <FormControl label="Default Branch" v-model="form.bench.default_branch" placeholder="develop" />
+          <div />
           <FormControl type="number" label="HTTP Port" v-model="form.bench.http_port" />
           <FormControl type="number" label="SocketIO Port" v-model="form.bench.socketio_port" />
         </div>
@@ -172,7 +246,7 @@ onMounted(load)
 
       <!-- MariaDB -->
       <div class="flex flex-col gap-4">
-        <h3 class="text-base font-semibold text-ink-gray-8">MariaDB</h3>
+        <h3 class="font-semibold text-ink-gray-8">MariaDB</h3>
         <div class="grid grid-cols-2 gap-4">
           <FormControl label="Host" v-model="form.mariadb.host" />
           <FormControl type="number" label="Port" v-model="form.mariadb.port" />
@@ -186,12 +260,11 @@ onMounted(load)
 
       <!-- Redis -->
       <div class="flex flex-col gap-4">
-        <h3 class="text-base font-semibold text-ink-gray-8">Redis</h3>
+        <h3 class="font-semibold text-ink-gray-8">Redis</h3>
         <div class="grid grid-cols-2 gap-4">
           <FormControl type="number" label="Cache Port" v-model="form.redis.cache_port" />
           <FormControl type="number" label="Queue Port" v-model="form.redis.queue_port" />
-          <FormControl type="number" label="SocketIO Port" v-model="form.redis.socketio_port" />
-          <FormControl label="Version" v-model="form.redis.version" placeholder="e.g. 7" />
+          <FormControl label="Version" v-model="form.redis.version" disabled placeholder="not installed" />
         </div>
       </div>
 
@@ -199,37 +272,26 @@ onMounted(load)
 
       <!-- Workers -->
       <div class="flex flex-col gap-4">
-        <h3 class="text-base font-semibold text-ink-gray-8">Workers</h3>
-        <div class="grid grid-cols-3 gap-4">
-          <FormControl type="number" label="Default Workers" v-model="form.workers.default" />
-          <FormControl type="number" label="Short Workers" v-model="form.workers.short" />
-          <FormControl type="number" label="Long Workers" v-model="form.workers.long" />
+        <h3 class="font-semibold text-ink-gray-8">Workers</h3>
+        <p class="text-sm text-ink-gray-6">
+          Each group spawns <span class="font-medium">count</span> workers listening to the listed queues.
+        </p>
+        <div
+          v-for="(group, i) in form.workers"
+          :key="i"
+          class="grid grid-cols-[1fr_7rem_auto] items-end gap-3"
+        >
+          <FormControl :label="i === 0 ? 'Queues' : undefined" v-model="group.queues" placeholder="default, short, long" />
+          <FormControl type="number" :min="1" :label="i === 0 ? 'Count' : undefined" v-model.number="group.count" />
+          <Button
+            variant="ghost"
+            icon="trash-2"
+            :disabled="form.workers.length === 1"
+            @click="removeWorkerGroup(i)"
+          />
         </div>
-      </div>
-
-      <div class="border-t border-outline-gray-1" />
-
-      <!-- Nginx -->
-      <div class="flex flex-col gap-4">
-        <h3 class="text-base font-semibold text-ink-gray-8">Nginx</h3>
-        <Switch v-model="form.production.nginx" label="Manage Nginx" />
-        <div class="grid grid-cols-2 gap-4">
-          <FormControl type="number" label="HTTP Port" v-model="form.nginx.http_port" />
-          <FormControl type="number" label="HTTPS Port" v-model="form.nginx.https_port" />
-          <FormControl label="Worker Processes" v-model="form.nginx.worker_processes" placeholder="auto" />
-          <FormControl label="Client Max Body Size" v-model="form.nginx.client_max_body_size" placeholder="50m" />
-          <FormControl class="col-span-2" label="Config Directory" v-model="form.nginx.config_dir" />
-        </div>
-      </div>
-
-      <div class="border-t border-outline-gray-1" />
-
-      <!-- Let's Encrypt -->
-      <div class="flex flex-col gap-4">
-        <h3 class="text-base font-semibold text-ink-gray-8">Let's Encrypt</h3>
-        <div class="grid grid-cols-2 gap-4">
-          <FormControl label="Email" v-model="form.letsencrypt.email" placeholder="you@example.com" />
-          <FormControl label="Webroot Path" v-model="form.letsencrypt.webroot_path" />
+        <div>
+          <Button variant="subtle" icon-left="plus" label="Add group" @click="addWorkerGroup" />
         </div>
       </div>
 
@@ -237,10 +299,10 @@ onMounted(load)
 
       <!-- Setup -->
       <div class="flex flex-col gap-4">
-        <h3 class="text-base font-semibold text-ink-gray-8">Setup</h3>
+        <h3 class="font-semibold text-ink-gray-8">Setup</h3>
         <ErrorMessage :message="taskError" />
         <div class="flex flex-wrap gap-2">
-          <Button variant="outline" :loading="taskLoading === 'setup-nginx'" @click="taskLoading = 'setup-nginx'; runTask('setup-nginx')">Setup Nginx</Button>
+          <Button variant="outline" :loading="taskLoading === 'setup-nginx'" @click="taskLoading = 'setup-nginx'; runTask('setup-nginx')">Refresh Web Routing</Button>
           <Button variant="outline" :loading="taskLoading === 'setup-production'" @click="taskLoading = 'setup-production'; runTask('setup-production')">Setup Production</Button>
           <Button variant="outline" :loading="taskLoading === 'update'" @click="taskLoading = 'update'; runTask('update')">Update Bench</Button>
         </div>

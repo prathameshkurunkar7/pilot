@@ -7,7 +7,7 @@ from bench_cli.config.bench_config import BenchConfig
 from bench_cli.config.mariadb_config import MariaDBConfig
 from bench_cli.config.redis_config import RedisConfig
 from bench_cli.config.site_config import SiteConfig
-from bench_cli.config.worker_config import WorkerConfig
+from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
 from bench_cli.core.app import App
 from bench_cli.core.bench import Bench
 from bench_cli.core.site import Site
@@ -25,8 +25,12 @@ def make_bench(tmp_path: Path) -> Bench:
             AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16"),
         ],
         mariadb=MariaDBConfig(root_password="root"),
-        redis=RedisConfig(cache_port=13000, queue_port=11000, socketio_port=12000),
-        workers=WorkerConfig(default_count=2, short_count=1, long_count=1),
+        redis=RedisConfig(cache_port=13000, queue_port=11000),
+        workers=WorkerConfig(groups=[
+            WorkerGroup(queues=["default"], count=2),
+            WorkerGroup(queues=["short"], count=1),
+            WorkerGroup(queues=["long"], count=1),
+        ]),
     )
     return Bench(config, tmp_path)
 
@@ -165,12 +169,20 @@ def test_bench_init_apps_comes_from_config(tmp_path: Path) -> None:
 def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     # workers: default=2, short=1, long=1 => 4 worker processes
-    # plus web, socketio, redis_cache, redis_queue, redis_socketio = 5
-    # plus admin, admin-ui = 2
-    # total = 11
+    # plus web, socketio, redis_cache, redis_queue = 4
+    # plus admin = 1
+    # total = 9
     process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
-    assert len(definitions) == 11
+    assert len(definitions) == 9
+    assert "admin-ui" not in [pd.name for pd in definitions]
+
+
+def test_process_definitions_admin_dev_adds_vite_ui(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    definitions = ProcessManager(bench, admin_dev=True)._process_definitions()
+    assert "admin-ui" in [pd.name for pd in definitions]
+    assert len(definitions) == 10
 
 
 def test_process_definitions_worker_names_are_numbered(tmp_path: Path) -> None:
@@ -191,7 +203,7 @@ def test_process_definitions_includes_redis_processes(tmp_path: Path) -> None:
     names = [pd.name for pd in definitions]
     assert "redis_cache" in names
     assert "redis_queue" in names
-    assert "redis_socketio" in names
+    assert "redis_socketio" not in names
 
 
 def test_process_definitions_order_starts_with_web(tmp_path: Path) -> None:
@@ -217,6 +229,20 @@ def test_honcho_generate_config_writes_procfile(tmp_path: Path) -> None:
     assert "socketio:" in content
     assert "worker_default_1:" in content
     assert "redis_cache:" in content
+
+
+def test_honcho_generate_config_writes_redis_configs(tmp_path: Path) -> None:
+    # The generated Procfile runs `redis-server config/redis_{cache,queue}.conf`,
+    # so generate_config must (re)create those files. Regression: an upgraded
+    # bench whose config dir predates the split redis layout used to fail to
+    # start with "can't open config file".
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    process_manager = ProcessManager(bench)
+    process_manager.generate_config()
+
+    assert (tmp_path / "config" / "redis_cache.conf").exists()
+    assert (tmp_path / "config" / "redis_queue.conf").exists()
 
 
 def test_honcho_generate_config_procfile_format(tmp_path: Path) -> None:
@@ -252,11 +278,10 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
 
     with patch("bench_cli.managers.process_manager.subprocess.Popen", side_effect=fake_popen):
         with patch.object(process_manager, "_stop_all"):
-            entries = process_manager._parse_procfile()
-            for name, command in entries:
-                proc = fake_popen(command)
-                process_manager._procs[name] = proc
-                (bench.pids_path / f"{name}.pid").write_text(str(proc.pid))
+            for pd in process_manager._process_definitions():
+                proc = fake_popen(pd.command)
+                process_manager._procs[pd.name] = proc
+                (bench.pids_path / f"{pd.name}.pid").write_text(str(proc.pid))
 
     for name in process_manager._procs:
         pid_file = bench.pids_path / f"{name}.pid"

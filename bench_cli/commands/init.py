@@ -2,19 +2,24 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from bench_cli.core.bench import Bench
-from bench_cli.managers.process_manager import ProcessManagerFactory
-from bench_cli.managers.python_env_manager import PythonEnvManager
-from bench_cli.managers.redis_manager import RedisManager
+from bench_cli.commands.base import Command
+
+if TYPE_CHECKING:
+    from bench_cli.core.bench import Bench
 
 _BENCH_DIRS = ("apps", "sites", "logs", "config", "pids", "env", "admin", "tasks")
 
 
-class InitCommand:
-    def __init__(self, bench: Bench, sudo_password: str = "") -> None:
+class InitCommand(Command):
+    name = "init"
+    help = "Initialise the bench."
+    # Heavy/irreversible — never guess the target bench.
+    requires_explicit_bench = True
+
+    def __init__(self, bench: "Bench") -> None:
         self.bench = bench
-        self._sudo_password = sudo_password
         self._step_counter = 0
         self._total_steps = 0
         self._rollback_actions: list[tuple[str, Callable[[], None]]] = []
@@ -53,13 +58,6 @@ class InitCommand:
             if p.exists() or p.is_symlink():
                 shutil.rmtree(p, ignore_errors=True)
 
-    def _remove_sudoers(self) -> None:
-        import getpass
-        import subprocess
-
-        path = f"/etc/sudoers.d/{getpass.getuser()}"
-        subprocess.run(["sudo", "rm", "-f", path], capture_output=True, check=False)
-
     def _remove_nginx_symlink(self) -> None:
         import subprocess
 
@@ -85,14 +83,21 @@ class InitCommand:
     # ── init steps ─────────────────────────────────────────────────────────
 
     def _do_run(self) -> None:
-        production = self.bench.config.production.nginx
-        volume_enabled = self.bench.config.volume.enabled
-        has_sudoers = bool(self._sudo_password)
-        self._total_steps = 10 + (3 if production else 0) + (1 if volume_enabled else 0) + (1 if has_sudoers else 0)
+        from bench_cli.managers.process_manager import ProcessManagerFactory
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+        from bench_cli.managers.redis_manager import RedisManager
+        from bench_cli.platform import is_linux
 
-        if has_sudoers:
-            self._step("Configure passwordless sudo")
-            self._setup_sudoers()
+        self._check_passwordless_sudo()
+
+        production = self.bench.config.production.enabled
+        volume_enabled = is_linux() and self.bench.config.volume.enabled
+        dedicated_db = is_linux() and bool(self.bench.config.mariadb.instance)
+        # Passwordless sudo is set up by install.sh and enforced above by
+        # _check_passwordless_sudo, so the steps below never block on a prompt.
+        self._total_steps = (
+            10 + (3 if production else 0) + (1 if volume_enabled else 0) + (1 if dedicated_db else 0)
+        )
 
         self._step("Validate bench.toml")
         self.bench.config.validate()
@@ -103,6 +108,10 @@ class InitCommand:
         if volume_enabled:
             self._step("Set up ZFS volumes")
             self._setup_volume()
+
+        if dedicated_db:
+            self._step("Provision MariaDB instance")
+            self._provision_mariadb_instance()
 
         self._step("Create bench directory structure")
         self.bench.create_directories()
@@ -151,42 +160,22 @@ class InitCommand:
         print("  bench new-site site1.example.com   # create your first site")
         print("  bench start                        # start all processes")
 
+    def _check_passwordless_sudo(self) -> None:
+        from bench_cli.platform import has_passwordless_sudo, is_linux
+
+        if not is_linux() or has_passwordless_sudo():
+            return
+        raise RuntimeError(
+            "Passwordless sudo is not configured for this user. bench init needs it to "
+            "install packages and manage services without a password prompt.\n"
+            "Set it up by re-running the installer:\n"
+            "  curl -fsSL https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | bash\n"
+            "or add /etc/sudoers.d/<user> containing: <user> ALL=(ALL) NOPASSWD: ALL"
+        )
+
     def _step(self, description: str) -> None:
         self._step_counter += 1
         print(f"[{self._step_counter}/{self._total_steps}] {description}...", flush=True)
-
-    def _setup_sudoers(self) -> None:
-        import getpass
-        import subprocess
-
-        username = getpass.getuser()
-        rules = "\n".join([
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/apt-get",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/sbin/nginx",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/loginctl",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/ln",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/unlink",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/sbin/zpool",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/sbin/zfs",
-            f"{username} ALL=(ALL) NOPASSWD: /usr/bin/rsync",
-        ])
-        content = f"# Frappe bench — managed by bench init, do not edit\n{rules}\n"
-        sudoers_path = f"/etc/sudoers.d/{username}"
-        result = subprocess.run(
-            ["sudo", "-S", "tee", sudoers_path],
-            input=f"{self._sudo_password}\n{content}",
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            print(f"  Warning: could not write sudoers file — {result.stderr.strip() or 'permission denied'}")
-            print("  Sudo operations may prompt for a password during setup.")
-            return
-        subprocess.run(["sudo", "chmod", "0440", sudoers_path], capture_output=True, check=False)
-        print(f"  Wrote {sudoers_path}")
-        self._on_rollback(sudoers_path, self._remove_sudoers)
 
     def _download_admin_frontend(self) -> None:
         from bench_cli.commands.admin import BuildAdminCommand, _cli_root, download_admin_frontend
@@ -198,33 +187,53 @@ class InitCommand:
     def _setup_volume(self) -> None:
         from bench_cli.commands.volume import VolumeSetupCommand
 
-        VolumeSetupCommand(self.bench.config.volume, self.bench.path).run()
+        VolumeSetupCommand(self.bench.config.volume, self.bench.path, bench_config=self.bench.config).run()
 
-    # Build/runtime deps for compiling frappe's Python and Node wheels.
-    # Alpine (musl) ships no manylinux wheels, so the full header set is needed;
-    # bash and tzdata are runtime deps frappe assumes are present.
-    _ALPINE_BUILD_PACKAGES = (
-        "build-base", "pkgconf", "mariadb-dev", "git", "bash", "tzdata",
-        "linux-headers", "libffi-dev", "openssl-dev", "libxml2-dev",
-        "libxslt-dev", "jpeg-dev", "zlib-dev", "freetype-dev", "tiff-dev",
-        "lcms2-dev", "openjpeg-dev",
-    )
+    def _provision_mariadb_instance(self) -> None:
+        from bench_cli.managers.mariadb_manager import MariaDBManager
+
+        # Runs after _setup_volume: if volume is enabled, the bench's mariadb
+        # dataset is already mounted at the instance datadir, so install-db
+        # writes straight onto ZFS; otherwise the datadir is a plain directory.
+        MariaDBManager(self.bench.config.mariadb).provision_instance(self.bench.config_path)
 
     def _install_system_packages(self) -> None:
         from bench_cli.managers.mariadb_manager import MariaDBManager
-        from bench_cli.platform import get_package_manager, is_alpine, is_linux
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+        from bench_cli.managers.redis_manager import RedisManager
+        from bench_cli.platform import get_package_manager, is_linux
 
         pkg = get_package_manager()
         if is_linux():
             pkg.update()
 
         mariadb_manager = MariaDBManager(self.bench.config.mariadb)
-        mariadb_manager.install()
-        mariadb_manager.start()
+        if mariadb_manager.is_dedicated:
+            # Install the package only; the instance is provisioned after volume
+            # setup (see _do_run) so a ZFS-backed datadir, if any, is mounted
+            # before mariadb-install-db runs against it.
+            freshly_installed = not mariadb_manager.is_installed()
+            mariadb_manager.install()
+            if freshly_installed and is_linux():
+                # apt auto-starts the shared mariadb service on port 3306 after
+                # installation. Stop and disable it so the dedicated instance can
+                # claim its port without a conflict when provision_instance runs.
+                mariadb_manager.stop_shared()
+
+        else:
+            freshly_installed = not mariadb_manager.is_installed()
+            mariadb_manager.install()
+            mariadb_manager.start()
+            if freshly_installed:
+                mariadb_manager.secure_installation()
+            elif not mariadb_manager.check_credentials():
+                raise RuntimeError(
+                    "MariaDB is already installed but the configured root password is incorrect. "
+                    "Fix mariadb.root_password in bench.toml (or secure the existing MariaDB) and retry."
+                )
         RedisManager(self.bench.config.redis, self.bench).install()
-        if is_alpine():
-            pkg.install(*self._ALPINE_BUILD_PACKAGES)
-        elif is_linux():
+        if is_linux():
+            pkg = get_package_manager()
             pkg.install("build-essential", "pkg-config", "libmariadb-dev", "git")
         PythonEnvManager(self.bench).ensure_python()
 
@@ -244,14 +253,7 @@ class InitCommand:
         common_config_path.write_text(json.dumps(existing, indent=2))
 
     def _setup_process_manager(self) -> None:
-        if self.bench.config.production.process_manager == "openrc":
-            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
-
-            mgr = OpenRCProcessManager(self.bench)
-            mgr.install_config()
-            mgr.reload()
-            # openrc init scripts live inside config/ — _remove_bench_dirs handles it
-        elif self.bench.config.production.process_manager == "systemd":
+        if self.bench.config.production.process_manager == "systemd":
             from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
             mgr = SystemdProcessManager(self.bench)
@@ -260,6 +262,7 @@ class InitCommand:
             self._on_rollback("systemd user units", self._remove_systemd_units)
         else:
             import subprocess
+
             from bench_cli.platform import get_package_manager, is_linux
 
             pkg = get_package_manager()
