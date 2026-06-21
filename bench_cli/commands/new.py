@@ -5,7 +5,7 @@ from pathlib import Path
 
 from bench_cli.commands.base import Command
 from bench_cli.exceptions import BenchError
-from bench_cli.platform import is_linux
+from bench_cli.platform import is_alpine, is_linux
 from bench_cli.utils import iter_sibling_benches
 
 
@@ -76,9 +76,10 @@ class NewCommand(Command):
         # New benches get their own MariaDB instance (mariadb@<name>) with an
         # isolated socket/datadir; mariadb.port is offset automatically via
         # _PORT_FIELDS. Existing benches without these fields keep using the
-        # shared system MariaDB. macOS is dev-only (Homebrew, no systemd
-        # template units), so it stays on the shared server.
-        if is_linux():
+        # shared system MariaDB. macOS (Homebrew) and Alpine (OpenRC) have no
+        # systemd mariadb@.service template units, so they stay on the shared
+        # server.
+        if is_linux() and not is_alpine():
             settings.update(
                 {
                     "mariadb_instance": self.name,
