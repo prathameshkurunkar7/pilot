@@ -235,11 +235,18 @@ def create_app(bench_root: Path) -> Flask:
         if not name or not _NAME_RE.match(name):
             return jsonify({"error": "Bench name must contain only letters, numbers, '-' and '_'"}), 400
 
+        from bench_cli.config.production_config import VALID_PROCESS_MANAGERS
+        from bench_cli.platform import is_alpine
+
         process_manager = (data.get("process_manager") or "").strip().lower()
         if process_manager == "supervisord":
             process_manager = "supervisor"
-        if process_manager not in ("systemd", "supervisor"):
-            return jsonify({"error": "Choose a process manager: systemd or supervisor."}), 400
+        if process_manager not in VALID_PROCESS_MANAGERS:
+            return jsonify({"error": f"Choose a process manager: {', '.join(VALID_PROCESS_MANAGERS)}."}), 400
+        if is_alpine():
+            # Alpine has no systemd, and the prebuilt UI only offers
+            # systemd/supervisor — deploy with OpenRC, the validated Alpine manager.
+            process_manager = "openrc"
 
         admin_domain = (data.get("admin_domain") or "").strip()
         if not admin_domain:
@@ -281,16 +288,19 @@ def create_app(bench_root: Path) -> Flask:
                 from bench_cli.config.bench_config import BenchConfig
                 from bench_cli.core.bench import Bench
                 from bench_cli.managers.nginx_manager import NginxManager
-                from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-                from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
                 bench = Bench(BenchConfig.from_file(new_dir / "bench.toml"), new_dir)
                 # Not deployed yet (production.enabled is false at this point), so
                 # pick the manager by the configured process_manager rather than
                 # via the factory, which gates on enabled.
-                pm = (SystemdProcessManager if bench.config.production.process_manager == "systemd"
-                      else SupervisorProcessManager)
-                pm(bench).setup_admin()
+                configured_pm = bench.config.production.process_manager
+                if configured_pm == "systemd":
+                    from bench_cli.managers.systemd_process_manager import SystemdProcessManager as PM
+                elif configured_pm == "openrc":
+                    from bench_cli.managers.openrc_process_manager import OpenRCProcessManager as PM
+                else:
+                    from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager as PM
+                PM(bench).setup_admin()
                 nginx = NginxManager(bench)
                 nginx.generate_config()
                 nginx.install_config()
