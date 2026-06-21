@@ -179,8 +179,11 @@ class ProcessReader:
             pid = self._read_pidfile(Path(f"/run/{service}.pid"))
             status = "running" if running else "stopped"
             running_now = bool(running and pid)
-            cpu, rss, pss = _get_process_stats(pid) if running_now and pid else (None, None, None)
-            uptime = _proc_uptime(pid) if running_now and pid else None
+            if running_now and pid is not None:
+                cpu, rss, pss = _get_process_stats(pid)
+                uptime = _proc_uptime(pid)
+            else:
+                cpu = rss = pss = uptime = None
             infos.append(ProcessInfo(
                 name=pd.name, status=status, pid=pid, uptime=uptime,
                 log_file=pd.log_file, cpu_percent=cpu, rss_mb=rss, pss_mb=pss,
