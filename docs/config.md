@@ -49,7 +49,7 @@ count = 1
 # ── Production (set by `bench setup production`) ──────────────────────────────
 # [production]
 # enabled = false        # true once deployed; cleared by `bench remove production`
-# process_manager = ""   # systemd | supervisor
+# process_manager = ""   # systemd | supervisor | openrc
 
 # ── Nginx (production only) ───────────────────────────────────────────────────
 [nginx]
@@ -176,7 +176,7 @@ count = 1
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `enabled` | bool | no | `false` | `true` once the bench is deployed to production. Set by `bench setup production` and cleared by `bench remove production`; gates `bench restart`, nginx setup, and production process management. |
-| `process_manager` | string | no | `""` | Production process manager: `systemd` or `supervisor`. Empty on an undeployed bench. |
+| `process_manager` | string | no | `""` | Production process manager: `systemd`, `supervisor`, or `openrc` (Alpine). Empty on an undeployed bench. |
 | `use_companion_manager` | bool | no | `false` | Run scheduler, RQ workers, and socket.io as Gunicorn companion processes under a single preloaded master. Requires the Frappe Gunicorn fork with companion support. |
 
 ### `[nginx]` _(production only)_

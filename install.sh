@@ -1,5 +1,8 @@
-#!/bin/bash
+#!/bin/sh
 set -e
+
+# POSIX sh (not bash) so a bare Alpine box can bootstrap via `wget -qO- ... | sh`
+# before bash exists. The Ubuntu one-liner still pipes to bash explicitly.
 
 # ── configuration ────────────────────────────────────────────────────────────
 INSTALL_URL="https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh"
@@ -31,6 +34,18 @@ done
 
 # A tty is required to prompt; without one we must run non-interactively.
 [ -e /dev/tty ] || NONINTERACTIVE=1
+
+# ── Alpine bootstrap ──────────────────────────────────────────────────────────
+# Bare Alpine ships almost nothing and uses apk + musl. Install the tools the
+# rest of this script and bench need before they're first used: git/curl/bash,
+# sudo + shadow (so the user-setup path's useradd/usermod/visudo work), a Python,
+# and the base build deps for compiling the admin venv (psutil) and frappe wheels.
+if [ -f /etc/alpine-release ] && command -v apk >/dev/null 2>&1; then
+    echo "Alpine detected — installing base dependencies via apk..."
+    if [ "$(id -u)" -eq 0 ]; then APK_SUDO=""; else APK_SUDO="sudo"; fi
+    $APK_SUDO apk add --no-cache \
+        git curl bash sudo shadow python3 python3-dev build-base linux-headers tzdata
+fi
 
 # ── sudo wrapper ──────────────────────────────────────────────────────────────
 # Injects SUDO_PASS when provided so the script works unattended; otherwise
@@ -123,7 +138,10 @@ authenticate_sudo() {
     local pass
     while true; do
         printf "[sudo] password for %s: " "$(id -un)" > /dev/tty
-        read -rs pass < /dev/tty
+        # `read -s` is a bashism; toggle echo via stty so this works under ash too.
+        stty -echo < /dev/tty 2>/dev/null || true
+        read -r pass < /dev/tty
+        stty echo < /dev/tty 2>/dev/null || true
         echo > /dev/tty
         if echo "$pass" | sudo -S -v 2>/dev/null; then
             SUDO_PASS="$pass"
@@ -202,20 +220,29 @@ add_to_path() {
 }
 
 RC_FILE=""
-if [[ "$SHELL" == */fish ]]; then
-    FISH_CONFIG="$HOME/.config/fish/config.fish"
-    mkdir -p "$(dirname "$FISH_CONFIG")"
-    if ! grep -qF 'bench-cli' "$FISH_CONFIG" 2>/dev/null; then
-        echo "fish_add_path \$HOME/bench-cli" >> "$FISH_CONFIG"
-        echo "Added bench to PATH in $FISH_CONFIG"
-    fi
-elif [[ "$SHELL" == */zsh ]]; then
-    RC_FILE="$HOME/.zshrc"
-    add_to_path "$RC_FILE"
-else
-    RC_FILE="$HOME/.bashrc"
-    add_to_path "$RC_FILE"
-fi
+case "$SHELL" in
+    */fish)
+        FISH_CONFIG="$HOME/.config/fish/config.fish"
+        mkdir -p "$(dirname "$FISH_CONFIG")"
+        if ! grep -qF 'bench-cli' "$FISH_CONFIG" 2>/dev/null; then
+            echo "fish_add_path \$HOME/bench-cli" >> "$FISH_CONFIG"
+            echo "Added bench to PATH in $FISH_CONFIG"
+        fi
+        ;;
+    */zsh)
+        RC_FILE="$HOME/.zshrc"
+        add_to_path "$RC_FILE"
+        ;;
+    */ash|*/sh|"")
+        # Alpine/POSIX login shells read ~/.profile.
+        RC_FILE="$HOME/.profile"
+        add_to_path "$RC_FILE"
+        ;;
+    *)
+        RC_FILE="$HOME/.bashrc"
+        add_to_path "$RC_FILE"
+        ;;
+esac
 
 export PATH="$BENCH_CLI_DIR:$PATH"
 
@@ -224,7 +251,7 @@ export PATH="$BENCH_CLI_DIR:$PATH"
 # applies and a new terminal picks up the rc.
 if [ -n "$RC_FILE" ] && [ -f "$RC_FILE" ]; then
     # shellcheck disable=SC1090
-    source "$RC_FILE" 2>/dev/null || true
+    . "$RC_FILE" 2>/dev/null || true
 fi
 
 # ── admin venv ────────────────────────────────────────────────────────────────
@@ -255,4 +282,4 @@ echo "Quick start:"
 echo "  bench new my-bench"
 echo "  bench start"
 echo ""
-echo "If 'bench' is not found, open a new terminal or run: source ~/.bashrc"
+echo "If 'bench' is not found, open a new terminal or run: . ${RC_FILE:-$HOME/.bashrc}"
