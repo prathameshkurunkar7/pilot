@@ -5,11 +5,23 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from bench_cli.config.mariadb_config import MariaDBConfig
-from bench_cli.platform import get_package_manager, is_macos, which
+from bench_cli.platform import (
+    _privileged,
+    get_package_manager,
+    is_alpine,
+    is_macos,
+    service_command,
+    service_disable_command,
+    service_enable_command,
+    service_running,
+    which,
+)
 from bench_cli.utils import run_command
 
 _MACOS_SOCKET_CANDIDATES = ["/tmp/mysql.sock", "/usr/local/var/mysql/mysql.sock"]
 _LINUX_SOCKET_CANDIDATES = ["/var/run/mysqld/mysqld.sock", "/run/mysqld/mysqld.sock"]
+# Alpine's mariadb package uses the conventional shared datadir.
+_ALPINE_DATA_DIR = Path("/var/lib/mysql")
 
 DEFAULT_VERSION = "11.8"
 _REPO_SETUP_URL = "https://r.mariadb.com/downloads/mariadb_repo_setup"
@@ -48,14 +60,16 @@ class MariaDBManager:
         return self.config.data_dir or f"/var/lib/mysql-{self.config.instance}"
 
     def service_is_active(self) -> bool:
-        result = subprocess.run(["systemctl", "is-active", "--quiet", self.service_unit()])
-        return result.returncode == 0
+        return service_running(self.service_unit())
 
     def is_installed(self) -> bool:
         # which() searches sbin too; mysqld/mariadbd live in /usr/sbin.
         return bool(which("mysqld") or which("mariadbd"))
 
     def install(self) -> None:
+        if is_alpine():
+            self._install_alpine()
+            return
         if self.is_installed():
             return
         package_manager = get_package_manager()
@@ -66,28 +80,48 @@ class MariaDBManager:
         package_manager.update()
         package_manager.install("mariadb-server", "mariadb-client")
 
+    def _install_alpine(self) -> None:
+        # Alpine ships no MariaDB official apk repo; the distro package (11.x) is
+        # what we use. Unlike Debian, it neither initialises the datadir nor
+        # enables the service, so do both here. Idempotent — safe to re-run.
+        if not self.is_installed():
+            get_package_manager().install("mariadb", "mariadb-client")
+        self._initialize_data_dir()
+        run_command(service_enable_command("mariadb"))
+
+    def _initialize_data_dir(self) -> None:
+        if (_ALPINE_DATA_DIR / "mysql").is_dir():
+            return
+        run_command(_privileged([
+            "mariadb-install-db",
+            "--user=mysql",
+            f"--datadir={_ALPINE_DATA_DIR}",
+            "--skip-test-db",
+        ]))
+
     def start(self) -> None:
         if is_macos():
             run_command(["brew", "services", "start", self._brew_package()])
         else:
-            run_command(["sudo", "systemctl", "start", self.service_unit()])
+            run_command(service_command("start", self.service_unit()))
 
     def stop(self) -> None:
         if is_macos():
             run_command(["brew", "services", "stop", self._brew_package()])
         else:
-            run_command(["sudo", "systemctl", "stop", self.service_unit()])
+            run_command(service_command("stop", self.service_unit()))
 
     def stop_shared(self) -> None:
         """Stop and disable the shared mariadb service.
 
         Called after a fresh package install for dedicated-instance benches:
-        apt auto-starts the shared service on port 3306, which would collide
-        with the dedicated instance's port before provision_instance runs.
+        the package manager auto-starts the shared service on port 3306, which
+        would collide with the dedicated instance's port before
+        provision_instance runs.
         """
         try:
-            run_command(["sudo", "systemctl", "stop", "mariadb"])
-            run_command(["sudo", "systemctl", "disable", "mariadb"])
+            run_command(service_command("stop", "mariadb"))
+            run_command(service_disable_command("mariadb"))
         except Exception:
             pass
 
@@ -255,7 +289,7 @@ class MariaDBManager:
         self._run_sql_as_superuser("\n".join(statements))
 
     def _run_sql_as_superuser(self, sql: str) -> None:
-        cmd = ["mariadb"] if is_macos() else ["sudo", "mariadb"]
+        cmd = ["mariadb"] if is_macos() else _privileged(["mariadb"])
         if self.is_dedicated:
             # Target this bench's instance socket rather than the default one.
             cmd.append(f"--socket={self.instance_socket()}")
