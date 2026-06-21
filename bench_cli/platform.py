@@ -104,7 +104,10 @@ def service_disable_command(name: str) -> list[str]:
 def service_running(name: str) -> bool:
     """Return True if the named system service is currently running."""
     if is_alpine():
-        argv = ["rc-service", name, "status"]
+        # rc-service lives in /sbin (off a non-root login PATH) and reads
+        # root-owned run state, so query it with privilege — otherwise it's
+        # "command not found" for the bench user and every service looks stopped.
+        argv = _privileged(["rc-service", name, "status"])
     else:
         argv = ["systemctl", "is-active", "--quiet", name]
     try:
