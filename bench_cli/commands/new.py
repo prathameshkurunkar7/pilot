@@ -5,7 +5,7 @@ from pathlib import Path
 
 from bench_cli.commands.base import Command
 from bench_cli.exceptions import BenchError
-from bench_cli.platform import is_alpine, is_linux
+from bench_cli.platform import is_linux
 from bench_cli.utils import iter_sibling_benches
 
 
@@ -73,13 +73,12 @@ class NewCommand(Command):
         sibling_email = self._sibling_letsencrypt_email()
         if sibling_email:
             settings["letsencrypt_email"] = sibling_email
-        # New benches get their own MariaDB instance (mariadb@<name>) with an
-        # isolated socket/datadir; mariadb.port is offset automatically via
-        # _PORT_FIELDS. Existing benches without these fields keep using the
-        # shared system MariaDB. macOS (Homebrew) and Alpine (OpenRC) have no
-        # systemd mariadb@.service template units, so they stay on the shared
-        # server.
-        if is_linux() and not is_alpine():
+        # New benches get their own MariaDB instance with an isolated
+        # socket/datadir; mariadb.port is offset automatically via _PORT_FIELDS.
+        # Linux uses a per-bench instance (systemd mariadb@<name>, or a generated
+        # OpenRC mariadb-<name> on Alpine). macOS (Homebrew) has no per-instance
+        # mechanism, so it stays on the shared server.
+        if is_linux():
             settings.update(
                 {
                     "mariadb_instance": self.name,

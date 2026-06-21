@@ -122,6 +122,23 @@ def test_new_command_writes_dedicated_mariadb_instance(tmp_path: Path, monkeypat
     assert data["mariadb"]["port"] == 3307  # base 3306 + offset 1
 
 
+def test_new_command_writes_dedicated_mariadb_instance_on_alpine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Alpine gets a per-bench instance too (run under OpenRC), at parity with
+    systemd — only macOS stays on the shared server."""
+    from bench_cli.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("bench_cli.commands.new.is_linux", lambda: True)
+    target = tmp_path / "benches" / "alp"
+    NewCommand(target, "alp").run()
+
+    with open(target / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["mariadb"]["instance"] == "alp"
+    assert data["mariadb"]["socket_path"] == "/run/mysqld/mysqld-alp.sock"
+
+
 def test_volume_setup_binds_mariadb_to_instance_datadir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """For an instance bench, the dataset's mariadb subdir bind-mounts onto the
     instance's sibling datadir (not the shared /var/lib/mysql)."""
