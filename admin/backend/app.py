@@ -151,11 +151,14 @@ def create_app(bench_root: Path) -> Flask:
             return jsonify({"enabled": False, "error": str(exc)}), 503
         if not initialized or not config.admin.password:
             return jsonify(_wizard_status(bench_root))
+        from bench_cli.platform import native_process_manager
+
         return jsonify(
             {
                 "enabled": config.admin.enabled,
                 "name": config.name,
                 "production": config.production.enabled,
+                "native_process_manager": native_process_manager(),
                 "authenticated": bool(session.get("authenticated")),
             }
         )
@@ -243,9 +246,10 @@ def create_app(bench_root: Path) -> Flask:
             process_manager = "supervisor"
         if process_manager not in VALID_PROCESS_MANAGERS:
             return jsonify({"error": f"Choose a process manager: {', '.join(VALID_PROCESS_MANAGERS)}."}), 400
-        if is_alpine():
-            # Alpine has no systemd, and the prebuilt UI only offers
-            # systemd/supervisor — deploy with OpenRC, the validated Alpine manager.
+        if is_alpine() and process_manager == "systemd":
+            # Alpine has no systemd; the UI offers OpenRC there, but coerce any
+            # stale systemd request to OpenRC (the native Alpine manager) so a
+            # cached client can never deploy an unmanageable bench.
             process_manager = "openrc"
 
         admin_domain = (data.get("admin_domain") or "").strip()

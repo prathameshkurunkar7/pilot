@@ -256,11 +256,12 @@ def stream_task(task_id: str):
 
 def _read_defaults(bench_root: Path) -> dict:
     from admin.backend.tasks.manager.task_reader import TaskReader
-    from bench_cli.platform import is_linux
+    from bench_cli.platform import is_linux, native_process_manager
 
     result = {
         "bench_name": bench_root.name,
         "is_linux": is_linux(),
+        "native_process_manager": native_process_manager(),
         **BenchTomlBuilder.DEFAULTS,
     }
     toml_path = bench_root / "bench.toml"
