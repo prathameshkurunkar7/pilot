@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { Button, Badge, Dialog, FormControl, TextInput, ErrorMessage } from 'frappe-ui'
+import { Button, Badge, Combobox, Dialog, FormControl, TextInput, ErrorMessage } from 'frappe-ui'
 import { useTaskProgress } from '../composables/useTaskProgress.js'
 import LucideTriangleAlert from '~icons/lucide/triangle-alert'
 
@@ -34,6 +34,8 @@ const error = ref('')
 // Custom repo / branch form
 const customRepo = ref('')
 const customBranch = ref('')
+const customTab = ref('public')  // 'public' | 'private'
+const selectedRepo = ref(null)   // repo object chosen from GitHub picker, null = manual entry
 
 function isFrappe(app) {
   return Boolean(app.repo?.includes('github.com/frappe/'))
@@ -88,6 +90,9 @@ function reset() {
   pendingBranch.value = ''
   customRepo.value = ''
   customBranch.value = ''
+  customTab.value = 'public'
+  selectedRepo.value = null
+  repoBranches.value = []
   error.value = ''
 }
 
@@ -106,6 +111,8 @@ function selectApp(app) {
 function openCustom() {
   customRepo.value = ''
   customBranch.value = ''
+  selectedRepo.value = null
+  repoBranches.value = []
   error.value = ''
   mode.value = 'custom'
   loadGitStatus()
@@ -117,21 +124,35 @@ const gitProvider = ref('github')
 const gitToken = ref('')
 const gitConnecting = ref(false)
 const gitError = ref('')
-const showConnect = ref(false)     // reveal the token form even before connecting
+const showConnect = ref(false)
 const repos = ref([])
 const reposLoading = ref(false)
-const repoSearch = ref('')
+const repoBranches = ref([])
+const repoBranchesLoading = ref(false)
 
-const tokenHelpUrl = computed(() => gitStatus.value?.providers?.[gitProvider.value] || '')
+const repoOptions = computed(() =>
+  repos.value.map(r => {
+    const desc = (r.description || '').trim()
+    return {
+      label: r.full_name,
+      value: r.clone_url,
+      // Truncate at 72 chars so the dropdown never inflates beyond the trigger width.
+      // The CSS max-width rule below is the final guard; the JS truncation reduces
+      // intrinsic content width so the CSS variable (set asynchronously by floating-ui)
+      // doesn't need to race against first-paint.
+      description: desc.length > 72 ? desc.slice(0, 72) + '…' : desc,
+    }
+  })
+)
+const repoByCloneUrl = computed(() => new Map(repos.value.map(r => [r.clone_url, r])))
+
+const tokenHelpUrl = computed(() =>
+  gitStatus.value?.providers?.[gitProvider.value] ||
+  (gitProvider.value === 'github' ? 'https://github.com/settings/tokens/new?scopes=repo&description=Bench+CLI' : '')
+)
 
 const gitConnected = computed(() => gitStatus.value?.connected && gitStatus.value?.is_token_valid)
 const gitPaused = computed(() => gitStatus.value?.connected && !gitStatus.value?.is_token_valid)
-
-const filteredRepos = computed(() => {
-  const q = repoSearch.value.toLowerCase().trim()
-  if (!q) return repos.value
-  return repos.value.filter(r => (r.full_name || '').toLowerCase().includes(q))
-})
 
 async function loadGitStatus() {
   gitError.value = ''
@@ -208,9 +229,43 @@ async function disconnectGit() {
 }
 
 function selectRepo(repo) {
+  selectedRepo.value = repo
   customRepo.value = repo.clone_url
   customBranch.value = repo.default_branch || ''
-  repoSearch.value = repo.full_name
+  fetchRepoBranches(repo.full_name)
+}
+
+async function fetchRepoBranches(fullName) {
+  repoBranchesLoading.value = true
+  repoBranches.value = []
+  try {
+    const res = await fetch(`/api/git/branches?repo=${encodeURIComponent(fullName)}`)
+    const d = await res.json()
+    if (d.ok) repoBranches.value = d.branches
+  } catch { /* branch list is optional — Combobox allowCustomValue handles manual entry */ }
+  finally { repoBranchesLoading.value = false }
+}
+
+function onRepoSelect(option) {
+  // frappe-ui emits null for BOTH "custom value confirmed" and "selection cleared".
+  // Distinguish by checking customRepo, which v-model updates synchronously before
+  // this handler runs.
+  if (!option) {
+    selectedRepo.value = null
+    repoBranches.value = []
+    if (!customRepo.value?.trim()) customBranch.value = ''  // only clear on true clear
+    return
+  }
+  // Known repo from the list
+  const repo = repoByCloneUrl.value.get(option.value)
+  if (repo) selectRepo(repo)
+}
+
+function switchTab(tab) {
+  customTab.value = tab
+  error.value = ''
+  gitError.value = ''
+  if (tab === 'private' && !gitStatus.value) loadGitStatus()
 }
 
 function backToBrowse() {
@@ -307,99 +362,140 @@ function confirmCustomInstall() {
         <!-- Custom repo / branch view -->
         <template v-else-if="mode === 'custom'">
           <div class="flex flex-col gap-4">
-            <p class="text-sm text-ink-gray-5">
-              Fetch an app from any git repository and install it on this site.
-            </p>
-
-            <!-- ── Git connection panel ─────────────────────────────────── -->
-            <!-- Connection paused: token expired/revoked -->
-            <div v-if="gitPaused"
-              class="flex flex-col gap-2.5 rounded-lg border border-outline-amber-2 bg-surface-amber-1 p-3">
-              <div class="flex items-start gap-2">
-                <LucideTriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-ink-amber-3" />
-                <div class="text-sm text-ink-gray-7">
-                  <p class="font-medium text-ink-gray-8">Connection paused</p>
-                  <p class="mt-0.5">Your {{ gitProvider }} token has expired or been revoked. Existing apps keep
-                    working — but you can't browse new repositories until you refresh the connection.</p>
-                </div>
-              </div>
-              <div class="flex items-end gap-2">
-                <FormControl class="flex-1" label="New access token" type="password" v-model="gitToken"
-                  placeholder="Paste a fresh token" @keydown.enter="connectGit" />
-                <Button variant="solid" :loading="gitConnecting" @click="connectGit">Update Token</Button>
-              </div>
+            <!-- Segment control -->
+            <div class="grid grid-cols-2 gap-0.5 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-0.5">
+              <button type="button"
+                class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+                :class="customTab === 'public'
+                  ? 'bg-surface-white text-ink-gray-9 shadow-sm'
+                  : 'text-ink-gray-5 hover:text-ink-gray-7'"
+                @click="switchTab('public')">
+                Public Repository
+              </button>
+              <button type="button"
+                class="flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+                :class="customTab === 'private'
+                  ? 'bg-surface-white text-ink-gray-9 shadow-sm'
+                  : 'text-ink-gray-5 hover:text-ink-gray-7'"
+                @click="switchTab('private')">
+                <span v-if="gitConnected" class="h-1.5 w-1.5 rounded-full bg-surface-green-3"></span>
+                Private Account
+              </button>
             </div>
 
-            <!-- Connected: repository picker -->
-            <div v-else-if="gitConnected"
-              class="flex flex-col gap-2.5 rounded-lg border border-outline-gray-2 p-3">
+            <!-- Public tab: URL + branch -->
+            <template v-if="customTab === 'public'">
+              <FormControl label="Repository URL" type="text" v-model="customRepo"
+                placeholder="https://github.com/frappe/crm" />
+              <FormControl label="Branch" type="text" v-model="customBranch"
+                placeholder="Leave blank for the repository default" />
+              <ErrorMessage v-if="error" :message="error" />
               <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2 text-sm">
-                  <span class="inline-block h-1.5 w-1.5 rounded-full bg-surface-green-3"></span>
-                  <span class="font-medium text-ink-gray-8 capitalize">{{ gitProvider }}</span>
-                  <span class="text-ink-gray-5">connected</span>
+                <Button variant="ghost" @click="backToBrowse">← Back</Button>
+                <div class="flex gap-2">
+                  <Button variant="ghost" @click="show = false">Cancel</Button>
+                  <Button variant="solid" :loading="loading" :disabled="!customRepo.trim()"
+                    @click="confirmCustomInstall">Install</Button>
                 </div>
-                <Button variant="ghost" size="sm" @click="disconnectGit">Disconnect</Button>
               </div>
-              <TextInput v-model="repoSearch" placeholder="Search your repositories…" />
-              <div class="max-h-48 overflow-y-auto flex flex-col gap-1">
-                <p v-if="reposLoading" class="py-4 text-center text-sm text-ink-gray-4">Loading repositories…</p>
-                <p v-else-if="!filteredRepos.length" class="py-4 text-center text-sm text-ink-gray-4">No repositories found.</p>
-                <button v-for="repo in filteredRepos" :key="repo.full_name" type="button"
-                  @click="selectRepo(repo)"
-                  :class="[
-                    'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left transition-colors',
-                    customRepo === repo.clone_url
-                      ? 'border-outline-gray-4 bg-surface-gray-2'
-                      : 'border-transparent hover:bg-surface-gray-2',
-                  ]">
-                  <div class="min-w-0 flex-1">
-                    <p class="truncate text-sm font-medium text-ink-gray-8">{{ repo.full_name }}</p>
-                    <p v-if="repo.description" class="truncate text-xs text-ink-gray-5">{{ repo.description }}</p>
-                  </div>
-                  <Badge v-if="repo.private" label="Private" theme="orange" size="sm" />
-                </button>
-              </div>
-            </div>
+            </template>
 
-            <!-- Not connected: connect prompt -->
-            <div v-else class="flex flex-col gap-2.5 rounded-lg border border-dashed border-outline-gray-2 p-3">
-              <template v-if="!showConnect">
-                <div class="flex items-center justify-between gap-2">
-                  <p class="text-sm text-ink-gray-6">Connect GitHub to browse and install private repositories.</p>
-                  <Button variant="subtle" size="sm" @click="showConnect = true">Connect</Button>
+            <!-- Private tab -->
+            <template v-else>
+              <!-- Loading -->
+              <p v-if="!gitStatus && !gitError" class="py-4 text-center text-sm text-ink-gray-4">Loading…</p>
+
+              <!-- Token paused (expired / revoked) -->
+              <template v-else-if="gitPaused">
+                <div class="flex items-start gap-2 rounded-lg border border-outline-amber-2 bg-surface-amber-1 p-3">
+                  <LucideTriangleAlert class="mt-0.5 h-4 w-4 shrink-0 text-ink-amber-3" />
+                  <div>
+                    <p class="text-sm font-medium text-ink-gray-8">Connection paused</p>
+                    <p class="mt-0.5 text-sm text-ink-gray-6">Your {{ gitProvider }} token has expired or been revoked.
+                      Existing apps keep working — refresh the connection to browse new repositories.</p>
+                  </div>
+                </div>
+                <FormControl label="New access token" type="text" v-model="gitToken"
+                  placeholder="Paste a fresh token" @keydown.enter="connectGit" />
+                <a v-if="tokenHelpUrl" :href="tokenHelpUrl" target="_blank" rel="noopener"
+                  class="text-xs text-ink-blue-3 hover:underline">Generate a token →</a>
+                <ErrorMessage v-if="gitError" :message="gitError" />
+                <div class="flex items-center justify-between">
+                  <Button variant="ghost" @click="backToBrowse">← Back</Button>
+                  <div class="flex gap-2">
+                    <Button variant="ghost" @click="show = false">Cancel</Button>
+                    <Button variant="solid" :loading="gitConnecting" @click="connectGit">Update Token</Button>
+                  </div>
                 </div>
               </template>
+
+              <!-- Connected: repo + branch comboboxes -->
+              <template v-else-if="gitConnected">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-1.5">
+                    <span class="h-1.5 w-1.5 rounded-full bg-surface-green-3"></span>
+                    <span class="text-sm font-medium capitalize text-ink-gray-8">{{ gitProvider }}</span>
+                    <span class="text-sm text-ink-gray-5">connected</span>
+                  </div>
+                  <Button variant="ghost" size="sm" @click="disconnectGit">Disconnect</Button>
+                </div>
+
+                <Combobox
+                  label="Repository"
+                  v-model="customRepo"
+                  :options="repoOptions"
+                  :loading="reposLoading"
+                  :allowCustomValue="true"
+                  placeholder="Search or paste a URL…"
+                  emptyText="No repositories found."
+                  @update:selectedOption="onRepoSelect"
+                >
+                  <template #item-suffix="{ item }">
+                    <Badge v-if="repoByCloneUrl.get(item.value)?.private" label="Private" theme="orange" size="sm" />
+                  </template>
+                </Combobox>
+
+                <!-- Branch: shown as soon as a repo URL is committed (picker or paste) -->
+                <Combobox
+                  v-if="customRepo && customRepo.trim()"
+                  label="Branch"
+                  v-model="customBranch"
+                  :options="repoBranches.map(b => ({ label: b, value: b }))"
+                  :loading="repoBranchesLoading"
+                  :allowCustomValue="true"
+                  placeholder="Leave blank for the default branch"
+                  emptyText="No branches found."
+                />
+
+                <ErrorMessage v-if="error || gitError" :message="error || gitError" />
+                <div class="flex items-center justify-between">
+                  <Button variant="ghost" @click="backToBrowse">← Back</Button>
+                  <div class="flex gap-2">
+                    <Button variant="ghost" @click="show = false">Cancel</Button>
+                    <Button variant="solid" :loading="loading" :disabled="!customRepo.trim()"
+                      @click="confirmCustomInstall">Install</Button>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Not connected: token entry form -->
               <template v-else>
                 <FormControl label="Provider" type="select" v-model="gitProvider"
                   :options="[{ label: 'GitHub', value: 'github' }]" />
-                <FormControl label="Personal access token" type="password" v-model="gitToken"
+                <FormControl label="Personal Access Token" type="text" v-model="gitToken"
                   placeholder="ghp_…" @keydown.enter="connectGit" />
                 <a v-if="tokenHelpUrl" :href="tokenHelpUrl" target="_blank" rel="noopener"
                   class="text-xs text-ink-blue-3 hover:underline">Generate a token →</a>
-                <div class="flex justify-end gap-2">
-                  <Button variant="ghost" size="sm" @click="showConnect = false">Cancel</Button>
-                  <Button variant="solid" size="sm" :loading="gitConnecting" @click="connectGit">Connect</Button>
+                <ErrorMessage v-if="gitError" :message="gitError" />
+                <div class="flex items-center justify-between">
+                  <Button variant="ghost" @click="backToBrowse">← Back</Button>
+                  <div class="flex gap-2">
+                    <Button variant="ghost" @click="show = false">Cancel</Button>
+                    <Button variant="solid" :loading="gitConnecting" @click="connectGit">Connect</Button>
+                  </div>
                 </div>
               </template>
-            </div>
-
-            <ErrorMessage v-if="gitError" :message="gitError" />
-
-            <!-- ── Manual repo + branch ─────────────────────────────────── -->
-            <FormControl label="Repository URL" type="text" v-model="customRepo"
-              placeholder="https://github.com/owner/app" />
-            <FormControl label="Branch" type="text" v-model="customBranch"
-              placeholder="Leave blank for the repository default" />
-            <ErrorMessage v-if="error" :message="error" />
-            <div class="flex items-center justify-between gap-2">
-              <Button variant="ghost" @click="backToBrowse">← Back</Button>
-              <div class="flex gap-2">
-                <Button variant="ghost" @click="show = false">Cancel</Button>
-                <Button variant="solid" :loading="loading" :disabled="!customRepo.trim()"
-                  @click="confirmCustomInstall">Install</Button>
-              </div>
-            </div>
+            </template>
           </div>
         </template>
 
@@ -465,3 +561,17 @@ function confirmCustomInstall() {
     </template>
   </Dialog>
 </template>
+
+<!--
+  The Combobox portals its dropdown to <body> (position: fixed, floating-ui).
+  floating-ui sets --reka-combobox-trigger-width to the anchor's measured width,
+  and frappe-ui's ComboboxContent applies min-w-[--reka-combobox-trigger-width].
+  But there is no max-w, so long option descriptions inflate the intrinsic size
+  and push the dropdown past the trigger width. Cap it here.
+  Non-scoped so the rule reaches the portaled element outside the component root.
+-->
+<style>
+[data-slot='content'][data-selection] {
+  max-width: var(--reka-combobox-trigger-width, 600px);
+}
+</style>

@@ -19,15 +19,16 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 
 CREDENTIALS_FILENAME = ".bench.git.info"
 
 # Per-provider Fine-Grained PAT generation links, pre-scoped where the provider
 # supports it, surfaced in the UI so the user lands on the right settings page.
+# Classic PAT URL pre-fills the `repo` scope so the user only has to click
+# "Generate token" — no manual scope selection needed.
 TOKEN_HELP_URLS = {
-    "github": "https://github.com/settings/personal-access-tokens/new",
+    "github": "https://github.com/settings/tokens/new?scopes=repo&description=Bench+CLI",
     "gitlab": "https://gitlab.com/-/user_settings/personal_access_tokens",
 }
 
@@ -120,6 +121,18 @@ class GitProvider(abc.ABC):
     def authenticated_clone_url(self, repo_url: str) -> str:
         """Rewrite ``repo_url`` into a token-embedded HTTPS clone URL."""
 
+    @abc.abstractmethod
+    def list_branches(self, full_name: str) -> list[str]:
+        """Return branch names for *full_name* (``owner/repo``), up to 100."""
+
+    def fetch_raw_file(self, repo_url: str, path: str, ref: str = "HEAD") -> str:
+        """Return the raw text content of *path* at *ref* in *repo_url*.
+
+        Raises ``GitProviderError`` if the file is not found or the provider
+        does not support this operation.
+        """
+        raise GitProviderError(f"Fetching repository files is not supported for {self.name}.")
+
     # -- shared helpers --------------------------------------------------------
 
     def owns(self, repo_url: str) -> bool:
@@ -184,6 +197,30 @@ class GitHubProvider(GitProvider):
     def authenticated_clone_url(self, repo_url: str) -> str:
         return inject_https_token(repo_url, "x-access-token", self.token)
 
+    def list_branches(self, full_name: str) -> list[str]:
+        url = f"{self.api_base}/repos/{full_name}/branches?per_page=100"
+        data, _ = self._get_json(url, self._headers())
+        return [b["name"] for b in data]
+
+    def fetch_raw_file(self, repo_url: str, path: str, ref: str = "HEAD") -> str:
+        owner, repo = _parse_github_owner_repo(repo_url)
+        url = f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}"
+        headers = {"User-Agent": "bench"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return resp.read().decode()
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                raise GitAuthError(f"Access denied reading {path} from repository.") from exc
+            if exc.code == 404:
+                raise GitProviderError(f"{path} not found in repository.") from exc
+            raise GitProviderError(f"HTTP {exc.code} reading {path}.") from exc
+        except urllib.error.URLError as exc:
+            raise GitProviderError(f"Could not reach GitHub: {exc.reason}.") from exc
+
 
 class GitLabProvider(GitProvider):
     """Stub — mapped out for a later phase, not wired up yet."""
@@ -199,6 +236,9 @@ class GitLabProvider(GitProvider):
 
     def authenticated_clone_url(self, repo_url: str) -> str:
         return inject_https_token(repo_url, "oauth2", self.token)
+
+    def list_branches(self, full_name: str) -> list[str]:
+        raise GitProviderError("GitLab support is not implemented yet.")
 
 
 PROVIDERS: dict[str, type[GitProvider]] = {
@@ -251,6 +291,54 @@ def inject_https_token(repo_url: str, username: str, token: str) -> str:
         rest = rest.split("@", 1)[1]
     quoted = urllib.parse.quote(token, safe="")
     return f"https://{username}:{quoted}@{rest}"
+
+
+def _parse_github_owner_repo(repo_url: str) -> tuple[str, str]:
+    """Extract (owner, repo) from a GitHub HTTPS URL.
+
+    Accepts ``https://github.com/owner/repo`` and ``…/repo.git``.
+    Raises ``GitProviderError`` when the URL cannot be parsed.
+    """
+    url = normalize_to_https(repo_url).rstrip("/").removesuffix(".git")
+    parts = url.split("/")
+    # Expect ['https:', '', 'github.com', 'owner', 'repo']
+    if len(parts) < 5 or not parts[-2] or not parts[-1]:
+        raise GitProviderError(f"Cannot parse owner/repo from URL: {repo_url!r}")
+    return parts[-2], parts[-1]
+
+
+def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = "") -> str:
+    """Fetch *pyproject.toml* from *repo_url* and return ``project.name``.
+
+    Uses the stored credential when available so private repos work.
+    Public repos are fetched anonymously when no token is on file.
+    """
+    import tomllib
+
+    record = GitCredentialStore(bench_root).load()
+    token = record.get("token", "") if record else ""
+
+    provider = provider_for_repo(repo_url, token)
+    if provider is None:
+        raise GitProviderError(
+            f"No supported git provider found for {repo_url!r}. "
+            "Only GitHub is supported for automatic app-name resolution."
+        )
+
+    ref = branch.strip() or "HEAD"
+    content = provider.fetch_raw_file(repo_url, "pyproject.toml", ref)
+
+    try:
+        data = tomllib.loads(content)
+    except Exception as exc:
+        raise GitProviderError(f"Could not parse pyproject.toml: {exc}") from exc
+
+    name = (data.get("project") or {}).get("name", "").strip()
+    if not name:
+        raise GitProviderError(
+            "pyproject.toml does not contain a [project] name field."
+        )
+    return name
 
 
 def authenticated_url_for(bench_root: Path, repo_url: str) -> str:

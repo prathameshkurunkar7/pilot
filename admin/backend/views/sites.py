@@ -18,9 +18,7 @@ sites_bp = Blueprint("sites", __name__)
 
 # Confidential / system-managed site_config keys. These are never sent to the
 # admin UI and cannot be edited through it — they are preserved as-is on disk.
-PROTECTED_CONFIG_KEYS = frozenset(
-    {"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl"}
-)
+PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl"})
 
 
 @sites_bp.route("/")
@@ -162,6 +160,7 @@ def reinstall_site(name: str):
 @sites_bp.route("/<name>/force-drop", methods=["POST"])
 def force_drop_site(name: str):
     import shutil
+
     bench_root = Path(current_app.config["BENCH_ROOT"])
     site_path = bench_root / "sites" / name
     if not (site_path / "site_config.json").exists():
@@ -204,10 +203,17 @@ def get_and_install_app(name: str):
     app = (data.get("app") or "").strip()
     repo = (data.get("repo") or "").strip()
     branch = (data.get("branch") or "").strip()
-    if not app:
-        return jsonify({"ok": False, "error": "App name is required."})
     if not repo:
         return jsonify({"ok": False, "error": "Repo URL is required."})
+    if not app:
+        from bench_cli.core.git_providers import GitProviderError, resolve_app_name_from_repo
+
+        try:
+            app = resolve_app_name_from_repo(bench_root, repo, branch)
+        except GitProviderError as e:
+            return jsonify({"ok": False, "error": f"Could not determine app name: {e}"})
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"Could not read pyproject.toml: {e}"})
     try:
         task_args = {"site": name, "app": app, "repo": repo}
         if branch:
@@ -241,6 +247,7 @@ def force_uninstall_app(name: str):
     data = request.get_json(silent=True) or {}
 
     from ..validators import validate_app_name
+
     app = (data.get("app") or "").strip()
     err = validate_app_name(app)
     if err:
@@ -256,10 +263,16 @@ def force_uninstall_app(name: str):
     try:
         result = _sp.run(
             [
-                python, "-m", "frappe.utils.bench_helper", "frappe",
-                "--site", name,
-                "execute", "frappe.installer.remove_from_installed_apps",
-                "--args", f'["{app}"]',
+                python,
+                "-m",
+                "frappe.utils.bench_helper",
+                "frappe",
+                "--site",
+                name,
+                "execute",
+                "frappe.installer.remove_from_installed_apps",
+                "--args",
+                f'["{app}"]',
             ],
             cwd=str(bench_root / "sites"),
             capture_output=True,
@@ -375,11 +388,13 @@ def enable_ssl(name: str):
 
     # No email anywhere — ask the UI to collect one instead of starting a doomed task.
     if not config.letsencrypt.email:
-        return jsonify({
-            "ok": False,
-            "needs_email": True,
-            "error": "A Let's Encrypt account email is required to issue certificates.",
-        })
+        return jsonify(
+            {
+                "ok": False,
+                "needs_email": True,
+                "error": "A Let's Encrypt account email is required to issue certificates.",
+            }
+        )
 
     import json
 
@@ -519,20 +534,14 @@ def _new_site_name_error(bench_root: Path, name: str) -> str | None:
 
     owner = host_owner(bench_root, name)
     if owner:
-        return (
-            f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). "
-            f"All benches share one nginx, so hostnames must be unique."
-        )
+        return f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). All benches share one nginx, so hostnames must be unique."
 
     try:
         admin_domain = BenchConfig.from_file(bench_root / "bench.toml").admin.domain
     except Exception:
         admin_domain = ""
     if admin_domain and normalize_host(name) == normalize_host(admin_domain):
-        return (
-            f"Site '{name}' clashes with this bench's admin domain. "
-            f"An admin domain must not match a site domain."
-        )
+        return f"Site '{name}' clashes with this bench's admin domain. An admin domain must not match a site domain."
     return None
 
 

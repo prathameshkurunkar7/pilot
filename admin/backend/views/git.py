@@ -12,6 +12,7 @@ from bench_cli.core.git_providers import (
     provider_for_name,
 )
 
+
 git_bp = Blueprint("git", __name__)
 
 
@@ -33,8 +34,6 @@ def _status(record: dict | None) -> dict:
 
 @git_bp.route("/integration", methods=["GET"])
 def get_integration():
-    print("Returning ", _status(_store().load()))
-
     return jsonify(_status(_store().load()))
 
 
@@ -82,3 +81,24 @@ def list_repos():
         return jsonify({"ok": False, "error": str(e)})
     store.mark_valid()
     return jsonify({"ok": True, "repos": repos})
+
+
+@git_bp.route("/branches", methods=["GET"])
+def list_branches():
+    repo = request.args.get("repo", "").strip()
+    if not repo:
+        return jsonify({"ok": False, "error": "repo parameter is required."})
+    store = _store()
+    record = store.load()
+    if not record or not record.get("token"):
+        return jsonify({"ok": False, "error": "No git provider connected."})
+    try:
+        provider = provider_for_name(record["provider"], record["token"])
+        branches = provider.list_branches(repo)
+    except GitAuthError:
+        store.mark_invalid()
+        return jsonify({"ok": False, "token_invalid": True,
+                        "error": "Your access token has expired or been revoked."})
+    except GitProviderError as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "branches": branches})
