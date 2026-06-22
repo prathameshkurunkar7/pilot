@@ -10,7 +10,7 @@ from pathlib import Path
 
 from bench_cli.config.volume_config import VolumeConfig
 from bench_cli.exceptions import CommandError, VolumeError
-from bench_cli.platform import _privileged, get_package_manager, is_alpine, service_enable_command
+from bench_cli.platform import _privileged, get_package_manager, is_alpine, service_enable_command, which as platform_which
 from bench_cli.utils import run_command
 
 
@@ -281,8 +281,9 @@ class VolumeManager:
     def _ensure_zfs(self):
         # On Alpine the userland CLI can be installed while the kernel module is
         # absent (e.g. wrong kernel), so verify ZFS is actually usable, not just
-        # that the `zfs` binary exists.
-        if shutil.which("zfs") and (not is_alpine() or self._zfs_usable()):
+        # that the `zfs` binary exists.  Use platform_which so we also find
+        # binaries in /sbin /usr/sbin — a non-root user's PATH often omits them.
+        if platform_which("zfs") and (not is_alpine() or self._zfs_usable()):
             return
 
         print("ZFS not found installing....")
@@ -290,7 +291,7 @@ class VolumeManager:
             self._install_zfs_alpine()
         else:
             get_package_manager().install("zfsutils-linux")
-            if not shutil.which("zfs"):
+            if not platform_which("zfs"):
                 raise VolumeError("Something went wrong in installing zfs")
         print("ZFS installed....")
 
@@ -324,17 +325,14 @@ class VolumeManager:
 
         flavor = self._alpine_kernel_flavor()
         if flavor:
-            try:
-                pkg.install(f"zfs-{flavor}")
-            except Exception:
-                pass  # no matching module package — caught by the usability check
+            pkg.install(f"zfs-{flavor}")
 
         subprocess.run(_privileged(["modprobe", "zfs"]), capture_output=True)
         # Re-import and mount pools at boot so volumes survive reboots.
         for service in ("zfs-import", "zfs-mount"):
             subprocess.run(service_enable_command(service), capture_output=True)
 
-        if not (shutil.which("zfs") and self._zfs_usable()):
+        if not (platform_which("zfs") and self._zfs_usable()):
             raise VolumeError(
                 "The ZFS kernel module could not be loaded on this host "
                 f"(kernel {os.uname().release}). Alpine provides ZFS modules only "
