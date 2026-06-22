@@ -129,6 +129,8 @@ const repos = ref([])
 const reposLoading = ref(false)
 const repoBranches = ref([])
 const repoBranchesLoading = ref(false)
+const repoComboboxOpen = ref(false)
+const branchComboboxOpen = ref(false)
 
 const repoOptions = computed(() =>
   repos.value.map(r => {
@@ -440,32 +442,38 @@ function confirmCustomInstall() {
                   <Button variant="ghost" size="sm" @click="disconnectGit">Disconnect</Button>
                 </div>
 
-                <Combobox
-                  label="Repository"
-                  v-model="customRepo"
-                  :options="repoOptions"
-                  :loading="reposLoading"
-                  :allowCustomValue="true"
-                  placeholder="Search or paste a URL…"
-                  emptyText="No repositories found."
-                  @update:selectedOption="onRepoSelect"
-                >
-                  <template #item-suffix="{ item }">
-                    <Badge v-if="repoByCloneUrl.get(item.value)?.private" label="Private" theme="orange" size="sm" />
-                  </template>
-                </Combobox>
+                <div :class="((repoComboboxOpen && !reposLoading) || branchComboboxOpen) && 'pb-60'">
+                  <div class="flex flex-col gap-4">
+                    <Combobox
+                      label="Repository"
+                      v-model="customRepo"
+                      :options="repoOptions"
+                      :loading="reposLoading"
+                      :allowCustomValue="true"
+                      placeholder="Search or paste a URL…"
+                      emptyText="No repositories found."
+                      @update:selectedOption="onRepoSelect"
+                      @update:open="repoComboboxOpen = $event"
+                    >
+                      <template #item-suffix="{ item }">
+                        <Badge v-if="repoByCloneUrl.get(item.value)?.private" label="Private" theme="orange" size="sm" />
+                      </template>
+                    </Combobox>
 
-                <!-- Branch: shown as soon as a repo URL is committed (picker or paste) -->
-                <Combobox
-                  v-if="customRepo && customRepo.trim()"
-                  label="Branch"
-                  v-model="customBranch"
-                  :options="repoBranches.map(b => ({ label: b, value: b }))"
-                  :loading="repoBranchesLoading"
-                  :allowCustomValue="true"
-                  placeholder="Leave blank for the default branch"
-                  emptyText="No branches found."
-                />
+                    <!-- Branch: shown as soon as a repo URL is committed (picker or paste) -->
+                    <Combobox
+                      v-if="customRepo && customRepo.trim()"
+                      label="Branch"
+                      v-model="customBranch"
+                      :options="repoBranches.map(b => ({ label: b, value: b }))"
+                      :loading="repoBranchesLoading"
+                      :allowCustomValue="true"
+                      placeholder="Leave blank for the default branch"
+                      emptyText="No branches found."
+                      @update:open="branchComboboxOpen = $event"
+                    />
+                  </div>
+                </div>
 
                 <ErrorMessage v-if="error || gitError" :message="error || gitError" />
                 <div class="flex items-center justify-between">
