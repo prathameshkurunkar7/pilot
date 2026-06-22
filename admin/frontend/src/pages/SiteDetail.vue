@@ -263,12 +263,20 @@ async function loadAppDetails() {
 async function syncAppUpdates() {
   checkingUpdates.value = true
   try {
-    const res = await fetch(`/api/sites/${siteName}/apps/fetch`, { method: 'POST' })
-    const d = await res.json()
-    if (d.updates) {
-      appDetails.value = appDetails.value.map(a =>
-        a.name in d.updates ? { ...a, has_update: d.updates[a.name] } : a
-      )
+    const { task_id } = await fetch(`/api/sites/${siteName}/apps/fetch`, { method: 'POST' }).then(r => r.json())
+
+    // Poll until the task finishes, then read the JSON result from its output.
+    while (true) {
+      await new Promise(r => setTimeout(r, 1500))
+      const { task, output } = await fetch(`/api/tasks/${task_id}`).then(r => r.json())
+      if (task.status === 'running') continue
+      if (task.status === 'success' && output?.length) {
+        const updates = JSON.parse(output[output.length - 1])
+        appDetails.value = appDetails.value.map(a =>
+          a.name in updates ? { ...a, has_update: updates[a.name] } : a
+        )
+      }
+      break
     }
   } catch { /* best-effort */ }
   finally { checkingUpdates.value = false }
