@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Button, Badge, Dialog, Dropdown, FormControl, ListView, LoadingText, ErrorMessage, Tabs } from 'frappe-ui'
 import { useTaskProgress } from '../composables/useTaskProgress.js'
 import InstallAppDialog from '../components/InstallAppDialog.vue'
+import UpdateAppDialog from '../components/UpdateAppDialog.vue'
 import LucideServer from '~icons/lucide/server'
 import LucideMoreVertical from '~icons/lucide/more-vertical'
 import LucideDownload from '~icons/lucide/download'
@@ -221,6 +222,64 @@ async function deleteConfigEntry() {
   }
 }
 
+// ── Apps tab detail ───────────────────────────────────────────────────────────
+const appDetails = ref([])       // [{name, branch, commit, version, repo, has_update}]
+const appDetailsLoading = ref(false)
+const appsTabLoaded = ref(false)
+const checkingUpdates = ref(false)
+
+const appDetailMap = computed(() => Object.fromEntries(appDetails.value.map(a => [a.name, a])))
+
+const showChangeBranch = ref(false)
+const changeBranchApp = ref(null)
+const changeBranchInput = ref('')
+
+const showUpdateModal = ref(false)
+const updateModalApp = ref(null)
+
+const appsWithUpdates = computed(() => appDetails.value.filter(a => a.has_update))
+
+function openChangeBranch(app) {
+  changeBranchApp.value = app
+  changeBranchInput.value = app.branch
+  showChangeBranch.value = true
+}
+
+function openUpdateModal(app) {
+  updateModalApp.value = app
+  showUpdateModal.value = true
+}
+
+async function loadAppDetails() {
+  appDetailsLoading.value = true
+  try {
+    const res = await fetch(`/api/sites/${siteName}/apps`)
+    const d = await res.json()
+    if (d.apps) appDetails.value = d.apps
+  } catch { /* non-fatal — falls back to name-only display */ }
+  finally { appDetailsLoading.value = false }
+}
+
+async function syncAppUpdates() {
+  checkingUpdates.value = true
+  try {
+    const res = await fetch(`/api/sites/${siteName}/apps/fetch`, { method: 'POST' })
+    const d = await res.json()
+    if (d.updates) {
+      appDetails.value = appDetails.value.map(a =>
+        a.name in d.updates ? { ...a, has_update: d.updates[a.name] } : a
+      )
+    }
+  } catch { /* best-effort */ }
+  finally { checkingUpdates.value = false }
+}
+
+function appMenuOptions(app) {
+  return [
+    { label: 'Change Branch', onClick: () => openChangeBranch(app) },
+  ]
+}
+
 const TAB_SLUGS = ['apps', 'config', 'backups', 'actions']
 const tabs = [
   { label: 'Apps' },
@@ -344,6 +403,10 @@ async function deleteBackupSet() {
 
 watch(activeTab, (idx) => {
   router.replace({ hash: `#${TAB_SLUGS[idx]}` })
+  if (tabs[idx]?.label === 'Apps' && !appsTabLoaded.value) {
+    appsTabLoaded.value = true
+    loadAppDetails().then(syncAppUpdates)
+  }
   if (tabs[idx]?.label === 'Backups' && !backupsTabLoaded.value) {
     backupsTabLoaded.value = true
     loadBackups()
@@ -586,6 +649,10 @@ async function forceDrop() {
 onMounted(() => {
   load()
   loadRegistry()
+  if (tabs[activeTab.value]?.label === 'Apps') {
+    appsTabLoaded.value = true
+    loadAppDetails().then(syncAppUpdates)
+  }
   if (tabs[activeTab.value]?.label === 'Backups') {
     backupsTabLoaded.value = true
     loadBackups()
@@ -646,10 +713,22 @@ onMounted(() => {
             <div v-if="tab.label === 'Apps'">
               <div class="flex items-center justify-between px-4 py-2.5">
                 <h3 class="text-sm font-semibold text-ink-gray-9">Installed Apps</h3>
-                <Button variant="ghost" size="sm" @click="showInstall = true">
-                  <template #prefix><LucidePlus class="h-4 w-4" /></template>
-                  Install App
-                </Button>
+                <div class="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" :loading="checkingUpdates" @click="syncAppUpdates"
+                    :title="checkingUpdates ? 'Checking for updates…' : 'Check for updates'">
+                    <template #icon><LucideRefreshCw class="h-3.5 w-3.5" /></template>
+                  </Button>
+                  <div v-if="appsWithUpdates.length || checkingUpdates" class="h-4 w-px bg-outline-gray-2" />
+                  <Button v-if="appsWithUpdates.length" variant="ghost" size="sm"
+                    @click="openUpdateModal(appsWithUpdates[0])">
+                    Update ({{ appsWithUpdates.length }})
+                  </Button>
+                  <div class="h-4 w-px bg-outline-gray-2" />
+                  <Button variant="ghost" size="sm" @click="showInstall = true">
+                    <template #prefix><LucidePlus class="h-4 w-4" /></template>
+                    Install App
+                  </Button>
+                </div>
               </div>
               <div class="mx-4 border-b border-outline-gray-1" />
               <div v-if="!site.installed_apps.length" class="py-12 text-center text-sm text-ink-gray-4">
@@ -663,11 +742,31 @@ onMounted(() => {
                       <img v-if="logoMap[app]" :src="logoMap[app]" :alt="app" class="h-full w-full object-contain" />
                       <span v-else class="text-sm font-bold text-white">{{ app[0].toUpperCase() }}</span>
                     </div>
-                    <span class="text-sm font-medium text-ink-gray-8">{{ titleMap[app] || app }}</span>
+                    <div>
+                      <p class="text-sm font-medium text-ink-gray-8">{{ titleMap[app] || app }}</p>
+                      <div v-if="appDetailMap[app]" class="mt-0.5 flex items-center gap-1.5 text-xs text-ink-gray-5">
+                        <span v-if="appDetailMap[app].branch" class="font-mono">{{ appDetailMap[app].branch }}</span>
+                        <span v-if="appDetailMap[app].branch && appDetailMap[app].commit">·</span>
+                        <span v-if="appDetailMap[app].commit" class="font-mono">{{ appDetailMap[app].commit }}</span>
+                        <span v-if="appDetailMap[app].commit">·</span>
+                        <Badge v-if="appDetailMap[app].is_dirty" label="Modified" theme="yellow" size="sm" />
+                        <button v-if="appDetailMap[app].has_update"
+                          class="cursor-pointer"
+                          @click="openUpdateModal(appDetailMap[app])">
+                          <Badge label="Update available" theme="orange" size="sm" />
+                        </button>
+                        <span v-else class="text-ink-green-3">Up to date</span>
+                      </div>
+                      <div v-else-if="appDetailsLoading" class="mt-0.5 h-3 w-28 animate-pulse rounded bg-surface-gray-2" />
+                    </div>
                   </div>
-                  <Button v-if="app !== 'frappe'" variant="ghost" theme="red" size="sm" @click="confirmUninstall(app)">
-                    Uninstall
-                  </Button>
+                  <Dropdown :options="appMenuOptions(appDetailMap[app] || { name: app, branch: '', commit: '' })" placement="left">
+                    <template #default="{ open }">
+                      <Button variant="ghost" size="sm" :active="open">
+                        <template #icon><LucideMoreVertical class="h-4 w-4" /></template>
+                      </Button>
+                    </template>
+                  </Dropdown>
                 </div>
               </div>
             </div>
@@ -1083,6 +1182,26 @@ onMounted(() => {
     </Dialog>
 
     <!-- Uninstall App dialog -->
+    <!-- Change Branch dialog -->
+    <Dialog v-model="showChangeBranch" :options="{ title: 'Change Branch', size: 'sm' }">
+      <template #body-content>
+        <div class="flex flex-col gap-3">
+          <p class="text-sm leading-5 text-ink-gray-6">
+            Switch <strong>{{ changeBranchApp?.name }}</strong> to a different branch. This will run <code class="rounded bg-surface-gray-2 px-1 py-0.5 text-xs">git checkout</code> on the app.
+          </p>
+          <FormControl label="Branch" type="text" v-model="changeBranchInput" placeholder="e.g. develop" />
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" @click="showChangeBranch = false">Cancel</Button>
+            <Button variant="solid" :disabled="!changeBranchInput.trim() || changeBranchInput === changeBranchApp?.branch">
+              Switch Branch
+            </Button>
+          </div>
+        </div>
+      </template>
+    </Dialog>
+
+    <UpdateAppDialog v-model="showUpdateModal" :app="updateModalApp" :site-name="siteName" />
+
     <Dialog v-model="showUninstall" :options="{ title: 'Uninstall App', size: 'sm' }">
       <template #body-content>
         <p class="text-sm text-ink-gray-7">
