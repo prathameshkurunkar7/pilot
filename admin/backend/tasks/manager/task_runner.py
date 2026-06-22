@@ -38,7 +38,7 @@ _WHITELIST: dict[str, list[str]] = {
     "reinstall-site": ["site", "admin_password"],
     "bench-init": [],
     "update-cli": [],
-    "fetch-app-updates": ["site"],
+    "fetch-all-app-updates": [],
 }
 
 
@@ -136,7 +136,12 @@ class TaskRunner:
                 cmd += ["--app", args["app"]]
             return cmd
         if command == "update":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.update_task", str(self._bench_root)]
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.update_task", str(self._bench_root)]
+            if args.get("apps"):
+                argv += ["--apps"] + list(args["apps"])
+            if args.get("sites"):
+                argv += ["--sites"] + list(args["sites"])
+            return argv
         if command == "get-app":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.get_app_task", str(self._bench_root), args["repo"]]
             if args.get("branch"):
@@ -192,9 +197,8 @@ class TaskRunner:
             return argv
         if command == "update-cli":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.update_cli_task", str(self._bench_root)]
-        if command == "fetch-app-updates":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.fetch_app_updates_task", str(self._bench_root), args["site"]]
-
+        if command == "fetch-all-app-updates":
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.fetch_app_updates_task", str(self._bench_root)]
         raise ValueError(f"Unhandled command: {command!r}")
 
     @staticmethod
