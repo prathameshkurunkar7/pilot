@@ -291,7 +291,7 @@ def _fake_run_factory(calls, pool_exists=True, dataset_exists=False, is_mountpoi
 
 
 def test_setup_reuses_existing_pool_and_creates_dataset(monkeypatch) -> None:
-    monkeypatch.setattr(volume_manager.shutil, "which", lambda _: "/usr/sbin/zfs")
+    monkeypatch.setattr(volume_manager.shutil, "which", lambda _, **kw: "/usr/sbin/zfs")
     config = VolumeConfig(enabled=True, pool="bench-pool", name="shop", backing="device", device="/dev/sdb")
     mgr = VolumeManager(config)
     calls: list[list[str]] = []
@@ -371,7 +371,7 @@ def _patch_zfs_install(monkeypatch, *, zpool_rc: int, installed: list) -> None:
     monkeypatch.setattr(volume_manager, "get_package_manager", lambda: pkg)
     monkeypatch.setattr(volume_manager, "service_enable_command", lambda s: ["rc-update", "add", s])
     monkeypatch.setattr(volume_manager, "_privileged", lambda c: c)
-    monkeypatch.setattr(volume_manager.shutil, "which", lambda n: "/usr/sbin/zfs")
+    monkeypatch.setattr(volume_manager.shutil, "which", lambda n, **kw: "/usr/sbin/zfs")
     monkeypatch.setattr(
         volume_manager.subprocess, "run",
         lambda *a, **k: SimpleNamespace(returncode=zpool_rc, stdout=b"", stderr=b""),
@@ -400,7 +400,7 @@ def test_install_zfs_alpine_succeeds_when_module_loads(monkeypatch) -> None:
 
 def test_ensure_zfs_routes_to_alpine(monkeypatch) -> None:
     monkeypatch.setattr(volume_manager, "is_alpine", lambda: True)
-    monkeypatch.setattr(volume_manager.shutil, "which", lambda n: None)
+    monkeypatch.setattr(volume_manager.shutil, "which", lambda n, **kw: None)
     called: dict = {}
     monkeypatch.setattr(VolumeManager, "_install_zfs_alpine", lambda self: called.setdefault("alpine", True))
     _vm()._ensure_zfs()
