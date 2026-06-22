@@ -1,8 +1,9 @@
-import subprocess
-import sys
 import time
 
 from bench_cli.commands.get_app import GetAppCommand
+from bench_cli.core.bench import Bench, BenchConfig
+from bench_cli.core.site import Site, SiteConfig
+
 from .base_task import BaseTask
 
 
@@ -32,19 +33,9 @@ class GetAndInstallAppTask(BaseTask):
         GetAppCommand(self.bench, self.repo, self.branch).run()
 
         _step("install", f"Install on {self.site}")
-        sites_dir = self.bench_root / "sites"
-        result = subprocess.run(
-            [*self.bench.frappe_call, "frappe", "--site", self.site, "install-app", self.app],
-            cwd=str(sites_dir),
-        )
-        if result.returncode != 0:
-            sys.exit(result.returncode)
-
-        app = next((a for a in self.bench.apps() if a.config.name == self.app), None)
-        if app:
-            _step("build", f"Build assets for {self.app}")
-            from bench_cli.managers.python_env_manager import PythonEnvManager
-            PythonEnvManager(self.bench).build_assets_for_app(app)
+        bench = Bench(BenchConfig.from_file(self.bench_root / "bench.toml"), self.bench_root)
+        site = Site(SiteConfig(name=self.site, apps=[]), bench)
+        site.install_app(self.app)
 
         _step("done")
 
