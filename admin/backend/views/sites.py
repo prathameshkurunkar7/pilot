@@ -70,6 +70,64 @@ def detail(name: str):
     return jsonify({"site": site_dict, "installable_apps": installable, "http_port": http_port, "nginx_enabled": nginx_enabled, "admin_tls": admin_tls})
 
 
+@sites_bp.route("/<name>/apps")
+def site_apps(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        site = SiteReader(bench_root).read_one(name)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+
+    reader = AppReader(bench_root)
+    result = []
+    for app_name in site.installed_apps:
+        try:
+            info = reader.read_one(app_name)
+            result.append(
+                {
+                    "name": app_name,
+                    "branch": info.branch,
+                    "commit": info.current_commit,
+                    "version": info.installed_version,
+                    "repo": info.repo,
+                    "has_update": info.has_update,
+                    "is_dirty": info.uncommitted_changes,
+                }
+            )
+        except Exception:
+            result.append(
+                {
+                    "name": app_name,
+                    "branch": "",
+                    "commit": "",
+                    "version": "",
+                    "repo": "",
+                    "has_update": False,
+                }
+            )
+
+    return jsonify({"apps": result})
+
+
+@sites_bp.route("/<name>/apps/fetch", methods=["POST"])
+def fetch_app_updates(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        site = SiteReader(bench_root).read_one(name)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+
+    updates = AppReader(bench_root).check_remote_updates(site.installed_apps)
+    return jsonify({"ok": True, "updates": updates})
+
+
+@sites_bp.route("/<name>/apps/<app_name>/commits")
+def app_commits(name: str, app_name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    commits = AppReader(bench_root).list_commits(app_name)
+    return jsonify({"commits": commits})
+
+
 @sites_bp.route("/create", methods=["POST"])
 def create():
     bench_root = Path(current_app.config["BENCH_ROOT"])
