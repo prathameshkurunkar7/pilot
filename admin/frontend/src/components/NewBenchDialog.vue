@@ -2,6 +2,8 @@
 import { ref, computed, watch } from 'vue'
 import { Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 
+const PM_LABELS = { systemd: 'Systemd', openrc: 'OpenRC', supervisor: 'Supervisor' }
+
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue'])
 
@@ -11,6 +13,8 @@ const show = computed({
 })
 
 const name = ref('')
+// The host's native production manager: 'openrc' on Alpine, 'systemd' elsewhere.
+const nativeProcessManager = ref('systemd')
 const processManager = ref('systemd')
 const adminDomain = ref('')
 const error = ref('')
@@ -23,10 +27,11 @@ const status = ref('')
 // In that case we point the user at the CLI instead.
 const isProduction = ref(null)
 
-const processManagerOptions = [
-  { value: 'systemd', label: 'Systemd', hint: 'Recommended' },
+// Native manager is recommended; supervisor is the cross-platform alternative.
+const processManagerOptions = computed(() => [
+  { value: nativeProcessManager.value, label: PM_LABELS[nativeProcessManager.value] || nativeProcessManager.value, hint: 'Recommended' },
   { value: 'supervisor', label: 'Supervisor', hint: 'Alternative' },
-]
+])
 
 async function loadMode() {
   isProduction.value = null
@@ -35,6 +40,8 @@ async function loadMode() {
     if (response.ok) {
       const data = await response.json()
       isProduction.value = data.production === true
+      nativeProcessManager.value = data.native_process_manager || 'systemd'
+      processManager.value = nativeProcessManager.value
     } else {
       isProduction.value = false
     }
@@ -46,7 +53,7 @@ async function loadMode() {
 watch(show, (open) => {
   if (!open) return
   name.value = ''
-  processManager.value = 'systemd'
+  processManager.value = nativeProcessManager.value
   adminDomain.value = ''
   error.value = ''
   creating.value = false

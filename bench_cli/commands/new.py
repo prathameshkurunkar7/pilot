@@ -73,11 +73,11 @@ class NewCommand(Command):
         sibling_email = self._sibling_letsencrypt_email()
         if sibling_email:
             settings["letsencrypt_email"] = sibling_email
-        # New benches get their own MariaDB instance (mariadb@<name>) with an
-        # isolated socket/datadir; mariadb.port is offset automatically via
-        # _PORT_FIELDS. Existing benches without these fields keep using the
-        # shared system MariaDB. macOS is dev-only (Homebrew, no systemd
-        # template units), so it stays on the shared server.
+        # New benches get their own MariaDB instance with an isolated
+        # socket/datadir; mariadb.port is offset automatically via _PORT_FIELDS.
+        # Linux uses a per-bench instance (systemd mariadb@<name>, or a generated
+        # OpenRC mariadb-<name> on Alpine). macOS (Homebrew) has no per-instance
+        # mechanism, so it stays on the shared server.
         if is_linux():
             settings.update(
                 {

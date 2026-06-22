@@ -23,9 +23,10 @@ class SetupProductionCommand(Command):
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--process-manager",
-            choices=["systemd", "supervisord"],
+            choices=["systemd", "supervisord", "openrc"],
             default=None,
-            help="Process manager to deploy with (defaults to production.process_manager in bench.toml, or systemd).",
+            help="Process manager to deploy with (defaults to production.process_manager in "
+                 "bench.toml, or systemd — openrc on Alpine).",
         )
         parser.add_argument(
             "--admin-domain",
@@ -59,7 +60,10 @@ class SetupProductionCommand(Command):
         self.bench.config.validate()
         old_pm = self._installed_manager()
         self._write_dns_multitenancy()
-        if self.bench.config.production.process_manager == "systemd":
+        pm = self.bench.config.production.process_manager
+        if pm == "openrc":
+            self._setup_openrc()
+        elif pm == "systemd":
             self._setup_systemd()
         else:
             self._setup_supervisor()
@@ -79,10 +83,16 @@ class SetupProductionCommand(Command):
         rest of setup operates on the requested target. The toml is written last."""
         from bench_cli.config.bench_config import BenchConfig
         from bench_cli.config.production_config import VALID_PROCESS_MANAGERS
+        from bench_cli.platform import is_alpine
 
-        pm = BenchConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager) or "systemd"
+        default_pm = "openrc" if is_alpine() else "systemd"
+        pm = BenchConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager) or default_pm
         if pm not in VALID_PROCESS_MANAGERS:
             raise BenchError(f"Invalid process manager '{pm}'. Must be one of {', '.join(VALID_PROCESS_MANAGERS)}.")
+        if is_alpine() and pm == "systemd":
+            # Alpine has no systemd; proceeding would shell out to systemctl and
+            # leave an unmanageable deployment. Steer the operator to OpenRC.
+            raise BenchError("systemd is not available on Alpine. Use --process-manager openrc (the native Alpine manager).")
         self.bench.config.production.process_manager = pm
         self.bench.config.production.enabled = True
         # Production serves the admin behind its domain, so it must be enabled —
@@ -97,6 +107,15 @@ class SetupProductionCommand(Command):
     def _installed_manager(self) -> Optional[str]:
         """Which process manager already has a deployment on disk, if any —
         used to migrate when --process-manager differs."""
+        from bench_cli.platform import is_alpine
+
+        # Alpine has only OpenRC; probing the systemd/supervisor managers there
+        # would shell out to CLIs that aren't installed.
+        if is_alpine():
+            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+
+            return "openrc" if OpenRCProcessManager(self.bench).is_configured() else None
+
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
@@ -116,6 +135,10 @@ class SetupProductionCommand(Command):
             from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
 
             SupervisorProcessManager(self.bench).shutdown()
+        elif old_pm == "openrc":
+            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+
+            OpenRCProcessManager(self.bench).remove_services()
         else:
             from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
@@ -200,6 +223,14 @@ class SetupProductionCommand(Command):
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
         mgr = SystemdProcessManager(self.bench)
+        mgr.generate_config()
+        mgr.install_config()
+        mgr.reload()
+
+    def _setup_openrc(self) -> None:
+        from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+
+        mgr = OpenRCProcessManager(self.bench)
         mgr.generate_config()
         mgr.install_config()
         mgr.reload()

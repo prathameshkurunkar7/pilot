@@ -126,13 +126,9 @@ class StatusCommand(Command):
                 self._row(label, _warn("not found"))
 
     def _service_status(self, service: str) -> str:
-        result = subprocess.run(
-            ["systemctl", "is-active", service],
-            capture_output=True,
-            text=True,
-        )
-        active = result.stdout.strip() == "active"
-        return _ok("active") if active else _dim(result.stdout.strip() or "inactive")
+        from bench_cli.platform import service_running
+
+        return _ok("active") if service_running(service) else _dim("inactive")
 
     def _section(self, title: str) -> None:
         print(f"\n\033[1m{title}\033[0m")

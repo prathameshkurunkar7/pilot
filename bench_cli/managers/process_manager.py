@@ -390,6 +390,11 @@ class ProcessManagerFactory:
         if not bench.config.production.enabled:
             return ProcessManager(bench)
 
+        if bench.config.production.process_manager == "openrc":
+            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+
+            return OpenRCProcessManager(bench)
+
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
 
@@ -408,6 +413,11 @@ class ProcessManagerFactory:
         Falls back to create() when nothing is detected as running, so callers
         still get the appropriate "not running" error for the configured manager.
         """
+        if bench.config.production.process_manager == "openrc":
+            # Alpine has only OpenRC; skip the systemd/supervisor probes (their
+            # CLIs aren't installed and the probes would just error out).
+            return cls.create(bench)
+
         from bench_cli.managers.systemd_process_manager import SystemdProcessManager
         from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
 

@@ -61,9 +61,11 @@ class InitCommand(Command):
     def _remove_nginx_symlink(self) -> None:
         import subprocess
 
+        from bench_cli.platform import _privileged
+
         symlink = self.bench.config.nginx.config_dir / f"{self.bench.config.name}.conf"
         if symlink.exists() or symlink.is_symlink():
-            subprocess.run(["sudo", "unlink", str(symlink)], capture_output=True, check=False)
+            subprocess.run(_privileged(["unlink", str(symlink)]), capture_output=True, check=False)
 
     def _remove_systemd_units(self) -> None:
         import subprocess
@@ -79,6 +81,11 @@ class InitCommand(Command):
             check=False,
             env=mgr._systemctl_env(),
         )
+
+    def _remove_openrc_services(self) -> None:
+        from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+
+        OpenRCProcessManager(self.bench).remove_services()
 
     # ── init steps ─────────────────────────────────────────────────────────
 
@@ -197,11 +204,23 @@ class InitCommand(Command):
         # writes straight onto ZFS; otherwise the datadir is a plain directory.
         MariaDBManager(self.bench.config.mariadb).provision_instance(self.bench.config_path)
 
+    # Build/runtime deps for compiling frappe's Python and Node wheels on Alpine.
+    # musl ships no manylinux wheels, so the full header set is needed; bash and
+    # tzdata are runtime deps frappe assumes are present. python3-dev provides
+    # Python.h: Alpine ships a system python that `uv venv` reuses, so C
+    # extensions (mysqlclient, etc.) need the matching dev headers to compile.
+    _ALPINE_BUILD_PACKAGES = (
+        "build-base", "pkgconf", "mariadb-dev", "git", "bash", "tzdata",
+        "python3-dev", "linux-headers", "libffi-dev", "openssl-dev", "libxml2-dev",
+        "libxslt-dev", "jpeg-dev", "zlib-dev", "freetype-dev", "tiff-dev",
+        "lcms2-dev", "openjpeg-dev",
+    )
+
     def _install_system_packages(self) -> None:
         from bench_cli.managers.mariadb_manager import MariaDBManager
         from bench_cli.managers.python_env_manager import PythonEnvManager
         from bench_cli.managers.redis_manager import RedisManager
-        from bench_cli.platform import get_package_manager, is_linux
+        from bench_cli.platform import get_package_manager, is_alpine, is_linux
 
         pkg = get_package_manager()
         if is_linux():
@@ -232,9 +251,12 @@ class InitCommand(Command):
                     "Fix mariadb.root_password in bench.toml (or secure the existing MariaDB) and retry."
                 )
         RedisManager(self.bench.config.redis, self.bench).install()
-        if is_linux():
-            pkg = get_package_manager()
-            pkg.install("build-essential", "pkg-config", "libmariadb-dev", "git")
+        if is_alpine():
+            pkg.install(*self._ALPINE_BUILD_PACKAGES)
+        elif is_linux():
+            # python3-dev provides Python.h for C-extension wheels when uv reuses
+            # a system python (it isn't needed when uv downloads a managed one).
+            pkg.install("build-essential", "pkg-config", "libmariadb-dev", "git", "python3-dev")
         PythonEnvManager(self.bench).ensure_python()
 
     def _write_common_config_for_production(self, production: bool) -> None:
@@ -253,7 +275,14 @@ class InitCommand(Command):
         common_config_path.write_text(json.dumps(existing, indent=2))
 
     def _setup_process_manager(self) -> None:
-        if self.bench.config.production.process_manager == "systemd":
+        if self.bench.config.production.process_manager == "openrc":
+            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
+
+            mgr = OpenRCProcessManager(self.bench)
+            mgr.install_config()
+            mgr.reload()
+            self._on_rollback("openrc services", self._remove_openrc_services)
+        elif self.bench.config.production.process_manager == "systemd":
             from bench_cli.managers.systemd_process_manager import SystemdProcessManager
 
             mgr = SystemdProcessManager(self.bench)

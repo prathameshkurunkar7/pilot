@@ -121,6 +121,49 @@ def test_write_instance_config_targets_mariadb_conf_d_with_pidfile(tmp_path) -> 
     assert dest == "/etc/mysql/mariadb.conf.d/99-bench-b1.cnf"
 
 
+def test_service_unit_alpine_uses_generated_openrc_name() -> None:
+    """Alpine has no mariadb@.service template, so a dedicated instance runs a
+    bench-generated `mariadb-<instance>` OpenRC service instead."""
+    with patch("bench_cli.managers.mariadb_manager.is_alpine", return_value=True):
+        assert _dedicated("b1").service_unit() == "mariadb-b1"
+        assert _manager().service_unit() == "mariadb"
+
+
+def test_provision_instance_openrc_generates_init_script(tmp_path) -> None:
+    """On Alpine, provisioning generates a supervise-daemon init script for a
+    second mariadbd with the bench's datadir/socket/port, then enables, starts
+    and secures it."""
+    m = _dedicated("b1")
+    calls: list = []
+    with patch("bench_cli.managers.mariadb_manager.is_alpine", return_value=True), patch(
+        "bench_cli.platform.is_alpine", return_value=True
+    ), patch("bench_cli.platform.is_root", return_value=False), patch(
+        "bench_cli.managers.mariadb_manager.which", return_value="/usr/sbin/mariadbd"
+    ), patch.object(m, "_wait_until_reachable"), patch.object(
+        m, "secure_installation"
+    ), patch(
+        "bench_cli.managers.mariadb_manager.run_command", lambda *a, **k: calls.append(a[0])
+    ):
+        m.provision_instance(tmp_path)
+
+    script = (tmp_path / "mariadb" / "mariadb-b1").read_text()
+    assert script.startswith("#!/sbin/openrc-run")
+    assert "supervisor=supervise-daemon" in script
+    assert 'command="/usr/sbin/mariadbd"' in script
+    assert "--datadir=/var/lib/mysql-b1" in script
+    assert "--socket=/run/mysqld/mysqld-b1.sock" in script
+    assert "--pid-file=/run/mysqld/mysqld-b1.pid" in script
+    assert 'command_user="mysql:mysql"' in script
+
+    # The script is installed into /etc/init.d, the log is pre-created mysql-owned
+    # (supervise-daemon opens it after dropping privileges), then the service is
+    # enabled + started.
+    assert ["sudo", "install", "-m", "0755", str(tmp_path / "mariadb" / "mariadb-b1"), "/etc/init.d/mariadb-b1"] in calls
+    assert ["sudo", "install", "-m", "0644", "-o", "mysql", "-g", "mysql", "/dev/null", "/var/log/mariadb-b1.log"] in calls
+    assert ["sudo", "rc-update", "add", "mariadb-b1", "default"] in calls
+    assert ["sudo", "rc-service", "mariadb-b1", "start"] in calls
+
+
 def test_write_systemd_override_pins_escaped_group_suffix(tmp_path) -> None:
     """systemd's %I unescapes '-' to '/', so the packaged --defaults-group-suffix=.%I
     looks for [mariadbd.my/bench] and ignores our [mariadbd.my-bench] group. The

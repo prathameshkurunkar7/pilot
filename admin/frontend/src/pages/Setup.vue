@@ -10,6 +10,9 @@ const error = ref('')
 const loading = ref(false)
 const benchName = ref('')
 const isLinux = ref(true)
+// The host's native production manager: 'openrc' on Alpine, 'systemd' elsewhere.
+// Set from the backend so the wizard offers the right default per platform.
+const nativeProcessManager = ref('systemd')
 const dedicatedWillInstall = ref(false)  // true when a new dedicated instance will be created
 const sharedWillInstall = ref(false)     // true when the system/shared MariaDB isn't installed yet
 
@@ -163,6 +166,20 @@ watch(dbWillInstall, (fresh) => {
 }, { immediate: true })
 watch(() => [form.value.volume_backing, form.value.volume_device, form.value.volume_image_size], applySmartSizes)
 
+// ── process manager ────────────────────────────────────────────────────────
+// The native manager (systemd/OpenRC) is the recommended option; supervisor is
+// the cross-platform alternative. macOS has no production managers at all.
+const PM_LABELS = { systemd: 'Systemd', openrc: 'OpenRC', supervisor: 'Supervisor' }
+const processManagerOptions = computed(() => {
+  if (!isLinux.value) return [{ label: 'Development — run it yourself', value: 'none' }]
+  const native = nativeProcessManager.value
+  return [
+    { label: 'Development — run it yourself', value: 'none' },
+    { label: `${PM_LABELS[native] || native} — recommended`, value: native },
+    { label: 'Supervisor — alternative', value: 'supervisor' },
+  ]
+})
+
 // ── step flow ──────────────────────────────────────────────────────────────
 const configSteps = computed(() => {
   const steps = ['passwords', 'database', 'customize']
@@ -199,6 +216,7 @@ async function loadConfig() {
     const data = await res.json()
     benchName.value = data.bench_name || ''
     isLinux.value = data.is_linux !== false
+    nativeProcessManager.value = data.native_process_manager || 'systemd'
     availableDevices.value = data.available_devices || []
     rootfsFreeBytes.value = data.rootfs_free_bytes || 0
     for (const key of Object.keys(form.value)) {
@@ -207,7 +225,7 @@ async function loadConfig() {
     clampImageSize()
     if (isLinux.value) {
       form.value.dedicated_db = data.mariadb_instance ? 'dedicated' : 'shared'
-      if (form.value.production_process_manager === 'none') form.value.production_process_manager = 'systemd'
+      if (form.value.production_process_manager === 'none') form.value.production_process_manager = nativeProcessManager.value
     }
     if (data.running_init_task_id) {
       step.value = 'running'
@@ -523,13 +541,7 @@ function backToConfig() {
             type="select"
             label="Production process manager"
             v-model="form.production_process_manager"
-            :options="isLinux
-              ? [
-                  { label: 'Development — run it yourself', value: 'none' },
-                  { label: 'Systemd — recommended', value: 'systemd' },
-                  { label: 'Supervisor — alternative', value: 'supervisor' },
-                ]
-              : [{ label: 'Development — run it yourself', value: 'none' }]"
+            :options="processManagerOptions"
           />
           <div v-if="form.production_process_manager !== 'none'" class="flex flex-col gap-3">
             <div>

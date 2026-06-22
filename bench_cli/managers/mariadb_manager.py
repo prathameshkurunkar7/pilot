@@ -5,11 +5,23 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from bench_cli.config.mariadb_config import MariaDBConfig
-from bench_cli.platform import get_package_manager, is_macos, which
+from bench_cli.platform import (
+    _privileged,
+    get_package_manager,
+    is_alpine,
+    is_macos,
+    service_command,
+    service_disable_command,
+    service_enable_command,
+    service_running,
+    which,
+)
 from bench_cli.utils import run_command
 
 _MACOS_SOCKET_CANDIDATES = ["/tmp/mysql.sock", "/usr/local/var/mysql/mysql.sock"]
 _LINUX_SOCKET_CANDIDATES = ["/var/run/mysqld/mysqld.sock", "/run/mysqld/mysqld.sock"]
+# Alpine's mariadb package uses the conventional shared datadir.
+_ALPINE_DATA_DIR = Path("/var/lib/mysql")
 
 DEFAULT_VERSION = "11.8"
 _REPO_SETUP_URL = "https://r.mariadb.com/downloads/mariadb_repo_setup"
@@ -35,7 +47,11 @@ class MariaDBManager:
         return bool(self.config.instance)
 
     def service_unit(self) -> str:
-        return f"mariadb@{self.config.instance}" if self.is_dedicated else "mariadb"
+        if not self.is_dedicated:
+            return "mariadb"
+        # systemd ships a mariadb@.service template; Alpine/OpenRC has no template,
+        # so a dedicated instance runs a bench-generated `mariadb-<instance>` script.
+        return f"mariadb-{self.config.instance}" if is_alpine() else f"mariadb@{self.config.instance}"
 
     def instance_socket(self) -> str:
         return self.config.socket_path or f"/run/mysqld/mysqld-{self.config.instance}.sock"
@@ -48,14 +64,16 @@ class MariaDBManager:
         return self.config.data_dir or f"/var/lib/mysql-{self.config.instance}"
 
     def service_is_active(self) -> bool:
-        result = subprocess.run(["systemctl", "is-active", "--quiet", self.service_unit()])
-        return result.returncode == 0
+        return service_running(self.service_unit())
 
     def is_installed(self) -> bool:
         # which() searches sbin too; mysqld/mariadbd live in /usr/sbin.
         return bool(which("mysqld") or which("mariadbd"))
 
     def install(self) -> None:
+        if is_alpine():
+            self._install_alpine()
+            return
         if self.is_installed():
             return
         package_manager = get_package_manager()
@@ -66,28 +84,52 @@ class MariaDBManager:
         package_manager.update()
         package_manager.install("mariadb-server", "mariadb-client")
 
+    def _install_alpine(self) -> None:
+        # Alpine ships no MariaDB official apk repo; the distro package (11.x) is
+        # what we use. Unlike Debian, it neither initialises the datadir nor
+        # enables the service, so do both here. Idempotent — safe to re-run.
+        if not self.is_installed():
+            get_package_manager().install("mariadb", "mariadb-client")
+        # A dedicated bench runs its own instance (provisioned separately), so it
+        # never touches the shared server — don't initialise or enable it.
+        if self.is_dedicated:
+            return
+        self._initialize_data_dir()
+        run_command(service_enable_command("mariadb"))
+
+    def _initialize_data_dir(self) -> None:
+        if (_ALPINE_DATA_DIR / "mysql").is_dir():
+            return
+        run_command(_privileged([
+            "mariadb-install-db",
+            "--user=mysql",
+            f"--datadir={_ALPINE_DATA_DIR}",
+            "--skip-test-db",
+        ]))
+
     def start(self) -> None:
         if is_macos():
             run_command(["brew", "services", "start", self._brew_package()])
         else:
-            run_command(["sudo", "systemctl", "start", self.service_unit()])
+            run_command(service_command("start", self.service_unit()))
 
     def stop(self) -> None:
         if is_macos():
             run_command(["brew", "services", "stop", self._brew_package()])
         else:
-            run_command(["sudo", "systemctl", "stop", self.service_unit()])
+            run_command(service_command("stop", self.service_unit()))
 
     def stop_shared(self) -> None:
         """Stop and disable the shared mariadb service.
 
         Called after a fresh package install for dedicated-instance benches:
-        apt auto-starts the shared service on port 3306, which would collide
-        with the dedicated instance's port before provision_instance runs.
+        the package manager auto-starts the shared service on port 3306, which
+        would collide with the dedicated instance's port before
+        provision_instance runs.
         """
         try:
-            run_command(["sudo", "systemctl", "stop", "mariadb"])
-            run_command(["sudo", "systemctl", "disable", "mariadb"])
+            run_command(service_command("stop", "mariadb"))
+            run_command(service_disable_command("mariadb"))
         except Exception:
             pass
 
@@ -146,6 +188,10 @@ class MariaDBManager:
         if not self.is_dedicated:
             raise RuntimeError("provision_instance called for a bench without a dedicated mariadb.instance")
 
+        if is_alpine():
+            self._provision_instance_openrc(staging_dir)
+            return
+
         # Runtime dir for the per-instance socket and pid file (also created by
         # systemd-tmpfiles at boot; ensured here for first provisioning).
         run_command(["sudo", "install", "-d", "-m", "755", "-o", "mysql", "-g", "mysql", "/run/mysqld"])
@@ -161,6 +207,74 @@ class MariaDBManager:
         self._wait_until_reachable()
 
         self.secure_installation()
+
+    def _provision_instance_openrc(self, staging_dir: Path) -> None:
+        """Create, configure, start and secure this bench's MariaDB instance on
+        Alpine/OpenRC. Idempotent — safe to re-run.
+
+        Alpine has no ``mariadb@.service`` template, so we generate a
+        ``supervise-daemon`` init script that runs a second ``mariadbd`` with this
+        bench's datadir/socket/port — the OpenRC counterpart of the systemd
+        template path. Explicit command-line flags override the shared
+        ``[mariadbd]`` group in ``/etc/my.cnf.d``, so no per-instance option file
+        (or fragile include-ordering) is needed.
+        """
+        instance = self.config.instance
+        data_dir = self.data_dir()
+        socket = self.instance_socket()
+        pid_file = f"/run/mysqld/mysqld-{instance}.pid"
+
+        # Runtime dir for the per-instance socket and pid file.
+        run_command(_privileged(["install", "-d", "-m", "755", "-o", "mysql", "-g", "mysql", "/run/mysqld"]))
+        # Datadir, owned by mysql, initialised only if empty (a re-run keeps data).
+        run_command(_privileged(["install", "-d", "-m", "750", "-o", "mysql", "-g", "mysql", data_dir]))
+        if not (Path(data_dir) / "mysql").is_dir():
+            run_command(_privileged([
+                "mariadb-install-db", "--user=mysql", f"--datadir={data_dir}", "--skip-test-db",
+            ]))
+
+        self._install_openrc_mariadb_service(staging_dir, data_dir, socket, pid_file)
+        run_command(service_enable_command(self.service_unit()))
+        run_command(service_command("start", self.service_unit()))
+        self._wait_until_reachable()
+        self.secure_installation()
+
+    def _install_openrc_mariadb_service(self, staging_dir: Path, data_dir: str, socket: str, pid_file: str) -> None:
+        """Render and install the instance's OpenRC init script into /etc/init.d."""
+        instance = self.config.instance
+        service = self.service_unit()
+        mariadbd = which("mariadbd") or "/usr/sbin/mariadbd"
+        args = (
+            f"--datadir={data_dir} --socket={socket} --port={self.config.port} "
+            f"--pid-file={pid_file} --bind-address=127.0.0.1"
+        )
+        script = "\n".join([
+            "#!/sbin/openrc-run",
+            f"# MariaDB instance for bench {instance} — generated by bench, do not edit",
+            f'description="MariaDB ({instance})"',
+            "supervisor=supervise-daemon",
+            f'command="{mariadbd}"',
+            f'command_args="{args}"',
+            'command_user="mysql:mysql"',
+            f'pidfile="/run/{service}.pid"',
+            f'output_log="/var/log/{service}.log"',
+            f'error_log="/var/log/{service}.log"',
+            "respawn_delay=5",
+            "",
+            "depend() {",
+            "\tuse net",
+            "\tafter firewall",
+            "}",
+        ]) + "\n"
+        staged_dir = staging_dir / "mariadb"
+        staged_dir.mkdir(parents=True, exist_ok=True)
+        staged = staged_dir / service
+        staged.write_text(script)
+        run_command(_privileged(["install", "-m", "0755", str(staged), f"/etc/init.d/{service}"]))
+        # supervise-daemon opens output_log/error_log *after* dropping to mysql, so
+        # the file must already exist and be mysql-writable — otherwise the daemon
+        # silently fails to start (it can't create a file in root-owned /var/log).
+        run_command(_privileged(["install", "-m", "0644", "-o", "mysql", "-g", "mysql", "/dev/null", f"/var/log/{service}.log"]))
 
     def _write_systemd_override(self, staging_dir: Path) -> None:
         """Pin the instance's option-group suffix to the *escaped* unit name (%i).
@@ -255,7 +369,7 @@ class MariaDBManager:
         self._run_sql_as_superuser("\n".join(statements))
 
     def _run_sql_as_superuser(self, sql: str) -> None:
-        cmd = ["mariadb"] if is_macos() else ["sudo", "mariadb"]
+        cmd = ["mariadb"] if is_macos() else _privileged(["mariadb"])
         if self.is_dedicated:
             # Target this bench's instance socket rather than the default one.
             cmd.append(f"--socket={self.instance_socket()}")
