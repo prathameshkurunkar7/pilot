@@ -138,12 +138,18 @@ class ConfigPatcher:
             return None
         if "process_manager" in production:
             from bench_cli.config.production_config import VALID_PROCESS_MANAGERS
+            from bench_cli.platform import is_alpine
 
             process_manager = str(production["process_manager"])
             valid = ("none", *VALID_PROCESS_MANAGERS)
             if process_manager not in valid:
                 return f"process_manager must be one of: {', '.join(valid)}"
             pm = "" if process_manager == "none" else process_manager
+            if is_alpine() and pm == "systemd":
+                # Alpine has no systemd; coerce a stale systemd request to OpenRC
+                # (the native Alpine manager), matching the new-bench endpoint, so
+                # a cached client default can't break the deployment.
+                pm = "openrc"
             self.config.production.process_manager = pm
             self.config.production.enabled = pm != ""
         return None
