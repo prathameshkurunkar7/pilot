@@ -89,6 +89,10 @@ class SetupProductionCommand(Command):
         pm = BenchConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager) or default_pm
         if pm not in VALID_PROCESS_MANAGERS:
             raise BenchError(f"Invalid process manager '{pm}'. Must be one of {', '.join(VALID_PROCESS_MANAGERS)}.")
+        if is_alpine() and pm == "systemd":
+            # Alpine has no systemd; proceeding would shell out to systemctl and
+            # leave an unmanageable deployment. Steer the operator to OpenRC.
+            raise BenchError("systemd is not available on Alpine. Use --process-manager openrc (the native Alpine manager).")
         self.bench.config.production.process_manager = pm
         self.bench.config.production.enabled = True
         # Production serves the admin behind its domain, so it must be enabled —
