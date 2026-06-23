@@ -14,11 +14,12 @@ setup_bp = Blueprint("setup", __name__)
 def wizard_marker_path(bench_root: Path) -> Path:
     """Marker that the bench is going through first-time setup via the wizard.
 
-    Written when the wizard kicks off init and cleared when setup finishes (and
-    as a safety-net by /api/status once the bench is fully deployed). It lets the
-    admin tell the wizard's own production deploy — during which production isn't
-    enabled yet and the bench looks 'initialized' — apart from an independent
-    `bench setup production` re-run from Settings or the CLI, which never writes it.
+    Written when the wizard kicks off its setup task and cleared when setup
+    finishes (and as a safety-net by /api/status once the bench is fully set up).
+    It keeps /api/status on the wizard during the run's in-between window — after
+    init the bench looks 'initialized' even though the production deploy hasn't
+    enabled it yet — without mistaking an independent `setup production` from
+    Settings or the CLI (which never writes it) for a wizard session.
     """
     return bench_root / ".wizard-active"
 
@@ -160,22 +161,29 @@ def _validate(data: dict) -> str | None:
     return None
 
 
-@setup_bp.route("/init", methods=["POST"])
-def start_init():
+@setup_bp.route("/start", methods=["POST"])
+def start_setup():
+    """Run the whole wizard as one task: initialize the bench and, when a
+    production process manager was chosen, deploy it — see WizardSetupTask.
+
+    A single task means the wizard follows one continuous output stream and, on a
+    reload, simply reattaches to the one running task instead of guessing which of
+    two phases it was in.
+    """
     from bench_cli.config.bench_config import BenchConfig
     from bench_cli.managers.volume_manager import VolumeManager
     from bench_cli.platform import has_passwordless_sudo, is_linux
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
 
-    # The wizard runs init as a no-TTY task; without passwordless sudo it would
-    # hang on a hidden password prompt. Surface a clean error instead.
+    # The wizard runs as a no-TTY task; without passwordless sudo it would hang on
+    # a hidden password prompt. Surface a clean error instead.
     if is_linux() and not has_passwordless_sudo():
         return jsonify({"ok": False, "error": "Passwordless sudo is not configured. "
                         "Run install.sh (or add /etc/sudoers.d/<user> NOPASSWD) and retry."}), 400
 
-    # Pre-flight validation so volume sizing errors surface in the wizard
-    # instead of failing deep inside the init task.
+    # Pre-flight validation so config/volume errors surface in the wizard instead
+    # of failing deep inside the task.
     try:
         config = BenchConfig.from_file(bench_root / "bench.toml")
         config.validate()
@@ -186,23 +194,15 @@ def start_init():
             return jsonify({"ok": False, "error": error}), 400
 
     try:
-        task_id = TaskRunner(bench_root).run("bench-init", {})
-        # Mark the wizard as active so a reload mid-setup (including the later
-        # production deploy) returns to the wizard rather than the dashboard.
+        # Reattach to an in-flight run rather than starting a second one (e.g. the
+        # page reloaded and re-posted on resume).
+        existing = _running_setup_task(bench_root)
+        if existing:
+            return jsonify({"ok": True, "task_id": existing.task_id})
+        task_id = TaskRunner(bench_root).run("wizard-setup", {})
+        # Mark the wizard as owning this bench until setup finishes, so a reload
+        # mid-run returns to the wizard rather than the half-built dashboard.
         wizard_marker_path(bench_root).touch()
-        return jsonify({"ok": True, "task_id": task_id})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
-
-
-@setup_bp.route("/setup-production", methods=["POST"])
-def start_setup_production():
-    """Deploy the freshly-initialized bench to production using the process
-    manager + admin domain stored during the wizard, so it's reachable at its
-    domain instead of a localhost dev port."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    try:
-        task_id = TaskRunner(bench_root).run("setup-production", {})
         return jsonify({"ok": True, "task_id": task_id})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
@@ -275,7 +275,6 @@ def stream_task(task_id: str):
 
 
 def _read_defaults(bench_root: Path) -> dict:
-    from admin.backend.tasks.manager.task_reader import TaskReader
     from bench_cli.platform import is_linux, native_process_manager
 
     result = {
@@ -296,16 +295,22 @@ def _read_defaults(bench_root: Path) -> dict:
     result.update(_volume_suggestions(toml_path))
 
     try:
-        tasks = TaskReader(bench_root).list_tasks()
-        running_init = next((t for t in tasks if t.command == "bench-init" and t.status == "running"), None)
-        running_prod = next((t for t in tasks if t.command == "setup-production" and t.status == "running"), None)
-        result["running_init_task_id"] = running_init.task_id if running_init else None
-        result["running_production_task_id"] = running_prod.task_id if running_prod else None
+        task = _running_setup_task(bench_root)
+        result["running_setup_task_id"] = task.task_id if task else None
     except Exception:
-        result["running_init_task_id"] = None
-        result["running_production_task_id"] = None
+        result["running_setup_task_id"] = None
 
     return result
+
+
+def _running_setup_task(bench_root: Path):
+    """The wizard's setup task if it's currently running, else None. The single
+    live task is the whole resume signal: a reload reattaches to it."""
+    return next(
+        (t for t in TaskReader(bench_root).list_tasks()
+         if t.command == "wizard-setup" and t.status == "running"),
+        None,
+    )
 
 
 def _volume_suggestions(toml_path: Path) -> dict:

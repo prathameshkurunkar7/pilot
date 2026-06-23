@@ -73,8 +73,8 @@ def _wizard_status(bench_root: Path) -> dict:
 def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
     """Whether first-time setup has fully finished — used to retire a stale wizard
     marker. A production bench isn't done until production is enabled (the deploy
-    sets it last); a dev bench is done once init has. Either way, no init or
-    production task may still be running."""
+    sets it last); a dev bench is done once init has. Either way, the wizard's
+    setup task must no longer be running."""
     if not (bench_root / "env" / "bin" / "python").exists() or not config.admin.password:
         return False
     if config.production.process_manager and not config.production.enabled:
@@ -83,7 +83,7 @@ def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
         from admin.backend.tasks.manager.task_reader import TaskReader
 
         tasks = TaskReader(bench_root).list_tasks(limit=20)
-        if any(t.command in ("bench-init", "setup-production") and t.status == "running" for t in tasks):
+        if any(t.command == "wizard-setup" and t.status == "running" for t in tasks):
             return False
     except Exception:
         pass

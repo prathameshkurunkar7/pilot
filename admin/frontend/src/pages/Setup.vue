@@ -1,11 +1,14 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { Button, FormControl, FormLabel, Password, Slider, ErrorMessage, Progress, FeatherIcon } from 'frappe-ui'
+import { Button, FormControl, FormLabel, Password, Slider, ErrorMessage, FeatherIcon } from 'frappe-ui'
 import TaskStream from '../components/TaskStream.vue'
 
 const emit = defineEmits(['done'])
 
-const step = ref('passwords')
+// Starts as 'loading' so a reload resolves the resume phase from the backend
+// before rendering — otherwise the wizard flashes step 1 (passwords) on every
+// refresh, including mid-deploy. loadConfig sets the real step.
+const step = ref('loading')
 const error = ref('')
 const loading = ref(false)
 const benchName = ref('')
@@ -27,15 +30,15 @@ const dbPasswordDescription = computed(() =>
   dbWillInstall.value ? 'MariaDB will be installed and its root password set to this value.' : undefined
 )
 
-// ── init-task streaming state ─────────────────────────────────────────────
-// TaskStream owns the SSE connection; we drive it via streamUrl and read its
-// `[N/M]` lines for the progress bar. streamPhase routes the shared "done" event
-// to the right handler across the init → production sequence.
+// ── setup-task streaming state ─────────────────────────────────────────────
+// The whole wizard runs as one task (init + optional production deploy). It
+// streams `[N/M] description` lines, which name the current step. deployedProduction
+// records whether that run includes the production deploy, so onStreamDone knows
+// whether to redirect to the bench's domain or tell the user to `bench start`.
 const taskStream = ref(null)
 const streamUrl = ref('')
-const streamPhase = ref('init')  // 'init' | 'production'
-const progress = ref(0)
 const currentStep = ref('Starting…')
+const deployedProduction = ref(false)
 const showDetails = ref(false)
 
 const form = ref({
@@ -190,10 +193,6 @@ const configSteps = computed(() => {
 const stepNumber = computed(() => configSteps.value.indexOf(step.value) + 1)
 const isConfiguring = computed(() => stepNumber.value > 0)
 const isRunning = computed(() => step.value === 'running')
-// The production deploy (a separate, shared `setup production` command) emits no
-// [N/M] markers, so its progress is shown as an indeterminate bar rather than a
-// fake percentage. All real step tracking lives in init.
-const indeterminate = computed(() => isRunning.value && streamPhase.value === 'production')
 const isLastConfigStep = computed(() => step.value === configSteps.value[configSteps.value.length - 1])
 const modalWidthClass = computed(() => (isRunning.value && showDetails.value ? 'max-w-2xl' : 'max-w-lg'))
 
@@ -227,18 +226,24 @@ async function loadConfig() {
       if (data[key] !== undefined) form.value[key] = data[key]
     }
     clampImageSize()
+    // Whether the saved config deploys to production. Read before the default
+    // below rewrites a 'none' selection, so a resumed run routes correctly.
+    deployedProduction.value = !!data.production_process_manager && data.production_process_manager !== 'none'
     if (isLinux.value) {
       form.value.dedicated_db = data.mariadb_instance ? 'dedicated' : 'shared'
       if (form.value.production_process_manager === 'none') form.value.production_process_manager = nativeProcessManager.value
     }
-    if (data.running_production_task_id) {
+    // One task, one resume rule: if it's still running, reattach to its stream.
+    // Otherwise start at the first config step.
+    if (data.running_setup_task_id) {
       step.value = 'running'
-      beginStream('production', data.running_production_task_id)
-    } else if (data.running_init_task_id) {
-      step.value = 'running'
-      beginStream('init', data.running_init_task_id)
+      beginStream(data.running_setup_task_id)
+    } else {
+      step.value = 'passwords'
     }
-  } catch {}
+  } catch {
+    if (step.value === 'loading') step.value = 'passwords'
+  }
   fetchBranches()
   checkDedicatedInstall()
 }
@@ -265,29 +270,31 @@ async function postJson(url, body) {
   return res.json()
 }
 
-// ── streaming + progress ─────────────────────────────────────────────────
-// Init prints `[N/M] description...` per step (see InitCommand). We parse those
-// to drive the progress bar; the raw output stays available behind "details".
-function updateProgress(raw) {
-  const match = raw.match(/^\[(\d+)\/(\d+)\]\s*(.+?)\.*\s*$/)
+// ── streaming ──────────────────────────────────────────────────────────────
+// Init prints `[N/M] description...` per step (see InitCommand). We read the
+// description to name the current step; the raw output stays behind "details".
+function updateCurrentStep(raw) {
+  const match = raw.match(/^\[\d+\/\d+\]\s*(.+?)\.*\s*$/)
   if (!match) return
-  const [, done, total, label] = match
-  progress.value = Math.round((parseInt(done) / parseInt(total)) * 100)
-  currentStep.value = label
+  currentStep.value = match[1]
 }
 
-// Point TaskStream at a task's output. Changing streamUrl makes the component
-// (re)connect and reset its output; we reset our own progress alongside it.
-function beginStream(phase, taskId) {
-  streamPhase.value = phase
-  progress.value = 0
+// Point TaskStream at the task's output. Changing streamUrl makes the component
+// (re)connect and reset its output; we reset the step label alongside it.
+function beginStream(taskId) {
   currentStep.value = 'Starting…'
   streamUrl.value = `/api/setup/stream/${taskId}`
 }
 
 function onStreamDone(success) {
-  if (streamPhase.value === 'production') onProductionDone(success)
-  else onInitDone(success)
+  if (!success) {
+    failWith('Setup failed. Open the details to see what went wrong, then try again.')
+    return
+  }
+  step.value = 'done'
+  // Production deploys live behind their domain; dev benches need a `bench start`.
+  if (deployedProduction.value) finishAndRedirectToDomain()
+  else shutdownAndPoll()
 }
 
 function failWith(message) {
@@ -396,52 +403,17 @@ async function initialize() {
   loading.value = true
   try {
     await saveConfig()
-    const data = await postJson('/api/setup/init', {})
+    // The saved config decides whether this run deploys to production.
+    deployedProduction.value = form.value.production_process_manager !== 'none'
+    const data = await postJson('/api/setup/start', {})
     if (!data.ok) throw new Error(data.error || 'Failed to start setup.')
     step.value = 'running'
-    beginStream('init', data.task_id)
+    beginStream(data.task_id)
   } catch (e) {
     error.value = e.message
   } finally {
     loading.value = false
   }
-}
-
-function onInitDone(success) {
-  if (!success) {
-    failWith('Setup failed. Open the details to see what went wrong, then try again.')
-    return
-  }
-  progress.value = 100
-  currentStep.value = 'Done'
-  if (form.value.production_process_manager !== 'none') {
-    deployProduction()
-  } else {
-    step.value = 'done'
-    shutdownAndPoll()
-  }
-}
-
-async function deployProduction() {
-  try {
-    const data = await postJson('/api/setup/setup-production', {})
-    if (!data.ok) throw new Error(data.error || 'Failed to start production setup.')
-    beginStream('production', data.task_id)
-  } catch (e) {
-    // step is already 'running' with init output on screen — surface it.
-    failWith(e.message)
-  }
-}
-
-function onProductionDone(success) {
-  if (!success) {
-    failWith('Production setup failed. Check the output above and try again.')
-    return
-  }
-  progress.value = 100
-  currentStep.value = 'Done'
-  step.value = 'done'
-  finishAndRedirectToDomain()
 }
 
 async function finishAndRedirectToDomain() {
@@ -505,7 +477,11 @@ function backToConfig() {
 
       <!-- Body -->
       <div class="flex-1 overflow-y-auto p-5">
-        <div v-if="step === 'passwords'" class="flex flex-col gap-4">
+        <div v-if="step === 'loading'" class="flex items-center justify-center py-10">
+          <FeatherIcon name="loader" class="h-5 w-5 animate-spin text-ink-gray-4" />
+        </div>
+
+        <div v-else-if="step === 'passwords'" class="flex flex-col gap-4">
           <Password label="Admin password" v-model="form.admin_password" placeholder="Choose a password" @keydown.enter="nextStep" />
           <ErrorMessage v-if="error" :message="error" />
         </div>
@@ -619,13 +595,10 @@ function backToConfig() {
         </div>
 
         <div v-else-if="isRunning" class="flex flex-col gap-4">
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between">
-              <p class="text-sm text-ink-gray-7">{{ indeterminate ? 'Deploying to production…' : currentStep }}</p>
-              <p v-if="!indeterminate" class="text-sm text-ink-gray-4">{{ progress }}%</p>
-            </div>
-            <Progress v-if="!indeterminate" :value="progress" size="md" />
-          </div>
+          <!-- A single status line, named by the task's current `[N/M] description`
+               step (init's steps, then "Deploying to production"). No progress bar.
+               The terminal stays collapsed unless something fails. -->
+          <p class="text-sm text-ink-gray-7">{{ currentStep }}</p>
           <button
             type="button"
             class="flex items-center gap-1 self-start text-sm text-ink-gray-5 hover:text-ink-gray-7"
@@ -642,7 +615,7 @@ function backToConfig() {
               ref="taskStream"
               :url="streamUrl"
               :guard-hidden-tab="true"
-              @line="updateProgress"
+              @line="updateCurrentStep"
               @done="onStreamDone"
               @error="failWith('Lost connection to the setup process.')"
             />
@@ -651,10 +624,11 @@ function backToConfig() {
         </div>
 
         <div v-else-if="step === 'done'" class="flex flex-col items-center gap-3 py-6 text-center">
-          <p class="text-sm text-ink-gray-7">
-            Your bench is ready. The setup server is shutting down now.
+          <p class="text-sm text-ink-gray-7">Your bench is ready.</p>
+          <p v-if="deployedProduction" class="text-sm text-ink-gray-5">
+            Taking you to your bench…
           </p>
-          <p class="text-sm text-ink-gray-5">
+          <p v-else class="text-sm text-ink-gray-5">
             Run
             <code class="rounded bg-surface-gray-2 px-1 font-mono">bench start</code>
             in your terminal to start your bench — this page will reload automatically once it's back.
@@ -663,7 +637,7 @@ function backToConfig() {
       </div>
 
       <!-- Footer -->
-      <div v-if="(!isRunning && step !== 'done') || (isRunning && error)" class="flex gap-2 border-t border-outline-gray-2 px-5 py-4">
+      <div v-if="(!isRunning && step !== 'done' && step !== 'loading') || (isRunning && error)" class="flex gap-2 border-t border-outline-gray-2 px-5 py-4">
         <Button v-if="isRunning && error" variant="subtle" class="w-full" @click="backToConfig">
           Back to configuration
         </Button>
