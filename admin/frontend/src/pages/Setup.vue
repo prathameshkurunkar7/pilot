@@ -625,9 +625,6 @@ function backToConfig() {
               <p v-if="!indeterminate" class="text-sm text-ink-gray-4">{{ progress }}%</p>
             </div>
             <Progress v-if="!indeterminate" :value="progress" size="md" />
-            <div v-else class="h-1.5 w-full overflow-hidden rounded-full bg-surface-gray-3">
-              <div class="indeterminate-bar h-full w-1/3 rounded-full bg-ink-gray-8" />
-            </div>
           </div>
           <button
             type="button"
@@ -691,14 +688,3 @@ function backToConfig() {
     </div>
   </div>
 </template>
-
-<style scoped>
-/* Indeterminate progress for the production deploy (no [N/M] steps to report). */
-@keyframes indeterminate-slide {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(300%); }
-}
-.indeterminate-bar {
-  animation: indeterminate-slide 1.2s ease-in-out infinite;
-}
-</style>
