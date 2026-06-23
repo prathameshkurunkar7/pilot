@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sys
@@ -32,28 +33,44 @@ class PythonEnvManager:
         version = self.bench.config.python_version
         run_command([uv, "venv", "--python", version, str(self.bench.env_path)], stream_output=True)
 
-    def _build_env(self) -> dict | None:
-        """Environment for compiling Python C extensions during install.
+    def _build_env(self) -> dict:
+        """Environment for subprocesses that build app artifacts.
 
-        On macOS, mysqlclient's build can't find MariaDB through pkg-config
-        (Homebrew doesn't expose a matching `.pc` on the default search path),
-        so it aborts with "Can not find valid pkg-config name". We feed it the
-        flags from `mariadb_config` directly via MYSQLCLIENT_CFLAGS/LDFLAGS,
-        which makes the build skip pkg-config entirely. On Linux the system
-        `libmariadb-dev` package provides the pkg-config file, so no override is
-        needed.
+        Folds together the two build-time concerns so callers don't juggle
+        variants:
+
+        - `frappe build` shells out to bare `yarn` via PATH. yarn may live in
+          ~/.local/bin (installed by `_install_yarn`), which isn't on a fresh
+          VPS's PATH, so prepend its directory when present.
+        - On macOS, mysqlclient's C-extension build can't find MariaDB through
+          pkg-config (Homebrew doesn't expose a matching `.pc` on the default
+          search path), so it aborts with "Can not find valid pkg-config name".
+          We feed it the flags from `mariadb_config` directly via
+          MYSQLCLIENT_CFLAGS/LDFLAGS, which skips pkg-config entirely. On Linux
+          the system `libmariadb-dev` package provides the `.pc` file, so no
+          override is needed.
+
+        Both additions are harmless to callers that only need one of them.
         """
-        if not is_macos():
-            return None
+        env = os.environ.copy()
 
-        import os
+        try:
+            yarn_dir = str(Path(get_yarn_bin()).parent)
+            env["PATH"] = os.pathsep.join([yarn_dir, env.get("PATH", "")])
+        except BenchError:
+            pass  # yarn not installed yet (e.g. compiling C extensions pre-node)
+
+        if is_macos():
+            self._add_mysqlclient_flags(env)
+
+        return env
+
+    def _add_mysqlclient_flags(self, env: dict) -> None:
         import subprocess
 
         config_bin = self._mariadb_config_bin()
         if not config_bin:
-            return None
-
-        env = os.environ.copy()
+            return
         try:
             env.setdefault(
                 "MYSQLCLIENT_CFLAGS",
@@ -64,8 +81,7 @@ class PythonEnvManager:
                 subprocess.run([config_bin, "--libs"], capture_output=True, text=True, check=True).stdout.strip(),
             )
         except subprocess.CalledProcessError:
-            return None
-        return env
+            pass
 
     @staticmethod
     def _mariadb_config_bin() -> str | None:
@@ -129,6 +145,7 @@ class PythonEnvManager:
         run_command(
             [*self.bench.frappe_call, "frappe", "build", "--force"],
             cwd=self.bench.sites_path,
+            env=self._build_env(),
             stream_output=True,
         )
 
@@ -157,6 +174,7 @@ class PythonEnvManager:
         run_command(
             [*self.bench.frappe_call, "frappe", "build", "--force", "--app", app.config.name],
             cwd=self.bench.sites_path,
+            env=self._build_env(),
             stream_output=True,
         )
 
