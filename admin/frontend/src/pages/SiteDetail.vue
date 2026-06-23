@@ -681,6 +681,15 @@ onMounted(() => {
                     </div>
                     <div v-else-if="appDetailsLoading" class="h-3 w-28 animate-pulse rounded bg-surface-gray-2" />
                   </div>
+                  <div class="ml-auto shrink-0">
+                    <Dropdown v-if="app !== 'frappe'" :options="[{ label: 'Uninstall', icon: LucideTrash2, theme: 'red', onClick: () => confirmUninstall(app) }]" placement="left">
+                      <template #default="{ open }">
+                        <Button variant="ghost" size="sm" :active="open">
+                          <template #icon><LucideMoreVertical class="h-4 w-4" /></template>
+                        </Button>
+                      </template>
+                    </Dropdown>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1098,21 +1107,26 @@ onMounted(() => {
     <!-- Uninstall App dialog -->
     <Dialog v-model="showUninstall" :options="{ title: 'Uninstall App', size: 'sm' }">
       <template #body-content>
-        <p class="text-sm text-ink-gray-7">
-          Uninstall <strong>{{ uninstallTarget }}</strong> from <strong>{{ siteName }}</strong>?
-        </p>
-        <div class="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" @click="showUninstall = false">Cancel</Button>
-          <Button variant="solid" theme="red"
-            @click="showUninstall = false; doAction('uninstall-app', { app: uninstallTarget })">Uninstall</Button>
-        </div>
-        <div class="mt-4 border-t border-outline-gray-1 pt-3">
-          <p class="mb-2 text-xs text-ink-gray-4">If the app is broken and normal uninstall fails, force-remove it from
-            the site's app list without running any app scripts.</p>
-          <ErrorMessage :message="forceUninstallError" class="mb-2" />
-          <Button variant="outline" theme="red" size="sm" :loading="forceUninstallLoading" @click="doForceUninstall">
-            Force Remove
-          </Button>
+        <div @pointerdown.stop>
+          <p class="text-sm text-ink-gray-7">
+            Uninstall <strong>{{ uninstallTarget }}</strong> from <strong>{{ siteName }}</strong>?
+          </p>
+          <div class="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" @click="showUninstall = false">Cancel</Button>
+            <Button variant="solid" theme="red"
+              @click="showUninstall = false; doAction('uninstall-app', { app: uninstallTarget })">Uninstall</Button>
+          </div>
+          <div class="mt-4 rounded-md border border-outline-gray-2 bg-surface-gray-1 p-3">
+            <p class="text-xs font-medium text-ink-gray-6">Force Remove</p>
+            <p class="mt-1 text-xs leading-relaxed text-ink-gray-5">
+              If the app is broken and normal uninstall fails, force-remove it from the site's app list without running any app scripts.
+            </p>
+            <ErrorMessage v-if="forceUninstallError" :message="forceUninstallError" class="mt-2" />
+            <button class="mt-2 text-xs font-medium text-ink-red-3 hover:text-ink-red-4 disabled:opacity-50"
+              :disabled="forceUninstallLoading" @click="doForceUninstall">
+              {{ forceUninstallLoading ? 'Removing…' : 'Force Remove' }}
+            </button>
+          </div>
         </div>
       </template>
     </Dialog>
