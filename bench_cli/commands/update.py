@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 
 from bench_cli.commands.base import Command
 from bench_cli.exceptions import CommandError, MigrateError
-from bench_cli.managers.snapshot_orchestrator import get_orchestrator
 
 if TYPE_CHECKING:
     from bench_cli.core.bench import Bench
@@ -97,6 +96,7 @@ class UpdateCommand(Command):
 
     def _snapshot(self):
         from datetime import datetime
+        from bench_cli.managers.snapshot_orchestrator import get_orchestrator
 
         self.tag = datetime.now().strftime("%Y%m%d-%H%M%S")  # Dynamically set tag for rollbacks
         try:
@@ -107,6 +107,8 @@ class UpdateCommand(Command):
             print(f" Unable to take snapshot for automatic rollbacks: {e}")
 
     def _rollback(self):
+        from bench_cli.managers.snapshot_orchestrator import get_orchestrator
+
         try:
             orchestrator = get_orchestrator(self.bench.path)
             orchestrator.rollback_snapshot(self.tag)
