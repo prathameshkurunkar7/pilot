@@ -54,6 +54,7 @@ class RedisManager:
         self._write_config("redis_queue.conf", self.config.queue_port)
 
     def _write_config(self, filename: str, port: int) -> None:
+        self.bench.config_path.mkdir(parents=True, exist_ok=True)
         content = (
             f"port {port}\n"
             "bind 127.0.0.1\n"
