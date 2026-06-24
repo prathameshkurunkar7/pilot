@@ -287,6 +287,7 @@ def test_remove_app_confirm_raises_on_negative_answer(tmp_path: Path, monkeypatc
     from bench_cli.commands.remove_app import RemoveAppCommand
 
     bench = make_bench(tmp_path)
+    (bench.apps_path / "myapp").mkdir(parents=True)
     monkeypatch.setattr("builtins.input", lambda _: "n")
 
     with pytest.raises(BenchError, match="Aborted"):
@@ -297,6 +298,7 @@ def test_remove_app_confirm_passes_on_yes(tmp_path: Path, monkeypatch: pytest.Mo
     from bench_cli.commands.remove_app import RemoveAppCommand
 
     bench = make_bench(tmp_path)
+    (bench.apps_path / "myapp").mkdir(parents=True)
     monkeypatch.setattr("builtins.input", lambda _: "y")
     RemoveAppCommand(bench, "myapp")._confirm()  # no raise
 
@@ -305,6 +307,7 @@ def test_remove_app_confirm_skipped_when_skip_confirm(tmp_path: Path) -> None:
     from bench_cli.commands.remove_app import RemoveAppCommand
 
     bench = make_bench(tmp_path)
+    (bench.apps_path / "myapp").mkdir(parents=True)
     RemoveAppCommand(bench, "myapp", skip_confirm=True)._confirm()  # no raise, no input
 
 
@@ -313,6 +316,7 @@ def test_remove_app_removes_app_from_apps_txt(tmp_path: Path) -> None:
 
     bench = make_bench(tmp_path)
     bench.create_directories()
+    (bench.apps_path / "myapp").mkdir()
     apps_txt = bench.sites_path / "apps.txt"
     apps_txt.write_text("frappe\nmyapp\nerpnext\n")
 
@@ -329,6 +333,7 @@ def test_remove_app_removes_from_apps_txt_missing_file(tmp_path: Path) -> None:
 
     bench = make_bench(tmp_path)
     bench.create_directories()
+    (bench.apps_path / "myapp").mkdir()
     # apps.txt does not exist — should not raise
 
     RemoveAppCommand(bench, "myapp")._remove_from_apps_txt()
@@ -384,6 +389,7 @@ def test_uninstall_app_raises_if_app_not_installed(tmp_path: Path) -> None:
 
     bench = make_bench(tmp_path)
     bench.create_directories()
+    (bench.apps_path / "myapp").mkdir()
     site_dir = bench.sites_path / "site1.localhost"
     site_dir.mkdir()
     (site_dir / "site_config.json").write_text("{}")
@@ -399,6 +405,7 @@ def test_uninstall_app_calls_site_uninstall_when_installed(tmp_path: Path) -> No
 
     bench = make_bench(tmp_path)
     bench.create_directories()
+    (bench.apps_path / "myapp").mkdir()
     site_dir = bench.sites_path / "site1.localhost"
     site_dir.mkdir()
     (site_dir / "site_config.json").write_text("{}")

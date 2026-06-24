@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List
 
 from bench_cli.config.bench_config import BenchConfig
+from bench_cli.exceptions import BenchError
 
 if TYPE_CHECKING:
     from bench_cli.core.app import App
@@ -61,6 +62,10 @@ class Bench:
         if not d.is_dir():
             # Try the hyphen variant so module names resolve to their folder.
             d = self.apps_path / name.replace("_", "-")
+
+        if not d.is_dir():
+            raise BenchError(f"App {name} not found in bench")
+
         return App(AppConfig(name=d.name, repo=self._git_remote(d), branch=self._git_branch(d)), self)
 
     def apps(self) -> List["App"]:
@@ -90,6 +95,7 @@ class Bench:
     def sites(self) -> List["Site"]:
         """Return all sites by scanning sites/ directory."""
         import json as _json
+
         from bench_cli.config.site_config import SiteConfig
         from bench_cli.core.site import Site
 

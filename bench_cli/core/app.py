@@ -141,9 +141,10 @@ class App:
         conventional = self.config.name.replace("-", "_")
         if (self.path / conventional / "hooks.py").exists():
             return conventional
-        for child in self.path.iterdir():
-            if child.is_dir() and (child / "hooks.py").exists():
-                return child.name
+        if self.path.is_dir():
+            for child in self.path.iterdir():
+                if child.is_dir() and (child / "hooks.py").exists():
+                    return child.name
         return conventional
 
     def build_assets(self) -> None:
