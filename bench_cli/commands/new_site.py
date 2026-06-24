@@ -97,9 +97,8 @@ class NewSiteCommand(Command):
         nginx_mgr.reload()
 
     def _validate(self) -> None:
-        from bench_cli.utils import host_owner
-
-        from bench_cli.utils import normalize_host
+        from bench_cli.core.domain_controller import DomainRouteProvider
+        from bench_cli.utils import host_owner, matches_wildcard, normalize_host
 
         if (self.bench.sites_path / self.name / "site_config.json").exists():
             raise BenchError(f"Site '{self.name}' already exists.")
@@ -114,6 +113,9 @@ class NewSiteCommand(Command):
                 f"Site '{self.name}' clashes with this bench's admin domain. "
                 f"An admin domain must not match a site domain."
             )
+        patterns = DomainRouteProvider.wildcard_domains(self.name)
+        if patterns and not matches_wildcard(self.name, patterns):
+            raise BenchError(f"Site name must match one of this bench's wildcard domains: {', '.join(patterns)}.")
         apps_txt = self.bench.sites_path / "apps.txt"
         installed = set(apps_txt.read_text().splitlines()) if apps_txt.exists() else set()
         for app in self.apps:

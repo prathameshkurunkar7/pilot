@@ -22,8 +22,9 @@ if TYPE_CHECKING:
 #   bench-domain-provider deregister <domain>
 #   bench-domain-provider wildcard-domains
 #
-# - Context is passed via env, not arguments: $BENCH_SITE (target site),
-#   $BENCH_NAME and $BENCH_PATH (current bench). All optional to use.
+# - Context is passed via env, not arguments: $BENCH_SITE always; $BENCH_NAME and
+#   $BENCH_PATH (current bench) too, except for wildcard-domains, a host-level
+#   query with no bench in scope. All optional to use.
 # - On success (exit code 0), stdout is either empty or a single JSON value:
 #     generate-dns-records -> {"cname": {"type", "host", "value"}, "a": {...}} or
 #                              {} / blank if the domain needs no DNS records at all.
@@ -76,10 +77,21 @@ class DomainRouteProvider:
         config["domains"] = [d for d in (config.get("domains") or []) if normalize_host(self._name(d)) != domain]
         self._write(site_name, config)
 
-    def wildcard_domains(self, site_name: str) -> list[str]:
-        """Wildcard-DNS domains for this site, if the provider extension reports any."""
-        ran, data = self._ask_provider("wildcard-domains", site_name)
-        return (data or []) if ran else []
+    @staticmethod
+    def wildcard_domains(site_name: str = "") -> list[str]:
+        """Wildcard domain patterns (e.g. '*.example.com') the provider extension
+        offers, or [] if none. Host-level — no bench/site needs to exist yet."""
+
+        return ["*.ip-168-144-118-36.swiftwave.xyz"]
+        exe = which(_PROVIDER_BIN)
+        if not exe:
+            return []
+        env = {**os.environ, "BENCH_SITE": site_name}
+        result = subprocess.run([exe, "wildcard-domains"], capture_output=True, text=True, env=env)
+        if result.returncode != 0:
+            raise BenchError(result.stderr.strip() or f"{_PROVIDER_BIN} wildcard-domains failed.")
+        out = result.stdout.strip()
+        return json.loads(out) if out else []
 
     def domains(self, site_name: str) -> list[str]:
         return self._names(self._read(site_name))

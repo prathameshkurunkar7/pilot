@@ -269,6 +269,18 @@ def create_app(bench_root: Path) -> Flask:
                 continue
         return jsonify(running)
 
+    @app.route("/api/benches/wildcard-domains", methods=["GET"])
+    def api_benches_wildcard_domains():
+        """Wildcard domain suffixes (no leading '*') new bench admin domains may be built from."""
+        from bench_cli.core.domain_controller import DomainRouteProvider
+        from bench_cli.utils import wildcard_suffix
+
+        try:
+            patterns = DomainRouteProvider.wildcard_domains()
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        return jsonify({"domains": [wildcard_suffix(p) for p in patterns]})
+
     @app.route("/api/benches/new", methods=["POST"])
     def api_benches_new():
         from bench_cli.utils import host_owner, normalize_host
@@ -304,6 +316,13 @@ def create_app(bench_root: Path) -> Flask:
             return jsonify({"error": f"Admin domain '{admin_domain}' is already used by bench '{owner}'."}), 400
         if normalize_host(admin_domain) == normalize_host(name):
             return jsonify({"error": "Admin domain must differ from the bench/site name."}), 400
+
+        from bench_cli.core.domain_controller import DomainRouteProvider
+        from bench_cli.utils import matches_wildcard
+
+        patterns = DomainRouteProvider.wildcard_domains(admin_domain)
+        if patterns and not matches_wildcard(admin_domain, patterns):
+            return jsonify({"error": f"Admin domain must match one of: {', '.join(patterns)}."}), 400
 
         # New benches from the UI come up plain HTTP; the user enables HTTPS
         # later from Settings (or the wizard). Never inherit a sibling's TLS here.

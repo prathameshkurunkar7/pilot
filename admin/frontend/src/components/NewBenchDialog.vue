@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, FormControl, Select } from 'frappe-ui'
 
 const PM_LABELS = { systemd: 'Systemd', openrc: 'OpenRC', supervisor: 'Supervisor' }
 
@@ -17,6 +17,9 @@ const name = ref('')
 const nativeProcessManager = ref('systemd')
 const processManager = ref('systemd')
 const adminDomain = ref('')
+const adminPrefix = ref('')
+const wildcardDomains = ref([])
+const selectedSuffix = ref('')
 const error = ref('')
 const creating = ref(false)
 const status = ref('')
@@ -50,15 +53,36 @@ async function loadMode() {
   }
 }
 
+async function loadWildcardDomains() {
+  try {
+    const response = await fetch('/api/benches/wildcard-domains')
+    const data = await response.json()
+    wildcardDomains.value = data.domains || []
+    selectedSuffix.value = wildcardDomains.value[0] || ''
+  } catch {
+    wildcardDomains.value = []
+  }
+}
+
+// In wildcard mode the visible field is just the prefix; keep adminDomain (what
+// createBench() actually submits) assembled from prefix + chosen suffix.
+watch([adminPrefix, selectedSuffix], () => {
+  if (wildcardDomains.value.length > 0) {
+    adminDomain.value = `${adminPrefix.value.trim()}${selectedSuffix.value}`
+  }
+})
+
 watch(show, (open) => {
   if (!open) return
   name.value = ''
   processManager.value = nativeProcessManager.value
   adminDomain.value = ''
+  adminPrefix.value = ''
   error.value = ''
   creating.value = false
   status.value = ''
   loadMode()
+  loadWildcardDomains()
 })
 
 // Wait for the new bench's setup-wizard server to come up, then send the user
@@ -172,6 +196,7 @@ async function createBench() {
           </div>
           <div>
             <FormControl
+              v-if="wildcardDomains.length === 0"
               label="Admin domain"
               type="text"
               v-model="adminDomain"
@@ -179,6 +204,22 @@ async function createBench() {
               @input="error = ''"
               @keyup.enter="createBench"
             />
+            <div v-else>
+              <span class="mb-1.5 block text-xs text-ink-gray-5">Admin domain</span>
+              <div class="flex items-stretch gap-2">
+                <FormControl
+                  class="min-w-0 flex-1"
+                  type="text"
+                  v-model="adminPrefix"
+                  placeholder="my-admin"
+                  @input="error = ''"
+                  @keyup.enter="createBench"
+                />
+                <Select v-if="wildcardDomains.length > 1" class="w-48 shrink-0" v-model="selectedSuffix"
+                  :options="wildcardDomains.map(d => ({ label: d, value: d }))" />
+                <span v-else class="flex shrink-0 items-center whitespace-nowrap text-sm text-ink-gray-6">{{ wildcardDomains[0] }}</span>
+              </div>
+            </div>
             <p class="mt-1.5 text-xs text-ink-gray-5">
               The web address you'll use to open this bench.
             </p>

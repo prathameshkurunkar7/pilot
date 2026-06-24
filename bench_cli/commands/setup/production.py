@@ -170,7 +170,8 @@ class SetupProductionCommand(Command):
         """Admin is reached only via its domain in production. Use whatever is in
         bench.toml (validate() enforces it is present); just reject a domain that
         another bench already claims."""
-        from bench_cli.utils import normalize_host
+        from bench_cli.core.domain_controller import DomainRouteProvider
+        from bench_cli.utils import matches_wildcard, normalize_host
 
         domain = self.bench.config.admin.domain
         if not domain:
@@ -185,6 +186,9 @@ class SetupProductionCommand(Command):
                     f"Admin domain '{domain}' conflicts with this bench's own site '{site.config.name}'. "
                     f"An admin domain must not match a site domain."
                 )
+        patterns = DomainRouteProvider.wildcard_domains(domain)
+        if patterns and not matches_wildcard(domain, patterns):
+            raise BenchError(f"Admin domain must match one of this bench's wildcard domains: {', '.join(patterns)}.")
 
     def _persist(self, updates: dict) -> None:
         """Merge ``updates`` into bench.toml in place, preserving all other fields."""

@@ -107,6 +107,19 @@ def site_apps(name: str):
     return jsonify({"apps": result})
 
 
+@sites_bp.route("/wildcard-domains", methods=["GET"])
+def wildcard_domains():
+    """Wildcard domain suffixes (no leading '*') new site names may be built from."""
+    from bench_cli.core.domain_controller import DomainRouteProvider
+    from bench_cli.utils import wildcard_suffix
+
+    try:
+        patterns = DomainRouteProvider.wildcard_domains()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"domains": [wildcard_suffix(p) for p in patterns]})
+
+
 @sites_bp.route("/create", methods=["POST"])
 def create():
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -656,6 +669,13 @@ def _new_site_name_error(bench_root: Path, name: str) -> str | None:
         admin_domain = ""
     if admin_domain and normalize_host(name) == normalize_host(admin_domain):
         return f"Site '{name}' clashes with this bench's admin domain. An admin domain must not match a site domain."
+
+    from bench_cli.core.domain_controller import DomainRouteProvider
+    from bench_cli.utils import matches_wildcard
+
+    patterns = DomainRouteProvider.wildcard_domains(name)
+    if patterns and not matches_wildcard(name, patterns):
+        return f"Site name must match one of this bench's wildcard domains: {', '.join(patterns)}."
     return None
 
 
