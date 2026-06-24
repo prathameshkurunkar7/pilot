@@ -19,42 +19,56 @@ export function useTaskStream({ guardHiddenTab = false } = {}) {
 
   // start() does NOT clear lines — caller clears if needed (Setup resets on each
   // run; TaskDetail appends to lines already loaded by its REST fetch).
+  const MAX_RETRIES = 5
+
   function start(url, { onDone, onLine, onError } = {}) {
     if (es) { es.close(); es = null }
     streaming.value = true
     let volatile = false
+    let retries = 0
 
-    es = new EventSource(url)
-    es.onmessage = (e) => {
-      const raw = e.data
-      if (volatile) { rawLines.value.pop(); lines.value.pop(); volatile = false }
-      rawLines.value.push(raw)
-      lines.value.push(processLine(raw))
-      onLine?.(raw)
-      scrollToBottom()
-    }
-    es.addEventListener('overwrite', (e) => {
-      const raw = e.data
-      if (volatile) {
-        rawLines.value[rawLines.value.length - 1] = raw
-        lines.value[lines.value.length - 1] = processLine(raw)
-      } else {
+    function open() {
+      es = new EventSource(url)
+      es.onmessage = (e) => {
+        retries = 0
+        const raw = e.data
+        if (volatile) { rawLines.value.pop(); lines.value.pop(); volatile = false }
         rawLines.value.push(raw)
         lines.value.push(processLine(raw))
-        volatile = true
+        onLine?.(raw)
+        scrollToBottom()
       }
-      scrollToBottom()
-    })
-    es.addEventListener('done', (e) => {
-      streaming.value = false
-      es.close(); es = null
-      onDone?.(parseInt(e.data) === 0)
-    })
-    es.onerror = () => {
-      streaming.value = false
-      if (es) { es.close(); es = null }
-      onError?.()
+      es.addEventListener('overwrite', (e) => {
+        retries = 0
+        const raw = e.data
+        if (volatile) {
+          rawLines.value[rawLines.value.length - 1] = raw
+          lines.value[lines.value.length - 1] = processLine(raw)
+        } else {
+          rawLines.value.push(raw)
+          lines.value.push(processLine(raw))
+          volatile = true
+        }
+        scrollToBottom()
+      })
+      es.addEventListener('done', (e) => {
+        streaming.value = false
+        es.close(); es = null
+        onDone?.(parseInt(e.data) === 0)
+      })
+      es.onerror = () => {
+        if (es) { es.close(); es = null }
+        if (retries < MAX_RETRIES) {
+          retries++
+          setTimeout(open, 1000 * retries)
+        } else {
+          streaming.value = false
+          onError?.()
+        }
+      }
     }
+
+    open()
   }
 
   function stop() {
