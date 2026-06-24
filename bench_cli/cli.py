@@ -93,14 +93,18 @@ def main() -> None:
     # Parse with the bench flag stripped so -b/--bench works after the subcommand too.
     parser = registry.build_parser()
     args = parser.parse_args(remaining)
-    loader.set_active_bench(bench_name)
+    if bench_name != "all":
+        loader.set_active_bench(bench_name)
 
     import time
 
     verbose = getattr(args, "verbose", False)
     _t0 = time.monotonic()
     try:
-        registry.dispatch(args, parser)
+        if bench_name == "all":
+            registry.dispatch_all(args, parser)
+        else:
+            registry.dispatch(args, parser)
     except BenchError as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)

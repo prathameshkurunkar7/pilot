@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 class RunCommand(Command):
     name = "start"
     help = "Start all bench processes."
+    supports_all_benches = True
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:

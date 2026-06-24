@@ -19,6 +19,7 @@ _DEV_MESSAGE = (
 class RestartCommand(Command):
     name = "restart"
     help = "Restart the production workload (production mode only)."
+    supports_all_benches = True
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:

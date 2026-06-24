@@ -30,6 +30,8 @@ class Command:
     requires_bench: ClassVar[bool] = True
     #: If True, require -b/--bench or running inside the bench dir (no auto-pick).
     requires_explicit_bench: ClassVar[bool] = False
+    #: If True, `-b all` runs this command once per production-managed bench.
+    supports_all_benches: ClassVar[bool] = False
 
     def __init__(self, bench: "Bench | None" = None) -> None:
         self.bench = bench
