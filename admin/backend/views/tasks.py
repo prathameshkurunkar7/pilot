@@ -66,14 +66,21 @@ def stream_task_output(task_id: str):
     bench_root = current_app.config["BENCH_ROOT"]
     reader = TaskReader(bench_root)
 
+    try:
+        skip = int(request.headers.get("Last-Event-ID", 0))
+    except ValueError:
+        skip = 0
+
     def generate():
-        for line in reader.stream_output(task_id):
+        for event_id, line in enumerate(reader.stream_output(task_id), start=1):
+            if event_id <= skip:
+                continue
             if line.startswith("__DONE__:"):
-                yield f"event: done\ndata: {line[9:]}\n\n"
+                yield f"id: {event_id}\nevent: done\ndata: {line[9:]}\n\n"
             elif line.startswith("__CR__:"):
-                yield f"event: overwrite\ndata: {line[7:]}\n\n"
+                yield f"id: {event_id}\nevent: overwrite\ndata: {line[7:]}\n\n"
             else:
-                yield f"data: {line}\n\n"
+                yield f"id: {event_id}\ndata: {line}\n\n"
 
     return Response(
         stream_with_context(generate()),
