@@ -376,7 +376,7 @@ def test_uninstall_app_raises_if_site_not_found(tmp_path: Path) -> None:
     bench.create_directories()
 
     with pytest.raises(BenchError, match="does not exist"):
-        UninstallAppCommand(bench, "site1.localhost", "myapp").run()
+        UninstallAppCommand(bench, "site1.localhost", ["myapp"]).run()
 
 
 def test_uninstall_app_raises_if_app_not_installed(tmp_path: Path) -> None:
@@ -388,7 +388,7 @@ def test_uninstall_app_raises_if_app_not_installed(tmp_path: Path) -> None:
     site_dir.mkdir()
     (site_dir / "site_config.json").write_text("{}")
 
-    cmd = UninstallAppCommand(bench, "site1.localhost", "myapp")
+    cmd = UninstallAppCommand(bench, "site1.localhost", ["myapp"])
     with patch("bench_cli.core.site.Site.list_apps", return_value=["frappe"]):
         with pytest.raises(BenchError, match="not installed"):
             cmd.run()
@@ -403,11 +403,11 @@ def test_uninstall_app_calls_site_uninstall_when_installed(tmp_path: Path) -> No
     site_dir.mkdir()
     (site_dir / "site_config.json").write_text("{}")
 
-    cmd = UninstallAppCommand(bench, "site1.localhost", "myapp")
+    cmd = UninstallAppCommand(bench, "site1.localhost", ["myapp"])
     with patch("bench_cli.core.site.Site.list_apps", return_value=["frappe", "myapp"]), \
          patch("bench_cli.core.site.Site.uninstall_app") as mock_uninstall:
         cmd.run()
-        mock_uninstall.assert_called_once_with("myapp")
+        mock_uninstall.assert_called_once()
 
 
 # ── FrappeCommand ─────────────────────────────────────────────────────────────
