@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from typing import TYPE_CHECKING
 
 from bench_cli.commands.base import Command
@@ -19,8 +20,21 @@ class RestartCommand(Command):
     name = "restart"
     help = "Restart the production workload (production mode only)."
 
-    def __init__(self, bench: "Bench") -> None:
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--admin",
+            action="store_true",
+            help="Also restart the admin control plane, if it's installed.",
+        )
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, admin=args.admin)
+
+    def __init__(self, bench: "Bench", admin: bool = False) -> None:
         self.bench = bench
+        self.admin = admin
 
     def run(self) -> None:
         if not self.bench.config.production.enabled:
@@ -37,6 +51,8 @@ class RestartCommand(Command):
         manager.generate_config()
         manager.reload()
         manager.restart()
+        if self.admin:
+            manager.restart_admin()
 
 
 def _incomplete_message(bench: "Bench") -> str:

@@ -128,6 +128,13 @@ class OpenRCProcessManager(ProcessManager):
         for service in self._workload_service_names():
             run_command(service_command("restart", service))
 
+    def restart_admin(self) -> None:
+        """Restart admin services that are installed, so on-disk code/asset
+        changes (e.g. a rebuilt UI) take effect immediately."""
+        for service in self._admin_service_names():
+            if (self.init_d_dir / service).exists():
+                run_command(service_command("restart", service))
+
     def remove_services(self) -> None:
         """Stop, disable and unlink every service this bench owns (workload +
         admin). Best-effort; the scripts under config/openrc stay on disk."""

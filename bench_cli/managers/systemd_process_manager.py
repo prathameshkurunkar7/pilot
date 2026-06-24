@@ -224,6 +224,15 @@ class SystemdProcessManager(ProcessManager):
     def restart(self) -> None:
         run_command(self._systemctl("restart", self._target_name()), env=self._systemctl_env())
 
+    def restart_admin(self) -> None:
+        """Restart the admin unit if it's installed, so on-disk code/asset
+        changes (e.g. a rebuilt UI) take effect without waiting for the next
+        socket activation."""
+        service = self._unit_name("admin")
+        if not (self.user_unit_dir / service).exists():
+            return
+        run_command(self._systemctl("restart", service), env=self._systemctl_env())
+
     def is_running(self) -> bool:
         try:
             result = subprocess.run(
