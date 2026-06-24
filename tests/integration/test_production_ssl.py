@@ -65,7 +65,7 @@ pytestmark = pytest.mark.integration
 def _missing_tooling() -> str | None:
     if os.environ.get("BENCH_E2E_PRODUCTION") != "1":
         return "BENCH_E2E_PRODUCTION != 1 (destructive: installs services, rewrites nginx)"
-    for tool in ("openssl", "nginx", "sudo", "uv"):
+    for tool in ("openssl", "nginx", "sudo"):
         if shutil.which(tool) is None:
             return f"required tool '{tool}' not on PATH"
     return None
