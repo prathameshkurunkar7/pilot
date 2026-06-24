@@ -12,6 +12,8 @@ import LucideTrash2 from '~icons/lucide/trash-2'
 import LucideTriangleAlert from '~icons/lucide/triangle-alert'
 import LucideRefreshCw from '~icons/lucide/refresh-cw'
 import LucidePlus from '~icons/lucide/plus'
+import LucideCheck from '~icons/lucide/check'
+import LucideStar from '~icons/lucide/star'
 
 const route = useRoute()
 const router = useRouter()
@@ -83,6 +85,109 @@ async function enableSsl(email) {
     else sslError.value = e.message
   } finally {
     sslLoading.value = false
+  }
+}
+
+const domains = ref([])
+const primaryDomain = ref(null)
+const newDomain = ref('')
+const domainLoading = ref('')
+const domainError = ref('')
+const showAddDomain = ref(false)
+
+const domainColumns = [
+  { label: 'Domain', key: 'domain', align: 'left', width: 3 },
+  { label: 'Status', key: 'status', align: 'left', width: 1 },
+  { label: 'Primary', key: 'primary', align: 'center', width: 1 },
+  { label: '', key: 'actions', align: 'right', width: '3rem' },
+]
+
+const domainRows = computed(() => {
+  // The site name is the canonical default — primary whenever no explicit primary is set.
+  const rows = [{ name: siteName, domain: siteName, isSite: true, isPrimary: !primaryDomain.value || primaryDomain.value === siteName }]
+  for (const d of domains.value) {
+    rows.push({ name: d, domain: d, isPrimary: primaryDomain.value === d })
+  }
+  return rows
+})
+
+function domainMenuOptions(row) {
+  const options = []
+  // The primary domain can't be removed and is already primary — make another primary first.
+  if (!row.isPrimary) {
+    options.push({ label: 'Make primary', icon: LucideStar, onClick: () => setPrimary(row.domain) })
+    if (!row.isSite) {
+      options.push({ label: 'Delete', icon: LucideTrash2, theme: 'red', onClick: () => removeDomain(row.domain) })
+    }
+  }
+  return options
+}
+
+function openAddDomain() {
+  newDomain.value = ''
+  domainError.value = ''
+  showAddDomain.value = true
+}
+
+async function loadDomains() {
+  try {
+    const res = await fetch(`/api/sites/${siteName}/domains`)
+    const d = await res.json()
+    domains.value = d.domains || []
+    primaryDomain.value = d.primary || null
+  } catch (e) {
+    domainError.value = e.message
+  }
+}
+
+async function domainRequest(method, body) {
+  domainError.value = ''
+  const res = await fetch(`/api/sites/${siteName}/domains`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const d = await res.json()
+  if (!d.ok) { domainError.value = d.error; return false }
+  // Dismiss the dialog before navigating to the task page, else it lingers on top.
+  newDomain.value = ''
+  showAddDomain.value = false
+  await loadDomains()
+  if (d.task_id) watchTask(d.task_id)
+  return true
+}
+
+async function addDomain() {
+  const domain = newDomain.value.trim()
+  if (!domain) return
+  domainLoading.value = 'add'
+  try {
+    await domainRequest('POST', { domain })
+  } finally {
+    domainLoading.value = ''
+  }
+}
+
+async function removeDomain(domain) {
+  domainLoading.value = domain
+  try { await domainRequest('DELETE', { domain }) } finally { domainLoading.value = '' }
+}
+
+async function setPrimary(domain) {
+  domainError.value = ''
+  domainLoading.value = `primary:${domain || ''}`
+  try {
+    const res = await fetch(`/api/sites/${siteName}/domains/primary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain }),
+    })
+    const d = await res.json()
+    if (!d.ok) { domainError.value = d.error; return }
+    await loadDomains()
+    if (d.task_id) watchTask(d.task_id)
+  } finally {
+    domainLoading.value = ''
   }
 }
 
@@ -236,15 +341,17 @@ async function loadAppDetails() {
   finally { appDetailsLoading.value = false }
 }
 
-const TAB_SLUGS = ['apps', 'config', 'backups', 'actions']
-const tabs = [
+// Domains is production-only — it only routes through nginx.
+const tabs = computed(() => [
   { label: 'Apps' },
   { label: 'Config' },
   { label: 'Backups' },
+  ...(nginxEnabled.value ? [{ label: 'Domains' }] : []),
   { label: 'Actions' },
-]
+])
+const TAB_SLUGS = computed(() => tabs.value.map((t) => t.label.toLowerCase()))
 const initialHash = route.hash.slice(1).toLowerCase()
-const initialIdx = TAB_SLUGS.indexOf(initialHash)
+const initialIdx = TAB_SLUGS.value.indexOf(initialHash)
 const activeTab = ref(initialIdx >= 0 ? initialIdx : 0)
 
 // ── Backups tab ──────────────────────────────────────────────────────────────
@@ -358,12 +465,12 @@ async function deleteBackupSet() {
 }
 
 watch(activeTab, (idx) => {
-  router.replace({ hash: `#${TAB_SLUGS[idx]}` })
-  if (tabs[idx]?.label === 'Apps' && !appsTabLoaded.value) {
+  router.replace({ hash: `#${TAB_SLUGS.value[idx]}` })
+  if (tabs.value[idx]?.label === 'Apps' && !appsTabLoaded.value) {
     appsTabLoaded.value = true
     loadAppDetails()
   }
-  if (tabs[idx]?.label === 'Backups' && !backupsTabLoaded.value) {
+  if (tabs.value[idx]?.label === 'Backups' && !backupsTabLoaded.value) {
     backupsTabLoaded.value = true
     loadBackups()
     loadSchedule()
@@ -518,6 +625,7 @@ async function load() {
     nginxEnabled.value = d.nginx_enabled ?? false
     adminTls.value = d.admin_tls ?? false
     installable.value = d.installable_apps
+    if (nginxEnabled.value) loadDomains()
   } catch (e) {
     error.value = e.message
   } finally {
@@ -591,11 +699,11 @@ async function forceDrop() {
 onMounted(() => {
   load()
   loadRegistry()
-  if (tabs[activeTab.value]?.label === 'Apps') {
+  if (tabs.value[activeTab.value]?.label === 'Apps') {
     appsTabLoaded.value = true
     loadAppDetails()
   }
-  if (tabs[activeTab.value]?.label === 'Backups') {
+  if (tabs.value[activeTab.value]?.label === 'Backups') {
     backupsTabLoaded.value = true
     loadBackups()
     loadSchedule()
@@ -793,6 +901,44 @@ onMounted(() => {
                     {{ item }}</div>
                 </template>
               </ListView>
+            </div>
+
+            <!-- Domains -->
+            <div v-else-if="tab.label === 'Domains'" class="flex flex-col">
+              <div class="flex items-center justify-between px-4 py-2.5">
+                <h3 class="text-sm font-semibold text-ink-gray-9">Domains</h3>
+                <Button variant="ghost" size="sm" @click="openAddDomain">
+                  <template #prefix>
+                    <LucidePlus class="h-4 w-4" />
+                  </template>
+                  Add Domain
+                </Button>
+              </div>
+              <div class="mx-4 border-b border-outline-gray-1" />
+              <ListView class="px-2 pb-2" :columns="domainColumns" :rows="domainRows" row-key="name"
+                :options="{ selectable: false, showTooltip: false, rowHeight: 44 }">
+                <template #cell="{ column, row, item }">
+                  <div v-if="column.key === 'actions'" class="flex w-full justify-end">
+                    <Dropdown v-if="domainMenuOptions(row).length" :options="domainMenuOptions(row)" placement="left">
+                      <template #default="{ open }">
+                        <Button variant="ghost" size="sm" :active="open">
+                          <template #icon>
+                            <LucideMoreVertical class="h-4 w-4" />
+                          </template>
+                        </Button>
+                      </template>
+                    </Dropdown>
+                  </div>
+                  <div v-else-if="column.key === 'status'" class="w-full">
+                    <Badge label="Active" theme="green" />
+                  </div>
+                  <div v-else-if="column.key === 'primary'" class="flex w-full justify-center">
+                    <LucideCheck v-if="row.isPrimary" class="h-4 w-4 text-ink-green-3" />
+                  </div>
+                  <div v-else class="w-full truncate text-sm font-medium text-ink-gray-8">{{ item }}</div>
+                </template>
+              </ListView>
+              <ErrorMessage v-if="domainError" :message="domainError" class="px-4 pb-2" />
             </div>
 
             <!-- Actions -->
@@ -1008,6 +1154,46 @@ onMounted(() => {
             <Button variant="ghost" @click="showConfigEntry = false">Cancel</Button>
             <Button variant="solid" :loading="configSaving" @click="saveConfigEntry">Save</Button>
           </div>
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- Add domain dialog -->
+    <Dialog v-model="showAddDomain" :options="{ title: 'Add Domain', size: '2xl' }">
+      <template #body-content>
+        <div @pointerdown.stop class="flex flex-col gap-4">
+          <p class="text-base leading-relaxed text-ink-gray-6">
+            To add a custom domain, you must already own it. If you don't have one, buy it and come back here.
+          </p>
+          <FormControl label="Domain" type="text" v-model="newDomain" placeholder="www.example.com"
+            @keydown.enter="addDomain" />
+          <div>
+            <p class="text-sm font-medium text-ink-gray-7">Add this DNS record at your domain provider</p>
+            <div class="mt-2 overflow-hidden rounded-lg border border-outline-gray-2">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="bg-surface-gray-2 text-left text-xs font-medium uppercase tracking-wide text-ink-gray-5">
+                    <th class="px-3 py-2">Type</th>
+                    <th class="px-3 py-2">Host</th>
+                    <th class="px-3 py-2">Points to</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8">CNAME</td>
+                    <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">
+                      {{ newDomain.trim() || 'www.example.com' }}
+                    </td>
+                    <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ siteName }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="mt-2 text-xs text-ink-gray-5">DNS changes can take a few minutes to propagate.</p>
+          </div>
+          <ErrorMessage :message="domainError" />
+          <Button class="w-full" variant="solid" :loading="domainLoading === 'add'" :disabled="!newDomain.trim()"
+            @click="addDomain">Verify DNS</Button>
         </div>
       </template>
     </Dialog>

@@ -268,8 +268,8 @@ class NginxManager:
             + self._render_error_pages()
             + self._render_assets_location()
             + self._render_files_location(site)
-            + self._render_socketio_location(socketio_port)
-            + self._render_proxy_location(bench_name)
+            + self._render_socketio_location(socketio_port, site.name)
+            + self._render_proxy_location(bench_name, site)
             + f"}}\n"
         )
 
@@ -329,8 +329,8 @@ class NginxManager:
             + self._render_error_pages()
             + self._render_assets_location()
             + self._render_files_location(site)
-            + self._render_socketio_location(socketio_port)
-            + self._render_proxy_location(bench_name)
+            + self._render_socketio_location(socketio_port, site.name)
+            + self._render_proxy_location(bench_name, site)
             + f"}}\n"
         )
 
@@ -351,30 +351,43 @@ class NginxManager:
             f"    }}\n\n"
         )
 
-    def _render_socketio_location(self, socketio_port: int) -> str:
+    def _render_socketio_location(self, socketio_port: int, site_name: str) -> str:
+        # X-Frappe-Site-Name must be the site's real directory name, not $host:
+        # a custom domain (host) differs from it and Frappe resolves the site by
+        # this header. Host stays $host for URL building / host_name redirects.
         return (
             f"    location /socket.io {{\n"
             f"        proxy_pass         http://127.0.0.1:{socketio_port};\n"
             f"        proxy_http_version 1.1;\n"
             f"        proxy_set_header   Upgrade $http_upgrade;\n"
             f'        proxy_set_header   Connection "upgrade";\n'
-            f"        proxy_set_header   X-Frappe-Site-Name $host;\n"
+            f"        proxy_set_header   X-Frappe-Site-Name {site_name};\n"
             f"        proxy_set_header   Origin $scheme://$http_host;\n"
             f"        proxy_set_header   Host $host;\n"
             f"    }}\n\n"
         )
 
-    def _render_proxy_location(self, bench_name: str) -> str:
+    def _render_proxy_location(self, bench_name: str, site: "SiteConfig") -> str:
+        # Send every non-primary host to the canonical (primary) domain. Scoped to
+        # location / so /.well-known/acme-challenge/ (its own location) still works.
+        redirect = ""
+        if len(site.all_domains) > 1:
+            redirect = (
+                f'        if ($host != "{site.primary}") {{\n'
+                f"            return 301 $scheme://{site.primary}$request_uri;\n"
+                f"        }}\n"
+            )
         return (
             f"    location / {{\n"
-            f"        proxy_pass         http://bench-{bench_name};\n"
+            + redirect
+            + f"        proxy_pass         http://bench-{bench_name};\n"
             f"        proxy_read_timeout 120;\n"
             f"        proxy_redirect     off;\n"
             f"        proxy_set_header   Host               $host;\n"
             f"        proxy_set_header   X-Real-IP          $remote_addr;\n"
             f"        proxy_set_header   X-Forwarded-For    $proxy_add_x_forwarded_for;\n"
             f"        proxy_set_header   X-Forwarded-Proto  $scheme;\n"
-            f"        proxy_set_header   X-Frappe-Site-Name $host;\n"
+            f"        proxy_set_header   X-Frappe-Site-Name {site.name};\n"
             f"    }}\n"
         )
 

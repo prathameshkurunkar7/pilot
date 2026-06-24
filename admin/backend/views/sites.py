@@ -18,7 +18,7 @@ sites_bp = Blueprint("sites", __name__)
 
 # Confidential / system-managed site_config keys. These are never sent to the
 # admin UI and cannot be edited through it — they are preserved as-is on disk.
-PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl"})
+PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl", "domains", "host_name"})
 
 
 @sites_bp.route("/")
@@ -448,6 +448,69 @@ def enable_ssl(name: str):
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})
+
+
+def _domain_controller(bench_root: Path, name: str):
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.core.bench import Bench
+    from bench_cli.core.domain_controller import DomainController
+
+    bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
+    return DomainController(bench, name)
+
+
+def _apply_domains(bench_root: Path, name: str) -> str:
+    """Re-run the right task so nginx (and certs, for SSL sites) pick up the change."""
+    import json
+
+    ssl = bool(json.loads((bench_root / "sites" / name / "site_config.json").read_text()).get("ssl"))
+    return TaskRunner(bench_root).run("setup-letsencrypt" if ssl else "setup-nginx", {})
+
+
+@sites_bp.route("/<name>/domains", methods=["GET"])
+def list_domains(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        controller = _domain_controller(bench_root, name)
+        return jsonify({"domains": controller.domains(), "primary": controller.primary()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@sites_bp.route("/<name>/domains", methods=["POST"])
+def add_domain(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
+    if err := validate_site_name(domain):
+        return jsonify({"ok": False, "error": err})
+    try:
+        _domain_controller(bench_root, name).add(domain)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "task_id": _apply_domains(bench_root, name)})
+
+
+@sites_bp.route("/<name>/domains", methods=["DELETE"])
+def remove_domain(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
+    try:
+        _domain_controller(bench_root, name).remove(domain)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "task_id": _apply_domains(bench_root, name)})
+
+
+@sites_bp.route("/<name>/domains/primary", methods=["POST"])
+def set_primary_domain(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip() or None
+    try:
+        _domain_controller(bench_root, name).set_primary(domain)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    # nginx redirects non-primary hosts to the primary, so regenerate it.
+    return jsonify({"ok": True, "task_id": _apply_domains(bench_root, name)})
 
 
 @sites_bp.route("/<name>/config", methods=["PATCH"])

@@ -65,8 +65,12 @@ class LetsEncryptManager:
         from bench_cli.managers.nginx_manager import NginxManager
 
         nginx_manager = NginxManager(self.bench)
-        if nginx_manager.cert_exists(site) and not self._is_near_expiry(site):
-            print(f"Certificate for {site.name} already exists and is not near expiry. Skipping.")
+        if (
+            nginx_manager.cert_exists(site)
+            and not self._is_near_expiry(site)
+            and self._cert_covers(nginx_manager.cert_path(site), site.all_domains)
+        ):
+            print(f"Certificate for {site.name} already covers all domains and is not near expiry. Skipping.")
             return
 
         domain_args = []
@@ -81,6 +85,8 @@ class LetsEncryptManager:
             "--webroot",
             "-w", webroot_path,
             *domain_args,
+            "--cert-name", site.name,
+            "--expand",
             "--email", email,
             "--agree-tos",
             "--non-interactive",
@@ -120,6 +126,20 @@ class LetsEncryptManager:
 
     def renew(self) -> None:
         run_command(_privileged(["certbot", "renew", "--quiet"]))
+
+    def _cert_covers(self, cert_file: Path, domains: list[str]) -> bool:
+        """True if the on-disk cert's SAN list already includes every domain."""
+        import subprocess
+
+        result = subprocess.run(
+            _privileged(["openssl", "x509", "-noout", "-ext", "subjectAltName", "-in", str(cert_file)]),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return False
+        sans = {token.strip().removeprefix("DNS:") for token in result.stdout.replace(",", " ").split()}
+        return all(domain in sans for domain in domains)
 
     def _is_near_expiry(self, site: "SiteConfig") -> bool:
         from bench_cli.managers.nginx_manager import NginxManager
