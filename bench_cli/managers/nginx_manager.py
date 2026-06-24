@@ -196,6 +196,10 @@ class NginxManager:
     def _render_catchall(self, http_port: int, https_port: int, error_dir: Path) -> str:
         directives = "".join(f"    error_page {code} /_errors/{code}.html;\n" for code in _ERROR_PAGES)
         return (
+            # 256 fits any single server_name (DNS names max out at 253 chars); the
+            # stock 64-byte bucket overflows on long custom/wildcard domains. Set once
+            # here in the shared default conf — a per-bench copy would be a duplicate.
+            "server_names_hash_bucket_size 256;\n\n"
             "server {\n"
             f"    listen {http_port} default_server;\n"
             f"    listen [::]:{http_port} default_server;\n"
