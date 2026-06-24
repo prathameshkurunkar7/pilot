@@ -75,7 +75,11 @@ def stream_task_output(task_id: str):
             else:
                 yield f"data: {line}\n\n"
 
-    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"X-Accel-Buffering": "no"},
+    )
 
 
 @tasks_bp.route("/run", methods=["POST"])
