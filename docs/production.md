@@ -66,7 +66,7 @@ A bench can offer wildcard domain patterns (e.g. `*.example.com`, or a per-host 
 
 ### `bench-domain-provider` extension
 
-All of the above is this bench's own implementation. If a `bench-domain-provider` executable is found on `PATH` (e.g. installed by a managed/cloud hosting platform), it takes over entirely instead — see `#### DomainRouteProvider` for the CLI contract it must implement.
+All of the above is this bench's own implementation. If a `bench-domain-provider` executable is found on `PATH` (e.g. installed by a managed/cloud hosting platform), it takes over entirely instead. See [domain-provider.md](domain-provider.md) for the CLI contract it must implement.
 
 ---
 
@@ -589,16 +589,7 @@ class DomainRouteProvider:
         """
 ```
 
-If a `bench-domain-provider` executable is on `PATH`, every method above except `wildcard_domains` (a static, host-level query) delegates to it instead of touching `site_config.json`:
-
-| Invocation | stdout (JSON) on success |
-|---|---|
-| `bench-domain-provider generate-dns-records <domain>` | `{"cname": {...}, "a": {...}}`, or blank/`{}` if no DNS record is needed |
-| `bench-domain-provider register <domain>` | ignored; blank is fine |
-| `bench-domain-provider deregister <domain>` | ignored; blank is fine |
-| `bench-domain-provider wildcard-domains` | a JSON list of patterns, or blank for none |
-
-The target site is passed via `$BENCH_SITE`; `register`/`deregister`/`generate-dns-records` also get `$BENCH_NAME`/`$BENCH_PATH` for the current bench (`wildcard-domains` doesn't — it's host-level). All three are optional for the extension to use. On failure, the extension exits non-zero and writes a message to stderr, which becomes the error shown to the user.
+If a `bench-domain-provider` executable is on `PATH`, every method above except `wildcard_domains` (a static, host-level query) delegates to it instead of touching `site_config.json`. The CLI contract that extension must implement — verbs, env, stdout, exit codes — is documented in [domain-provider.md](domain-provider.md).
 
 ### New commands
 
