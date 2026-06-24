@@ -94,6 +94,7 @@ const domainError = ref('')
 const showAddDomain = ref(false)
 const domainStep = ref('input') // 'input' | 'records'
 const dnsRecords = ref(null)
+const hasDnsRecords = computed(() => !!dnsRecords.value?.cname?.host)
 
 const domainColumns = [
   { label: 'Domain', key: 'domain', align: 'left', width: 3 },
@@ -1184,54 +1185,64 @@ onMounted(() => {
               @click="continueAddDomain">Continue</Button>
           </template>
           <template v-else>
-            <p class="text-sm text-ink-gray-6">
-              Add <span class="font-medium text-ink-gray-7">either one</span> of these records at your domain provider — any one will work.
-            </p>
-            <div>
-              <p class="text-sm font-medium text-ink-gray-7">Option 1: CNAME record</p>
-              <div class="mt-2 overflow-hidden rounded-lg border border-outline-gray-2">
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="bg-surface-gray-2 text-left text-xs font-medium uppercase tracking-wide text-ink-gray-5">
-                      <th class="px-3 py-2">Type</th>
-                      <th class="px-3 py-2">Host</th>
-                      <th class="px-3 py-2">Points to</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8">CNAME</td>
-                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.cname?.host }}</td>
-                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.cname?.value }}</td>
-                    </tr>
-                  </tbody>
-                </table>
+            <template v-if="hasDnsRecords">
+              <p class="text-sm text-ink-gray-6">
+                Add <span class="font-medium text-ink-gray-7">either one</span> of these records at your domain provider — any one will work.
+              </p>
+              <div>
+                <p class="text-sm font-medium text-ink-gray-7">Option 1: CNAME record</p>
+                <div class="mt-2 overflow-hidden rounded-lg border border-outline-gray-2">
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="bg-surface-gray-2 text-left text-xs font-medium uppercase tracking-wide text-ink-gray-5">
+                        <th class="px-3 py-2">Type</th>
+                        <th class="px-3 py-2">Host</th>
+                        <th class="px-3 py-2">Points to</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8">CNAME</td>
+                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.cname?.host }}</td>
+                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.cname?.value }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-            <div v-if="dnsRecords?.a?.value">
-              <p class="text-sm font-medium text-ink-gray-7">Option 2: A record</p>
-              <div class="mt-2 overflow-hidden rounded-lg border border-outline-gray-2">
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="bg-surface-gray-2 text-left text-xs font-medium uppercase tracking-wide text-ink-gray-5">
-                      <th class="px-3 py-2">Type</th>
-                      <th class="px-3 py-2">Host</th>
-                      <th class="px-3 py-2">Points to</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8">A</td>
-                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.a?.host }}</td>
-                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.a?.value }}</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div v-if="dnsRecords?.a?.value">
+                <p class="text-sm font-medium text-ink-gray-7">Option 2: A record</p>
+                <div class="mt-2 overflow-hidden rounded-lg border border-outline-gray-2">
+                  <table class="w-full text-sm">
+                    <thead>
+                      <tr class="bg-surface-gray-2 text-left text-xs font-medium uppercase tracking-wide text-ink-gray-5">
+                        <th class="px-3 py-2">Type</th>
+                        <th class="px-3 py-2">Host</th>
+                        <th class="px-3 py-2">Points to</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8">A</td>
+                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.a?.host }}</td>
+                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.a?.value }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
+              <p class="text-xs text-ink-gray-5">DNS changes can take a few minutes to propagate.</p>
+            </template>
+            <div v-else class="flex flex-col items-center gap-3 py-8">
+              <div class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-green-2">
+                <LucideCheck class="h-6 w-6 text-ink-green-2" />
+              </div>
+              <p class="text-base font-medium text-ink-gray-8">No DNS Records Needed!</p>
             </div>
-            <p class="text-xs text-ink-gray-5">DNS changes can take a few minutes to propagate.</p>
             <ErrorMessage :message="domainError" />
-            <Button class="w-full" variant="solid" :loading="domainLoading === 'add'" @click="addDomain">Verify DNS</Button>
+            <Button class="w-full" variant="solid" :loading="domainLoading === 'add'" @click="addDomain">
+              {{ hasDnsRecords ? 'Verify DNS' : 'Register' }}
+            </Button>
           </template>
         </div>
       </template>

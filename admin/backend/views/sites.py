@@ -450,13 +450,13 @@ def enable_ssl(name: str):
     return jsonify({"ok": True, "task_id": task_id})
 
 
-def _domain_controller(bench_root: Path, name: str):
+def _domain_routes(bench_root: Path):
     from bench_cli.config.bench_config import BenchConfig
     from bench_cli.core.bench import Bench
-    from bench_cli.core.domain_controller import DomainController
+    from bench_cli.core.domain_controller import DomainRouteProvider
 
     bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
-    return DomainController(bench, name)
+    return DomainRouteProvider(bench)
 
 
 def _apply_domains(bench_root: Path, name: str) -> str:
@@ -471,8 +471,8 @@ def _apply_domains(bench_root: Path, name: str) -> str:
 def list_domains(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        controller = _domain_controller(bench_root, name)
-        return jsonify({"domains": controller.domains(), "primary": controller.primary()})
+        routes = _domain_routes(bench_root)
+        return jsonify({"domains": routes.domains(name), "primary": routes.primary(name)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -485,7 +485,7 @@ def domain_dns_records(name: str):
     if err := validate_site_name(domain):
         return jsonify({"ok": False, "error": err})
     try:
-        records = _domain_controller(bench_root, name).get_dns_records(domain)
+        records = _domain_routes(bench_root).generate_dns_records(name, domain)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "records": records})
@@ -498,7 +498,7 @@ def add_domain(name: str):
     if err := validate_site_name(domain):
         return jsonify({"ok": False, "error": err})
     try:
-        _domain_controller(bench_root, name).add(domain)
+        _domain_routes(bench_root).register(name, domain)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": _apply_domains(bench_root, name)})
@@ -509,7 +509,7 @@ def remove_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
     try:
-        _domain_controller(bench_root, name).remove(domain)
+        _domain_routes(bench_root).deregister(name, domain)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": _apply_domains(bench_root, name)})
@@ -520,7 +520,7 @@ def set_primary_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip() or None
     try:
-        _domain_controller(bench_root, name).set_primary(domain)
+        _domain_routes(bench_root).set_primary(name, domain)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     # nginx redirects non-primary hosts to the primary, so regenerate it.
