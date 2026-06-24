@@ -93,11 +93,15 @@ jobs:
           BENCH_TEST_ROOT: ${{ github.workspace }}/benches/ci-bench
 
       - name: Stop manually-started redis
+        if: ${{ !cancelled() }}
         run: |
           redis-cli -p 13000 shutdown nosave || true
           redis-cli -p 11000 shutdown nosave || true
 
+      # Run regardless of the non-production result so the production signal
+      # isn't masked by an unrelated failure in the first group.
       - name: Run production e2e tests
+        if: ${{ !cancelled() }}
         run: pytest tests/integration/ -v -m "production"
         env:
           BENCH_TEST_ROOT: ${{ github.workspace }}/benches/ci-bench
