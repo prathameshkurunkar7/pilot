@@ -139,6 +139,16 @@ class Bench:
 
         RestartCommand(self).run()
 
+    def reload_workers(self, web_only: bool = False, raises: bool = False):
+        from bench_cli.managers.process_manager import ProcessManagerFactory
+
+        try:
+            ProcessManagerFactory.create(self).reload_workers(web_only)
+        except Exception as e:
+            print(f"Failed to reload workers: {e}")
+            if raises:
+                raise
+
     @staticmethod
     def _git_remote(path: Path) -> str:
         result = subprocess.run(
