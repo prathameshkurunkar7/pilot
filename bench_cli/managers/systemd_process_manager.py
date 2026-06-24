@@ -263,7 +263,6 @@ class SystemdProcessManager(ProcessManager):
                     env=self._systemctl_env(),
                 )
             else:
-                print("Restarting workers...")
                 run_command(
                     self._systemctl("restart", self._target_name()),
                     env=self._systemctl_env(),

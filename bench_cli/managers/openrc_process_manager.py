@@ -149,10 +149,8 @@ class OpenRCProcessManager(ProcessManager):
         subprocess.run(["redis-cli", "-p", str(cache_port), "del", "assets_json"], capture_output=True)
         if self.is_running():
             if web_only:
-                print("Restarting web worker to pick up new assets...")
                 run_command(service_command("restart", self._service_name("web")))
             else:
-                print("Restarting workers...")
                 for service in self._workload_service_names():
                     run_command(service_command("restart", service))
 
