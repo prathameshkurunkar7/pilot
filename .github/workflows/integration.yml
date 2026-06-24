@@ -91,3 +91,20 @@ jobs:
           # Opt in to the destructive production + self-signed SSL e2e
           # (installs services, rewrites the machine's nginx config).
           BENCH_E2E_PRODUCTION: "1"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          echo "::group::systemd --user units"
+          systemctl --user list-units --all --no-pager | grep -i ci-bench || true
+          echo "::endgroup::"
+          echo "::group::failed unit status"
+          systemctl --user --no-pager status 'ci-bench-*' 'ci-bench.target' || true
+          echo "::endgroup::"
+          echo "::group::journal (user)"
+          journalctl --user -n 300 --no-pager || true
+          echo "::endgroup::"
+          echo "::group::bench logs"
+          tail -n 80 benches/ci-bench/logs/*.log 2>/dev/null || true
+          echo "::endgroup::"
