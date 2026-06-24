@@ -52,6 +52,54 @@ class DomainController:
         host = (self._read().get("host_name") or "").strip()
         return host.split("://", 1)[-1] or None if host else None
 
+    def _validate_new(self, domain: str) -> str:
+        """Normalize ``domain`` and raise if it can't be attached to this site
+        (already attached here, or owned by another bench). Shared by the two
+        steps of attaching a domain: showing DNS records, then verify+add."""
+        domain = normalize_host(domain)
+        if not domain:
+            raise BenchError("A domain is required.")
+        if domain == normalize_host(self.site_name) or domain in (normalize_host(d) for d in self.domains()):
+            raise BenchError(f"{domain} is already attached to this site.")
+        owner = host_owner(self.bench.path, domain)
+        if owner:
+            raise BenchError(f"{domain} is already used by bench '{owner}'. Hostnames must be unique across benches.")
+        return domain
+
+    def get_dns_records(self, domain: str) -> dict:
+        """Step 1 of attaching a domain: validate it's free, then return the DNS
+        record options the user can pick from to point it at this server."""
+        domain = self._validate_new(domain)
+        return {
+            "cname": {"type": "CNAME", "host": domain, "value": self.site_name},
+            "a": {"type": "A", "host": domain, "value": self.server_ip()},
+        }
+
+    @staticmethod
+    def server_ip() -> str:
+        """Best-effort public IP of this server, for the A-record option.
+        Tries the outbound-route trick first (no packets actually sent to
+        8.8.8.8); falls back to an external echo service since the route trick
+        only yields a private IP behind NAT/PaaS (e.g. SwiftWave)."""
+        import socket
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                ip = s.getsockname()[0]
+            if not ip.startswith(("10.", "172.", "192.168.", "127.")):
+                return ip
+        except OSError:
+            pass
+
+        import urllib.request
+
+        try:
+            with urllib.request.urlopen("https://ifconfig.me/ip", timeout=3) as resp:
+                return resp.read().decode().strip()
+        except OSError:
+            return ""
+
     def verify(self, domain: str) -> None:
         """Raise BenchError unless ``domain`` resolves to the same server as this
         site — i.e. its DNS points here. Needs no nginx/sudo: a CNAME to the site
@@ -78,15 +126,8 @@ class DomainController:
             return set()
 
     def add(self, domain: str) -> None:
-        domain = normalize_host(domain)
-        if not domain:
-            raise BenchError("A domain is required.")
-        if domain == normalize_host(self.site_name) or domain in (normalize_host(d) for d in self.domains()):
-            raise BenchError(f"{domain} is already attached to this site.")
-        owner = host_owner(self.bench.path, domain)
-        if owner:
-            raise BenchError(f"{domain} is already used by bench '{owner}'. Hostnames must be unique across benches.")
-
+        """Step 2: re-validate, verify DNS, then persist."""
+        domain = self._validate_new(domain)
         self.verify(domain)
 
         config = self._read()

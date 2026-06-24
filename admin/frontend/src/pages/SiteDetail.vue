@@ -5,7 +5,6 @@ import { Button, Badge, Dialog, Dropdown, FormControl, ListView, LoadingText, Er
 import { useTaskProgress } from '../composables/useTaskProgress.js'
 import { useAppRegistry, hashColor } from '../composables/useAppRegistry.js'
 import InstallAppDialog from '../components/InstallAppDialog.vue'
-import LucideServer from '~icons/lucide/server'
 import LucideMoreVertical from '~icons/lucide/more-vertical'
 import LucideDownload from '~icons/lucide/download'
 import LucideTrash2 from '~icons/lucide/trash-2'
@@ -22,7 +21,6 @@ const { watchTask } = useTaskProgress()
 const { registry, logoMap, titleMap, loadRegistry } = useAppRegistry()
 
 const site = ref(null)
-const httpPort = ref(8000)
 const nginxEnabled = ref(false)
 const adminTls = ref(false)
 const installable = ref([])
@@ -94,6 +92,8 @@ const newDomain = ref('')
 const domainLoading = ref('')
 const domainError = ref('')
 const showAddDomain = ref(false)
+const domainStep = ref('input') // 'input' | 'records'
+const dnsRecords = ref(null)
 
 const domainColumns = [
   { label: 'Domain', key: 'domain', align: 'left', width: 3 },
@@ -126,7 +126,29 @@ function domainMenuOptions(row) {
 function openAddDomain() {
   newDomain.value = ''
   domainError.value = ''
+  dnsRecords.value = null
+  domainStep.value = 'input'
   showAddDomain.value = true
+}
+
+async function continueAddDomain() {
+  const domain = newDomain.value.trim()
+  if (!domain) return
+  domainError.value = ''
+  domainLoading.value = 'continue'
+  try {
+    const res = await fetch(`/api/sites/${siteName}/domains/dns-records`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain }),
+    })
+    const d = await res.json()
+    if (!d.ok) { domainError.value = d.error; return }
+    dnsRecords.value = d.records
+    domainStep.value = 'records'
+  } finally {
+    domainLoading.value = ''
+  }
 }
 
 async function loadDomains() {
@@ -345,8 +367,8 @@ async function loadAppDetails() {
 const tabs = computed(() => [
   { label: 'Apps' },
   { label: 'Config' },
-  { label: 'Backups' },
   ...(nginxEnabled.value ? [{ label: 'Domains' }] : []),
+  { label: 'Backups' },
   { label: 'Actions' },
 ])
 const TAB_SLUGS = computed(() => tabs.value.map((t) => t.label.toLowerCase()))
@@ -621,7 +643,6 @@ async function load() {
     if (!res.ok) throw new Error(`${res.status}`)
     const d = await res.json()
     site.value = d.site
-    httpPort.value = d.http_port ?? 8000
     nginxEnabled.value = d.nginx_enabled ?? false
     adminTls.value = d.admin_tls ?? false
     installable.value = d.installable_apps
@@ -733,15 +754,6 @@ onMounted(() => {
                 </span>
               </h1>
               <Badge v-if="site.ssl" label="SSL" theme="blue" />
-            </div>
-            <div class="flex items-center gap-4 text-sm text-ink-gray-5">
-              <span v-if="site.db_host" class="flex items-center gap-1.5">
-                <LucideServer class="h-3.5 w-3.5" />
-                {{ site.db_host }}
-              </span>
-              <span class="flex items-center gap-1.5">
-                :{{ httpPort }}
-              </span>
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-2">
@@ -938,7 +950,6 @@ onMounted(() => {
                   <div v-else class="w-full truncate text-sm font-medium text-ink-gray-8">{{ item }}</div>
                 </template>
               </ListView>
-              <ErrorMessage v-if="domainError" :message="domainError" class="px-4 pb-2" />
             </div>
 
             <!-- Actions -->
@@ -1162,38 +1173,66 @@ onMounted(() => {
     <Dialog v-model="showAddDomain" :options="{ title: 'Add Domain', size: '2xl' }">
       <template #body-content>
         <div @pointerdown.stop class="flex flex-col gap-4">
-          <p class="text-base leading-relaxed text-ink-gray-6">
-            To add a custom domain, you must already own it. If you don't have one, buy it and come back here.
-          </p>
-          <FormControl label="Domain" type="text" v-model="newDomain" placeholder="www.example.com"
-            @keydown.enter="addDomain" />
-          <div>
-            <p class="text-sm font-medium text-ink-gray-7">Add this DNS record at your domain provider</p>
-            <div class="mt-2 overflow-hidden rounded-lg border border-outline-gray-2">
-              <table class="w-full text-sm">
-                <thead>
-                  <tr class="bg-surface-gray-2 text-left text-xs font-medium uppercase tracking-wide text-ink-gray-5">
-                    <th class="px-3 py-2">Type</th>
-                    <th class="px-3 py-2">Host</th>
-                    <th class="px-3 py-2">Points to</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8">CNAME</td>
-                    <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">
-                      {{ newDomain.trim() || 'www.example.com' }}
-                    </td>
-                    <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ siteName }}</td>
-                  </tr>
-                </tbody>
-              </table>
+          <template v-if="domainStep === 'input'">
+            <p class="text-base leading-relaxed text-ink-gray-6">
+              To add a custom domain, you must already own it. If you don't have one, buy it and come back here.
+            </p>
+            <FormControl label="Domain" type="text" v-model="newDomain" placeholder="www.example.com"
+              @keydown.enter="continueAddDomain" />
+            <ErrorMessage :message="domainError" />
+            <Button class="w-full" variant="solid" :loading="domainLoading === 'continue'" :disabled="!newDomain.trim()"
+              @click="continueAddDomain">Continue</Button>
+          </template>
+          <template v-else>
+            <p class="text-sm text-ink-gray-6">
+              Add <span class="font-medium text-ink-gray-7">either one</span> of these records at your domain provider — any one will work.
+            </p>
+            <div>
+              <p class="text-sm font-medium text-ink-gray-7">Option 1: CNAME record</p>
+              <div class="mt-2 overflow-hidden rounded-lg border border-outline-gray-2">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="bg-surface-gray-2 text-left text-xs font-medium uppercase tracking-wide text-ink-gray-5">
+                      <th class="px-3 py-2">Type</th>
+                      <th class="px-3 py-2">Host</th>
+                      <th class="px-3 py-2">Points to</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8">CNAME</td>
+                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.cname?.host }}</td>
+                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.cname?.value }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <p class="mt-2 text-xs text-ink-gray-5">DNS changes can take a few minutes to propagate.</p>
-          </div>
-          <ErrorMessage :message="domainError" />
-          <Button class="w-full" variant="solid" :loading="domainLoading === 'add'" :disabled="!newDomain.trim()"
-            @click="addDomain">Verify DNS</Button>
+            <div v-if="dnsRecords?.a?.value">
+              <p class="text-sm font-medium text-ink-gray-7">Option 2: A record</p>
+              <div class="mt-2 overflow-hidden rounded-lg border border-outline-gray-2">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="bg-surface-gray-2 text-left text-xs font-medium uppercase tracking-wide text-ink-gray-5">
+                      <th class="px-3 py-2">Type</th>
+                      <th class="px-3 py-2">Host</th>
+                      <th class="px-3 py-2">Points to</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8">A</td>
+                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.a?.host }}</td>
+                      <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.a?.value }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <p class="text-xs text-ink-gray-5">DNS changes can take a few minutes to propagate.</p>
+            <ErrorMessage :message="domainError" />
+            <Button class="w-full" variant="solid" :loading="domainLoading === 'add'" @click="addDomain">Verify DNS</Button>
+          </template>
         </div>
       </template>
     </Dialog>

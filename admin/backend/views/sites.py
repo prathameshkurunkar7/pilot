@@ -477,6 +477,20 @@ def list_domains(name: str):
         return jsonify({"error": str(e)}), 500
 
 
+@sites_bp.route("/<name>/domains/dns-records", methods=["POST"])
+def domain_dns_records(name: str):
+    """Step 1 of attaching a domain: validate it, return CNAME/A record options."""
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
+    if err := validate_site_name(domain):
+        return jsonify({"ok": False, "error": err})
+    try:
+        records = _domain_controller(bench_root, name).get_dns_records(domain)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "records": records})
+
+
 @sites_bp.route("/<name>/domains", methods=["POST"])
 def add_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
