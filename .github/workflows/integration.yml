@@ -29,7 +29,6 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y mariadb-server redis-server git nginx openssl
           sudo systemctl start mariadb redis-server
-          sudo systemctl enable --now nginx
           sudo mysql -e "SET PASSWORD FOR root@localhost = PASSWORD('admin'); FLUSH PRIVILEGES;"
 
       - name: Install uv
