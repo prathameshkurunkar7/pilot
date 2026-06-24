@@ -73,14 +73,14 @@ class Site:
             cwd=self.bench.sites_path,
             stream_output=True,
         )
-        self.bench.reload_workers()
+        self.bench.reload_workers(raises=True)
 
     def uninstall_app(self, app_name: str, force: bool = False) -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "uninstall-app", app_name, "--yes", "--no-backup")
         if force:
             cmd.append("--force")
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
-        self.bench.reload_workers()
+        self.bench.reload_workers(raises=True)
 
     def list_apps(self) -> list[str]:
         import subprocess
