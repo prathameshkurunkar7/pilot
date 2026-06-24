@@ -20,7 +20,7 @@ from .views.stats import stats_bp
 from .views.database import database_bp
 from .views.logs import logs_bp
 from .views.processes import processes_bp
-from .views.setup import setup_bp
+from .views.setup import setup_bp, wizard_marker_path
 from .views.settings import settings_bp
 from .views.sites import sites_bp
 from .views.tasks import tasks_bp
@@ -68,6 +68,26 @@ def _wizard_status(bench_root: Path) -> dict:
     except Exception:
         pass
     return {"wizard": True, "name": name, "enabled": True, "authenticated": True}
+
+
+def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
+    """Whether first-time setup has fully finished — used to retire a stale wizard
+    marker. A production bench isn't done until production is enabled (the deploy
+    sets it last); a dev bench is done once init has. Either way, the wizard's
+    setup task must no longer be running."""
+    if not (bench_root / "env" / "bin" / "python").exists() or not config.admin.password:
+        return False
+    if config.production.process_manager and not config.production.enabled:
+        return False
+    try:
+        from admin.backend.tasks.manager.task_reader import TaskReader
+
+        tasks = TaskReader(bench_root).list_tasks(limit=20)
+        if any(t.command == "wizard-setup" and t.status == "running" for t in tasks):
+            return False
+    except Exception:
+        pass
+    return True
 
 
 def _install_idle_watchdog(app: Flask) -> None:
@@ -152,6 +172,17 @@ def create_app(bench_root: Path) -> Flask:
             return jsonify({"enabled": False, "error": str(exc)}), 503
         if not initialized or not config.admin.password:
             return jsonify(_wizard_status(bench_root))
+        # The bench looks initialized, but the wizard's own production deploy may
+        # still be mid-flight (env + password exist before production is enabled).
+        # The wizard marker tells that apart from an independent `setup production`
+        # re-run, which never writes it. Clear a stale marker once setup is truly
+        # complete so a crashed/closed wizard can't trap the bench in setup mode.
+        marker = wizard_marker_path(bench_root)
+        if marker.exists():
+            if _setup_complete(bench_root, config):
+                marker.unlink(missing_ok=True)
+            else:
+                return jsonify(_wizard_status(bench_root))
         from bench_cli.platform import native_process_manager
 
         return jsonify(

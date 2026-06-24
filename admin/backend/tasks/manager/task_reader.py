@@ -19,7 +19,7 @@ def _collapse_cr(line: str) -> str:
     if '\r' not in line:
         return line
     parts = line.split('\r')
-    return next((p for p in reversed(parts) if p), '')
+    return next((p for p in reversed(parts) if p.strip()), '')
 
 
 class TaskReader:
@@ -73,21 +73,24 @@ class TaskReader:
         output_path.touch()
         with open(output_path, "r", errors="replace", newline='') as log_file:
             log_file.seek(0, 2)  # seek to end
-            cur = ''  # current line; \r resets it, \n commits it
+            # Raw current line, carriage returns and all. We only resolve \r at
+            # emit time via _collapse_cr, so the live stream matches read_output
+            # and the frontend exactly: a CRLF keeps its text, while a progress
+            # line cleared with \r + padding collapses to its last real segment
+            # instead of leaking a row of spaces.
+            cur = ''
 
             while True:
                 chunk = log_file.read(8192)
                 if chunk:
                     for ch in chunk:
                         if ch == '\n':
-                            yield cur  # commit: append
-                            cur = ''
-                        elif ch == '\r':
+                            yield _collapse_cr(cur)  # commit
                             cur = ''
                         else:
                             cur += ch
                     if cur:
-                        yield f"__CR__:{cur}"  # partial: overwrite
+                        yield f"__CR__:{_collapse_cr(cur)}"  # partial: overwrite
                     continue
 
                 status_path = self._bench_root / "tasks" / task_id / "status"
@@ -97,7 +100,7 @@ class TaskReader:
 
                 if effective != "running":
                     if cur:
-                        yield cur  # commit trailing partial line
+                        yield _collapse_cr(cur)  # commit trailing partial line
 
                     meta_path = self._bench_root / "tasks" / task_id / "meta.json"
                     exit_code: int | None = None

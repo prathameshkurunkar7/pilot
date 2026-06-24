@@ -58,79 +58,64 @@ class InitCommand(Command):
             if p.exists() or p.is_symlink():
                 shutil.rmtree(p, ignore_errors=True)
 
-    def _remove_nginx_symlink(self) -> None:
-        import subprocess
-
-        from bench_cli.platform import _privileged
-
-        symlink = self.bench.config.nginx.config_dir / f"{self.bench.config.name}.conf"
-        if symlink.exists() or symlink.is_symlink():
-            subprocess.run(_privileged(["unlink", str(symlink)]), capture_output=True, check=False)
-
-    def _remove_systemd_units(self) -> None:
-        import subprocess
-
-        from bench_cli.managers.systemd_process_manager import SystemdProcessManager
-
-        mgr = SystemdProcessManager(self.bench)
-        for f in mgr.user_unit_dir.glob(f"{self.bench.config.name}*"):
-            f.unlink(missing_ok=True)
-        subprocess.run(
-            ["systemctl", "--user", "daemon-reload"],
-            capture_output=True,
-            check=False,
-            env=mgr._systemctl_env(),
-        )
-
-    def _remove_openrc_services(self) -> None:
-        from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
-
-        OpenRCProcessManager(self.bench).remove_services()
-
     # ── init steps ─────────────────────────────────────────────────────────
 
     def _do_run(self) -> None:
-        from bench_cli.managers.process_manager import ProcessManagerFactory
         from bench_cli.managers.python_env_manager import PythonEnvManager
-        from bench_cli.managers.redis_manager import RedisManager
         from bench_cli.platform import is_linux
 
         self._check_passwordless_sudo()
 
-        production = self.bench.config.production.enabled
         volume_enabled = is_linux() and self.bench.config.volume.enabled
         dedicated_db = is_linux() and bool(self.bench.config.mariadb.instance)
         # Passwordless sudo is set up by install.sh and enforced above by
         # _check_passwordless_sudo, so the steps below never block on a prompt.
-        self._total_steps = (
-            10 + (3 if production else 0) + (1 if volume_enabled else 0) + (1 if dedicated_db else 0)
-        )
+        python_env_manager = PythonEnvManager(self.bench)
 
-        self._step("Validate bench.toml")
-        self.bench.config.validate()
-
-        self._step("Install system packages")
-        self._install_system_packages()
-
+        # The ordered list of steps that will actually run, so the progress total
+        # is derived from the steps themselves rather than a hand-counted number
+        # that drifts whenever a step is added or removed. Production deployment
+        # (process manager, nginx, TLS) is intentionally NOT done here — it's a
+        # separate `bench setup production` step, run by the wizard when the user
+        # opts in and available standalone from the CLI.
+        steps: list[tuple[str, Callable[[], None]]] = [
+            ("Validate bench.toml", self.bench.config.validate),
+            ("Install system packages", self._install_system_packages),
+        ]
         if volume_enabled:
-            self._step("Set up ZFS volumes")
-            self._setup_volume()
-
+            steps.append(("Set up ZFS volumes", self._setup_volume))
         if dedicated_db:
-            self._step("Provision MariaDB instance")
-            self._provision_mariadb_instance()
+            steps.append(("Provision MariaDB instance", self._provision_mariadb_instance))
+        steps += [
+            ("Create bench directory structure", self._create_bench_structure),
+            ("Create Python virtualenv", lambda: self._create_virtualenv(python_env_manager)),
+            ("Clone and install framework app", lambda: self._install_framework_apps(python_env_manager)),
+            ("Install Node.js", python_env_manager.install_node),
+            ("Install Node.js dependencies", python_env_manager.install_node_dependencies),
+            ("Configure Redis", self._configure_redis),
+            ("Download admin frontend", self._download_admin_frontend),
+            ("Generate process config", self._generate_process_config),
+        ]
 
-        self._step("Create bench directory structure")
+        self._total_steps = len(steps)
+        for description, action in steps:
+            self._step(description)
+            action()
+
+        print("\nBench initialised. Next steps:")
+        print("  bench new-site site1.example.com   # create your first site")
+        print("  bench start                        # start all processes")
+
+    def _create_bench_structure(self) -> None:
         self.bench.create_directories()
         self.bench.write_common_site_config()
         self._on_rollback("bench directories", self._remove_bench_dirs)
 
-        self._step("Create Python virtualenv")
-        python_env_manager = PythonEnvManager(self.bench)
+    def _create_virtualenv(self, python_env_manager) -> None:
         python_env_manager.ensure_python()
         python_env_manager.create_venv()
 
-        self._step("Clone and install framework app")
+    def _install_framework_apps(self, python_env_manager) -> None:
         for app in self.bench.init_apps():
             if not app.is_cloned:
                 print(f"  Cloning {app.config.name}...")
@@ -139,33 +124,15 @@ class InitCommand(Command):
             python_env_manager.install_app(app)
         self.bench.write_apps_txt()
 
-        self._step("Install Node.js")
-        python_env_manager.install_node()
+    def _configure_redis(self) -> None:
+        from bench_cli.managers.redis_manager import RedisManager
 
-        self._step("Install Node.js dependencies")
-        python_env_manager.install_node_dependencies()
-
-        self._step("Configure Redis")
         RedisManager(self.bench.config.redis, self.bench).generate_configs()
 
-        self._step("Download admin frontend")
-        self._download_admin_frontend()
+    def _generate_process_config(self) -> None:
+        from bench_cli.managers.process_manager import ProcessManagerFactory
 
-        self._step("Generate process config")
-        self._write_common_config_for_production(production)
         ProcessManagerFactory.create(self.bench).generate_config()
-
-        if production:
-            self._step("Setup process manager")
-            self._setup_process_manager()
-            self._step("Setup nginx")
-            self._setup_nginx()
-            self._step("Setup Let's Encrypt SSL")
-            self._setup_letsencrypt()
-
-        print("\nBench initialised. Next steps:")
-        print("  bench new-site site1.example.com   # create your first site")
-        print("  bench start                        # start all processes")
 
     def _check_passwordless_sudo(self) -> None:
         from bench_cli.platform import has_passwordless_sudo, is_linux
@@ -258,63 +225,3 @@ class InitCommand(Command):
             # a system python (it isn't needed when uv downloads a managed one).
             pkg.install("build-essential", "pkg-config", "libmariadb-dev", "git", "python3-dev")
         PythonEnvManager(self.bench).ensure_python()
-
-    def _write_common_config_for_production(self, production: bool) -> None:
-        if not production:
-            return
-        import json
-
-        common_config_path = self.bench.sites_path / "common_site_config.json"
-        existing: dict = {}
-        if common_config_path.exists():
-            try:
-                existing = json.loads(common_config_path.read_text())
-            except Exception:
-                pass
-        existing["dns_multitenant"] = 1
-        common_config_path.write_text(json.dumps(existing, indent=2))
-
-    def _setup_process_manager(self) -> None:
-        if self.bench.config.production.process_manager == "openrc":
-            from bench_cli.managers.openrc_process_manager import OpenRCProcessManager
-
-            mgr = OpenRCProcessManager(self.bench)
-            mgr.install_config()
-            mgr.reload()
-            self._on_rollback("openrc services", self._remove_openrc_services)
-        elif self.bench.config.production.process_manager == "systemd":
-            from bench_cli.managers.systemd_process_manager import SystemdProcessManager
-
-            mgr = SystemdProcessManager(self.bench)
-            mgr.install_config()
-            mgr.reload()
-            self._on_rollback("systemd user units", self._remove_systemd_units)
-        else:
-            import subprocess
-
-            from bench_cli.platform import get_package_manager, is_linux
-
-            pkg = get_package_manager()
-            if is_linux() and not pkg.is_installed("supervisor"):
-                pkg.install("supervisor")
-                subprocess.run(["sudo", "systemctl", "disable", "--now", "supervisor"], check=False)
-            from bench_cli.managers.supervisor_process_manager import SupervisorProcessManager
-
-            mgr = SupervisorProcessManager(self.bench)
-            mgr.install_config()
-            mgr.reload()
-            # supervisor config lives inside config/ — _remove_bench_dirs handles it
-
-    def _setup_nginx(self) -> None:
-        from bench_cli.commands.setup.nginx import SetupNginxCommand
-
-        SetupNginxCommand(self.bench).run()
-        self._on_rollback("nginx config symlink", self._remove_nginx_symlink)
-
-    def _setup_letsencrypt(self) -> None:
-        if not self.bench.config.letsencrypt.email:
-            print("  Skipped — no letsencrypt.email set in bench.toml")
-            return
-        from bench_cli.commands.setup.letsencrypt import SetupLetsEncryptCommand
-
-        SetupLetsEncryptCommand(self.bench).run()
