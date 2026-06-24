@@ -64,6 +64,15 @@ def _workload_running(bench_dir: Path, toml_path: Path) -> bool | None:
         return None
 
 
+def _site_count(bench_dir: Path) -> int:
+    """Number of real sites in a bench — a sites/ subdir is a site iff it holds a
+    site_config.json (skips assets/, apps.txt, etc.)."""
+    sites_dir = bench_dir / "sites"
+    if not sites_dir.is_dir():
+        return 0
+    return sum(1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists())
+
+
 def _persist_toml(bench_dir: Path, updates: dict) -> None:
     """Merge ``updates`` into a bench's bench.toml in place, preserving other keys."""
     from bench_cli.utils import write_toml
@@ -279,6 +288,7 @@ def create_app(bench_root: Path) -> Flask:
                     "reachable": reachable,
                     "admin_url": admin_url,
                     "workload_running": workload_running,
+                    "site_count": _site_count(bench_dir),
                 })
             except Exception:
                 continue
@@ -312,6 +322,36 @@ def create_app(bench_root: Path) -> Flask:
             )
         except subprocess.TimeoutExpired:
             return jsonify({"ok": False, "error": f"'{action}' timed out."}), 500
+        if result.returncode != 0:
+            return jsonify({"ok": False, "error": (result.stderr or result.stdout).strip()}), 500
+        return jsonify({"ok": True})
+
+    @app.route("/api/benches/<name>", methods=["DELETE"])
+    def api_benches_drop(name):
+        if not _NAME_RE.match(name):
+            return jsonify({"ok": False, "error": "Invalid bench name."}), 400
+
+        target_dir = bench_root.parent / name
+        toml_path = target_dir / "bench.toml"
+        if not toml_path.exists():
+            return jsonify({"ok": False, "error": f"Bench '{name}' not found."}), 404
+        if target_dir.resolve() == bench_root.resolve():
+            return jsonify({"ok": False, "error": "Can't drop the bench you're currently using."}), 400
+
+        # The drop itself re-checks for sites, but reject early with a clear
+        # message rather than shelling out only to fail.
+        sites = _site_count(target_dir)
+        if sites:
+            return jsonify({"ok": False, "error": f"Bench '{name}' has {sites} site(s). Drop them first."}), 400
+
+        cli_root = _cli_root()
+        try:
+            result = subprocess.run(
+                [str(cli_root / "bench"), "--yes", "-b", name, "drop"],
+                cwd=cli_root, capture_output=True, text=True, timeout=180,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify({"ok": False, "error": "Drop timed out."}), 500
         if result.returncode != 0:
             return jsonify({"ok": False, "error": (result.stderr or result.stdout).strip()}), 500
         return jsonify({"ok": True})

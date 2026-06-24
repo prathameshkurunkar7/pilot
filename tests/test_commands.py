@@ -827,3 +827,83 @@ def test_orchestrator_rollback_stops_mariadb_and_sets_maintenance() -> None:
     mariadb.start.assert_called_once()
     volume.rollback_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
     assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
+
+
+# ── DropBenchCommand ────────────────────────────────────────────────────────
+
+
+def _drop_config(name: str, instance: str = "") -> BenchConfig:
+    return BenchConfig(
+        name=name,
+        python_version="3.14",
+        apps=[AppConfig(name="frappe", repo="x", branch="y")],
+        mariadb=MariaDBConfig(root_password="root", instance=instance),
+        redis=RedisConfig(cache_port=13000, queue_port=11000),
+        workers=WorkerConfig(groups=[WorkerGroup(queues=["default"], count=1)]),
+    )
+
+
+def test_drop_bench_refuses_when_sites_exist(tmp_path: Path) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+
+    bench = Bench(_drop_config("one"), tmp_path)
+    site = tmp_path / "sites" / "a.localhost"
+    site.mkdir(parents=True)
+    (site / "site_config.json").write_text("{}")
+
+    with pytest.raises(BenchError, match="site"):
+        DropBenchCommand(bench, skip_confirm=True).run()
+    # The bench directory must survive a refused drop.
+    assert tmp_path.exists()
+
+
+def test_drop_bench_keeps_mariadb_instance_shared_with_sibling(tmp_path: Path) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+
+    benches = tmp_path / "benches"
+    (benches / "one").mkdir(parents=True)
+    sibling = benches / "two"
+    sibling.mkdir(parents=True)
+    (sibling / "bench.toml").write_text('[bench]\nname = "two"\n\n[mariadb]\ninstance = "shared"\n')
+
+    bench = Bench(_drop_config("one", instance="shared"), benches / "one")
+    assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is True
+
+
+def test_drop_bench_removes_unique_mariadb_instance(tmp_path: Path) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+
+    benches = tmp_path / "benches"
+    (benches / "one").mkdir(parents=True)
+    sibling = benches / "two"
+    sibling.mkdir(parents=True)
+    # A genuinely separate instance: own name, own datadir/socket, own port.
+    (sibling / "bench.toml").write_text(
+        '[bench]\nname = "two"\n\n[mariadb]\ninstance = "two"\nport = 3308\n'
+    )
+
+    config = _drop_config("one", instance="one")
+    config.mariadb.port = 3307
+    bench = Bench(config, benches / "one")
+    assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is False
+
+
+def test_drop_bench_keeps_mariadb_when_sibling_shares_host_port(tmp_path: Path) -> None:
+    """A sibling pointed at this bench's DB over TCP (same host:port) — even with
+    a different instance name — must keep the database alive."""
+    from bench_cli.commands.drop_bench import DropBenchCommand
+
+    benches = tmp_path / "benches"
+    (benches / "one").mkdir(parents=True)
+    sibling = benches / "two"
+    sibling.mkdir(parents=True)
+    # Different instance name, but connects to bench one's port on localhost.
+    (sibling / "bench.toml").write_text(
+        '[bench]\nname = "two"\n\n[mariadb]\ninstance = "two"\nhost = "127.0.0.1"\nport = 3307\n'
+    )
+
+    config = _drop_config("one", instance="one")
+    config.mariadb.host = "localhost"
+    config.mariadb.port = 3307
+    bench = Bench(config, benches / "one")
+    assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is True

@@ -9,6 +9,7 @@ import LucidePlay from '~icons/lucide/play'
 import LucideSquare from '~icons/lucide/square'
 import LucideRotateCw from '~icons/lucide/rotate-cw'
 import LucideLoader2 from '~icons/lucide/loader-2'
+import LucideTrash2 from '~icons/lucide/trash-2'
 
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue', 'new-bench'])
@@ -25,10 +26,19 @@ const currentHost = window.location.hostname
 const controlLoading = ref('')
 const controlError = ref('')
 
+const benchToDrop = ref(null)
+const dropping = ref(false)
+
+const showDropConfirm = computed({
+  get: () => !!benchToDrop.value,
+  set: (v) => { if (!v) benchToDrop.value = null },
+})
+
 const columns = [
   { label: 'Bench', key: 'name', align: 'left', width: 2 },
   { label: 'Mode', key: 'mode', align: 'left', width: 1 },
   { label: 'Manager', key: 'manager', align: 'left', width: 1 },
+  { label: 'Sites', key: 'sites', align: 'left', width: 1 },
   { label: 'Status', key: 'status', align: 'left', width: 1 },
   { label: '', key: 'actions', align: 'right', width: '3rem' },
 ]
@@ -37,6 +47,7 @@ const rows = computed(() => benches.value.map((b) => ({
   name: b.name,
   mode: benchMode(b),
   manager: benchManager(b),
+  sites: b.site_count ?? 0,
   status: statusLabel(b),
   bench: b,
 })))
@@ -102,6 +113,9 @@ function menuOptions(bench) {
     if (running !== false && !current)
       opts.push({ label: 'Stop', icon: LucideSquare, theme: 'red', onClick: () => control(bench, 'stop') })
   }
+  // Only an empty bench can be dropped, and never the one you're using.
+  if (!isCurrentBench(bench) && (bench.site_count ?? 0) === 0)
+    opts.push({ label: 'Drop bench', icon: LucideTrash2, theme: 'red', onClick: () => confirmDrop(bench) })
   return opts
 }
 
@@ -130,6 +144,29 @@ async function control(bench, action) {
   }
 }
 
+function confirmDrop(bench) {
+  controlError.value = ''
+  benchToDrop.value = bench
+}
+
+async function dropBench() {
+  const bench = benchToDrop.value
+  if (!bench) return
+  dropping.value = true
+  controlError.value = ''
+  try {
+    const res = await fetch(`/api/benches/${bench.name}`, { method: 'DELETE' })
+    const d = await res.json()
+    if (!d.ok) { controlError.value = d.error; return }
+    benchToDrop.value = null
+    await loadBenches()
+  } catch (e) {
+    controlError.value = e.message
+  } finally {
+    dropping.value = false
+  }
+}
+
 function newBench() {
   show.value = false
   emit('new-bench')
@@ -141,15 +178,19 @@ watch(show, (open) => {
 </script>
 
 <template>
-  <Dialog v-model="show" title="Manage Benches" size="2xl" :showCloseButton="true">
+  <Dialog v-model="show" title="Manage Benches" size="3xl" :showCloseButton="true">
     <template #default>
       <div class="flex flex-col" @pointerdown.stop>
         <div class="mb-4 flex items-center justify-end gap-1">
           <Button variant="ghost" size="sm" :loading="loading" @click="loadBenches" title="Refresh">
-            <template #icon><LucideRefreshCw class="h-4 w-4" /></template>
+            <template #icon>
+              <LucideRefreshCw class="h-4 w-4" />
+            </template>
           </Button>
           <Button variant="outline" size="sm" @click="newBench">
-            <template #prefix><LucidePlus class="h-4 w-4" /></template>
+            <template #prefix>
+              <LucidePlus class="h-4 w-4" />
+            </template>
             New Bench
           </Button>
         </div>
@@ -160,13 +201,8 @@ watch(show, (open) => {
         <div v-else-if="!benches.length" class="py-10 text-center text-sm text-ink-gray-4">
           No benches found.
         </div>
-        <ListView
-          v-else
-          :columns="columns"
-          :rows="rows"
-          row-key="name"
-          :options="{ selectable: false, showTooltip: false, rowHeight: 48 }"
-        >
+        <ListView v-else :columns="columns" :rows="rows" row-key="name"
+          :options="{ selectable: false, showTooltip: false, rowHeight: 48 }">
           <template #cell="{ column, row, item }">
             <!-- Bench name + Current marker. Running state lives in the Status
                  column, so the name stays flush-left under its header. -->
@@ -182,20 +218,15 @@ watch(show, (open) => {
 
             <!-- Per-bench actions -->
             <div v-else-if="column.key === 'actions'" class="flex w-full justify-end">
-              <span
-                v-if="controlLoading === row.name"
-                class="flex h-7 w-7 items-center justify-center"
-              >
+              <span v-if="controlLoading === row.name" class="flex h-7 w-7 items-center justify-center">
                 <LucideLoader2 class="h-4 w-4 animate-spin text-ink-gray-5" />
               </span>
-              <Dropdown
-                v-else-if="menuOptions(row.bench).length"
-                :options="menuOptions(row.bench)"
-                placement="left"
-              >
+              <Dropdown v-else-if="menuOptions(row.bench).length" :options="menuOptions(row.bench)" placement="left">
                 <template #default="{ open }">
                   <Button variant="ghost" size="sm" :active="open">
-                    <template #icon><LucideMoreVertical class="h-4 w-4" /></template>
+                    <template #icon>
+                      <LucideMoreVertical class="h-4 w-4" />
+                    </template>
                   </Button>
                 </template>
               </Dropdown>
@@ -205,6 +236,25 @@ watch(show, (open) => {
             <div v-else class="w-full truncate text-sm text-ink-gray-6">{{ item }}</div>
           </template>
         </ListView>
+      </div>
+    </template>
+  </Dialog>
+
+  <Dialog v-model="showDropConfirm" :options="{ title: 'Drop Bench', size: 'sm' }">
+    <template #default>
+      <div class="flex flex-col gap-4" @pointerdown.stop>
+        <div class="flex flex-col gap-2 text-sm leading-relaxed text-ink-gray-7">
+          <p>Permanently delete <strong class="text-ink-gray-9">{{ benchToDrop?.name }}</strong>?</p>
+          <p>
+            This tears down its production services, nginx config and MariaDB instance, then
+            removes the bench directory. This action cannot be undone.
+          </p>
+        </div>
+        <ErrorMessage v-if="controlError" :message="controlError" />
+        <div class="flex justify-end gap-2">
+          <Button variant="ghost" @click="showDropConfirm = false">Cancel</Button>
+          <Button variant="solid" theme="red" :loading="dropping" @click="dropBench">Drop Bench</Button>
+        </div>
       </div>
     </template>
   </Dialog>

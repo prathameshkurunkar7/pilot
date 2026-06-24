@@ -27,12 +27,19 @@ class ListCommand(Command):
         name_w = max(len("NAME"), *(len(r["name"]) for r in rows))
         mode_w = max(len("MODE"), *(len(r["mode"]) for r in rows))
         mgr_w = max(len("MANAGER"), *(len(r["manager"]) for r in rows))
+        sites_w = max(len("SITES"), *(len(str(r["sites"])) for r in rows))
 
-        header = f"  {'':1} {'NAME':<{name_w}}  {'MODE':<{mode_w}}  {'MANAGER':<{mgr_w}}  ADDRESS"
+        header = (
+            f"  {'':1} {'NAME':<{name_w}}  {'MODE':<{mode_w}}  "
+            f"{'MANAGER':<{mgr_w}}  {'SITES':<{sites_w}}  ADDRESS"
+        )
         print(_dim(header))
         for r in rows:
             dot = _ok("●") if r["running"] else _dim("○")
-            print(f"  {dot} {r['name']:<{name_w}}  {r['mode']:<{mode_w}}  {r['manager']:<{mgr_w}}  {r['address']}")
+            print(
+                f"  {dot} {r['name']:<{name_w}}  {r['mode']:<{mode_w}}  "
+                f"{r['manager']:<{mgr_w}}  {str(r['sites']):<{sites_w}}  {r['address']}"
+            )
 
     def _collect(self, benches_dir: Path) -> list[dict]:
         if not benches_dir.is_dir():
@@ -50,7 +57,7 @@ class ListCommand(Command):
         from bench_cli.core.bench import Bench
 
         name = bench_dir.name
-        mode, manager, address, running = "unknown", "-", "", False
+        mode, manager, address, running, sites = "unknown", "-", "", False, 0
         try:
             # Parse-only (no validate) so a half-configured bench still lists.
             config = BenchConfig._from_dict(tomllib.loads(toml_path.read_text()))
@@ -66,9 +73,17 @@ class ListCommand(Command):
 
             address = admin_url(config)
             running = self._is_running(Bench(config, bench_dir))
+            sites = self._site_count(bench_dir)
         except Exception:
             pass
-        return {"name": name, "mode": mode, "manager": manager, "address": address, "running": running}
+        return {"name": name, "mode": mode, "manager": manager, "address": address, "running": running, "sites": sites}
+
+    def _site_count(self, bench_dir: Path) -> int:
+        """A sites/ subdir counts as a site iff it has a site_config.json."""
+        sites_dir = bench_dir / "sites"
+        if not sites_dir.is_dir():
+            return 0
+        return sum(1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists())
 
     def _is_running(self, bench) -> bool:
         """A bench counts as running if its admin (control plane) is up."""

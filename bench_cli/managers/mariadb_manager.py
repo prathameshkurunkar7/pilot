@@ -119,6 +119,52 @@ class MariaDBManager:
         else:
             run_command(service_command("stop", self.service_unit()))
 
+    def remove_instance(self) -> None:
+        """Tear down this bench's dedicated MariaDB instance — the inverse of
+        provision_instance. Best-effort and idempotent: absent units/files are
+        skipped. No-op for shared (non-dedicated) setups, e.g. macOS. Used when
+        dropping a bench."""
+        if not self.is_dedicated or is_macos():
+            return
+        if is_alpine():
+            self._remove_instance_openrc()
+        else:
+            self._remove_instance_systemd()
+        self._remove_data_dir()
+
+    def _remove_instance_systemd(self) -> None:
+        instance = self.config.instance
+        service = self.service_unit()  # mariadb@<instance>
+        for cmd in (service_command("stop", service), service_disable_command(service)):
+            try:
+                run_command(cmd)
+            except Exception:
+                pass
+        override_dir = f"/etc/systemd/system/mariadb@{instance}.service.d"
+        run_command(_privileged(["rm", "-rf", override_dir]))
+        run_command(_privileged(["rm", "-f", f"{_CONF_DIR}/99-bench-{instance}.cnf"]))
+        try:
+            run_command(["sudo", "systemctl", "daemon-reload"])
+        except Exception:
+            pass
+
+    def _remove_instance_openrc(self) -> None:
+        service = self.service_unit()  # mariadb-<instance>
+        for cmd in (service_command("stop", service), service_disable_command(service)):
+            try:
+                run_command(cmd)
+            except Exception:
+                pass
+        run_command(_privileged(["rm", "-f", f"/etc/init.d/{service}", f"/var/log/{service}.log"]))
+
+    def _remove_data_dir(self) -> None:
+        # Guard against ever wiping the shared server's datadir; only a
+        # per-instance /var/lib/mysql-<instance> should be removed here.
+        data_dir = self.data_dir()
+        if Path(data_dir) == _ALPINE_DATA_DIR or data_dir.rstrip("/") == "/var/lib/mysql":
+            return
+        run_command(_privileged(["rm", "-rf", data_dir]))
+
     def stop_shared(self) -> None:
         """Stop and disable the shared mariadb service.
 

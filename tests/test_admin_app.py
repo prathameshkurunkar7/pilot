@@ -94,6 +94,24 @@ def test_api_benches_includes_production_metadata(tmp_path: Path) -> None:
     assert entry["admin_url"] == "https://admin-prod.example.com"
 
 
+def test_api_benches_includes_site_count(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+
+    with _listening_socket() as live_port:
+        bench_dir = benches_dir / "with-sites"
+        _write_raw_bench_toml(bench_dir, "with-sites", admin_port=live_port)
+        # Two real sites plus a non-site dir (assets) that must not be counted.
+        for site in ("a.localhost", "b.localhost"):
+            (bench_dir / "sites" / site).mkdir(parents=True)
+            (bench_dir / "sites" / site / "site_config.json").write_text("{}")
+        (bench_dir / "sites" / "assets").mkdir(parents=True)
+        resp = client.get("/api/benches/")
+
+    entry = next(b for b in resp.get_json() if b["name"] == "with-sites")
+    assert entry["site_count"] == 2
+
+
 # ── POST /api/benches/new ────────────────────────────────────────────────────
 
 
@@ -317,3 +335,57 @@ def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
 
     assert resp.status_code == 500
     assert resp.get_json() == {"ok": False, "error": "boom"}
+
+
+# ── DELETE /api/benches/<name> (drop) ────────────────────────────────────────
+
+
+def test_api_benches_drop_rejects_current_bench(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+
+    resp = client.delete("/api/benches/current")
+
+    assert resp.status_code == 400
+    assert "currently using" in resp.get_json()["error"]
+
+
+def test_api_benches_drop_rejects_bench_with_sites(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+    bench_dir = benches_dir / "prod-bench"
+    _write_prod_bench_toml(bench_dir, "prod-bench")
+    (bench_dir / "sites" / "a.localhost").mkdir(parents=True)
+    (bench_dir / "sites" / "a.localhost" / "site_config.json").write_text("{}")
+
+    with patch("admin.backend.app.subprocess.run") as mock_run:
+        resp = client.delete("/api/benches/prod-bench")
+
+    assert resp.status_code == 400
+    assert "site" in resp.get_json()["error"].lower()
+    mock_run.assert_not_called()
+
+
+def test_api_benches_drop_rejects_unknown_bench(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+
+    resp = client.delete("/api/benches/does-not-exist")
+
+    assert resp.status_code == 404
+
+
+def test_api_benches_drop_runs_bench_cli(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+    _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
+
+    with patch("admin.backend.app.subprocess.run") as mock_run:
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = ""
+        resp = client.delete("/api/benches/prod-bench")
+
+    assert resp.get_json() == {"ok": True}
+    argv = mock_run.call_args.args[0]
+    assert argv[-4:] == ["--yes", "-b", "prod-bench", "drop"]
