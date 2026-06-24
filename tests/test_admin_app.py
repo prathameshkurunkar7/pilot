@@ -59,7 +59,7 @@ def test_api_benches_requires_auth(tmp_path: Path) -> None:
     assert resp.status_code == 401
 
 
-def test_api_benches_lists_only_running_benches(tmp_path: Path) -> None:
+def test_api_benches_lists_all_benches_with_reachability(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
@@ -68,9 +68,10 @@ def test_api_benches_lists_only_running_benches(tmp_path: Path) -> None:
         _write_raw_bench_toml(benches_dir / "dead-bench", "dead-bench", admin_port=1)
         resp = client.get("/api/benches/")
 
-    names = [b["name"] for b in resp.get_json()]
-    assert "live-bench" in names
-    assert "dead-bench" not in names
+    entries = {b["name"]: b for b in resp.get_json()}
+    # Stopped benches are listed too, flagged unreachable rather than hidden.
+    assert entries["live-bench"]["reachable"] is True
+    assert entries["dead-bench"]["reachable"] is False
 
 
 def test_api_benches_includes_production_metadata(tmp_path: Path) -> None:
@@ -243,3 +244,76 @@ def test_api_benches_ready_false_on_invalid_port(tmp_path: Path) -> None:
     resp = client.get("/api/benches/ready?port=not-a-number")
 
     assert resp.status_code == 400
+
+
+# ── POST /api/benches/<name>/<action> ────────────────────────────────────────
+
+
+def _write_prod_bench_toml(bench_dir: Path, name: str) -> None:
+    bench_dir.mkdir(parents=True, exist_ok=True)
+    (bench_dir / "bench.toml").write_text(
+        f'[bench]\nname = "{name}"\n\n[admin]\nport = 9999\n\n'
+        f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
+    )
+
+
+def test_api_benches_control_rejects_unknown_action(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+    _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
+
+    resp = client.post("/api/benches/prod-bench/wiggle")
+
+    assert resp.status_code == 400
+    assert resp.get_json()["ok"] is False
+
+
+def test_api_benches_control_rejects_unknown_bench(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    resp = client.post("/api/benches/does-not-exist/start")
+
+    assert resp.status_code == 404
+    assert resp.get_json()["ok"] is False
+
+
+def test_api_benches_control_rejects_dev_bench(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+    _write_bench_toml(benches_dir / "dev-bench", "dev-bench")
+
+    resp = client.post("/api/benches/dev-bench/start")
+
+    assert resp.status_code == 400
+    assert "production" in resp.get_json()["error"]
+
+
+def test_api_benches_control_runs_bench_cli_and_reports_success(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+    _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
+
+    with patch("admin.backend.app.subprocess.run") as mock_run:
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = ""
+        resp = client.post("/api/benches/prod-bench/restart")
+
+    assert resp.get_json() == {"ok": True}
+    argv = mock_run.call_args.args[0]
+    assert argv[-3:] == ["-b", "prod-bench", "restart"]
+
+
+def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+    _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
+
+    with patch("admin.backend.app.subprocess.run") as mock_run:
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = ""
+        mock_run.return_value.stderr = "boom"
+        resp = client.post("/api/benches/prod-bench/stop")
+
+    assert resp.status_code == 500
+    assert resp.get_json() == {"ok": False, "error": "boom"}

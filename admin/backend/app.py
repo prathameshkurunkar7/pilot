@@ -49,6 +49,21 @@ def _port_open(port: int) -> bool:
         return False
 
 
+def _workload_running(bench_dir: Path, toml_path: Path) -> bool | None:
+    """Whether a production bench's workload is currently running — used to
+    gate start/stop/restart controls for other benches in the switcher. None
+    if the check itself fails (e.g. process manager CLI not installed)."""
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.core.bench import Bench
+    from bench_cli.managers.process_manager import ProcessManagerFactory
+
+    try:
+        bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
+        return ProcessManagerFactory.create(bench).is_running()
+    except Exception:
+        return None
+
+
 def _persist_toml(bench_dir: Path, updates: dict) -> None:
     """Merge ``updates`` into a bench's bench.toml in place, preserving other keys."""
     from bench_cli.utils import write_toml
@@ -225,7 +240,7 @@ def create_app(bench_root: Path) -> Flask:
     @app.route("/api/benches/")
     def api_benches():
         benches_dir = bench_root.parent
-        running = []
+        benches = []
         for bench_dir in sorted(benches_dir.iterdir()):
             if not bench_dir.is_dir():
                 continue
@@ -252,22 +267,54 @@ def create_app(bench_root: Path) -> Flask:
                 # A production admin stays reachable while its workload is
                 # stopped; a stopped dev bench is unavailable (dead port).
                 reachable = _port_open(port) or _port_open(port + 1)
-                if not reachable:
-                    continue
                 scheme = "https" if tls else "http"
                 admin_url = f"{scheme}://{domain}" if production and domain else ""
-                running.append({
+                workload_running = _workload_running(bench_dir, toml_path) if production else None
+                benches.append({
                     "name": name,
                     "port": port,
                     "domain": domain,
                     "production": production,
                     "process_manager": pm or None,
-                    "runtime_state": "running",
+                    "reachable": reachable,
                     "admin_url": admin_url,
+                    "workload_running": workload_running,
                 })
             except Exception:
                 continue
-        return jsonify(running)
+        return jsonify(benches)
+
+    @app.route("/api/benches/<name>/<action>", methods=["POST"])
+    def api_benches_control(name, action):
+        if action not in ("start", "stop", "restart"):
+            return jsonify({"ok": False, "error": f"Unknown action '{action}'."}), 400
+        if not _NAME_RE.match(name):
+            return jsonify({"ok": False, "error": "Invalid bench name."}), 400
+
+        target_dir = bench_root.parent / name
+        toml_path = target_dir / "bench.toml"
+        if not toml_path.exists():
+            return jsonify({"ok": False, "error": f"Bench '{name}' not found."}), 404
+
+        try:
+            with open(toml_path, "rb") as f:
+                target_config = tomllib.load(f)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+        if not target_config.get("production", {}).get("enabled"):
+            return jsonify({"ok": False, "error": "Start/stop/restart from here is only supported for production benches."}), 400
+
+        cli_root = _cli_root()
+        try:
+            result = subprocess.run(
+                [str(cli_root / "bench"), "-b", name, action],
+                cwd=cli_root, capture_output=True, text=True, timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify({"ok": False, "error": f"'{action}' timed out."}), 500
+        if result.returncode != 0:
+            return jsonify({"ok": False, "error": (result.stderr or result.stdout).strip()}), 500
+        return jsonify({"ok": True})
 
     @app.route("/api/benches/wildcard-domains", methods=["GET"])
     def api_benches_wildcard_domains():
