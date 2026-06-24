@@ -180,6 +180,19 @@ def _set_admin_password(bench_root: Path, password: str) -> None:
     write_toml(toml_path, data)
 
 
+def _set_admin_tls(bench_root: Path, enabled: bool) -> None:
+    """Toggle admin.tls in bench.toml so setup production (without --tls) deploys
+    the desired TLS mode."""
+    import tomllib
+
+    from bench_cli.utils import write_toml
+
+    toml_path = bench_root / "bench.toml"
+    data = tomllib.loads(toml_path.read_text())
+    data.setdefault("admin", {})["tls"] = enabled
+    write_toml(toml_path, data)
+
+
 def _served_cert_org(domain: str) -> str:
     """Organisation field of the leaf cert nginx presents for *domain* — used to
     confirm it served our self-signed cert, not something else."""
@@ -199,11 +212,17 @@ def _nginx_conf_dir(bench_root: Path) -> Path:
     return bench_root / "config" / "nginx"
 
 
+def _bench_name(bench_root: Path) -> str:
+    import tomllib
+
+    return tomllib.loads((bench_root / "bench.toml").read_text())["bench"]["name"]
+
+
 # ---------------------------------------------------------------------------
 # Module fixture: deploy production with self-signed SSL, tear it all down after
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="class")
 def production(bench_root: Path, bench_bin: str):
     """Bring the bench up in production with TLS on site1.localhost + admin
     (backed by self-signed certs) and site2.localhost left HTTP-only, so one
@@ -256,16 +275,43 @@ class TestProductionSSL:
         assert data["admin"]["tls"] is True
         assert data["admin"]["enabled"] is True
 
-    def test_nginx_config_uses_self_signed_certs(self, production: Path) -> None:
-        """The generated vhosts must point nginx at the cert paths we populated,
-        for both the SSL site and the admin domain."""
-        conf = _nginx_conf_dir(production)
-        site_conf = (conf / "sites" / f"{SITE}.conf").read_text()
-        admin_conf = (conf / "sites" / "_admin.conf").read_text()
+    def test_site_nginx_has_http_redirect_and_https_blocks(self, production: Path) -> None:
+        """An SSL site gets two server blocks: an HTTP one that serves ACME
+        challenges and 301-redirects everything else, and an HTTPS one with the
+        cert, the proxy, and the realtime socket.io upstream."""
+        conf = (_nginx_conf_dir(production) / "sites" / f"{SITE}.conf").read_text()
 
-        assert f"listen {HTTPS_PORT} ssl" in site_conf, site_conf
-        assert f"/etc/letsencrypt/live/{SITE}/fullchain.pem" in site_conf
-        assert f"/etc/letsencrypt/live/{ADMIN_DOMAIN}/fullchain.pem" in admin_conf
+        # HTTP (:80) block — ACME passthrough + redirect to https.
+        assert f"listen {HTTP_PORT};" in conf, conf
+        assert "/.well-known/acme-challenge/" in conf
+        assert "return 301 https://$host$request_uri;" in conf
+
+        # HTTPS (:443) block — our self-signed cert + reverse proxy.
+        assert f"listen {HTTPS_PORT} ssl" in conf, conf
+        assert f"ssl_certificate     /etc/letsencrypt/live/{SITE}/fullchain.pem;" in conf
+        assert f"ssl_certificate_key /etc/letsencrypt/live/{SITE}/privkey.pem;" in conf
+        assert f"proxy_pass         http://bench-{_bench_name(production)};" in conf
+
+    def test_admin_nginx_has_http_and_https_blocks(self, production: Path) -> None:
+        """The admin domain gets the same treatment: HTTP redirects to HTTPS, and
+        the HTTPS block terminates TLS with the admin cert and proxies the admin
+        process."""
+        conf = (_nginx_conf_dir(production) / "sites" / "_admin.conf").read_text()
+
+        assert f"server_name {ADMIN_DOMAIN};" in conf, conf
+        assert f"listen {HTTP_PORT};" in conf
+        assert "return 301 https://$host$request_uri;" in conf
+
+        assert f"listen {HTTPS_PORT} ssl" in conf
+        assert f"ssl_certificate     /etc/letsencrypt/live/{ADMIN_DOMAIN}/fullchain.pem;" in conf
+        assert f"ssl_certificate_key /etc/letsencrypt/live/{ADMIN_DOMAIN}/privkey.pem;" in conf
+
+    def test_socketio_proxy_configured(self, production: Path) -> None:
+        """Realtime needs nginx to proxy /socket.io and rewrite Origin to the
+        external scheme/host, or HTTPS clients fail the realtime auth callback."""
+        site_conf = (_nginx_conf_dir(production) / "sites" / f"{SITE}.conf").read_text()
+        assert "location /socket.io {" in site_conf, site_conf
+        assert "proxy_set_header   Origin $scheme://$http_host;" in site_conf
 
     def test_nginx_config_is_valid(self, production: Path) -> None:
         """The whole machine-wide nginx config (including our vhosts) must pass
@@ -350,6 +396,33 @@ class TestProductionSSL:
         code, target = _http_redirect(SITE_NO_SSL)
         assert code not in ("301", "308"), f"plain site unexpectedly redirected ({code} -> {target})"
 
+    # ── resilience / idempotency ─────────────────────────────────────────────
+
+    def test_unknown_host_handshake_rejected(self, production: Path) -> None:
+        """The catch-all default server must reject TLS for hosts with no vhost
+        (ssl_reject_handshake), so an unconfigured name can't be served another
+        bench's cert. curl reports 000 when the handshake is dropped."""
+        status = _https_status("definitely-not-configured.localhost")
+        assert status == "000", f"unknown host was served over TLS (got {status!r})"
+
+    def test_setup_production_idempotent(self, production: Path, bench_bin: str) -> None:
+        """Re-running setup production with the same args must succeed and leave
+        the deployment intact (operators re-run it routinely)."""
+        import tomllib
+
+        r = _run(
+            bench_bin, "setup", "production",
+            "--admin-domain", ADMIN_DOMAIN, "--tls",
+            cwd=production,
+        )
+        assert r.returncode == 0, f"idempotent re-run failed:\n{r.stdout}\n{r.stderr}"
+        data = tomllib.loads((production / "bench.toml").read_text())
+        assert data["production"]["enabled"] is True
+        assert data["admin"]["domain"] == ADMIN_DOMAIN
+        # Site still serves after the re-run.
+        status, _ = _request(SITE, "/api/method/frappe.ping")
+        assert status == "200", f"site broke after idempotent re-run (got {status})"
+
     def test_rename_site_refreshes_production(self, production: Path, bench_bin: str) -> None:
         """rename-site moves the dummy site to a new hostname and, because the
         bench is in production, re-runs setup production for the new domain. The
@@ -389,3 +462,163 @@ class TestProductionSSL:
         status, body = _request(ADMIN_DOMAIN_2, "/api/status")
         assert status == "200", f"new admin domain /api/status returned {status}: {body!r}"
         assert json.loads(body).get("production") is True, f"admin not live on new domain: {body!r}"
+
+    def test_remove_production(self, production: Path, bench_bin: str) -> None:
+        """`bench remove production` (run LAST) must tear the deployment down:
+        flip production.enabled off in bench.toml and drop the bench's nginx
+        vhost. Certs and the admin domain are intentionally kept for redeploy."""
+        import tomllib
+
+        # The current site name depends on whether the rename test ran.
+        current_site = RENAMED_SITE if _site_dir(production, RENAMED_SITE).exists() else SITE
+
+        r = _run(bench_bin, "remove", "production", cwd=production)
+        assert r.returncode == 0, f"remove production failed:\n{r.stdout}\n{r.stderr}"
+
+        data = tomllib.loads((production / "bench.toml").read_text())
+        assert data["production"]["enabled"] is False, "production still enabled after remove"
+
+        # The bench's shared-nginx vhost symlink must be gone.
+        link = _bench_name(production) + ".conf"
+        assert not (Path("/etc/nginx/conf.d") / link).exists(), "nginx vhost left behind"
+
+        # Site no longer served over HTTPS once nginx is reloaded without it.
+        assert _https_status(current_site) == "000", "site still served after remove"
+
+
+# ---------------------------------------------------------------------------
+# admin.tls = false: a central proxy terminates TLS, so the whole bench is
+# served over plain HTTP and obtains no certificates.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="class")
+def http_only_production(bench_root: Path, bench_bin: str):
+    _set_admin_tls(bench_root, False)
+    _set_admin_password(bench_root, ADMIN_PASSWORD)
+
+    result = _run(
+        bench_bin, "setup", "production", "--admin-domain", ADMIN_DOMAIN,
+        cwd=bench_root,  # no --tls: keeps admin.tls=false from bench.toml
+    )
+    assert result.returncode == 0, (
+        f"http-only setup production failed:\n{result.stdout}\n{result.stderr}"
+    )
+
+    yield bench_root
+
+    _run(bench_bin, "remove", "production", cwd=bench_root)
+    _set_admin_tls(bench_root, True)  # restore default for other classes
+
+
+class TestProductionNoTLS:
+
+    def test_admin_vhost_is_http_only(self, http_only_production: Path) -> None:
+        conf = (_nginx_conf_dir(http_only_production) / "sites" / "_admin.conf").read_text()
+        assert f"server_name {ADMIN_DOMAIN};" in conf, conf
+        assert f"listen {HTTP_PORT};" in conf
+        assert "ssl_certificate" not in conf, f"admin got TLS while admin.tls=false:\n{conf}"
+        assert "return 301 https" not in conf, conf
+
+    def test_admin_served_over_http(self, http_only_production: Path) -> None:
+        status, body = _request(ADMIN_DOMAIN, "/api/status", scheme="http")
+        assert status == "200", f"admin /api/status over http returned {status}: {body!r}"
+        assert json.loads(body).get("production") is True, body
+
+    def test_admin_not_served_over_https(self, http_only_production: Path) -> None:
+        """With admin.tls=false no admin cert exists, so the catch-all rejects an
+        HTTPS handshake for the admin domain."""
+        assert _https_status(ADMIN_DOMAIN) == "000", "admin answered HTTPS with TLS disabled"
+
+
+# ---------------------------------------------------------------------------
+# Process-manager migration: deploy on systemd, then switch to supervisord and
+# confirm the old manager is torn down and the bench keeps serving.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="class")
+def systemd_production(bench_root: Path, bench_bin: str):
+    _install_self_signed_cert(SITE)
+    _install_self_signed_cert(ADMIN_DOMAIN)
+    _set_admin_tls(bench_root, True)
+    _set_admin_password(bench_root, ADMIN_PASSWORD)
+    _set_site_ssl(bench_root, SITE, True)
+
+    result = _run(
+        bench_bin, "setup", "production", "--process-manager", "systemd",
+        "--admin-domain", ADMIN_DOMAIN, "--tls", cwd=bench_root,
+    )
+    assert result.returncode == 0, (
+        f"systemd setup production failed:\n{result.stdout}\n{result.stderr}"
+    )
+
+    yield bench_root
+
+    _run(bench_bin, "remove", "production", cwd=bench_root)
+    _set_site_ssl(bench_root, SITE, False)
+    _remove_cert(SITE)
+    _remove_cert(ADMIN_DOMAIN)
+
+
+class TestProcessManagerMigration:
+
+    def test_migrate_systemd_to_supervisord(self, systemd_production: Path, bench_bin: str) -> None:
+        import tomllib
+
+        name = _bench_name(systemd_production)
+        systemd_target = Path.home() / ".config" / "systemd" / "user" / f"{name}.target"
+        assert systemd_target.exists(), "systemd target missing before migration"
+
+        r = _run(
+            bench_bin, "setup", "production", "--process-manager", "supervisord",
+            "--admin-domain", ADMIN_DOMAIN, "--tls", cwd=systemd_production,
+        )
+        assert r.returncode == 0, f"migration to supervisord failed:\n{r.stdout}\n{r.stderr}"
+
+        data = tomllib.loads((systemd_production / "bench.toml").read_text())
+        assert data["production"]["process_manager"] == "supervisor", data
+
+        # New manager configured, old one torn down.
+        assert (systemd_production / "config" / "supervisor" / "supervisord.conf").exists()
+        assert not systemd_target.exists(), "systemd units left behind after migration"
+
+        # The bench keeps serving across the switch.
+        status, body = _request(SITE, "/api/method/frappe.ping")
+        assert status == "200", f"site broke after PM migration ({status}): {body!r}"
+        assert "pong" in body, body
+
+
+# ---------------------------------------------------------------------------
+# Multi-bench nginx sharing: a second bench's deploy must not break the first.
+# Needs a second initialised bench; skipped unless BENCH_TEST_ROOT_2 is set.
+# ---------------------------------------------------------------------------
+
+class TestMultiBench:
+
+    def test_second_bench_coexists(self, bench_root: Path, bench_bin: str) -> None:
+        """Two benches share one nginx; deploying the second must not break the
+        first. Self-contained (no `production` fixture) so it skips cheaply when
+        no second bench is provided — env var checked before any deploy."""
+        root2 = os.environ.get("BENCH_TEST_ROOT_2")
+        if not root2:
+            pytest.skip("set BENCH_TEST_ROOT_2 to a second initialised bench to test nginx sharing")
+        root1 = bench_root
+        root2 = Path(root2)
+        admin2 = "bench2-admin.localhost"
+        _install_self_signed_cert(SITE)
+        _install_self_signed_cert(ADMIN_DOMAIN)
+        _install_self_signed_cert(admin2)
+        _set_site_ssl(root1, SITE, True)
+        try:
+            r1 = _run(bench_bin, "setup", "production", "--admin-domain", ADMIN_DOMAIN, "--tls", cwd=root1)
+            assert r1.returncode == 0, f"first bench deploy failed:\n{r1.stdout}\n{r1.stderr}"
+            r2 = _run(bench_bin, "setup", "production", "--admin-domain", admin2, "--tls", cwd=root2)
+            assert r2.returncode == 0, f"second bench deploy failed:\n{r2.stdout}\n{r2.stderr}"
+            # First bench must still serve after the second rewrote shared nginx.
+            status, _ = _request(SITE, "/api/method/frappe.ping")
+            assert status == "200", f"first bench broke after second deploy ({status})"
+        finally:
+            _run(bench_bin, "remove", "production", cwd=root2)
+            _run(bench_bin, "remove", "production", cwd=root1)
+            _set_site_ssl(root1, SITE, False)
+            for d in (SITE, ADMIN_DOMAIN, admin2):
+                _remove_cert(d)

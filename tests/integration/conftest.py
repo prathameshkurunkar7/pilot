@@ -26,7 +26,10 @@ def bench_root() -> Path:
             f"No bench.toml at {BENCH_TEST_ROOT}. "
             "Run 'bench init' inside that directory first, or set BENCH_TEST_ROOT."
         )
-    if not (BENCH_TEST_ROOT / "env" / "bin" / "bench").exists():
+    # bench-cli is the `bench` binary (installed globally); unlike the old
+    # frappe-bench it does NOT drop a `bench` into the bench venv. Probe the
+    # venv interpreter instead — checking env/bin/bench skipped the whole suite.
+    if not (BENCH_TEST_ROOT / "env" / "bin" / "python").exists():
         pytest.skip(
             f"Bench env not initialised at {BENCH_TEST_ROOT}. "
             "Run 'bench init' inside that directory first."
