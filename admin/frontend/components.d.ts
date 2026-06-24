@@ -15,6 +15,7 @@ declare module 'vue' {
     AppSidebar: typeof import('./src/components/AppSidebar.vue')['default']
     BenchSwitcherDialog: typeof import('./src/components/BenchSwitcherDialog.vue')['default']
     ConfigTree: typeof import('./src/components/ConfigTree.vue')['default']
+    ConnectionGuard: typeof import('./src/components/ConnectionGuard.vue')['default']
     FilePickerField: typeof import('./src/components/FilePickerField.vue')['default']
     InstallAppDialog: typeof import('./src/components/InstallAppDialog.vue')['default']
     NewBenchDialog: typeof import('./src/components/NewBenchDialog.vue')['default']

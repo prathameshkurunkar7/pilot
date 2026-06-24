@@ -32,7 +32,7 @@ from bench_cli.config.bench_config import BenchConfig
 from bench_cli.exceptions import BenchError, ConfigError
 
 _STATIC_DIR = Path(__file__).parent / "static"
-_OPEN_PATHS = {"/api/status", "/api/login", "/api/logout"}
+_OPEN_PATHS = {"/api/status", "/api/login", "/api/logout", "/api/ping"}
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 # Lenient hostname: dotted alphanumeric/hyphen labels (allows admin.example.com
 # and dev names like my-admin.localhost).
@@ -162,6 +162,14 @@ def create_app(bench_root: Path) -> Flask:
             return _check_enabled(config) or _check_password(config)
         except Exception as exc:
             return jsonify({"error": str(exc), "enabled": False}), 503
+
+    @app.route("/api/ping")
+    def api_ping():
+        # Liveness check: no auth, always 200. CORS-open so the frontend can probe
+        # both http:// and https:// of the current host while recovering.
+        resp = jsonify({"ok": True})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp
 
     @app.route("/api/status")
     def api_status():

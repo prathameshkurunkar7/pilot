@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import AppLayout from './components/AppLayout.vue'
+import ConnectionGuard from './components/ConnectionGuard.vue'
 import Login from './pages/Login.vue'
 import Setup from './pages/Setup.vue'
 import { Alert, useTheme } from 'frappe-ui'
@@ -45,6 +46,7 @@ function onSetupDone() {
 </script>
 
 <template>
+  <ConnectionGuard />
   <div v-if="loading" class="flex h-screen items-center justify-center bg-surface-gray-2" />
   <Setup v-else-if="wizardMode" @done="onSetupDone" />
   <div v-else-if="adminError" class="flex h-screen items-center justify-center p-8">
