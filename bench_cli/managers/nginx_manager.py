@@ -509,9 +509,7 @@ class NginxManager:
         if not is_linux():
             run_command(["nginx", "-s", "reload"])
             return
-        # Reload only works on a running nginx, and a fresh install may not be
-        # started yet (Alpine never auto-starts; some systemd images don't
-        # either). Enable it, then start the first time and reload thereafter.
+        # reload needs a running nginx; a fresh install may not be started yet.
         if is_alpine():
             run_command(service_enable_command("nginx"))
         action = "reload" if service_running("nginx") else "start"
