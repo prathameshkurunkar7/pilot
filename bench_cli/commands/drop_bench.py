@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import argparse
 import shutil
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from bench_cli.commands.base import Command
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 class DropBenchCommand(Command):
     name = "drop"
-    help = "Delete a bench (must have no sites), tearing down its production services, nginx and MariaDB instance."
+    help = "Delete a bench (must have no sites), tearing down its production services, nginx, MariaDB instance and ZFS dataset."
     # Deleting whichever bench happens to be active by default would be too easy
     # to trigger by accident, so require an explicit -b/--bench (or running from
     # inside the bench dir).
@@ -33,8 +33,19 @@ class DropBenchCommand(Command):
         self._validate_no_sites(name)
         self._confirm(name)
 
+        # A dedicated MariaDB instance (and the ZFS dataset its data sits on) is
+        # only ours to destroy when no other bench connects to it.
+        dedicated = bool(self.bench.config.mariadb.instance)
+        full_db_teardown = dedicated and not self._mariadb_shared_with_other_bench()
+
         self._remove_production()
-        self._remove_mariadb_instance()
+        if full_db_teardown:
+            self._stop_mariadb()
+        self._remove_volume(destroy_dataset=full_db_teardown)
+        if full_db_teardown:
+            self._remove_mariadb_instance()
+        elif dedicated:
+            print("Keeping MariaDB instance — another bench shares it.")
         self._delete_bench_dir()
         print(f"\nBench '{name}' dropped.")
 
@@ -61,12 +72,58 @@ class DropBenchCommand(Command):
 
         RemoveProductionCommand(self.bench).run()
 
+    def _stop_mariadb(self) -> None:
+        """Stop the dedicated instance so its datadir bind can be unmounted and
+        the dataset destroyed without a busy mount."""
+        from bench_cli.managers.mariadb_manager import MariaDBManager
+
+        try:
+            MariaDBManager(self.bench.config.mariadb).stop()
+        except Exception as exc:
+            print(f"  (mariadb stop skipped: {exc})")
+
+    def _remove_volume(self, destroy_dataset: bool) -> None:
+        """Unmount the bench's ZFS bind mounts and, when this is a full teardown,
+        destroy its dataset (which holds both the bench files and the dedicated
+        MariaDB data). No-op when the bench doesn't use ZFS."""
+        vol = self.bench.config.volume
+        if not getattr(vol, "enabled", False):
+            return
+        from bench_cli.platform import is_linux
+
+        if not is_linux():
+            return
+        from bench_cli.managers.volume_manager import VolumeManager
+
+        mgr = VolumeManager(vol)
+        # Free the bench-files bind first so a later rmtree doesn't delete into a
+        # live mount.
+        self._unmount(mgr, self.bench.path)
+        if destroy_dataset:
+            from bench_cli.managers.mariadb_manager import MariaDBManager
+
+            datadir = Path(MariaDBManager(self.bench.config.mariadb).data_dir())
+            self._unmount(mgr, datadir)
+            print(f"Destroying ZFS dataset {vol.dataset_path}...")
+            sys.stdout.flush()
+            try:
+                mgr.destroy_dataset(vol.dataset_path)
+            except Exception as exc:
+                print(f"  (dataset destroy skipped: {exc})")
+        else:
+            print(f"Keeping ZFS dataset {vol.dataset_path} — its database is shared.")
+
+    @staticmethod
+    def _unmount(mgr, target: Path) -> None:
+        try:
+            mgr.unmount(target)
+            mgr.remove_fstab_entry(target)
+        except Exception as exc:
+            print(f"  (unmount {target} skipped: {exc})")
+
     def _remove_mariadb_instance(self) -> None:
         from bench_cli.managers.mariadb_manager import MariaDBManager
 
-        if self._mariadb_shared_with_other_bench():
-            print("Keeping MariaDB instance — another bench shares it.")
-            return
         print("Removing MariaDB instance...")
         sys.stdout.flush()
         try:

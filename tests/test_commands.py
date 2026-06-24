@@ -907,3 +907,57 @@ def test_drop_bench_keeps_mariadb_when_sibling_shares_host_port(tmp_path: Path) 
     config.mariadb.port = 3307
     bench = Bench(config, benches / "one")
     assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is True
+
+
+def test_drop_bench_destroys_zfs_dataset_on_full_teardown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+    from bench_cli.config.volume_config import VolumeConfig
+
+    config = _drop_config("one", instance="one")
+    config.volume = VolumeConfig(enabled=True, pool="bench-pool", name="one")
+    bench = Bench(config, tmp_path)
+
+    fake_mgr = MagicMock()
+    monkeypatch.setattr("bench_cli.platform.is_linux", lambda: True)
+    monkeypatch.setattr("bench_cli.managers.volume_manager.VolumeManager", lambda cfg: fake_mgr)
+
+    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=True)
+
+    fake_mgr.destroy_dataset.assert_called_once_with("bench-pool/one")
+    # Both the bench-files bind and the MariaDB datadir bind are unmounted.
+    assert fake_mgr.unmount.call_count == 2
+
+
+def test_drop_bench_keeps_zfs_dataset_when_db_shared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+    from bench_cli.config.volume_config import VolumeConfig
+
+    config = _drop_config("one", instance="one")
+    config.volume = VolumeConfig(enabled=True, pool="bench-pool", name="one")
+    bench = Bench(config, tmp_path)
+
+    fake_mgr = MagicMock()
+    monkeypatch.setattr("bench_cli.platform.is_linux", lambda: True)
+    monkeypatch.setattr("bench_cli.managers.volume_manager.VolumeManager", lambda cfg: fake_mgr)
+
+    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=False)
+
+    fake_mgr.destroy_dataset.assert_not_called()
+    # Only the bench-files bind is freed; the shared DB's datadir is left mounted.
+    fake_mgr.unmount.assert_called_once_with(tmp_path)
+
+
+def test_drop_bench_skips_volume_when_not_using_zfs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+
+    bench = Bench(_drop_config("one", instance="one"), tmp_path)  # volume disabled by default
+    called = {"made": False}
+    monkeypatch.setattr("bench_cli.platform.is_linux", lambda: True)
+    monkeypatch.setattr(
+        "bench_cli.managers.volume_manager.VolumeManager",
+        lambda cfg: called.__setitem__("made", True),
+    )
+
+    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=True)
+
+    assert called["made"] is False

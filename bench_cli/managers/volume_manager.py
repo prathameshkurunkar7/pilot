@@ -585,6 +585,14 @@ class VolumeManager:
             raise VolumeError(f"Snapshot '{snapshot}' does not exist.")
         self._run(["sudo", "zfs", "destroy", snapshot])
 
+    def destroy_dataset(self, dataset: str) -> None:
+        """Destroy a dataset along with its snapshots and child datasets.
+        Idempotent — a no-op if the dataset is already gone. Used when dropping a
+        bench, after its bind mounts have been unmounted."""
+        if not self.dataset_exists(dataset):
+            return
+        self._run(["sudo", "zfs", "destroy", "-r", dataset])
+
     def setup(self) -> None:
         self._ensure_zfs()
         # Reuse an existing pool — create_pool() is a no-op when the pool is
@@ -628,6 +636,34 @@ class VolumeManager:
             subprocess.run(["sudo", "tee", "-a", "/etc/fstab"], input=f"{entry}\n".encode(), capture_output=True, check=True)
         except subprocess.CalledProcessError as exc:
             raise VolumeError(f"Failed to write /etc/fstab entry for {target}: {exc}")
+
+    def unmount(self, target: Path) -> None:
+        """Unmount a bind mount if it's currently mounted (idempotent)."""
+        if self._is_mountpoint(target):
+            self._run(["sudo", "umount", str(target)])
+
+    def remove_fstab_entry(self, target: Path) -> None:
+        """Drop the /etc/fstab bind-mount line for target (idempotent) — the
+        inverse of persist_bind_mount, used when tearing a bench down."""
+        if not self._fstab_has_target(target):
+            return
+        try:
+            lines = Path("/etc/fstab").read_text().splitlines()
+        except OSError:
+            return
+        kept = [
+            line for line in lines
+            if not (
+                len(line.split()) >= 2
+                and not line.lstrip().startswith("#")
+                and line.split()[1] == str(target)
+            )
+        ]
+        content = "\n".join(kept) + "\n"
+        try:
+            subprocess.run(["sudo", "tee", "/etc/fstab"], input=content.encode(), capture_output=True, check=True)
+        except subprocess.CalledProcessError as exc:
+            raise VolumeError(f"Failed to rewrite /etc/fstab: {exc}")
 
     def _fstab_has_target(self, target: Path) -> bool:
         try:
