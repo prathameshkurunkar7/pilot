@@ -217,6 +217,37 @@ def test_proxy_headers_present(tmp_path: Path) -> None:
     assert "X-Forwarded-Proto" in config
 
 
+def test_no_proxy_servers_keeps_direct_defaults(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    manager._proxy_servers_cache = []  # no provider / direct exposure
+
+    config = manager._generate_site_config(_BASE_SITE, ssl_ready=False)
+
+    assert "set_real_ip_from" not in config
+    assert "deny" not in config
+    assert "X-Forwarded-For    $proxy_add_x_forwarded_for" in config
+
+
+def test_proxy_servers_trust_only_those_ips(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    manager._proxy_servers_cache = ["203.0.113.5", "203.0.113.6"]
+
+    config = manager._generate_site_config(_BASE_SITE, ssl_ready=False)
+
+    # Trust the proxy IPs and accept connections from them alone.
+    assert "set_real_ip_from   203.0.113.5;" in config
+    assert "set_real_ip_from   203.0.113.6;" in config
+    assert "real_ip_header     X-Forwarded-For;" in config
+    assert "allow              203.0.113.5;" in config
+    assert "allow              203.0.113.6;" in config
+    assert "deny               all;" in config
+    # Trust the proxy's X-Forwarded-For unchanged rather than appending to it.
+    assert "X-Forwarded-For    $http_x_forwarded_for" in config
+    assert "$proxy_add_x_forwarded_for" not in config
+
+
 def test_two_benches_generate_non_conflicting_configs(tmp_path: Path) -> None:
     """All benches share one nginx, so each bench's include.conf must use a
     uniquely-named upstream and its own admin server_name."""

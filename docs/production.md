@@ -587,9 +587,18 @@ class DomainRouteProvider:
         bench-domain-provider extension offers, or [] if none/not installed.
         Host-level — works even before a bench/site exists.
         """
+
+    @staticmethod
+    def proxy_servers() -> List[str]:
+        """
+        IPs of the edge proxies the extension fronts this bench with, or [] if
+        none/not installed. When set, setup-nginx trusts only those IPs (accepts
+        connections from them, reads the real client from their X-Forwarded-For,
+        and forwards that header unchanged). Host-level.
+        """
 ```
 
-If a `bench-domain-provider` executable is on `PATH`, every method above except `wildcard_domains` (a static, host-level query) delegates to it instead of touching `site_config.json`. The CLI contract that extension must implement — verbs, arguments, stdout, exit codes — is documented in [domain-provider.md](domain-provider.md).
+If a `bench-domain-provider` executable is on `PATH`, every method above except `wildcard_domains` and `proxy_servers` (static, host-level queries) delegates to it instead of touching `site_config.json`. The CLI contract that extension must implement — verbs, arguments, stdout, exit codes — is documented in [domain-provider.md](domain-provider.md).
 
 ### New commands
 

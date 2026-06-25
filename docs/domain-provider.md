@@ -1,18 +1,12 @@
 # Writing a domain provider
 
-A **domain provider** is an optional external program that takes over custom-domain
-routing for a bench — for managed hosting where an edge proxy / load balancer / DNS
-control plane sits in front of the bench.
+A **domain provider** is an optional external program that takes over custom-domain routing for a bench — for managed hosting where an edge proxy / load balancer / DNS control plane sits in front of the bench.
 
 - bench-cli looks for a binary named **`bench-domain-provider`** on `PATH`.
-- **Not found** → bench-cli uses its built-in behaviour (DNS verification + writing into
-  the site's `site_config.json`).
-- **Found** → the provider takes over. bench-cli calls it and reads only its **exit code**
-  and **stdout**.
+- **Not found** → bench-cli uses its built-in behaviour (DNS verification + writing into the site's `site_config.json`).
+- **Found** → the provider takes over. bench-cli calls it and reads only its **exit code** and **stdout**.
 
-Implement it in any language. The contract in code:
-[`bench_cli/core/domain_controller.py`](../bench_cli/core/domain_controller.py)
-(`DomainRouteProvider`).
+Implement it in any language. The contract in code: [`bench_cli/core/domain_controller.py`](../bench_cli/core/domain_controller.py) (`DomainRouteProvider`).
 
 ## Install
 
@@ -24,8 +18,7 @@ Implement it in any language. The contract in code:
 install -m 0755 ./my-domain-provider /usr/local/bin/bench-domain-provider
 ```
 
-Any config your binary needs (API URL, credentials) is your own concern — read it from a
-file or env you control.
+Any config your binary needs (API URL, credentials) is your own concern — read it from a file or env you control.
 
 ## Verbs
 
@@ -34,30 +27,23 @@ bench-domain-provider generate-dns-records <site> <domain>
 bench-domain-provider register             <domain>
 bench-domain-provider deregister           <domain>
 bench-domain-provider wildcard-domains
+bench-domain-provider proxy-servers
 ```
 
-Only `generate-dns-records` takes the **site** (its first positional argument, for the
-CNAME target); the rest operate on the domain alone. The process inherits the caller's
-environment; bench-cli sets no special variables. Any config your binary needs (API URL,
-credentials) is your own concern — read it from a file or env you control.
+Only `generate-dns-records` takes the **site** (its first positional argument, for the CNAME target); the rest operate on the domain alone. The process inherits the caller's environment; bench-cli sets no special variables. Any config your binary needs (API URL, credentials) is your own concern — read it from a file or env you control.
 
 ## `generate-dns-records <site> <domain>` — pre-flight
 
-Validate the domain and tell the user which DNS records to set. **Read-only:** never touch
-the proxy/DNS here — only report records. The actual provisioning happens in `register`.
+Validate the domain and tell the user which DNS records to set. **Read-only:** never touch the proxy/DNS here — only report records. The actual provisioning happens in `register`.
 
-- **stdout:** a JSON object with two record sets — `cname` and `a`, one per validation
-  method — or blank/`{}` if no records are needed. Either set may be empty; the UI shows
-  each non-empty set as an option, listing every record in it:
+- **stdout:** a JSON object with two record sets — `cname` and `a`, one per validation method — or blank/`{}` if no records are needed. Either set may be empty; the UI shows each non-empty set as an option, listing every record in it:
   ```json
   {
     "cname": [{ "type": "CNAME", "host": "app.example.com", "value": "site.bench.example.com" }],
     "a":     [{ "type": "A",     "host": "app.example.com", "value": "203.0.113.10" }]
   }
   ```
-- A set is the **complete recipe** for that path, so add extra records to it when you need
-  more than the route record — e.g. a `TXT` ownership/key-validation record the user must
-  set alongside the CNAME or A:
+- A set is the **complete recipe** for that path, so add extra records to it when you need more than the route record — e.g. a `TXT` ownership/key-validation record the user must set alongside the CNAME or A:
   ```json
   {
     "cname": [
@@ -66,53 +52,50 @@ the proxy/DNS here — only report records. The actual provisioning happens in `
     ]
   }
   ```
-- **Return blank/`{}`** when the user needs to do nothing — a subdomain under a wildcard you
-  already route, or a domain you provision **fully automatically** in `register` (proxy +
-  DNS, no manual step).
+- **Return blank/`{}`** when the user needs to do nothing — a subdomain under a wildcard you already route, or a domain you provision **fully automatically** in `register` (proxy + DNS, no manual step).
 - **Exit:** `0` to proceed, non-zero to abort (stderr shown).
 - Prefer to **fail open** on an outage here — the real gate is `register`.
 
 ## `register <domain>` — claim **and provision** the route
 
-Make `<domain>` actually route to this bench: claim the name and configure the edge proxy
-/ load balancer / DNS / cert so traffic reaches the bench. Called **before** the local
-site is created, so a failure leaves no orphan.
+Make `<domain>` actually route to this bench: claim the name and configure the edge proxy / load balancer / DNS / cert so traffic reaches the bench. Called **before** the local site is created, so a failure leaves no orphan.
 
 - **stdout:** ignored.
-- **Exit `0`:** route is live. bench-cli then writes the domain locally and re-runs its own
-  `setup-nginx` / `setup-letsencrypt` (your proxy sits in front — both layers apply).
-- **Exit non-zero:** bench-cli aborts and shows stderr. Undo any partial proxy/DNS changes
-  first.
+- **Exit `0`:** route is live. bench-cli then writes the domain locally and re-runs its own `setup-nginx` / `setup-letsencrypt` (your proxy sits in front — both layers apply).
+- **Exit non-zero:** bench-cli aborts and shows stderr. Undo any partial proxy/DNS changes first.
 - Must be **idempotent** — a retry should re-apply, not duplicate or error.
-- **Fail closed** on an unreachable control plane: if the route wasn't provisioned, don't
-  let the site get created.
+- **Fail closed** on an unreachable control plane: if the route wasn't provisioned, don't let the site get created.
 
 ## `deregister <domain>` — tear down / rollback
 
-Inverse of `register`: remove the proxy/DNS route and release the name. Called after a
-site is dropped, and as the rollback when a create fails midway.
+Inverse of `register`: remove the proxy/DNS route and release the name. Called after a site is dropped, and as the rollback when a create fails midway.
 
 - **stdout:** ignored.
-- **Always exit `0`** — best-effort. bench-cli removes the domain locally regardless; a
-  missed teardown just leaves a stale route to clean up later. A non-zero here would throw
-  an error on an otherwise-successful drop.
+- **Always exit `0`** — best-effort. bench-cli removes the domain locally regardless; a missed teardown just leaves a stale route to clean up later. A non-zero here would throw an error on an otherwise-successful drop.
 
 ## `wildcard-domains` — host-level query
 
-The wildcard patterns this host may create subdomains under. bench-cli uses them to
-constrain site names and to suggest subdomains in the UI.
+The wildcard patterns this host may create subdomains under. bench-cli uses them to constrain site names and to suggest subdomains in the UI.
 
 - **stdout:** a JSON array of patterns, or blank for none:
   ```json
   ["*.region.example.com", "*.eu.example.com"]
   ```
-- **Fail soft** — return blank (exit `0`) on an outage. Non-zero raises an error and breaks
-  the Add-Domain UI.
+- **Fail soft** — return blank (exit `0`) on an outage. Non-zero raises an error and breaks the Add-Domain UI.
+
+## `proxy-servers` — host-level query
+
+The IPs of the edge proxies / load balancers that sit in front of this bench. When you return any, bench-cli locks the generated nginx down to them: it accepts connections from those IPs **only** (`allow … ; deny all;`), reads the real client IP from the `X-Forwarded-For` they set (`set_real_ip_from` + `real_ip_header`), and forwards that header upstream **untouched** instead of appending to it. Return blank when the bench is reached directly and nginx should keep its default open, direct-client behaviour.
+
+- **stdout:** a JSON array of IPs (v4 or v6), or blank for none:
+  ```json
+  ["203.0.113.10", "203.0.113.11"]
+  ```
+- **Fail soft** — return blank (exit `0`) on an outage. A non-zero exit raises an error and breaks `setup-nginx`.
 
 ## Errors
 
-One mechanism: **exit non-zero, write the message to stderr.** That text becomes the error
-shown to the user; stdout is ignored on failure.
+One mechanism: **exit non-zero, write the message to stderr.** That text becomes the error shown to the user; stdout is ignored on failure.
 
 ```sh
 echo "subdomain 'app' is already taken — choose another" >&2
@@ -154,8 +137,13 @@ def main(argv):
         print(json.dumps(["*.region.example.com"]))  # or nothing for none
         return 0
 
+    if verb == "proxy-servers":
+        print(json.dumps(["203.0.113.10"]))  # edge-proxy IPs, or nothing for direct
+        return 0
+
     print("usage: bench-domain-provider generate-dns-records <site> <domain> | "
-          "register <domain> | deregister <domain> | wildcard-domains", file=sys.stderr)
+          "register <domain> | deregister <domain> | wildcard-domains | "
+          "proxy-servers", file=sys.stderr)
     return 64
 
 if __name__ == "__main__":
@@ -173,5 +161,4 @@ if __name__ == "__main__":
 ./bench-domain-provider register taken.example.com; echo "exit=$?"
 ```
 
-Then install it on `PATH` and exercise the real flows: `bench new-site` with a
-wildcard-matching name, and Add/Remove Domain in the admin UI.
+Then install it on `PATH` and exercise the real flows: `bench new-site` with a wildcard-matching name, and Add/Remove Domain in the admin UI.

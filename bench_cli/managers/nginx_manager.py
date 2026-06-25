@@ -97,6 +97,37 @@ if TYPE_CHECKING:
 class NginxManager:
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
+        self._proxy_servers_cache: list[str] | None = None
+
+    @property
+    def _proxy_servers(self) -> list[str]:
+        """Edge-proxy IPs the domain provider (if any) puts in front of this bench.
+        Looked up once; [] when no provider is installed, i.e. direct exposure."""
+        if self._proxy_servers_cache is None:
+            from bench_cli.core.domain_controller import DomainRouteProvider
+
+            self._proxy_servers_cache = DomainRouteProvider.proxy_servers()
+        return self._proxy_servers_cache
+
+    def _render_proxy_trust(self) -> str:
+        """When edge proxies front this bench, trust only them: accept connections
+        from those IPs alone, and read the real client IP from the X-Forwarded-For
+        they set. Empty (no restriction) when the bench is directly exposed."""
+        proxies = self._proxy_servers
+        if not proxies:
+            return ""
+        return (
+            "".join(f"    set_real_ip_from   {ip};\n" for ip in proxies)
+            + "    real_ip_header     X-Forwarded-For;\n"
+            + "    real_ip_recursive  on;\n"
+            + "".join(f"    allow              {ip};\n" for ip in proxies)
+            + "    deny               all;\n\n"
+        )
+
+    def _xff_header(self) -> str:
+        """Behind trusted proxies, pass their X-Forwarded-For through unchanged
+        rather than appending the (proxy's own) connecting address to it."""
+        return "$http_x_forwarded_for" if self._proxy_servers else "$proxy_add_x_forwarded_for"
 
     def is_installed(self) -> bool:
         return shutil.which("nginx") is not None
@@ -263,7 +294,8 @@ class NginxManager:
             f"    listen {http_port};\n"
             f"    listen [::]:{http_port};\n"
             f"    server_name {server_name};\n\n"
-            f"    root {bench_root}/sites;\n"
+            + self._render_proxy_trust()
+            + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
             f"    location /.well-known/acme-challenge/ {{\n"
             f"        root {webroot};\n"
@@ -287,7 +319,8 @@ class NginxManager:
             f"    listen {http_port};\n"
             f"    listen [::]:{http_port};\n"
             f"    server_name {server_name};\n\n"
-            f"    location /.well-known/acme-challenge/ {{\n"
+            + self._render_proxy_trust()
+            + f"    location /.well-known/acme-challenge/ {{\n"
             f"        root {webroot};\n"
             f"        try_files $uri =404;\n"
             f"    }}\n\n"
@@ -327,6 +360,7 @@ class NginxManager:
             f"    listen {https_port} ssl http2;\n"
             f"    listen [::]:{https_port} ssl http2;\n"
             f"    server_name {server_name};\n\n"
+            + self._render_proxy_trust()
             + ssl_directives
             + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
@@ -389,7 +423,7 @@ class NginxManager:
             f"        proxy_redirect     off;\n"
             f"        proxy_set_header   Host               $host;\n"
             f"        proxy_set_header   X-Real-IP          $remote_addr;\n"
-            f"        proxy_set_header   X-Forwarded-For    $proxy_add_x_forwarded_for;\n"
+            f"        proxy_set_header   X-Forwarded-For    {self._xff_header()};\n"
             f"        proxy_set_header   X-Forwarded-Proto  $scheme;\n"
             f"        proxy_set_header   X-Frappe-Site-Name {site.name};\n"
             f"    }}\n"
@@ -420,6 +454,7 @@ class NginxManager:
                 f"    listen {http_port};\n"
                 f"    listen [::]:{http_port};\n"
                 f"    server_name {domain};\n\n"
+                + self._render_proxy_trust()
                 + acme_block
                 + proxy_block
                 + f"}}\n"
@@ -431,6 +466,7 @@ class NginxManager:
                 f"    listen {http_port};\n"
                 f"    listen [::]:{http_port};\n"
                 f"    server_name {domain};\n\n"
+                + self._render_proxy_trust()
                 + acme_block
                 + proxy_block
                 + f"}}\n"
@@ -453,6 +489,7 @@ class NginxManager:
             f"    listen {http_port};\n"
             f"    listen [::]:{http_port};\n"
             f"    server_name {domain};\n\n"
+            + self._render_proxy_trust()
             + acme_block
             + f"    location / {{\n"
             f"        return 301 https://$host$request_uri;\n"
@@ -462,6 +499,7 @@ class NginxManager:
             f"    listen {https_port} ssl http2;\n"
             f"    listen [::]:{https_port} ssl http2;\n"
             f"    server_name {domain};\n\n"
+            + self._render_proxy_trust()
             + ssl_directives
             + proxy_block
             + f"}}\n"
@@ -475,7 +513,7 @@ class NginxManager:
             f"        proxy_redirect     off;\n"
             f"        proxy_set_header   Host               $host;\n"
             f"        proxy_set_header   X-Real-IP          $remote_addr;\n"
-            f"        proxy_set_header   X-Forwarded-For    $proxy_add_x_forwarded_for;\n"
+            f"        proxy_set_header   X-Forwarded-For    {self._xff_header()};\n"
             f"        proxy_set_header   X-Forwarded-Proto  $scheme;\n"
             f"    }}\n"
         )

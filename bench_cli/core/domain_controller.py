@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 #   bench-domain-provider register <domain>
 #   bench-domain-provider deregister <domain>
 #   bench-domain-provider wildcard-domains
+#   bench-domain-provider proxy-servers
 #
 # - Only generate-dns-records needs the site (its first positional arg, for the
 #   CNAME target); the rest operate on the domain alone. The process inherits the
@@ -31,6 +32,10 @@ if TYPE_CHECKING:
 #                              domain needs no DNS records at all.
 #     register, deregister -> output ignored; blank stdout is fine.
 #     wildcard-domains     -> a JSON list of domain strings, or blank for none.
+#     proxy-servers        -> a JSON list of edge-proxy IPs that front this bench,
+#                              or blank for none (the bench is directly exposed).
+# - On failure, exit non-zero and write a human-readable error to stderr; that
+#   text becomes the BenchError message shown to the user. stdout is ignored.
 # - On failure, exit non-zero and write a human-readable error to stderr; that
 #   text becomes the BenchError message shown to the user. stdout is ignored.
 _PROVIDER_BIN = "bench-domain-provider"
@@ -87,13 +92,24 @@ class DomainRouteProvider:
     def wildcard_domains() -> list[str]:
         """Wildcard domain patterns (e.g. '*.example.com') the provider extension
         offers, or [] if none. Host-level — no bench/site needs to exist yet."""
+        return DomainRouteProvider._host_query("wildcard-domains")
 
+    @staticmethod
+    def proxy_servers() -> list[str]:
+        """IPs of the edge proxies the provider extension puts in front of this
+        bench, or [] if none/not installed. Host-level — no bench/site in scope."""
+        return DomainRouteProvider._host_query("proxy-servers")
+
+    @staticmethod
+    def _host_query(verb: str) -> list[str]:
+        """Run a host-level provider verb that returns a JSON list, or [] if the
+        provider isn't installed or emits nothing."""
         exe = which(_PROVIDER_BIN)
         if not exe:
             return []
-        result = subprocess.run([exe, "wildcard-domains"], capture_output=True, text=True)
+        result = subprocess.run([exe, verb], capture_output=True, text=True)
         if result.returncode != 0:
-            raise BenchError(result.stderr.strip() or f"{_PROVIDER_BIN} wildcard-domains failed.")
+            raise BenchError(result.stderr.strip() or f"{_PROVIDER_BIN} {verb} failed.")
         out = result.stdout.strip()
         return json.loads(out) if out else []
 
