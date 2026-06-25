@@ -52,30 +52,41 @@ class SetupProductionCommand(Command):
         self._pm_arg = process_manager
         self._domain_arg = admin_domain
         self._tls_arg = admin_tls
+        self._existing_admin_domain = bench.config.admin.domain
+        self._registered_admin_domain: Optional[str] = None
 
     def run(self) -> None:
         self._require_linux()
         self._resolve_target()
         self._check_admin_domain()
-        self.bench.config.validate()
-        old_pm = self._installed_manager()
-        self._write_dns_multitenancy()
-        pm = self.bench.config.production.process_manager
-        if pm == "openrc":
-            self._setup_openrc()
-        elif pm == "systemd":
-            self._setup_systemd()
-        else:
-            self._setup_supervisor()
-        self._start_workload()
-        self._setup_nginx()
-        self._setup_letsencrypt_if_needed()
+        self._register_admin_domain()
+        try:
+            self.bench.config.validate()
+            old_pm = self._installed_manager()
+            self._write_dns_multitenancy()
+            pm = self.bench.config.production.process_manager
+            if pm == "openrc":
+                self._setup_openrc()
+            elif pm == "systemd":
+                self._setup_systemd()
+            else:
+                self._setup_supervisor()
+            self._start_workload()
+            self._setup_nginx()
+            self._setup_letsencrypt_if_needed()
 
-        self._build_admin_for_production()
+            self._build_admin_for_production()
 
-        self._migrate_from(old_pm)
-        self._persist_production_state()
+            self._migrate_from(old_pm)
+            self._persist_production_state()
+        except BaseException:
+            # A later step failed but the new admin route is already live at the
+            # provider; release it so a failed setup leaves no dead external route.
+            self._rollback_admin_domain()
+            raise
 
+        # The switch is committed; free the old hostname at the provider.
+        self._release_previous_admin_domain()
         self._print_summary()
 
     def _resolve_target(self) -> None:
@@ -170,7 +181,8 @@ class SetupProductionCommand(Command):
         """Admin is reached only via its domain in production. Use whatever is in
         bench.toml (validate() enforces it is present); just reject a domain that
         another bench already claims."""
-        from bench_cli.utils import normalize_host
+        from bench_cli.core.domain_controller import DomainRouteProvider
+        from bench_cli.utils import matches_wildcard, normalize_host
 
         domain = self.bench.config.admin.domain
         if not domain:
@@ -185,6 +197,42 @@ class SetupProductionCommand(Command):
                     f"Admin domain '{domain}' conflicts with this bench's own site '{site.config.name}'. "
                     f"An admin domain must not match a site domain."
                 )
+        # Enforce the wildcard rule only on a new/changed admin domain.
+        if normalize_host(domain) == normalize_host(self._existing_admin_domain):
+            return
+        patterns = DomainRouteProvider.wildcard_domains()
+        if patterns and not matches_wildcard(domain, patterns):
+            raise BenchError(f"Admin domain must match one of this bench's wildcard domains: {', '.join(patterns)}.")
+
+    def _register_admin_domain(self) -> None:
+        """Provision a new/changed admin domain with the provider before nginx/cert
+        work that would be wasted on a failure. _check_admin_domain has already
+        enforced the wildcard rule for it. Records the new domain so the run can
+        roll it back on failure or release the previous one on success."""
+        from bench_cli.core.domain_controller import DomainRouteProvider
+        from bench_cli.utils import normalize_host
+
+        self._registered_admin_domain = None
+        domain = self.bench.config.admin.domain
+        if not domain or normalize_host(domain) == normalize_host(self._existing_admin_domain):
+            return
+        DomainRouteProvider(self.bench).register(domain, domain)
+        self._registered_admin_domain = domain
+
+    def _rollback_admin_domain(self) -> None:
+        """Release the just-registered admin route after a failed setup."""
+        if self._registered_admin_domain:
+            from bench_cli.core.domain_controller import DomainRouteProvider
+
+            DomainRouteProvider(self.bench).release(self._registered_admin_domain)
+
+    def _release_previous_admin_domain(self) -> None:
+        """Free the superseded admin hostname at the provider once the switch is
+        committed, so another bench can reuse it without manual cleanup."""
+        if self._registered_admin_domain and self._existing_admin_domain:
+            from bench_cli.core.domain_controller import DomainRouteProvider
+
+            DomainRouteProvider(self.bench).release(self._existing_admin_domain)
 
     def _persist(self, updates: dict) -> None:
         """Merge ``updates`` into bench.toml in place, preserving all other fields."""

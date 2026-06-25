@@ -59,7 +59,6 @@ if (path === '/marketplace') return [{ label: 'Marketplace' }]
         @logout="$emit('logout')"
         @open-settings="showSettings = true"
         @change-bench="showChangeBench = true"
-        @new-bench="showNewBench = true"
       />
     </div>
     <main class="flex-1 overflow-hidden flex flex-col bg-surface-white">
@@ -75,7 +74,7 @@ if (path === '/marketplace') return [{ label: 'Marketplace' }]
       </div>
     </main>
     <SettingsModal v-model="showSettings" />
-    <BenchSwitcherDialog v-model="showChangeBench" />
+    <BenchSwitcherDialog v-model="showChangeBench" @new-bench="showNewBench = true" />
     <NewBenchDialog v-model="showNewBench" />
   </div>
 </template>

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 class StopCommand(Command):
     name = "stop"
     help = "Stop the running bench."
+    supports_all_benches = True
 
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench

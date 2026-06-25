@@ -26,6 +26,27 @@ def _is_public_domain(domain: str) -> bool:
     return bool(domain) and not domain.endswith(".localhost")
 
 
+def public_domains(site: "SiteConfig") -> list[str]:
+    """The site's domains certbot can issue for — the only ones a cert covers, so
+    a site with an internal name but a public custom domain still gets TLS."""
+    return [domain for domain in site.all_domains if _is_public_domain(domain)]
+
+
+def cert_covers(cert_file: Path, domains: list[str]) -> bool:
+    """True if the on-disk cert's SAN list already includes every domain."""
+    import subprocess
+
+    result = subprocess.run(
+        _privileged(["openssl", "x509", "-noout", "-ext", "subjectAltName", "-in", str(cert_file)]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    sans = {token.strip().removeprefix("DNS:") for token in result.stdout.replace(",", " ").split()}
+    return all(domain in sans for domain in domains)
+
+
 def letsencrypt_active(bench: "Bench") -> bool:
     """True if this bench is configured to obtain its own TLS certificates."""
     return bool(bench.config.letsencrypt.email) and bench.config.admin.tls
@@ -64,13 +85,21 @@ class LetsEncryptManager:
     def obtain(self, site: "SiteConfig") -> None:
         from bench_cli.managers.nginx_manager import NginxManager
 
+        domains = public_domains(site)
+        if not domains:
+            return  # nothing certbot can validate over the public internet
+
         nginx_manager = NginxManager(self.bench)
-        if nginx_manager.cert_exists(site) and not self._is_near_expiry(site):
-            print(f"Certificate for {site.name} already exists and is not near expiry. Skipping.")
+        if (
+            nginx_manager.cert_exists(site)
+            and not self._is_near_expiry(site)
+            and self._cert_covers(nginx_manager.cert_path(site), domains)
+        ):
+            print(f"Certificate for {site.name} already covers all domains and is not near expiry. Skipping.")
             return
 
         domain_args = []
-        for domain in site.all_domains:
+        for domain in domains:
             domain_args.extend(["-d", domain])
 
         webroot_path = str(self.bench.config.letsencrypt.webroot_path)
@@ -81,6 +110,8 @@ class LetsEncryptManager:
             "--webroot",
             "-w", webroot_path,
             *domain_args,
+            "--cert-name", site.name,
+            "--expand",
             "--email", email,
             "--agree-tos",
             "--non-interactive",
@@ -91,11 +122,26 @@ class LetsEncryptManager:
         # With TLS disabled a central proxy fronts the bench; obtain nothing.
         if not self.bench.config.admin.tls:
             return
+        from bench_cli.exceptions import CommandError
+
+        failed = []
         for site in self.bench.sites():
-            if site.config.ssl and _is_public_domain(site.config.name):
-                self.obtain(site.config)
+            if site.config.ssl and public_domains(site.config):
+                try:
+                    self.obtain(site.config)
+                except CommandError as exc:
+                    print(f"Could not obtain a certificate for '{site.config.name}', skipping: {exc}")
+                    failed.append(site.config.name)
         if _is_public_domain(self.bench.config.admin.domain):
-            self.obtain_admin()
+            try:
+                self.obtain_admin()
+            except CommandError as exc:
+                print(f"Could not obtain a certificate for '{self.bench.config.admin.domain}', skipping: {exc}")
+                failed.append(self.bench.config.admin.domain)
+        # Don't raise: certs that did issue should still get TLS applied. Domains
+        # that failed stay on HTTP and can be retried later.
+        if failed:
+            print(f"Certificate issuance failed for: {', '.join(failed)}. These stay on HTTP.")
 
     def obtain_admin(self) -> None:
         from bench_cli.managers.nginx_manager import NginxManager
@@ -120,6 +166,9 @@ class LetsEncryptManager:
 
     def renew(self) -> None:
         run_command(_privileged(["certbot", "renew", "--quiet"]))
+
+    def _cert_covers(self, cert_file: Path, domains: list[str]) -> bool:
+        return cert_covers(cert_file, domains)
 
     def _is_near_expiry(self, site: "SiteConfig") -> bool:
         from bench_cli.managers.nginx_manager import NginxManager

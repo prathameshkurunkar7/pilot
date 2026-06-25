@@ -22,6 +22,11 @@ _MACOS_SOCKET_CANDIDATES = ["/tmp/mysql.sock", "/usr/local/var/mysql/mysql.sock"
 _LINUX_SOCKET_CANDIDATES = ["/var/run/mysqld/mysqld.sock", "/run/mysqld/mysqld.sock"]
 # Alpine's mariadb package uses the conventional shared datadir.
 _ALPINE_DATA_DIR = Path("/var/lib/mysql")
+# Absolute paths we must never `rm -rf`, even if misconfigured as a datadir.
+_PROTECTED_DATA_DIRS = frozenset(
+    Path(p)
+    for p in ("/", "/var", "/var/lib", "/var/lib/mysql", "/home", "/root", "/etc", "/usr", "/srv", "/opt", "/mnt", "/data")
+)
 
 DEFAULT_VERSION = "11.8"
 _REPO_SETUP_URL = "https://r.mariadb.com/downloads/mariadb_repo_setup"
@@ -124,6 +129,56 @@ class MariaDBManager:
             run_command(["brew", "services", "stop", self._brew_package()])
         else:
             run_command(service_command("stop", self.service_unit()))
+
+    def remove_instance(self) -> None:
+        """Tear down this bench's dedicated MariaDB instance — the inverse of
+        provision_instance. Best-effort and idempotent: absent units/files are
+        skipped. No-op for shared (non-dedicated) setups, e.g. macOS. Used when
+        dropping a bench."""
+        if not self.is_dedicated or is_macos():
+            return
+        if is_alpine():
+            self._remove_instance_openrc()
+        else:
+            self._remove_instance_systemd()
+        self._remove_data_dir()
+
+    def _remove_instance_systemd(self) -> None:
+        instance = self.config.instance
+        service = self.service_unit()  # mariadb@<instance>
+        for cmd in (service_command("stop", service), service_disable_command(service)):
+            try:
+                run_command(cmd)
+            except Exception:
+                pass
+        override_dir = f"/etc/systemd/system/mariadb@{instance}.service.d"
+        run_command(_privileged(["rm", "-rf", override_dir]))
+        run_command(_privileged(["rm", "-f", f"{_CONF_DIR}/99-bench-{instance}.cnf"]))
+        try:
+            run_command(["sudo", "systemctl", "daemon-reload"])
+        except Exception:
+            pass
+
+    def _remove_instance_openrc(self) -> None:
+        service = self.service_unit()  # mariadb-<instance>
+        for cmd in (service_command("stop", service), service_disable_command(service)):
+            try:
+                run_command(cmd)
+            except Exception:
+                pass
+        run_command(_privileged(["rm", "-f", f"/etc/init.d/{service}", f"/var/log/{service}.log"]))
+
+    def _remove_data_dir(self) -> None:
+        # Only a dedicated instance owns a removable datadir; the shared server's
+        # is never ours to wipe. Guard against any shallow or protected system
+        # path so a malformed config can't delete data outside the bench.
+        if not self.is_dedicated:
+            return
+        data_dir = self.data_dir()
+        resolved = Path(data_dir).resolve()
+        if resolved in _PROTECTED_DATA_DIRS or len(resolved.parts) < 3:
+            return
+        run_command(_privileged(["rm", "-rf", data_dir]))
 
     def stop_shared(self) -> None:
         """Stop and disable the shared mariadb service.

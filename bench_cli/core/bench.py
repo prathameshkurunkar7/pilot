@@ -109,7 +109,14 @@ class Bench:
                     raw = _json.loads(cfg_path.read_text())
                 except Exception:
                     raw = {}
-                site_config = SiteConfig(name=d.name, apps=[], ssl=bool(raw.get("ssl")))
+                domains = [
+                    (entry.get("domain") if isinstance(entry, dict) else entry)
+                    for entry in (raw.get("domains") or [])
+                ]
+                domains = [d for d in domains if isinstance(d, str) and d]
+                host_name = (raw.get("host_name") or "").strip()
+                primary = host_name.split("://", 1)[-1] if host_name else ""
+                site_config = SiteConfig(name=d.name, apps=[], ssl=bool(raw.get("ssl")), domains=domains, primary_domain=primary)
                 result.append(Site(site_config, self))
         return result
 

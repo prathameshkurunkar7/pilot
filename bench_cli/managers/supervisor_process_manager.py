@@ -108,6 +108,12 @@ class SupervisorProcessManager(ProcessManager):
     def restart(self) -> None:
         run_command([*self._supervisorctl(), "restart", f"{self.workload_group}:*"])
 
+    def restart_admin(self) -> None:
+        """Restart the admin group if supervisord is up, so on-disk code/asset
+        changes (e.g. a rebuilt UI) take effect immediately."""
+        if self.is_alive():
+            run_command([*self._supervisorctl(), "restart", f"{self.admin_group}:*"])
+
     def is_running(self) -> bool:
         if not self.is_configured() or not self.is_alive():
             return False

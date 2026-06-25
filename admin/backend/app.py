@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import os
 import re
 import secrets
@@ -32,7 +33,7 @@ from bench_cli.config.bench_config import BenchConfig
 from bench_cli.exceptions import BenchError, ConfigError
 
 _STATIC_DIR = Path(__file__).parent / "static"
-_OPEN_PATHS = {"/api/status", "/api/login", "/api/logout"}
+_OPEN_PATHS = {"/api/status", "/api/login", "/api/logout", "/api/ping"}
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 # Lenient hostname: dotted alphanumeric/hyphen labels (allows admin.example.com
 # and dev names like my-admin.localhost).
@@ -47,6 +48,60 @@ def _port_open(port: int) -> bool:
             return True
     except OSError:
         return False
+
+
+def _workload_running(bench_dir: Path, toml_path: Path) -> bool | None:
+    """Whether a production bench's workload is currently running — used to
+    gate start/stop/restart controls for other benches in the switcher. None
+    if the check itself fails (e.g. process manager CLI not installed)."""
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.core.bench import Bench
+    from bench_cli.managers.process_manager import ProcessManagerFactory
+
+    try:
+        bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
+        return ProcessManagerFactory.create(bench).is_running()
+    except Exception:
+        return None
+
+
+def _admin_running(bench_dir: Path, toml_path: Path) -> bool | None:
+    """Whether a production bench's admin control plane is up — socket-activated,
+    so a listening socket counts even while the workload is stopped. Lets the UI
+    show 'Admin active' instead of 'Stopped' for a provisioned-but-not-started
+    bench. None if the check fails."""
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.core.bench import Bench
+    from bench_cli.managers.process_manager import ProcessManagerFactory
+
+    try:
+        bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
+        return ProcessManagerFactory.create(bench).admin_is_running()
+    except Exception:
+        return None
+
+
+def _admin_cert_exists(bench_dir: Path, toml_path: Path) -> bool:
+    """Whether the admin domain's TLS cert is in place — gates whether nginx
+    serves the admin over https yet. False on any failure (treat as plain http)."""
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.core.bench import Bench
+    from bench_cli.managers.nginx_manager import NginxManager
+
+    try:
+        bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
+        return NginxManager(bench).admin_cert_exists()
+    except Exception:
+        return False
+
+
+def _site_count(bench_dir: Path) -> int:
+    """Number of real sites in a bench — a sites/ subdir is a site iff it holds a
+    site_config.json (skips assets/, apps.txt, etc.)."""
+    sites_dir = bench_dir / "sites"
+    if not sites_dir.is_dir():
+        return 0
+    return sum(1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists())
 
 
 def _persist_toml(bench_dir: Path, updates: dict) -> None:
@@ -163,6 +218,14 @@ def create_app(bench_root: Path) -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc), "enabled": False}), 503
 
+    @app.route("/api/ping")
+    def api_ping():
+        # Liveness check: no auth, always 200. CORS-open so the frontend can probe
+        # both http:// and https:// of the current host while recovering.
+        resp = jsonify({"ok": True})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp
+
     @app.route("/api/status")
     def api_status():
         initialized = (bench_root / "env" / "bin" / "python").exists()
@@ -217,7 +280,7 @@ def create_app(bench_root: Path) -> Flask:
     @app.route("/api/benches/")
     def api_benches():
         benches_dir = bench_root.parent
-        running = []
+        benches = []
         for bench_dir in sorted(benches_dir.iterdir()):
             if not bench_dir.is_dir():
                 continue
@@ -244,22 +307,103 @@ def create_app(bench_root: Path) -> Flask:
                 # A production admin stays reachable while its workload is
                 # stopped; a stopped dev bench is unavailable (dead port).
                 reachable = _port_open(port) or _port_open(port + 1)
-                if not reachable:
-                    continue
-                scheme = "https" if tls else "http"
+                # Open over the scheme nginx actually serves: https only once the
+                # cert is in place, else http — a provisioned-but-not-set-up bench
+                # is served plain http even when tls is configured.
+                serves_https = tls and _admin_cert_exists(bench_dir, toml_path)
+                scheme = "https" if serves_https else "http"
                 admin_url = f"{scheme}://{domain}" if production and domain else ""
-                running.append({
+                workload_running = _workload_running(bench_dir, toml_path) if production else None
+                admin_running = _admin_running(bench_dir, toml_path) if production else None
+                benches.append({
                     "name": name,
                     "port": port,
                     "domain": domain,
                     "production": production,
                     "process_manager": pm or None,
-                    "runtime_state": "running",
+                    "reachable": reachable,
                     "admin_url": admin_url,
+                    "workload_running": workload_running,
+                    "admin_running": admin_running,
+                    "site_count": _site_count(bench_dir),
                 })
             except Exception:
                 continue
-        return jsonify(running)
+        return jsonify(benches)
+
+    @app.route("/api/benches/<name>/<action>", methods=["POST"])
+    def api_benches_control(name, action):
+        if action not in ("start", "stop", "restart"):
+            return jsonify({"ok": False, "error": f"Unknown action '{action}'."}), 400
+        if not _NAME_RE.match(name):
+            return jsonify({"ok": False, "error": "Invalid bench name."}), 400
+
+        target_dir = bench_root.parent / name
+        toml_path = target_dir / "bench.toml"
+        if not toml_path.exists():
+            return jsonify({"ok": False, "error": f"Bench '{name}' not found."}), 404
+
+        try:
+            with open(toml_path, "rb") as f:
+                target_config = tomllib.load(f)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+        if not target_config.get("production", {}).get("enabled"):
+            return jsonify({"ok": False, "error": "Start/stop/restart from here is only supported for production benches."}), 400
+
+        cli_root = _cli_root()
+        try:
+            result = subprocess.run(
+                [str(cli_root / "bench"), "-b", name, action],
+                cwd=cli_root, capture_output=True, text=True, timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify({"ok": False, "error": f"'{action}' timed out."}), 500
+        if result.returncode != 0:
+            return jsonify({"ok": False, "error": (result.stderr or result.stdout).strip()}), 500
+        return jsonify({"ok": True})
+
+    @app.route("/api/benches/<name>", methods=["DELETE"])
+    def api_benches_drop(name):
+        if not _NAME_RE.match(name):
+            return jsonify({"ok": False, "error": "Invalid bench name."}), 400
+
+        target_dir = bench_root.parent / name
+        toml_path = target_dir / "bench.toml"
+        if not toml_path.exists():
+            return jsonify({"ok": False, "error": f"Bench '{name}' not found."}), 404
+        if target_dir.resolve() == bench_root.resolve():
+            return jsonify({"ok": False, "error": "Can't drop the bench you're currently using."}), 400
+
+        # The drop itself re-checks for sites, but reject early with a clear
+        # message rather than shelling out only to fail.
+        sites = _site_count(target_dir)
+        if sites:
+            return jsonify({"ok": False, "error": f"Bench '{name}' has {sites} site(s). Drop them first."}), 400
+
+        cli_root = _cli_root()
+        try:
+            result = subprocess.run(
+                [str(cli_root / "bench"), "--yes", "-b", name, "drop"],
+                cwd=cli_root, capture_output=True, text=True, timeout=180,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify({"ok": False, "error": "Drop timed out."}), 500
+        if result.returncode != 0:
+            return jsonify({"ok": False, "error": (result.stderr or result.stdout).strip()}), 500
+        return jsonify({"ok": True})
+
+    @app.route("/api/benches/wildcard-domains", methods=["GET"])
+    def api_benches_wildcard_domains():
+        """Wildcard domain suffixes (no leading '*') new bench admin domains may be built from."""
+        from bench_cli.core.domain_controller import DomainRouteProvider
+        from bench_cli.utils import wildcard_suffix
+
+        try:
+            patterns = DomainRouteProvider.wildcard_domains()
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        return jsonify({"domains": [wildcard_suffix(p) for p in patterns]})
 
     @app.route("/api/benches/new", methods=["POST"])
     def api_benches_new():
@@ -297,6 +441,13 @@ def create_app(bench_root: Path) -> Flask:
         if normalize_host(admin_domain) == normalize_host(name):
             return jsonify({"error": "Admin domain must differ from the bench/site name."}), 400
 
+        from bench_cli.core.domain_controller import DomainRouteProvider
+        from bench_cli.utils import matches_wildcard
+
+        patterns = DomainRouteProvider.wildcard_domains()
+        if patterns and not matches_wildcard(admin_domain, patterns):
+            return jsonify({"error": f"Admin domain must match one of: {', '.join(patterns)}."}), 400
+
         # New benches from the UI come up plain HTTP; the user enables HTTPS
         # later from Settings (or the wizard). Never inherit a sibling's TLS here.
         admin_tls = bool(data.get("admin_tls", False))
@@ -326,6 +477,11 @@ def create_app(bench_root: Path) -> Flask:
                 from bench_cli.managers.nginx_manager import NginxManager
 
                 bench = Bench(BenchConfig.from_file(new_dir / "bench.toml"), new_dir)
+                # Register the admin domain with the domain provider (if any) before
+                # routing it, so it resolves to this server — the wizard is reached
+                # at this domain. The wizard's later `setup production` sees the
+                # domain unchanged and won't re-register it.
+                DomainRouteProvider(bench).register(admin_domain, admin_domain)
                 # Not deployed yet (production.enabled is false at this point), so
                 # pick the manager by the configured process_manager rather than
                 # via the factory, which gates on enabled.
@@ -346,10 +502,20 @@ def create_app(bench_root: Path) -> Flask:
                 # back to the foreground (Procfile) manager and misreport it. The
                 # workload simply stays stopped until the user finishes setup.
                 _persist_toml(new_dir, {"production": {"enabled": True}})
+                # The wizard is reached over the scheme nginx serves *now* — https
+                # only once the cert is actually in place, else http (TLS is set up
+                # later). Report it so the client never redirects to a scheme that
+                # isn't listening yet.
+                serves_https = bool(bench.config.admin.tls and nginx.admin_cert_exists())
+                # The IP the domain's A record should point at, so the browser can
+                # confirm (via DoH) that DNS has propagated to it specifically.
+                server_ip = DomainRouteProvider._server_ip()
             except Exception as exc:
                 return jsonify({"error": f"Failed to bring up the new bench: {exc}"}), 500
             return jsonify({"name": name, "port": new_port, "wizard_at_domain": True,
-                            "domain": admin.get("domain", "")})
+                            "domain": admin.get("domain", ""),
+                            "scheme": "https" if serves_https else "http",
+                            "server_ip": server_ip})
 
         # Dev parent (no process manager): run a standalone wizard server on the
         # bench's admin port and reach it on this host. Strip WERKZEUG_* so a
@@ -369,6 +535,31 @@ def create_app(bench_root: Path) -> Flask:
         return jsonify({"name": name, "port": new_port, "wizard_at_domain": False,
                         "domain": admin.get("domain", "")})
 
+    def _nginx_http_port() -> int:
+        # Shared host: one nginx serves every bench on the same http_port.
+        try:
+            with open(bench_root / "bench.toml", "rb") as f:
+                return int(tomllib.load(f).get("nginx", {}).get("http_port", 80))
+        except Exception:
+            return 80
+
+    def _wizard_responds(domain: str, scheme: str = "http") -> bool:
+        """Readiness for a production bench's wizard: nginx routes the domain to the
+        admin and the admin answers. Probed over loopback with a Host header, so no
+        DNS (and no stale DNS cache) is involved — DNS propagation to the browser is
+        the client's concern. /api/ping is unauthenticated and always 200 over http;
+        for an https bench :80 instead redirects to https, and that redirect only
+        exists once the cert is in place — so it is itself the readiness signal."""
+        conn = http.client.HTTPConnection("127.0.0.1", _nginx_http_port(), timeout=3)
+        try:
+            conn.request("GET", "/api/ping", headers={"Host": domain})
+            status = conn.getresponse().status
+            return status == 200 or (scheme == "https" and status in (301, 308))
+        except OSError:
+            return False
+        finally:
+            conn.close()
+
     def _current_is_production() -> bool:
         # Read the flag straight from toml (no full validation) so a slightly
         # incomplete current config can't block creating a new bench.
@@ -382,6 +573,12 @@ def create_app(bench_root: Path) -> Flask:
 
     @app.route("/api/benches/ready")
     def api_benches_ready():
+        # A production bench is reached at its admin domain: ready once the wizard
+        # actually answers there (DNS propagated, nginx routing, admin up).
+        domain = (request.args.get("domain") or "").strip()
+        if domain:
+            scheme = (request.args.get("scheme") or "http").strip()
+            return jsonify({"ready": _wizard_responds(domain, scheme)})
         try:
             port = int(request.args.get("port", ""))
         except ValueError:

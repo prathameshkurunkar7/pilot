@@ -97,6 +97,49 @@ if TYPE_CHECKING:
 class NginxManager:
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
+        self._proxy_servers_cache: list[str] | None = None
+
+    @property
+    def _proxy_servers(self) -> list[str]:
+        """Edge-proxy IPs the domain provider (if any) puts in front of this bench.
+        Looked up once; [] when no provider is installed, i.e. direct exposure."""
+        if self._proxy_servers_cache is None:
+            from bench_cli.core.domain_controller import DomainRouteProvider
+
+            self._proxy_servers_cache = DomainRouteProvider.proxy_servers()
+        return self._proxy_servers_cache
+
+    def _render_acme_location(self) -> str:
+        """ACME HTTP-01 challenge location. `allow all;` overrides any server-level
+        proxy-only deny so certbot's validation reaches the challenge files."""
+        webroot = self.bench.config.letsencrypt.webroot_path
+        return (
+            f"    location /.well-known/acme-challenge/ {{\n"
+            f"        allow all;\n"
+            f"        root {webroot};\n"
+            f"        try_files $uri =404;\n"
+            f"    }}\n\n"
+        )
+
+    def _render_proxy_trust(self) -> str:
+        """When edge proxies front this bench, trust only them: accept connections
+        from those IPs alone, and read the real client IP from the X-Forwarded-For
+        they set. Empty (no restriction) when the bench is directly exposed."""
+        proxies = self._proxy_servers
+        if not proxies:
+            return ""
+        return (
+            "".join(f"    set_real_ip_from   {ip};\n" for ip in proxies)
+            + "    real_ip_header     X-Forwarded-For;\n"
+            + "    real_ip_recursive  on;\n"
+            + "".join(f"    allow              {ip};\n" for ip in proxies)
+            + "    deny               all;\n\n"
+        )
+
+    def _xff_header(self) -> str:
+        """Behind trusted proxies, pass their X-Forwarded-For through unchanged
+        rather than appending the (proxy's own) connecting address to it."""
+        return "$http_x_forwarded_for" if self._proxy_servers else "$proxy_add_x_forwarded_for"
 
     def is_installed(self) -> bool:
         return shutil.which("nginx") is not None
@@ -114,7 +157,7 @@ class NginxManager:
         # terminates TLS, so neither sites nor the admin serve HTTPS here.
         tls = self.bench.config.admin.tls
         for site in self.bench.sites():
-            site_ssl_ready = tls and ssl_ready and self.cert_exists(site.config)
+            site_ssl_ready = tls and ssl_ready and self.cert_covers(site.config)
             conf_text = self._generate_site_config(site.config, site_ssl_ready)
             (sites_dir / f"{site.config.name}.conf").write_text(conf_text)
         # The admin is always reached via its (mandatory) domain in production;
@@ -196,6 +239,10 @@ class NginxManager:
     def _render_catchall(self, http_port: int, https_port: int, error_dir: Path) -> str:
         directives = "".join(f"    error_page {code} /_errors/{code}.html;\n" for code in _ERROR_PAGES)
         return (
+            # 256 fits any single server_name (DNS names max out at 253 chars); the
+            # stock 64-byte bucket overflows on long custom/wildcard domains. Set once
+            # here in the shared default conf — a per-bench copy would be a duplicate.
+            "server_names_hash_bucket_size 256;\n\n"
             "server {\n"
             f"    listen {http_port} default_server;\n"
             f"    listen [::]:{http_port} default_server;\n"
@@ -252,42 +299,36 @@ class NginxManager:
         max_body = nginx_config.client_max_body_size
         http_port = nginx_config.http_port
         socketio_port = self.bench.config.socketio_port
-        webroot = self.bench.config.letsencrypt.webroot_path
 
         return (
             f"server {{\n"
             f"    listen {http_port};\n"
             f"    listen [::]:{http_port};\n"
             f"    server_name {server_name};\n\n"
-            f"    root {bench_root}/sites;\n"
+            + self._render_proxy_trust()
+            + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
-            f"    location /.well-known/acme-challenge/ {{\n"
-            f"        root {webroot};\n"
-            f"        try_files $uri =404;\n"
-            f"    }}\n\n"
+            + self._render_acme_location()
             + self._render_error_pages()
             + self._render_assets_location()
             + self._render_files_location(site)
-            + self._render_socketio_location(socketio_port)
-            + self._render_proxy_location(bench_name)
+            + self._render_socketio_location(socketio_port, site.name)
+            + self._render_proxy_location(bench_name, site)
             + f"}}\n"
         )
 
     def _render_http_redirect_block(self, site: "SiteConfig", nginx_config: object) -> str:
         server_name = " ".join(site.all_domains)
         http_port = nginx_config.http_port
-        webroot = self.bench.config.letsencrypt.webroot_path
 
         return (
             f"server {{\n"
             f"    listen {http_port};\n"
             f"    listen [::]:{http_port};\n"
             f"    server_name {server_name};\n\n"
-            f"    location /.well-known/acme-challenge/ {{\n"
-            f"        root {webroot};\n"
-            f"        try_files $uri =404;\n"
-            f"    }}\n\n"
-            f"    location / {{\n"
+            + self._render_proxy_trust()
+            + self._render_acme_location()
+            + f"    location / {{\n"
             f"        return 301 https://$host$request_uri;\n"
             f"    }}\n"
             f"}}\n\n"
@@ -323,14 +364,15 @@ class NginxManager:
             f"    listen {https_port} ssl http2;\n"
             f"    listen [::]:{https_port} ssl http2;\n"
             f"    server_name {server_name};\n\n"
+            + self._render_proxy_trust()
             + ssl_directives
             + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
             + self._render_error_pages()
             + self._render_assets_location()
             + self._render_files_location(site)
-            + self._render_socketio_location(socketio_port)
-            + self._render_proxy_location(bench_name)
+            + self._render_socketio_location(socketio_port, site.name)
+            + self._render_proxy_location(bench_name, site)
             + f"}}\n"
         )
 
@@ -351,47 +393,57 @@ class NginxManager:
             f"    }}\n\n"
         )
 
-    def _render_socketio_location(self, socketio_port: int) -> str:
+    def _render_socketio_location(self, socketio_port: int, site_name: str) -> str:
+        # X-Frappe-Site-Name must be the site's real directory name, not $host:
+        # a custom domain (host) differs from it and Frappe resolves the site by
+        # this header. Host stays $host for URL building / host_name redirects.
         return (
             f"    location /socket.io {{\n"
             f"        proxy_pass         http://127.0.0.1:{socketio_port};\n"
             f"        proxy_http_version 1.1;\n"
             f"        proxy_set_header   Upgrade $http_upgrade;\n"
             f'        proxy_set_header   Connection "upgrade";\n'
-            f"        proxy_set_header   X-Frappe-Site-Name $host;\n"
+            f"        proxy_set_header   X-Frappe-Site-Name {site_name};\n"
             f"        proxy_set_header   Origin $scheme://$http_host;\n"
             f"        proxy_set_header   Host $host;\n"
             f"    }}\n\n"
         )
 
-    def _render_proxy_location(self, bench_name: str) -> str:
+    def _render_proxy_location(self, bench_name: str, site: "SiteConfig") -> str:
+        # Send every non-primary host to the canonical (primary) domain. Scoped to
+        # location / so /.well-known/acme-challenge/ (its own location) still works.
+        # Only when a primary was explicitly chosen — otherwise site.primary falls
+        # back to the (possibly internal) site name and would 301 public traffic to
+        # an unreachable host.
+        redirect = ""
+        if len(site.all_domains) > 1 and site.primary_domain:
+            redirect = (
+                f'        if ($host != "{site.primary}") {{\n'
+                f"            return 301 $scheme://{site.primary}$request_uri;\n"
+                f"        }}\n"
+            )
         return (
             f"    location / {{\n"
-            f"        proxy_pass         http://bench-{bench_name};\n"
+            + redirect
+            + f"        proxy_pass         http://bench-{bench_name};\n"
             f"        proxy_read_timeout 120;\n"
             f"        proxy_redirect     off;\n"
             f"        proxy_set_header   Host               $host;\n"
             f"        proxy_set_header   X-Real-IP          $remote_addr;\n"
-            f"        proxy_set_header   X-Forwarded-For    $proxy_add_x_forwarded_for;\n"
+            f"        proxy_set_header   X-Forwarded-For    {self._xff_header()};\n"
             f"        proxy_set_header   X-Forwarded-Proto  $scheme;\n"
-            f"        proxy_set_header   X-Frappe-Site-Name $host;\n"
+            f"        proxy_set_header   X-Frappe-Site-Name {site.name};\n"
             f"    }}\n"
         )
 
     def _generate_admin_config(self, ssl_ready: bool = False) -> str:
         admin = self.bench.config.admin
         nginx_config = self.bench.config.nginx
-        webroot = self.bench.config.letsencrypt.webroot_path
         http_port = nginx_config.http_port
         https_port = nginx_config.https_port
         domain = admin.domain
 
-        acme_block = (
-            f"    location /.well-known/acme-challenge/ {{\n"
-            f"        root {webroot};\n"
-            f"        try_files $uri =404;\n"
-            f"    }}\n\n"
-        )
+        acme_block = self._render_acme_location()
         proxy_block = self._render_error_pages() + self._render_admin_proxy_location()
 
         # admin.tls = False: a central proxy terminates TLS, so nginx serves the
@@ -403,6 +455,7 @@ class NginxManager:
                 f"    listen {http_port};\n"
                 f"    listen [::]:{http_port};\n"
                 f"    server_name {domain};\n\n"
+                + self._render_proxy_trust()
                 + acme_block
                 + proxy_block
                 + f"}}\n"
@@ -414,6 +467,7 @@ class NginxManager:
                 f"    listen {http_port};\n"
                 f"    listen [::]:{http_port};\n"
                 f"    server_name {domain};\n\n"
+                + self._render_proxy_trust()
                 + acme_block
                 + proxy_block
                 + f"}}\n"
@@ -436,6 +490,7 @@ class NginxManager:
             f"    listen {http_port};\n"
             f"    listen [::]:{http_port};\n"
             f"    server_name {domain};\n\n"
+            + self._render_proxy_trust()
             + acme_block
             + f"    location / {{\n"
             f"        return 301 https://$host$request_uri;\n"
@@ -445,6 +500,7 @@ class NginxManager:
             f"    listen {https_port} ssl http2;\n"
             f"    listen [::]:{https_port} ssl http2;\n"
             f"    server_name {domain};\n\n"
+            + self._render_proxy_trust()
             + ssl_directives
             + proxy_block
             + f"}}\n"
@@ -458,7 +514,7 @@ class NginxManager:
             f"        proxy_redirect     off;\n"
             f"        proxy_set_header   Host               $host;\n"
             f"        proxy_set_header   X-Real-IP          $remote_addr;\n"
-            f"        proxy_set_header   X-Forwarded-For    $proxy_add_x_forwarded_for;\n"
+            f"        proxy_set_header   X-Forwarded-For    {self._xff_header()};\n"
             f"        proxy_set_header   X-Forwarded-Proto  $scheme;\n"
             f"    }}\n"
         )
@@ -520,6 +576,17 @@ class NginxManager:
 
     def cert_exists(self, site: "SiteConfig") -> bool:
         return self._cert_files_exist(Path("/etc/letsencrypt/live") / site.name)
+
+    def cert_covers(self, site: "SiteConfig") -> bool:
+        """True if a cert exists and, when the site has public domains, its SAN list
+        covers every one — so a failed --expand can't serve a stale cert over HTTPS.
+        Pure-.localhost sites have no public exposure, so cert existence is enough."""
+        from bench_cli.managers.letsencrypt_manager import cert_covers, public_domains
+
+        if not self.cert_exists(site):
+            return False
+        public = public_domains(site)
+        return cert_covers(self.cert_path(site), public) if public else True
 
     @staticmethod
     def _cert_files_exist(live_dir: Path) -> bool:

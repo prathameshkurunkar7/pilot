@@ -57,6 +57,19 @@ def normalize_host(host: str) -> str:
     return h
 
 
+def wildcard_suffix(pattern: str) -> str:
+    """The fixed part of a wildcard domain pattern, e.g. '*.example.com' -> '.example.com',
+    '*-box1.example.com' -> '-box1.example.com'."""
+    return pattern[1:] if pattern.startswith("*") else pattern
+
+
+def matches_wildcard(domain: str, patterns: list[str]) -> bool:
+    """Whether ``domain`` ends with the fixed part of one of the wildcard ``patterns``
+    and has something before it (a bare suffix with no label doesn't match)."""
+    domain = normalize_host(domain)
+    return any(domain != (suffix := wildcard_suffix(p)) and domain.endswith(suffix) for p in patterns)
+
+
 def _bench_hosts(bench_dir: Path, config: "BenchConfig") -> Iterator[str]:
     """Yield every hostname a bench claims: its admin domain, each site's name,
     and each site's configured ``domains`` aliases — all normalized."""

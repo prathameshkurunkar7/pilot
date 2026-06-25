@@ -18,7 +18,7 @@ sites_bp = Blueprint("sites", __name__)
 
 # Confidential / system-managed site_config keys. These are never sent to the
 # admin UI and cannot be edited through it — they are preserved as-is on disk.
-PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl"})
+PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl", "domains", "host_name"})
 
 
 @sites_bp.route("/")
@@ -105,6 +105,19 @@ def site_apps(name: str):
             )
 
     return jsonify({"apps": result})
+
+
+@sites_bp.route("/wildcard-domains", methods=["GET"])
+def wildcard_domains():
+    """Wildcard domain suffixes (no leading '*') new site names may be built from."""
+    from bench_cli.core.domain_controller import DomainRouteProvider
+    from bench_cli.utils import wildcard_suffix
+
+    try:
+        patterns = DomainRouteProvider.wildcard_domains()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"domains": [wildcard_suffix(p) for p in patterns]})
 
 
 @sites_bp.route("/create", methods=["POST"])
@@ -450,6 +463,83 @@ def enable_ssl(name: str):
     return jsonify({"ok": True, "task_id": task_id})
 
 
+def _domain_routes(bench_root: Path):
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.core.bench import Bench
+    from bench_cli.core.domain_controller import DomainRouteProvider
+
+    bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
+    return DomainRouteProvider(bench)
+
+
+def _apply_domains(bench_root: Path, name: str) -> str:
+    """Re-run the right task so nginx (and certs, for SSL sites) pick up the change."""
+    import json
+
+    ssl = bool(json.loads((bench_root / "sites" / name / "site_config.json").read_text()).get("ssl"))
+    return TaskRunner(bench_root).run("setup-letsencrypt" if ssl else "setup-nginx", {})
+
+
+@sites_bp.route("/<name>/domains", methods=["GET"])
+def list_domains(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        routes = _domain_routes(bench_root)
+        return jsonify({"domains": routes.domains(name), "primary": routes.primary(name)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@sites_bp.route("/<name>/domains/dns-records", methods=["POST"])
+def domain_dns_records(name: str):
+    """Step 1 of attaching a domain: validate it, return CNAME/A record options."""
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
+    if err := validate_site_name(domain):
+        return jsonify({"ok": False, "error": err})
+    try:
+        records = _domain_routes(bench_root).generate_dns_records(name, domain)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "records": records})
+
+
+@sites_bp.route("/<name>/domains", methods=["POST"])
+def add_domain(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
+    if err := validate_site_name(domain):
+        return jsonify({"ok": False, "error": err})
+    try:
+        _domain_routes(bench_root).register(name, domain)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "task_id": _apply_domains(bench_root, name)})
+
+
+@sites_bp.route("/<name>/domains", methods=["DELETE"])
+def remove_domain(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
+    try:
+        _domain_routes(bench_root).deregister(name, domain)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "task_id": _apply_domains(bench_root, name)})
+
+
+@sites_bp.route("/<name>/domains/primary", methods=["POST"])
+def set_primary_domain(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip() or None
+    try:
+        _domain_routes(bench_root).set_primary(name, domain)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    # nginx redirects non-primary hosts to the primary, so regenerate it.
+    return jsonify({"ok": True, "task_id": _apply_domains(bench_root, name)})
+
+
 @sites_bp.route("/<name>/config", methods=["PATCH"])
 def update_config(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -579,6 +669,13 @@ def _new_site_name_error(bench_root: Path, name: str) -> str | None:
         admin_domain = ""
     if admin_domain and normalize_host(name) == normalize_host(admin_domain):
         return f"Site '{name}' clashes with this bench's admin domain. An admin domain must not match a site domain."
+
+    from bench_cli.core.domain_controller import DomainRouteProvider
+    from bench_cli.utils import matches_wildcard
+
+    patterns = DomainRouteProvider.wildcard_domains()
+    if patterns and not matches_wildcard(name, patterns):
+        return f"Site name must match one of this bench's wildcard domains: {', '.join(patterns)}."
     return None
 
 

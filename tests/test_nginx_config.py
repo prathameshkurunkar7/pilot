@@ -112,6 +112,25 @@ def test_admin_domain_proxy_under_systemd(tmp_path: Path) -> None:
     assert f"proxy_pass         http://127.0.0.1:{bench.config.admin.internal_port};" in content
 
 
+def test_localhost_ssl_site_gets_https_when_cert_present(tmp_path: Path) -> None:
+    # A pure-.localhost SSL site has no public domains to validate a SAN against,
+    # so cert existence alone enables HTTPS (the e2e suite runs on site1.localhost).
+    data = copy.deepcopy(_SSL_DATA)
+    data["admin"] = {"domain": "admin.example.com", "tls": True}
+    bench = _make_bench(tmp_path, data)
+    bench.create_directories()
+    (tmp_path / "sites" / "site1.localhost").mkdir(parents=True)
+    (tmp_path / "sites" / "site1.localhost" / "site_config.json").write_text('{"ssl": true}')
+
+    manager = NginxManager(bench)
+    manager.cert_exists = lambda site: True  # pretend a cert is present
+    manager.generate_config(ssl_ready=True)
+
+    content = (tmp_path / "config" / "nginx" / "sites" / "site1.localhost.conf").read_text()
+    assert "listen 443 ssl http2" in content
+    assert "return 301 https://$host$request_uri;" in content
+
+
 def test_admin_tls_disabled_serves_sites_http_only(tmp_path: Path) -> None:
     # admin.tls = False is bench-wide: even an SSL site with a cert on disk is
     # served plain-HTTP, because a central proxy terminates TLS upstream.
@@ -207,6 +226,34 @@ def test_server_name_includes_all_domains(tmp_path: Path) -> None:
     assert "www.site1.example.com" in config_text
 
 
+def test_no_canonical_redirect_without_explicit_primary(tmp_path: Path) -> None:
+    # Without an explicit primary, site.primary falls back to the (internal) site
+    # name; a 301 there would strand public traffic on an unreachable host.
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    site = SiteConfig(name="site.localhost", apps=["frappe"], domains=["www.example.com"])
+
+    config_text = manager._generate_site_config(site, ssl_ready=False)
+
+    assert "return 301 $scheme://" not in config_text
+
+
+def test_canonical_redirect_with_explicit_primary(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    site = SiteConfig(
+        name="site.localhost",
+        apps=["frappe"],
+        domains=["www.example.com"],
+        primary_domain="www.example.com",
+    )
+
+    config_text = manager._generate_site_config(site, ssl_ready=False)
+
+    assert 'if ($host != "www.example.com")' in config_text
+    assert "return 301 $scheme://www.example.com$request_uri;" in config_text
+
+
 def test_proxy_headers_present(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
@@ -215,6 +262,37 @@ def test_proxy_headers_present(tmp_path: Path) -> None:
 
     assert "X-Frappe-Site-Name" in config
     assert "X-Forwarded-Proto" in config
+
+
+def test_no_proxy_servers_keeps_direct_defaults(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    manager._proxy_servers_cache = []  # no provider / direct exposure
+
+    config = manager._generate_site_config(_BASE_SITE, ssl_ready=False)
+
+    assert "set_real_ip_from" not in config
+    assert "deny" not in config
+    assert "X-Forwarded-For    $proxy_add_x_forwarded_for" in config
+
+
+def test_proxy_servers_trust_only_those_ips(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    manager._proxy_servers_cache = ["203.0.113.5", "203.0.113.6"]
+
+    config = manager._generate_site_config(_BASE_SITE, ssl_ready=False)
+
+    # Trust the proxy IPs and accept connections from them alone.
+    assert "set_real_ip_from   203.0.113.5;" in config
+    assert "set_real_ip_from   203.0.113.6;" in config
+    assert "real_ip_header     X-Forwarded-For;" in config
+    assert "allow              203.0.113.5;" in config
+    assert "allow              203.0.113.6;" in config
+    assert "deny               all;" in config
+    # Trust the proxy's X-Forwarded-For unchanged rather than appending to it.
+    assert "X-Forwarded-For    $http_x_forwarded_for" in config
+    assert "$proxy_add_x_forwarded_for" not in config
 
 
 def test_two_benches_generate_non_conflicting_configs(tmp_path: Path) -> None:

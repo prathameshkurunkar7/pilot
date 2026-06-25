@@ -12,9 +12,8 @@ import LucideLogOut from '~icons/lucide/log-out'
 import LucideStore from '~icons/lucide/store'
 import LucideSettings from '~icons/lucide/settings'
 import LucideRepeat from '~icons/lucide/repeat'
-import LucidePlus from '~icons/lucide/plus'
 
-const emit = defineEmits(['logout', 'open-settings', 'change-bench', 'new-bench'])
+const emit = defineEmits(['logout', 'open-settings', 'change-bench'])
 
 const route = useRoute()
 
@@ -23,8 +22,7 @@ const header = {
   logo: '/logos/frappe-icon.png',
   menuItems: [
     { label: 'Settings', icon: LucideSettings, onClick: () => emit('open-settings') },
-    { label: 'Change Bench', icon: LucideRepeat, onClick: () => emit('change-bench') },
-    { label: 'New Bench', icon: LucidePlus, onClick: () => emit('new-bench') },
+    { label: 'Manage Benches', icon: LucideRepeat, onClick: () => emit('change-bench') },
     { label: 'Logout', icon: LucideLogOut, onClick: () => logout() },
   ],
 }

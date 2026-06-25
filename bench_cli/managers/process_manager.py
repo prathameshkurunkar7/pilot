@@ -159,6 +159,10 @@ class ProcessManager:
         # Dev admin runs in the foreground Procfile group; stop() already ends it.
         pass
 
+    def restart_admin(self) -> None:
+        # Dev admin runs in the foreground Procfile group; nothing to restart standalone.
+        pass
+
     def admin_is_running(self) -> bool:
         # In development the admin is served on admin.port by the foreground
         # runner; a bound port is the truth (not whether the runner pid is alive).

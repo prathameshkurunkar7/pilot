@@ -733,12 +733,28 @@ def test_ls_lists_benches_with_mode_and_address(tmp_path: Path, capsys: pytest.C
     (benches / "beta" / "bench.toml").write_text('[bench]\nname = "beta"\n\n[admin]\nport = 7005\n')
 
     with patch("bench_cli.loader.cli_root", return_value=tmp_path), \
-         patch("bench_cli.commands.ls.ListCommand._is_running", return_value=False):
+         patch("bench_cli.commands.ls.ListCommand._state", return_value="stopped"):
         ListCommand().run()
 
     out = capsys.readouterr().out
     assert "alpha" in out and "production" in out and "alpha-admin.example.com" in out
     assert "beta" in out and "development" in out and "http://localhost:7005" in out
+
+
+def test_ls_state_admin_active_when_workload_down_but_admin_up(tmp_path: Path) -> None:
+    from bench_cli.commands.ls import ListCommand
+    from bench_cli.managers.process_manager import ProcessManagerFactory
+
+    bench = make_bench(tmp_path)
+    with patch.object(ProcessManagerFactory, "create") as create:
+        manager = create.return_value
+        manager.is_running.return_value = False
+        manager.admin_is_running.return_value = True
+        assert ListCommand()._state(bench, production=True) == "admin"
+        manager.admin_is_running.return_value = False
+        assert ListCommand()._state(bench, production=True) == "stopped"
+        manager.is_running.return_value = True
+        assert ListCommand()._state(bench, production=True) == "running"
 
 
 def test_ls_empty_when_no_benches(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
@@ -834,3 +850,137 @@ def test_orchestrator_rollback_stops_mariadb_and_sets_maintenance() -> None:
     mariadb.start.assert_called_once()
     volume.rollback_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
     assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
+
+
+# ── DropBenchCommand ────────────────────────────────────────────────────────
+
+
+def _drop_config(name: str, instance: str = "") -> BenchConfig:
+    return BenchConfig(
+        name=name,
+        python_version="3.14",
+        apps=[AppConfig(name="frappe", repo="x", branch="y")],
+        mariadb=MariaDBConfig(root_password="root", instance=instance),
+        redis=RedisConfig(cache_port=13000, queue_port=11000),
+        workers=WorkerConfig(groups=[WorkerGroup(queues=["default"], count=1)]),
+    )
+
+
+def test_drop_bench_refuses_when_sites_exist(tmp_path: Path) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+
+    bench = Bench(_drop_config("one"), tmp_path)
+    site = tmp_path / "sites" / "a.localhost"
+    site.mkdir(parents=True)
+    (site / "site_config.json").write_text("{}")
+
+    with pytest.raises(BenchError, match="site"):
+        DropBenchCommand(bench, skip_confirm=True).run()
+    # The bench directory must survive a refused drop.
+    assert tmp_path.exists()
+
+
+def test_drop_bench_keeps_mariadb_instance_shared_with_sibling(tmp_path: Path) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+
+    benches = tmp_path / "benches"
+    (benches / "one").mkdir(parents=True)
+    sibling = benches / "two"
+    sibling.mkdir(parents=True)
+    (sibling / "bench.toml").write_text('[bench]\nname = "two"\n\n[mariadb]\ninstance = "shared"\n')
+
+    bench = Bench(_drop_config("one", instance="shared"), benches / "one")
+    assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is True
+
+
+def test_drop_bench_removes_unique_mariadb_instance(tmp_path: Path) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+
+    benches = tmp_path / "benches"
+    (benches / "one").mkdir(parents=True)
+    sibling = benches / "two"
+    sibling.mkdir(parents=True)
+    # A genuinely separate instance: own name, own datadir/socket, own port.
+    (sibling / "bench.toml").write_text(
+        '[bench]\nname = "two"\n\n[mariadb]\ninstance = "two"\nport = 3308\n'
+    )
+
+    config = _drop_config("one", instance="one")
+    config.mariadb.port = 3307
+    bench = Bench(config, benches / "one")
+    assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is False
+
+
+def test_drop_bench_keeps_mariadb_when_sibling_shares_host_port(tmp_path: Path) -> None:
+    """A sibling pointed at this bench's DB over TCP (same host:port) — even with
+    a different instance name — must keep the database alive."""
+    from bench_cli.commands.drop_bench import DropBenchCommand
+
+    benches = tmp_path / "benches"
+    (benches / "one").mkdir(parents=True)
+    sibling = benches / "two"
+    sibling.mkdir(parents=True)
+    # Different instance name, but connects to bench one's port on localhost.
+    (sibling / "bench.toml").write_text(
+        '[bench]\nname = "two"\n\n[mariadb]\ninstance = "two"\nhost = "127.0.0.1"\nport = 3307\n'
+    )
+
+    config = _drop_config("one", instance="one")
+    config.mariadb.host = "localhost"
+    config.mariadb.port = 3307
+    bench = Bench(config, benches / "one")
+    assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is True
+
+
+def test_drop_bench_destroys_zfs_dataset_on_full_teardown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+    from bench_cli.config.volume_config import VolumeConfig
+
+    config = _drop_config("one", instance="one")
+    config.volume = VolumeConfig(enabled=True, pool="bench-pool", name="one")
+    bench = Bench(config, tmp_path)
+
+    fake_mgr = MagicMock()
+    monkeypatch.setattr("bench_cli.platform.is_linux", lambda: True)
+    monkeypatch.setattr("bench_cli.managers.volume_manager.VolumeManager", lambda cfg: fake_mgr)
+
+    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=True)
+
+    fake_mgr.destroy_dataset.assert_called_once_with("bench-pool/one")
+    # Both the bench-files bind and the MariaDB datadir bind are unmounted.
+    assert fake_mgr.unmount.call_count == 2
+
+
+def test_drop_bench_keeps_zfs_dataset_when_db_shared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+    from bench_cli.config.volume_config import VolumeConfig
+
+    config = _drop_config("one", instance="one")
+    config.volume = VolumeConfig(enabled=True, pool="bench-pool", name="one")
+    bench = Bench(config, tmp_path)
+
+    fake_mgr = MagicMock()
+    monkeypatch.setattr("bench_cli.platform.is_linux", lambda: True)
+    monkeypatch.setattr("bench_cli.managers.volume_manager.VolumeManager", lambda cfg: fake_mgr)
+
+    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=False)
+
+    fake_mgr.destroy_dataset.assert_not_called()
+    # Only the bench-files bind is freed; the shared DB's datadir is left mounted.
+    fake_mgr.unmount.assert_called_once_with(tmp_path)
+
+
+def test_drop_bench_skips_volume_when_not_using_zfs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench_cli.commands.drop_bench import DropBenchCommand
+
+    bench = Bench(_drop_config("one", instance="one"), tmp_path)  # volume disabled by default
+    called = {"made": False}
+    monkeypatch.setattr("bench_cli.platform.is_linux", lambda: True)
+    monkeypatch.setattr(
+        "bench_cli.managers.volume_manager.VolumeManager",
+        lambda cfg: called.__setitem__("made", True),
+    )
+
+    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=True)
+
+    assert called["made"] is False

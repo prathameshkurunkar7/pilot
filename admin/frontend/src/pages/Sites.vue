@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
-import { Button, Dialog, FormControl, LoadingText, ErrorMessage, Switch, TabButtons } from 'frappe-ui'
+import { Button, Dialog, FormControl, LoadingText, ErrorMessage, Switch, TabButtons, Select } from 'frappe-ui'
 import FilePickerField from '../components/FilePickerField.vue'
 import UpdateAppDialog from '../components/UpdateAppDialog.vue'
 import { useTaskProgress } from '../composables/useTaskProgress.js'
@@ -27,8 +27,23 @@ async function loadSites() {
     loading.value = false
   }
 }
+async function loadWildcardDomains() {
+  try {
+    const res = await fetch('/api/sites/wildcard-domains')
+    const d = await res.json()
+    wildcardDomains.value = d.domains || []
+    selectedSuffix.value = wildcardDomains.value[0] || ''
+  } catch {
+    wildcardDomains.value = []
+  }
+}
+
 const showCreate = ref(false)
+const pendingTaskId = ref('')
 const siteName = ref('')
+const sitePrefix = ref('')
+const wildcardDomains = ref([])
+const selectedSuffix = ref('')
 const adminPassword = ref('')
 const creating = ref(false)
 const createError = ref('')
@@ -51,6 +66,14 @@ const STATUS_DOT = { online: 'bg-surface-green-3', broken: 'bg-surface-red-4', o
 function formatBackupDate(isoStr) {
   return new Date(isoStr).toLocaleString()
 }
+
+// In wildcard mode the visible field is just the prefix; keep siteName (what
+// createSite() actually submits) assembled from prefix + chosen suffix.
+watch([sitePrefix, selectedSuffix], () => {
+  if (wildcardDomains.value.length > 0) {
+    siteName.value = `${sitePrefix.value.trim()}${selectedSuffix.value}`
+  }
+})
 
 watch(backupSourceSite, async (site) => {
   selectedBackupTs.value = ''
@@ -109,7 +132,10 @@ async function createSite() {
       res = await fetch('/api/sites/create-from-upload', { method: 'POST', body: fd })
     }
     const d = await res.json()
-    if (d.ok) { showCreate.value = false; watchTask(d.task_id) }
+    // Navigate only after the dialog's leave transition completes (see
+    // onCreateClosed); closing and routing in the same tick unmounts this page
+    // mid-transition and orphans the teleported dialog overlay.
+    if (d.ok) { pendingTaskId.value = d.task_id; showCreate.value = false }
     else createError.value = d.error
   } catch (e) {
     createError.value = e.message
@@ -118,10 +144,19 @@ async function createSite() {
   }
 }
 
+function onCreateClosed() {
+  if (!pendingTaskId.value) return
+  const taskId = pendingTaskId.value
+  pendingTaskId.value = ''
+  watchTask(taskId)
+}
+
 function openCreate() {
   showCreate.value = true
   siteName.value = ''
+  sitePrefix.value = ''
   adminPassword.value = ''
+  loadWildcardDomains()
   createError.value = ''
   restoreFromBackup.value = false
   restoreMode.value = 'existing'
@@ -222,10 +257,20 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
 
     <UpdateAppDialog v-model="showUpdate" :apps="appsWithUpdates" />
 
-    <Dialog v-model="showCreate" :options="{ title: 'Create Site' }">
+    <Dialog v-model="showCreate" :options="{ title: 'Create Site' }" @after-leave="onCreateClosed">
       <template #body-content>
         <div @pointerdown.stop class="flex flex-col gap-4">
-          <FormControl label="Site Name" type="text" v-model="siteName" placeholder="mysite.localhost" @keyup.enter="createSite" />
+          <FormControl v-if="wildcardDomains.length === 0" label="Site Name" type="text" v-model="siteName"
+            placeholder="mysite.localhost" @keyup.enter="createSite" />
+          <div v-else>
+            <span class="mb-1.5 block text-xs text-ink-gray-5">Site Name</span>
+            <div class="flex items-stretch gap-2">
+              <FormControl class="min-w-0 flex-1" type="text" v-model="sitePrefix" placeholder="mysite" @keyup.enter="createSite" />
+              <Select v-if="wildcardDomains.length > 1" class="w-48 shrink-0" v-model="selectedSuffix"
+                :options="wildcardDomains.map(d => ({ label: d, value: d }))" />
+              <span v-else class="flex shrink-0 items-center whitespace-nowrap text-sm text-ink-gray-6">{{ wildcardDomains[0] }}</span>
+            </div>
+          </div>
           <FormControl label="Admin Password" type="password" v-model="adminPassword" placeholder="admin" description="Leave blank to use 'admin'" />
 
           <div class="border-t pt-4">
