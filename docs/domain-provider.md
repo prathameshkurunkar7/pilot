@@ -30,37 +30,35 @@ file or env you control.
 ## Verbs
 
 ```
-bench-domain-provider generate-dns-records <domain>
-bench-domain-provider register             <domain>
-bench-domain-provider deregister           <domain>
-bench-domain-provider wildcard-domains
+bench-domain-provider generate-dns-records <site> <domain>
+bench-domain-provider register             <site> <domain>
+bench-domain-provider deregister           <site> <domain>
+bench-domain-provider wildcard-domains     [site]
 ```
 
-Context is passed by **environment**, never flags:
+The **site in scope is the first positional argument** (`wildcard-domains` is host-level —
+it takes the site as an optional hint, which may be omitted). The process inherits the
+caller's environment; bench-cli sets no special variables. Any config your binary needs
+(API URL, credentials) is your own concern — read it from a file or env you control.
 
-| Variable     | Set for                          | Meaning                                              |
-|--------------|----------------------------------|------------------------------------------------------|
-| `BENCH_SITE` | all verbs                        | Site in scope (for `wildcard-domains`: a hint, may be empty) |
-| `BENCH_NAME` | all except `wildcard-domains`    | Bench name                                           |
-| `BENCH_PATH` | all except `wildcard-domains`    | Absolute path to the bench directory                 |
-
-## `generate-dns-records <domain>` — pre-flight
+## `generate-dns-records <site> <domain>` — pre-flight
 
 Validate the domain and tell the user which DNS records to set. **Not** the gate — just
 early feedback.
 
-- **stdout:** a JSON object, or blank/`{}` if no records are needed (e.g. it's a subdomain
-  under a wildcard you already route). Both keys optional:
+- **stdout:** a JSON object with two record sets — `cname` and `a`, one per validation
+  method — or blank/`{}` if no records are needed (e.g. it's a subdomain under a wildcard
+  you already route). Either set may be empty; the UI shows each non-empty set as an option:
   ```json
   {
-    "cname": { "type": "CNAME", "host": "app.example.com", "value": "site.bench.example.com" },
-    "a":     { "type": "A",     "host": "app.example.com", "value": "203.0.113.10" }
+    "cname": [{ "type": "CNAME", "host": "app.example.com", "value": "site.bench.example.com" }],
+    "a":     [{ "type": "A",     "host": "app.example.com", "value": "203.0.113.10" }]
   }
   ```
 - **Exit:** `0` to proceed, non-zero to abort (stderr shown).
 - Prefer to **fail open** on an outage here — the real gate is `register`.
 
-## `register <domain>` — claim **and provision** the route
+## `register <site> <domain>` — claim **and provision** the route
 
 Make `<domain>` actually route to this bench: claim the name and configure the edge proxy
 / load balancer / DNS / cert so traffic reaches the bench. Called **before** the local
@@ -75,7 +73,7 @@ site is created, so a failure leaves no orphan.
 - **Fail closed** on an unreachable control plane: if the route wasn't provisioned, don't
   let the site get created.
 
-## `deregister <domain>` — tear down / rollback
+## `deregister <site> <domain>` — tear down / rollback
 
 Inverse of `register`: remove the proxy/DNS route and release the name. Called after a
 site is dropped, and as the rollback when a create fails midway.
@@ -85,7 +83,7 @@ site is dropped, and as the rollback when a create fails midway.
   missed teardown just leaves a stale route to clean up later. A non-zero here would throw
   an error on an otherwise-successful drop.
 
-## `wildcard-domains` — host-level query
+## `wildcard-domains [site]` — host-level query
 
 The wildcard patterns this host may create subdomains under. bench-cli uses them to
 constrain site names and to suggest subdomains in the UI.
@@ -120,30 +118,32 @@ bench-cli only checks zero vs non-zero. A useful convention for your own code:
 
 ```python
 #!/usr/bin/env python3
-import json, os, sys
+import json, sys
 
 def main(argv):
     verb = argv[1] if len(argv) > 1 else ""
-    site = os.environ.get("BENCH_SITE", "")
 
-    if verb == "generate-dns-records" and len(argv) == 3:
-        return 0  # blank = no records; or print a {"cname": {...}} object
+    if verb == "generate-dns-records" and len(argv) == 4:
+        site, domain = argv[2], argv[3]
+        return 0  # blank = no records; or print {"cname": [...], "a": [...]}
 
-    if verb == "register" and len(argv) == 3:
-        domain = argv[2]
+    if verb == "register" and len(argv) == 4:
+        site, domain = argv[2], argv[3]
         # provision the route; on conflict:
         #   print(f"{domain} is already taken", file=sys.stderr); return 2
         return 0
 
-    if verb == "deregister" and len(argv) == 3:
+    if verb == "deregister" and len(argv) == 4:
         return 0  # best-effort; never block a drop
 
     if verb == "wildcard-domains":
+        site = argv[2] if len(argv) > 2 else ""
         print(json.dumps(["*.region.example.com"]))  # or nothing for none
         return 0
 
-    print("usage: bench-domain-provider generate-dns-records <domain> | "
-          "register <domain> | deregister <domain> | wildcard-domains", file=sys.stderr)
+    print("usage: bench-domain-provider generate-dns-records <site> <domain> | "
+          "register <site> <domain> | deregister <site> <domain> | "
+          "wildcard-domains [site]", file=sys.stderr)
     return 64
 
 if __name__ == "__main__":
@@ -153,13 +153,12 @@ if __name__ == "__main__":
 ## Test
 
 ```sh
-BENCH_SITE=mysite BENCH_NAME=demo BENCH_PATH=/path/to/bench \
-  ./bench-domain-provider generate-dns-records app.example.com; echo "exit=$?"
+./bench-domain-provider generate-dns-records mysite app.example.com; echo "exit=$?"
 
-BENCH_SITE=mysite ./bench-domain-provider wildcard-domains; echo "exit=$?"
+./bench-domain-provider wildcard-domains mysite; echo "exit=$?"
 
 # declined path: expect non-zero + stderr message
-BENCH_SITE=mysite ./bench-domain-provider register taken.example.com; echo "exit=$?"
+./bench-domain-provider register mysite taken.example.com; echo "exit=$?"
 ```
 
 Then install it on `PATH` and exercise the real flows: `bench new-site` with a

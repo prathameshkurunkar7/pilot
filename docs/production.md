@@ -565,7 +565,7 @@ class DomainRouteProvider:
         """
         Step 1 of attaching a domain: validate it's free (not on this site,
         another site, this bench's admin domain, or a sibling bench), then
-        return {"cname": {...}, "a": {...}} record options.
+        return {"cname": [...], "a": [...]} record sets, one per validation method.
         """
 
     def register(self, site_name: str, domain: str) -> None:
@@ -589,7 +589,7 @@ class DomainRouteProvider:
         """
 ```
 
-If a `bench-domain-provider` executable is on `PATH`, every method above except `wildcard_domains` (a static, host-level query) delegates to it instead of touching `site_config.json`. The CLI contract that extension must implement — verbs, env, stdout, exit codes — is documented in [domain-provider.md](domain-provider.md).
+If a `bench-domain-provider` executable is on `PATH`, every method above except `wildcard_domains` (a static, host-level query) delegates to it instead of touching `site_config.json`. The CLI contract that extension must implement — verbs, arguments, stdout, exit codes — is documented in [domain-provider.md](domain-provider.md).
 
 ### New commands
 

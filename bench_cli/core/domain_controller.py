@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import socket
 import subprocess
 import urllib.request
@@ -17,17 +16,18 @@ if TYPE_CHECKING:
 # Optional cloud/managed-hosting extension that takes over routing entirely when present.
 #
 # Contract for `bench-domain-provider`, invoked as:
-#   bench-domain-provider generate-dns-records <domain>
-#   bench-domain-provider register <domain>
-#   bench-domain-provider deregister <domain>
-#   bench-domain-provider wildcard-domains
+#   bench-domain-provider generate-dns-records <site> <domain>
+#   bench-domain-provider register <site> <domain>
+#   bench-domain-provider deregister <site> <domain>
+#   bench-domain-provider wildcard-domains [site]
 #
-# - Context is passed via env, not arguments: $BENCH_SITE always; $BENCH_NAME and
-#   $BENCH_PATH (current bench) too, except for wildcard-domains, a host-level
-#   query with no bench in scope. All optional to use.
+# - The site is passed as the first positional argument (host-level wildcard-domains
+#   takes it as an optional hint); the process inherits the caller's environment.
 # - On success (exit code 0), stdout is either empty or a single JSON value:
-#     generate-dns-records -> {"cname": {"type", "host", "value"}, "a": {...}} or
-#                              {} / blank if the domain needs no DNS records at all.
+#     generate-dns-records -> {"cname": [...], "a": [...]} — two sets of
+#                              {"type", "host", "value"} records, one per validation
+#                              method; either may be empty, or {} / blank if the
+#                              domain needs no DNS records at all.
 #     register, deregister -> output ignored; blank stdout is fine.
 #     wildcard-domains     -> a JSON list of domain strings, or blank for none.
 # - On failure, exit non-zero and write a human-readable error to stderr; that
@@ -42,16 +42,17 @@ class DomainRouteProvider:
         self.bench = bench
 
     def generate_dns_records(self, site_name: str, domain: str) -> dict:
-        """Step 1 of attaching a domain: validate it's free, return CNAME/A record options."""
+        """Step 1 of attaching a domain: validate it's free, return {"cname": [...], "a": [...]}
+        record sets — one per validation method; either may be empty if that route isn't an option."""
         ran, data = self._ask_provider("generate-dns-records", site_name, domain)
         if ran:
             return data or {}
         self._read(site_name)
         domain = self._validate_new(site_name, domain)
-        return {
-            "cname": {"type": "CNAME", "host": domain, "value": site_name},
-            "a": {"type": "A", "host": domain, "value": self._server_ip()},
-        }
+        records = {"cname": [{"type": "CNAME", "host": domain, "value": site_name}], "a": []}
+        if ip := self._server_ip():
+            records["a"] = [{"type": "A", "host": domain, "value": ip}]
+        return records
 
     def register(self, site_name: str, domain: str) -> None:
         """Step 2: validate + verify DNS — skipped if the provider already did
@@ -89,8 +90,8 @@ class DomainRouteProvider:
         exe = which(_PROVIDER_BIN)
         if not exe:
             return []
-        env = {**os.environ, "BENCH_SITE": site_name}
-        result = subprocess.run([exe, "wildcard-domains"], capture_output=True, text=True, env=env)
+        argv = [exe, "wildcard-domains", *([site_name] if site_name else [])]
+        result = subprocess.run(argv, capture_output=True, text=True)
         if result.returncode != 0:
             raise BenchError(result.stderr.strip() or f"{_PROVIDER_BIN} wildcard-domains failed.")
         out = result.stdout.strip()
@@ -130,18 +131,12 @@ class DomainRouteProvider:
         self._config_path(site_name).write_text(json.dumps(config, indent=1))
 
     def _ask_provider(self, action: str, site_name: str, domain: str | None = None) -> tuple[bool, object]:
-        """Run `bench-domain-provider <action> [domain]` if installed; (True, JSON or None) if it ran, else (False, None)."""
+        """Run `bench-domain-provider <action> <site> [domain]` if installed; (True, JSON or None) if it ran, else (False, None)."""
         exe = which(_PROVIDER_BIN)
         if not exe:
             return False, None
-        argv = [exe, action, *([domain] if domain else [])]
-        env = {
-            **os.environ,
-            "BENCH_SITE": site_name,
-            "BENCH_NAME": self.bench.config.name,
-            "BENCH_PATH": str(self.bench.path),
-        }
-        result = subprocess.run(argv, capture_output=True, text=True, env=env)
+        argv = [exe, action, site_name, *([domain] if domain else [])]
+        result = subprocess.run(argv, capture_output=True, text=True)
         if result.returncode != 0:
             raise BenchError(result.stderr.strip() or f"{_PROVIDER_BIN} {action} failed.")
         out = result.stdout.strip()

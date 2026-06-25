@@ -94,7 +94,14 @@ const domainError = ref('')
 const showAddDomain = ref(false)
 const domainStep = ref('input') // 'input' | 'records'
 const dnsRecords = ref(null)
-const hasDnsRecords = computed(() => !!dnsRecords.value?.cname?.host)
+const dnsRecordGroups = computed(() => {
+  const r = dnsRecords.value || {}
+  const groups = []
+  if (r.cname?.length) groups.push({ type: 'CNAME', records: r.cname })
+  if (r.a?.length) groups.push({ type: 'A', records: r.a })
+  return groups
+})
+const hasDnsRecords = computed(() => dnsRecordGroups.value.length > 0)
 
 const domainColumns = [
   { label: 'Domain', key: 'domain', align: 'left', width: 3 },
@@ -1187,10 +1194,17 @@ onMounted(() => {
           <template v-else>
             <template v-if="hasDnsRecords">
               <p class="text-sm text-ink-gray-6">
-                Add <span class="font-medium text-ink-gray-7">either one</span> of these records at your domain provider — any one will work.
+                <template v-if="dnsRecordGroups.length > 1">
+                  Add <span class="font-medium text-ink-gray-7">either one</span> of these records at your domain provider — any one will work.
+                </template>
+                <template v-else>
+                  Add this record at your domain provider.
+                </template>
               </p>
-              <div>
-                <p class="text-sm font-medium text-ink-gray-7">Option 1: CNAME record</p>
+              <div v-for="(group, i) in dnsRecordGroups" :key="group.type">
+                <p class="text-sm font-medium text-ink-gray-7">
+                  {{ dnsRecordGroups.length > 1 ? `Option ${i + 1}: ${group.type} record` : `${group.type} record` }}
+                </p>
                 <div class="mt-2 overflow-hidden rounded-lg border border-outline-gray-2">
                   <table class="w-full text-sm">
                     <thead>
@@ -1201,31 +1215,10 @@ onMounted(() => {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr>
-                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8">CNAME</td>
-                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.cname?.host }}</td>
-                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.cname?.value }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <div v-if="dnsRecords?.a?.value">
-                <p class="text-sm font-medium text-ink-gray-7">Option 2: A record</p>
-                <div class="mt-2 overflow-hidden rounded-lg border border-outline-gray-2">
-                  <table class="w-full text-sm">
-                    <thead>
-                      <tr class="bg-surface-gray-2 text-left text-xs font-medium uppercase tracking-wide text-ink-gray-5">
-                        <th class="px-3 py-2">Type</th>
-                        <th class="px-3 py-2">Host</th>
-                        <th class="px-3 py-2">Points to</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8">A</td>
-                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.a?.host }}</td>
-                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ dnsRecords?.a?.value }}</td>
+                      <tr v-for="(record, j) in group.records" :key="j">
+                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8">{{ record.type }}</td>
+                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ record.host }}</td>
+                        <td class="border-t border-outline-gray-2 px-3 py-2 font-mono text-ink-gray-8 break-all">{{ record.value }}</td>
                       </tr>
                     </tbody>
                   </table>
