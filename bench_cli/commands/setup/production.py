@@ -58,6 +58,7 @@ class SetupProductionCommand(Command):
         self._require_linux()
         self._resolve_target()
         self._check_admin_domain()
+        self._register_admin_domain()
         self.bench.config.validate()
         old_pm = self._installed_manager()
         self._write_dns_multitenancy()
@@ -193,6 +194,18 @@ class SetupProductionCommand(Command):
         patterns = DomainRouteProvider.wildcard_domains()
         if patterns and not matches_wildcard(domain, patterns):
             raise BenchError(f"Admin domain must match one of this bench's wildcard domains: {', '.join(patterns)}.")
+
+    def _register_admin_domain(self) -> None:
+        """Provision a new/changed admin domain with the provider before nginx/cert
+        work that would be wasted on a failure. _check_admin_domain has already
+        enforced the wildcard rule for it."""
+        from bench_cli.core.domain_controller import DomainRouteProvider
+        from bench_cli.utils import normalize_host
+
+        domain = self.bench.config.admin.domain
+        if not domain or normalize_host(domain) == normalize_host(self._existing_admin_domain):
+            return
+        DomainRouteProvider(self.bench).register(domain, domain)
 
     def _persist(self, updates: dict) -> None:
         """Merge ``updates`` into bench.toml in place, preserving all other fields."""

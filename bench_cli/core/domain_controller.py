@@ -79,8 +79,13 @@ class DomainRouteProvider:
 
     def deregister(self, site_name: str, domain: str) -> None:
         """Detach domain unless it's the primary. Always persists; the provider
-        (if any) is just told about it first, so a failure there stops us early."""
+        (if any) is just told about it first, so a failure there stops us early.
+        The site's own name has no domains-list entry, so it returns early after
+        telling the provider, mirroring register."""
         domain = normalize_host(domain)
+        if domain == normalize_host(site_name):
+            self._ask_provider("deregister", domain)
+            return
         primary = self.primary(site_name)
         if primary and normalize_host(primary) == domain:
             raise BenchError("Cannot remove the primary domain. Make another domain primary first.")

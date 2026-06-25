@@ -60,7 +60,11 @@ def test_deregisters_every_domain(tmp_path: Path, monkeypatch) -> None:
 
     DropSiteCommand(bench, "mysite")._deregister_domains()
 
-    assert log.read_text().splitlines() == ["deregister app.example.com", "deregister shop.example.com"]
+    assert log.read_text().splitlines() == [
+        "deregister mysite",
+        "deregister app.example.com",
+        "deregister shop.example.com",
+    ]
 
 
 def test_halts_on_provider_failure(tmp_path: Path, monkeypatch) -> None:

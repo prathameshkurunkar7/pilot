@@ -28,15 +28,17 @@ class DropSiteCommand:
         self._reload_nginx()
 
     def _deregister_domains(self) -> None:
-        """Release the site's custom domains at the provider before dropping. A
-        provider failure halts the drop so domains aren't orphaned at the edge.
-        Primary is cleared first so deregister's primary guard doesn't block it."""
+        """Release the site's domains at the provider before dropping. A provider
+        failure halts the drop so domains aren't orphaned at the edge. Primary is
+        cleared first so deregister's primary guard doesn't block it. The site's
+        own name (its primary route) is released alongside the custom domains."""
         from bench_cli.core.domain_controller import DomainRouteProvider
 
         if not (self.bench.sites_path / self.name / "site_config.json").exists():
             return
         routes = DomainRouteProvider(self.bench)
         routes.set_primary(self.name, None)
+        routes.deregister(self.name, self.name)
         for domain in routes.domains(self.name):
             routes.deregister(self.name, domain)
 

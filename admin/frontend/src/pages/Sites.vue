@@ -39,6 +39,7 @@ async function loadWildcardDomains() {
 }
 
 const showCreate = ref(false)
+const pendingTaskId = ref('')
 const siteName = ref('')
 const sitePrefix = ref('')
 const wildcardDomains = ref([])
@@ -131,13 +132,23 @@ async function createSite() {
       res = await fetch('/api/sites/create-from-upload', { method: 'POST', body: fd })
     }
     const d = await res.json()
-    if (d.ok) { showCreate.value = false; watchTask(d.task_id) }
+    // Navigate only after the dialog's leave transition completes (see
+    // onCreateClosed); closing and routing in the same tick unmounts this page
+    // mid-transition and orphans the teleported dialog overlay.
+    if (d.ok) { pendingTaskId.value = d.task_id; showCreate.value = false }
     else createError.value = d.error
   } catch (e) {
     createError.value = e.message
   } finally {
     creating.value = false
   }
+}
+
+function onCreateClosed() {
+  if (!pendingTaskId.value) return
+  const taskId = pendingTaskId.value
+  pendingTaskId.value = ''
+  watchTask(taskId)
 }
 
 function openCreate() {
@@ -246,7 +257,7 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
 
     <UpdateAppDialog v-model="showUpdate" :apps="appsWithUpdates" />
 
-    <Dialog v-model="showCreate" :options="{ title: 'Create Site' }">
+    <Dialog v-model="showCreate" :options="{ title: 'Create Site' }" @after-leave="onCreateClosed">
       <template #body-content>
         <div @pointerdown.stop class="flex flex-col gap-4">
           <FormControl v-if="wildcardDomains.length === 0" label="Site Name" type="text" v-model="siteName"

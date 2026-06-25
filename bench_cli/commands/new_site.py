@@ -44,13 +44,13 @@ class NewSiteCommand(Command):
 
         self._validate()
         ssl = self._should_enable_ssl()
+        self._register_with_provider()
         site = Site(SiteConfig(name=self.name, apps=self.apps, admin_password=self.admin_password, ssl=ssl), self.bench)
         print(f"Creating site '{self.name}'...")
         sys.stdout.flush()
         site.create()
         self.bench.write_common_site_config()
         print(f"\nSite '{self.name}' created successfully.")
-        self._register_with_provider()
         self.build_missing_assets()
         self._add_to_hosts()
         self._reload_nginx()
@@ -58,8 +58,8 @@ class NewSiteCommand(Command):
             self._obtain_cert(site)
 
     def _register_with_provider(self) -> None:
-        """A wildcard-derived name is the provider's to allocate; tell it before
-        spending time on assets/hosts/nginx/cert that would be wasted on failure."""
+        """A wildcard-derived name is the provider's to allocate; provision it before
+        creating the site so a provider failure leaves no orphan site."""
         if not self._via_wildcard:
             return
         from bench_cli.core.domain_controller import DomainRouteProvider
