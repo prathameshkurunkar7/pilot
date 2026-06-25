@@ -215,15 +215,21 @@ async function createBench() {
             </div>
           </div>
           <div>
-            <FormControl
-              v-if="wildcardDomains.length === 0"
-              label="Admin domain"
-              type="text"
-              v-model="adminDomain"
-              placeholder="my-admin.example.com"
-              @input="error = ''"
-              @keyup.enter="createBench"
-            />
+            <template v-if="wildcardDomains.length === 0">
+              <FormControl
+                label="Admin domain"
+                type="text"
+                v-model="adminDomain"
+                placeholder="my-admin.example.com"
+                @input="error = ''"
+                @keyup.enter="createBench"
+              />
+              <p class="mt-1.5 rounded bg-surface-gray-2 px-2.5 py-2 text-xs text-ink-gray-6">
+                Point this domain's DNS A record to this server <b>before</b> creating the
+                bench — it isn't provisioned automatically, so setup can't be reached until
+                it resolves here.
+              </p>
+            </template>
             <div v-else>
               <span class="mb-1.5 block text-xs text-ink-gray-5">Admin domain</span>
               <div class="flex items-stretch gap-2">

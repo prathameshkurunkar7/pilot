@@ -72,7 +72,7 @@ class ListCommand(Command):
             from bench_cli.admin_url import admin_url
 
             address = admin_url(config)
-            running = self._is_running(Bench(config, bench_dir))
+            running = self._is_running(Bench(config, bench_dir), prod.enabled)
             sites = self._site_count(bench_dir)
         except Exception:
             pass
@@ -85,11 +85,15 @@ class ListCommand(Command):
             return 0
         return sum(1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists())
 
-    def _is_running(self, bench) -> bool:
-        """A bench counts as running if its admin (control plane) is up."""
+    def _is_running(self, bench, production: bool) -> bool:
+        """Match the admin UI's view: a production bench is running when its
+        workload is up (its admin control plane stays up regardless), a dev bench
+        when its foreground admin is reachable."""
         from bench_cli.managers.process_manager import ProcessManagerFactory
 
         try:
+            if production:
+                return ProcessManagerFactory.create(bench).is_running()
             return ProcessManagerFactory.detect_running(bench).admin_is_running()
         except Exception:
             return False
