@@ -171,6 +171,10 @@ class DomainRouteProvider:
         result = subprocess.run(argv, capture_output=True, text=True)
         if result.returncode != 0:
             raise BenchError(result.stderr.strip() or f"{_PROVIDER_BIN} {action} failed.")
+        # Only data-returning actions emit JSON; register/deregister stdout is
+        # ignored, so don't parse it (a status line would wrongly fail an applied route).
+        if action in ("register", "deregister"):
+            return True, None
         out = result.stdout.strip()
         return True, (json.loads(out) if out else None)
 
