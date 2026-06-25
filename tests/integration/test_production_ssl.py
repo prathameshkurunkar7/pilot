@@ -19,6 +19,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -122,6 +123,19 @@ def _request(domain: str, path: str, *, scheme: str = "https", method: str = "GE
     args.append(f"{scheme}://{domain}:{port}{path}")
     body, _, code = _run(*args).stdout.rpartition("\n")
     return code.strip(), body
+
+
+def _request_ok(domain: str, path: str, *, tries: int = 20, delay: float = 0.5,
+                **kwargs) -> tuple[str, str]:
+    """Poll _request until it returns 200, to ride out the brief window where the
+    workload is restarting (e.g. just after a process-manager migration)."""
+    status, body = "000", ""
+    for _ in range(tries):
+        status, body = _request(domain, path, **kwargs)
+        if status == "200":
+            break
+        time.sleep(delay)
+    return status, body
 
 
 def _http_redirect(domain: str) -> tuple[str, str]:
@@ -500,7 +514,7 @@ class TestProcessManagerMigration:
         assert (systemd_production / "config" / "supervisor" / "supervisord.conf").exists()
         assert not systemd_target.exists(), "systemd units left behind after migration"
 
-        status, body = _request(SITE, "/api/method/frappe.ping")
+        status, body = _request_ok(SITE, "/api/method/frappe.ping")
         assert status == "200", f"site broke after PM migration ({status}): {body!r}"
         assert "pong" in body, body
 
