@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import os
 import re
 import secrets
@@ -445,11 +446,6 @@ def create_app(bench_root: Path) -> Flask:
                 # at this domain. The wizard's later `setup production` sees the
                 # domain unchanged and won't re-register it.
                 DomainRouteProvider(bench).register(admin_domain, admin_domain)
-                # When a provider just created the DNS record, give it a head start
-                # to propagate so the redirect doesn't land before it resolves; the
-                # UI keeps polling readiness after this.
-                if patterns:
-                    _wait_for_dns(admin_domain, timeout=20)
                 # Not deployed yet (production.enabled is false at this point), so
                 # pick the manager by the configured process_manager rather than
                 # via the factory, which gates on enabled.
@@ -470,10 +466,16 @@ def create_app(bench_root: Path) -> Flask:
                 # back to the foreground (Procfile) manager and misreport it. The
                 # workload simply stays stopped until the user finishes setup.
                 _persist_toml(new_dir, {"production": {"enabled": True}})
+                # The wizard is reached over the scheme nginx serves *now* — https
+                # only once the cert is actually in place, else http (TLS is set up
+                # later). Report it so the client never redirects to a scheme that
+                # isn't listening yet.
+                serves_https = bool(bench.config.admin.tls and nginx.admin_cert_exists())
             except Exception as exc:
                 return jsonify({"error": f"Failed to bring up the new bench: {exc}"}), 500
             return jsonify({"name": name, "port": new_port, "wizard_at_domain": True,
-                            "domain": admin.get("domain", "")})
+                            "domain": admin.get("domain", ""),
+                            "scheme": "https" if serves_https else "http"})
 
         # Dev parent (no process manager): run a standalone wizard server on the
         # bench's admin port and reach it on this host. Strip WERKZEUG_* so a
@@ -493,17 +495,30 @@ def create_app(bench_root: Path) -> Flask:
         return jsonify({"name": name, "port": new_port, "wizard_at_domain": False,
                         "domain": admin.get("domain", "")})
 
-    def _dns_resolves(host: str) -> bool:
+    def _nginx_http_port() -> int:
+        # Shared host: one nginx serves every bench on the same http_port.
         try:
-            socket.getaddrinfo(host, None)
-            return True
+            with open(bench_root / "bench.toml", "rb") as f:
+                return int(tomllib.load(f).get("nginx", {}).get("http_port", 80))
+        except Exception:
+            return 80
+
+    def _wizard_responds(domain: str, scheme: str = "http") -> bool:
+        """Readiness for a production bench's wizard: nginx routes the domain to the
+        admin and the admin answers. Probed over loopback with a Host header, so no
+        DNS (and no stale DNS cache) is involved — DNS propagation to the browser is
+        the client's concern. /api/ping is unauthenticated and always 200 over http;
+        for an https bench :80 instead redirects to https, and that redirect only
+        exists once the cert is in place — so it is itself the readiness signal."""
+        conn = http.client.HTTPConnection("127.0.0.1", _nginx_http_port(), timeout=3)
+        try:
+            conn.request("GET", "/api/ping", headers={"Host": domain})
+            status = conn.getresponse().status
+            return status == 200 or (scheme == "https" and status in (301, 308))
         except OSError:
             return False
-
-    def _wait_for_dns(host: str, timeout: int) -> None:
-        deadline = time.monotonic() + timeout
-        while not _dns_resolves(host) and time.monotonic() < deadline:
-            time.sleep(1)
+        finally:
+            conn.close()
 
     def _current_is_production() -> bool:
         # Read the flag straight from toml (no full validation) so a slightly
@@ -518,10 +533,12 @@ def create_app(bench_root: Path) -> Flask:
 
     @app.route("/api/benches/ready")
     def api_benches_ready():
-        # A production bench is reached at its admin domain: ready once DNS resolves.
+        # A production bench is reached at its admin domain: ready once the wizard
+        # actually answers there (DNS propagated, nginx routing, admin up).
         domain = (request.args.get("domain") or "").strip()
         if domain:
-            return jsonify({"ready": _dns_resolves(domain)})
+            scheme = (request.args.get("scheme") or "http").strip()
+            return jsonify({"ready": _wizard_responds(domain, scheme)})
         try:
             port = int(request.args.get("port", ""))
         except ValueError:

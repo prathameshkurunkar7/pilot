@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import socket
+import threading
 from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -265,6 +267,88 @@ def test_api_benches_ready_false_on_invalid_port(tmp_path: Path) -> None:
     resp = client.get("/api/benches/ready?port=not-a-number")
 
     assert resp.status_code == 400
+
+
+@contextmanager
+def _nginx_stub(ping_status: int = 200):
+    """A loopback HTTP server standing in for nginx+admin: answers /api/ping with
+    the given status (any Host), so the domain readiness probe can be exercised."""
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(ping_status if self.path == "/api/ping" else 404)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.server_address[1]
+    finally:
+        server.shutdown()
+
+
+def _set_nginx_http_port(bench_dir: Path, port: int) -> None:
+    path = bench_dir / "bench.toml"
+    path.write_text(path.read_text() + f"\n[nginx]\nhttp_port = {port}\n")
+
+
+def test_api_benches_ready_true_when_wizard_answers_at_domain(tmp_path: Path) -> None:
+    current = tmp_path / "benches" / "current"
+    client = _client(current)
+    with _nginx_stub() as port:
+        _set_nginx_http_port(current, port)
+        resp = client.get("/api/benches/ready?domain=admin.example.com")
+
+    assert resp.get_json() == {"ready": True}
+
+
+def test_api_benches_ready_false_when_wizard_errors_at_domain(tmp_path: Path) -> None:
+    current = tmp_path / "benches" / "current"
+    client = _client(current)
+    with _nginx_stub(ping_status=502) as port:
+        _set_nginx_http_port(current, port)
+        resp = client.get("/api/benches/ready?domain=admin.example.com")
+
+    assert resp.get_json() == {"ready": False}
+
+
+def test_api_benches_ready_true_when_https_bench_redirects(tmp_path: Path) -> None:
+    # An https bench redirects :80 -> https once the cert is in place; that
+    # redirect is itself the readiness signal, so scheme=https accepts a 301.
+    current = tmp_path / "benches" / "current"
+    client = _client(current)
+    with _nginx_stub(ping_status=301) as port:
+        _set_nginx_http_port(current, port)
+        resp = client.get("/api/benches/ready?domain=admin.example.com&scheme=https")
+
+    assert resp.get_json() == {"ready": True}
+
+
+def test_api_benches_ready_false_when_http_bench_redirects(tmp_path: Path) -> None:
+    # Without scheme=https a redirect is not readiness (an http bench answers 200).
+    current = tmp_path / "benches" / "current"
+    client = _client(current)
+    with _nginx_stub(ping_status=301) as port:
+        _set_nginx_http_port(current, port)
+        resp = client.get("/api/benches/ready?domain=admin.example.com")
+
+    assert resp.get_json() == {"ready": False}
+
+
+def test_api_benches_ready_false_when_nginx_down_at_domain(tmp_path: Path) -> None:
+    current = tmp_path / "benches" / "current"
+    client = _client(current)
+    with _listening_socket() as port:
+        pass  # nothing listening on `port` now
+    _set_nginx_http_port(current, port)
+
+    resp = client.get("/api/benches/ready?domain=admin.example.com")
+
+    assert resp.get_json() == {"ready": False}
 
 
 # ── POST /api/benches/<name>/<action> ────────────────────────────────────────

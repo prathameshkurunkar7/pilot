@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { Button, Dialog, ErrorMessage, FormControl, Select } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, FormControl, LoadingIndicator, Select } from 'frappe-ui'
 
 const PM_LABELS = { systemd: 'Systemd', openrc: 'OpenRC', supervisor: 'Supervisor' }
 
@@ -23,6 +23,25 @@ const selectedSuffix = ref('')
 const error = ref('')
 const creating = ref(false)
 const status = ref('')
+// Post-create waiting state: the bench exists; we poll until its wizard answers.
+const provisioning = ref(false)
+const wizardUrl = ref('')
+const elapsed = ref(0)
+let elapsedTimer = null
+
+const elapsedLabel = computed(() => {
+  const m = Math.floor(elapsed.value / 60)
+  const s = String(elapsed.value % 60).padStart(2, '0')
+  return `${m}:${s}`
+})
+
+function openWizard() {
+  if (wizardUrl.value) window.location.href = wizardUrl.value
+}
+
+function stopElapsed() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null }
+}
 
 // Whether the *current* bench is running in production. A dev bench (started
 // with `bench start`) most likely has no systemd/supervisor configured, so
@@ -73,7 +92,8 @@ watch([adminPrefix, selectedSuffix], () => {
 })
 
 watch(show, (open) => {
-  if (!open) return
+  stopElapsed()
+  if (!open) { provisioning.value = false; return }
   name.value = ''
   processManager.value = nativeProcessManager.value
   adminDomain.value = ''
@@ -81,48 +101,40 @@ watch(show, (open) => {
   error.value = ''
   creating.value = false
   status.value = ''
+  provisioning.value = false
+  wizardUrl.value = ''
+  elapsed.value = 0
   loadMode()
   loadWildcardDomains()
 })
 
-// Wait for the new bench's setup-wizard server to come up, then send the user
-// to it: a production parent routes the bench's own domain to the wizard, while
-// a dev parent is reached on this host's raw port.
-async function waitUntilLive(port, target, attempt = 0) {
-  try {
-    const response = await fetch(`/api/benches/ready?port=${port}`)
-    if (response.ok && (await response.json()).ready) {
-      status.value = 'Redirecting you to setup…'
-      window.location.href = target
-      return
-    }
-  } catch { }
-  if (attempt >= 60) {
-    error.value = 'New bench setup server did not come up in time.'
-    creating.value = false
-    return
-  }
-  setTimeout(() => waitUntilLive(port, target, attempt + 1), 1000)
+function startProvisioning(url) {
+  provisioning.value = true
+  wizardUrl.value = url
+  elapsed.value = 0
+  stopElapsed()
+  elapsedTimer = setInterval(() => { elapsed.value += 1 }, 1000)
 }
 
-// Poll until the new admin domain's DNS record resolves, then redirect to its
-// wizard. DNS propagation can lag the record's creation by a while.
-async function waitForDomain(domain, attempt = 0) {
-  status.value = 'Waiting for DNS to propagate…'
+// Poll the server until the wizard answers, then send the user to it. The server
+// probes nginx over loopback (DNS-free, deterministic), so readiness means the
+// bench is up and routing. We can't probe DNS from here — a no-cors fetch to the
+// http wizard is mixed-content blocked when this page is https — so once ready we
+// just navigate; the top-level redirect does its own resolution and the manual
+// link is the fallback if DNS hasn't reached this browser yet.
+async function pollReady(query) {
+  if (!provisioning.value) return
   try {
-    const response = await fetch(`/api/benches/ready?domain=${encodeURIComponent(domain)}`)
+    const response = await fetch(`/api/benches/ready?${query}`)
     if (response.ok && (await response.json()).ready) {
-      status.value = 'Redirecting you to setup…'
-      window.location.href = `http://${domain}`
+      stopElapsed()
+      status.value = 'Ready, opening setup…'
+      openWizard()
       return
     }
   } catch { }
-  if (attempt >= 120) {
-    error.value = `DNS for ${domain} did not propagate in time. Open it once it resolves.`
-    creating.value = false
-    return
-  }
-  setTimeout(() => waitForDomain(domain, attempt + 1), 2000)
+  status.value = 'Setting up the bench…'
+  setTimeout(() => pollReady(query), 2000)
 }
 
 async function createBench() {
@@ -151,15 +163,18 @@ async function createBench() {
       creating.value = false
       return
     }
-    status.value = 'Bench created — opening setup…'
+    status.value = 'Bench created, bringing up setup…'
     if (data.wizard_at_domain && data.domain) {
-      // The bench's own (socket-activated) admin serves the wizard at its domain.
-      // Wait for the new DNS record to resolve before redirecting — landing too
-      // soon fails to reach the host.
-      waitForDomain(data.domain)
+      // The bench's own (socket-activated) admin serves the wizard at its domain,
+      // over whichever scheme nginx reports it's actually serving (http until a
+      // cert is in place). Poll until it answers, then redirect to that scheme.
+      const scheme = data.scheme || 'http'
+      startProvisioning(`${scheme}://${data.domain}`)
+      pollReady(`domain=${encodeURIComponent(data.domain)}&scheme=${scheme}`)
     } else {
       // Dev parent: standalone wizard on this host's raw port.
-      waitUntilLive(data.port, `${window.location.protocol}//${window.location.hostname}:${data.port}`)
+      startProvisioning(`${window.location.protocol}//${window.location.hostname}:${data.port}`)
+      pollReady(`port=${data.port}`)
     }
   } catch {
     error.value = 'Failed to create bench'
@@ -175,9 +190,26 @@ async function createBench() {
            otherwise hijacks focus and prevents a click from focusing inputs
            (keyboard/Tab is unaffected) — same guard SettingsModal uses. -->
       <div class="flex flex-col gap-5" @pointerdown.stop>
+        <!-- Provisioning: the bench exists; wait until its wizard answers. -->
+        <div v-if="provisioning" class="flex flex-col items-center gap-4 py-6 text-center">
+          <LoadingIndicator class="h-8 w-8 text-ink-gray-5" />
+          <div class="flex flex-col gap-1.5">
+            <p class="text-base font-medium text-ink-gray-9">{{ status || 'Setting up the bench…' }}</p>
+            <p class="text-sm text-ink-gray-6">
+              Setting up <b class="font-medium text-ink-gray-8">{{ name }}</b>.
+              This can take up to 5 minutes and opens automatically when ready.
+            </p>
+            <p class="text-xs text-ink-gray-5">Elapsed {{ elapsedLabel }}</p>
+          </div>
+          <div class="flex flex-col items-center gap-1.5">
+            <Button variant="subtle" @click="openWizard">Open setup now</Button>
+            <span class="font-mono text-xs text-ink-gray-4 break-all">{{ wizardUrl }}</span>
+          </div>
+        </div>
+
         <!-- Dev bench: guide to the CLI rather than auto-provisioning a
              managed bench the host probably can't run. -->
-        <div v-if="isProduction === false" class="flex flex-col gap-3">
+        <div v-else-if="isProduction === false" class="flex flex-col gap-3">
           <p class="text-sm text-ink-gray-7">
             This bench is running in development mode, so new benches can be
             created from the command line :
@@ -226,7 +258,7 @@ async function createBench() {
               />
               <p class="mt-1.5 rounded bg-surface-gray-2 px-2.5 py-2 text-xs text-ink-gray-6">
                 Point this domain's DNS A record to this server <b>before</b> creating the
-                bench — it isn't provisioned automatically, so setup can't be reached until
+                bench. It isn't provisioned automatically, so setup can't be reached until
                 it resolves here.
               </p>
             </template>
@@ -258,9 +290,10 @@ async function createBench() {
     <template #actions>
       <div class="flex justify-end gap-2">
         <Button variant="ghost" @click="show = false">
-          {{ isProduction === false ? 'Close' : 'Cancel' }}
+          {{ (isProduction === false || provisioning) ? 'Close' : 'Cancel' }}
         </Button>
-        <Button v-if="isProduction === true" variant="solid" :loading="creating" @click="createBench">Create</Button>
+        <Button v-if="provisioning" variant="solid" @click="openWizard">Open setup</Button>
+        <Button v-else-if="isProduction === true" variant="solid" :loading="creating" @click="createBench">Create</Button>
       </div>
     </template>
   </Dialog>
