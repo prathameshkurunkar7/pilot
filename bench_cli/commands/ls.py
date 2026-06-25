@@ -35,7 +35,7 @@ class ListCommand(Command):
         )
         print(_dim(header))
         for r in rows:
-            dot = _ok("●") if r["running"] else _dim("○")
+            dot = {"running": _ok("●"), "admin": _warn("●")}.get(r["state"], _dim("○"))
             print(
                 f"  {dot} {r['name']:<{name_w}}  {r['mode']:<{mode_w}}  "
                 f"{r['manager']:<{mgr_w}}  {str(r['sites']):<{sites_w}}  {r['address']}"
@@ -57,7 +57,7 @@ class ListCommand(Command):
         from bench_cli.core.bench import Bench
 
         name = bench_dir.name
-        mode, manager, address, running, sites = "unknown", "-", "", False, 0
+        mode, manager, address, state, sites = "unknown", "-", "", "stopped", 0
         try:
             # Parse-only (no validate) so a half-configured bench still lists.
             config = BenchConfig._from_dict(tomllib.loads(toml_path.read_text()))
@@ -72,11 +72,11 @@ class ListCommand(Command):
             from bench_cli.admin_url import admin_url
 
             address = admin_url(config)
-            running = self._is_running(Bench(config, bench_dir), prod.enabled)
+            state = self._state(Bench(config, bench_dir), prod.enabled)
             sites = self._site_count(bench_dir)
         except Exception:
             pass
-        return {"name": name, "mode": mode, "manager": manager, "address": address, "running": running, "sites": sites}
+        return {"name": name, "mode": mode, "manager": manager, "address": address, "state": state, "sites": sites}
 
     def _site_count(self, bench_dir: Path) -> int:
         """A sites/ subdir counts as a site iff it has a site_config.json."""
@@ -85,22 +85,31 @@ class ListCommand(Command):
             return 0
         return sum(1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists())
 
-    def _is_running(self, bench, production: bool) -> bool:
-        """Match the admin UI's view: a production bench is running when its
-        workload is up (its admin control plane stays up regardless), a dev bench
-        when its foreground admin is reachable."""
+    def _state(self, bench, production: bool) -> str:
+        """Match the admin UI's view: 'running' when the workload is up, 'admin'
+        when only the (socket-activated) admin control plane is up — e.g. a bench
+        provisioned but not yet set up — and 'stopped' otherwise. A dev bench is
+        'running' iff its foreground admin is reachable."""
         from bench_cli.managers.process_manager import ProcessManagerFactory
 
         try:
-            if production:
-                return ProcessManagerFactory.create(bench).is_running()
-            return ProcessManagerFactory.detect_running(bench).admin_is_running()
+            if not production:
+                manager = ProcessManagerFactory.detect_running(bench)
+                return "running" if manager.admin_is_running() else "stopped"
+            manager = ProcessManagerFactory.create(bench)
+            if manager.is_running():
+                return "running"
+            return "admin" if manager.admin_is_running() else "stopped"
         except Exception:
-            return False
+            return "stopped"
 
 
 def _ok(text: str) -> str:
     return f"\033[32m{text}\033[0m"
+
+
+def _warn(text: str) -> str:
+    return f"\033[33m{text}\033[0m"
 
 
 def _dim(text: str) -> str:

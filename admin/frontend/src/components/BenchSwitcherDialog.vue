@@ -74,16 +74,29 @@ function benchManager(bench) {
   return mgr.charAt(0).toUpperCase() + mgr.slice(1)
 }
 
-// A dev bench is running iff its admin port is up. For production the admin
-// stays reachable while the workload is stopped, so the workload's state is
-// what "running" means; null means we couldn't tell (treated as running).
-function isRunning(bench) {
-  if (!bench.production) return bench.reachable
-  return bench.workload_running !== false
+// Three states. Dev: running iff its admin port is up. Production: the workload
+// being up is "Running"; if it's down but the admin control plane is still up
+// (socket-activated) the bench is "Admin active" rather than fully "Stopped" —
+// e.g. provisioned but setup not finished. null means we couldn't tell (up).
+function benchState(bench) {
+  if (!bench.production) return bench.reachable ? 'running' : 'stopped'
+  if (bench.workload_running !== false) return 'running'
+  if (bench.admin_running !== false) return 'admin'
+  return 'stopped'
+}
+
+const STATUS = {
+  running: { label: 'Running', theme: 'green' },
+  admin: { label: 'Admin active', theme: 'blue' },
+  stopped: { label: 'Stopped', theme: 'gray' },
 }
 
 function statusLabel(bench) {
-  return isRunning(bench) ? 'Running' : 'Stopped'
+  return STATUS[benchState(bench)].label
+}
+
+function statusTheme(bench) {
+  return STATUS[benchState(bench)].theme
 }
 
 // Production benches route through nginx, which socket-activates the admin on
@@ -213,7 +226,7 @@ watch(show, (open) => {
 
             <!-- Status badge -->
             <div v-else-if="column.key === 'status'" class="w-full">
-              <Badge :theme="isRunning(row.bench) ? 'green' : 'gray'" :label="row.status" />
+              <Badge :theme="statusTheme(row.bench)" :label="row.status" />
             </div>
 
             <!-- Per-bench actions -->

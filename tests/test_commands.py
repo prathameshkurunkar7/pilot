@@ -733,12 +733,28 @@ def test_ls_lists_benches_with_mode_and_address(tmp_path: Path, capsys: pytest.C
     (benches / "beta" / "bench.toml").write_text('[bench]\nname = "beta"\n\n[admin]\nport = 7005\n')
 
     with patch("bench_cli.loader.cli_root", return_value=tmp_path), \
-         patch("bench_cli.commands.ls.ListCommand._is_running", return_value=False):
+         patch("bench_cli.commands.ls.ListCommand._state", return_value="stopped"):
         ListCommand().run()
 
     out = capsys.readouterr().out
     assert "alpha" in out and "production" in out and "alpha-admin.example.com" in out
     assert "beta" in out and "development" in out and "http://localhost:7005" in out
+
+
+def test_ls_state_admin_active_when_workload_down_but_admin_up(tmp_path: Path) -> None:
+    from bench_cli.commands.ls import ListCommand
+    from bench_cli.managers.process_manager import ProcessManagerFactory
+
+    bench = make_bench(tmp_path)
+    with patch.object(ProcessManagerFactory, "create") as create:
+        manager = create.return_value
+        manager.is_running.return_value = False
+        manager.admin_is_running.return_value = True
+        assert ListCommand()._state(bench, production=True) == "admin"
+        manager.admin_is_running.return_value = False
+        assert ListCommand()._state(bench, production=True) == "stopped"
+        manager.is_running.return_value = True
+        assert ListCommand()._state(bench, production=True) == "running"
 
 
 def test_ls_empty_when_no_benches(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:

@@ -65,6 +65,22 @@ def _workload_running(bench_dir: Path, toml_path: Path) -> bool | None:
         return None
 
 
+def _admin_running(bench_dir: Path, toml_path: Path) -> bool | None:
+    """Whether a production bench's admin control plane is up — socket-activated,
+    so a listening socket counts even while the workload is stopped. Lets the UI
+    show 'Admin active' instead of 'Stopped' for a provisioned-but-not-started
+    bench. None if the check fails."""
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.core.bench import Bench
+    from bench_cli.managers.process_manager import ProcessManagerFactory
+
+    try:
+        bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
+        return ProcessManagerFactory.create(bench).admin_is_running()
+    except Exception:
+        return None
+
+
 def _site_count(bench_dir: Path) -> int:
     """Number of real sites in a bench — a sites/ subdir is a site iff it holds a
     site_config.json (skips assets/, apps.txt, etc.)."""
@@ -280,6 +296,7 @@ def create_app(bench_root: Path) -> Flask:
                 scheme = "https" if tls else "http"
                 admin_url = f"{scheme}://{domain}" if production and domain else ""
                 workload_running = _workload_running(bench_dir, toml_path) if production else None
+                admin_running = _admin_running(bench_dir, toml_path) if production else None
                 benches.append({
                     "name": name,
                     "port": port,
@@ -289,6 +306,7 @@ def create_app(bench_root: Path) -> Flask:
                     "reachable": reachable,
                     "admin_url": admin_url,
                     "workload_running": workload_running,
+                    "admin_running": admin_running,
                     "site_count": _site_count(bench_dir),
                 })
             except Exception:

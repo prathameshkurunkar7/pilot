@@ -165,7 +165,9 @@ async function pollReady(query, domain = '', serverIp = '') {
   if (!serverReady) status.value = 'Setting up the bench…'
   else if (!dnsOk) status.value = 'Waiting for DNS to propagate…'
   else status.value = 'Almost ready…'
-  setTimeout(() => pollReady(query, domain, serverIp), 2000)
+  // 5s between cycles: each one hits the public DoH resolver, which rate-limits
+  // (and can ban) aggressive callers, so keep the cadence gentle.
+  setTimeout(() => pollReady(query, domain, serverIp), 5000)
 }
 
 async function createBench() {
