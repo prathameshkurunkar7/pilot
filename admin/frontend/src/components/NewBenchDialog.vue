@@ -117,9 +117,6 @@ watch(show, (open) => {
 function startProvisioning(url) {
   provisioning.value = true
   wizardUrl.value = url
-  // One steady status for the whole wait — the internal stages (bench up, DNS,
-  // settle) shouldn't flicker the heading between messages.
-  status.value = 'Setting up your bench…'
   elapsed.value = 0
   stopElapsed()
   elapsedTimer = setInterval(() => { elapsed.value += 1 }, 1000)
@@ -233,10 +230,8 @@ async function createBench() {
         <div v-if="provisioning" class="flex flex-col items-center gap-5 py-8 text-center">
           <LoadingIndicator class="h-10 w-10 text-ink-gray-5" />
           <div class="flex flex-col gap-2">
-            <p class="text-lg font-semibold text-ink-gray-9">{{ status || 'Setting up the bench…' }}</p>
-            <p class="max-w-xs text-sm text-ink-gray-6">
-              This can take up to 5 minutes and opens automatically when ready.
-            </p>
+            <p class="text-lg font-semibold text-ink-gray-9">This may take a few minutes</p>
+            <p class="max-w-xs text-sm text-ink-gray-6">Opens automatically when ready.</p>
           </div>
           <span class="rounded-full bg-surface-gray-2 px-2.5 py-1 text-xs font-medium text-ink-gray-6">
             Elapsed {{ elapsedLabel }}
