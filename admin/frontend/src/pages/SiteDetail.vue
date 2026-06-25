@@ -92,6 +92,10 @@ const newDomain = ref('')
 const domainLoading = ref('')
 const domainError = ref('')
 const showAddDomain = ref(false)
+const showRemoveDomain = ref(false)
+const removeDomainTarget = ref('')
+const removeDomainError = ref('')
+const removingDomain = ref(false)
 const domainStep = ref('input') // 'input' | 'records'
 const dnsRecords = ref(null)
 const dnsRecordGroups = computed(() => {
@@ -198,9 +202,26 @@ async function addDomain() {
   }
 }
 
-async function removeDomain(domain) {
-  domainLoading.value = domain
-  try { await domainRequest('DELETE', { domain }) } finally { domainLoading.value = '' }
+function removeDomain(domain) {
+  // Confirm in a dialog, which also hosts any provider error (the row menu has
+  // nowhere to show one).
+  removeDomainTarget.value = domain
+  removeDomainError.value = ''
+  showRemoveDomain.value = true
+}
+
+async function confirmRemoveDomain() {
+  removingDomain.value = true
+  removeDomainError.value = ''
+  try {
+    if (await domainRequest('DELETE', { domain: removeDomainTarget.value })) {
+      showRemoveDomain.value = false
+    } else {
+      removeDomainError.value = domainError.value
+    }
+  } finally {
+    removingDomain.value = false
+  }
 }
 
 async function setPrimary(domain) {
@@ -1237,6 +1258,20 @@ onMounted(() => {
               {{ hasDnsRecords ? 'Verify DNS' : 'Register' }}
             </Button>
           </template>
+        </div>
+      </template>
+    </Dialog>
+
+    <!-- Remove domain dialog -->
+    <Dialog v-model="showRemoveDomain" :options="{ title: 'Remove Domain', size: 'md' }">
+      <template #body-content>
+        <p class="text-sm leading-relaxed text-ink-gray-7">
+          Remove <strong>{{ removeDomainTarget }}</strong> from this site? It will stop serving this domain.
+        </p>
+        <ErrorMessage v-if="removeDomainError" :message="removeDomainError" class="mt-2" />
+        <div class="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" @click="showRemoveDomain = false">Cancel</Button>
+          <Button variant="solid" theme="red" :loading="removingDomain" @click="confirmRemoveDomain">Remove</Button>
         </div>
       </template>
     </Dialog>
