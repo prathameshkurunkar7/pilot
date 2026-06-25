@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import functools
+import hmac
 import http.client
 import os
 import re
-import secrets
 import socket
 import subprocess
 import tomllib
@@ -12,7 +13,7 @@ import threading
 import time
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_file, session
+from flask import Flask, jsonify, request, send_file
 
 from .views.apps import apps_bp
 from .views.dashboard import dashboard_bp
@@ -40,6 +41,70 @@ _NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _ADMIN_DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
 )
+
+
+class _SlidingWindow:
+    """In-memory request counter, keyed by an arbitrary string. Safe for the
+    admin's single gunicorn worker (one process, multiple threads)."""
+
+    def __init__(self, max_hits: int, window: int) -> None:
+        self._max = max_hits
+        self._window = window
+        self._hits: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            recent = [t for t in self._hits.get(key, []) if now - t < self._window]
+            if len(recent) >= self._max:
+                self._hits[key] = recent
+                return False
+            recent.append(now)
+            self._hits[key] = recent
+            return True
+
+
+class _UsedTokens:
+    """Tracks consumed one-time sign-in token ids so each can be used only once.
+    In-memory (single gunicorn worker); entries self-expire at the token's exp."""
+
+    def __init__(self) -> None:
+        self._used: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def use(self, jti: str, exp: float) -> bool:
+        now = time.time()
+        with self._lock:
+            self._used = {j: e for j, e in self._used.items() if e > now}
+            if jti in self._used:
+                return False
+            self._used[jti] = exp
+            return True
+
+
+def _client_ip() -> str:
+    # nginx overwrites X-Real-IP with the real client address (unspoofable);
+    # in dev there is no proxy, so fall back to the direct peer.
+    return request.headers.get("X-Real-IP") or request.remote_addr or "unknown"
+
+
+def rate_limit(attempts: int, seconds: int, user_ip: bool = True):
+    """Allow at most ``attempts`` calls per ``seconds`` (per client IP when
+    ``user_ip``, else globally), returning HTTP 429 once exceeded."""
+
+    def decorator(view):
+        window = _SlidingWindow(attempts, seconds)
+
+        @functools.wraps(view)
+        def wrapper(*args, **kwargs):
+            if not window.allow(_client_ip() if user_ip else "*"):
+                return jsonify({"ok": False, "error": "Too many attempts. Try again later."}), 429
+            return view(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 def _port_open(port: int) -> bool:
@@ -186,10 +251,9 @@ def create_app(bench_root: Path) -> Flask:
     app = Flask(__name__, static_folder=str(_STATIC_DIR), static_url_path="/static")
     app.config["BENCH_ROOT"] = bench_root
     app.config["TEMPLATES_AUTO_RELOAD"] = False
-    app.secret_key = secrets.token_hex(32)
-    app.config["SESSION_COOKIE_NAME"] = f"bench_session_{bench_root.name}"
 
     _install_idle_watchdog(app)
+    used_logins = _UsedTokens()
 
     def _load_config():
         return BenchConfig.from_file(bench_root / "bench.toml")
@@ -199,10 +263,19 @@ def create_app(bench_root: Path) -> Flask:
             return jsonify({"error": "Admin is disabled", "enabled": False}), 503
         return None
 
+    def _is_authenticated(config: BenchConfig) -> bool:
+        from bench_cli.commands.generate_session import verify_token
+
+        return verify_token(request.cookies.get("sid", ""), config.admin.jwt_secret)
+
+    def _set_sid_cookie(resp, sid: str, config: BenchConfig):
+        resp.set_cookie("sid", sid, max_age=24 * 3600, httponly=True,
+                        secure=config.production.enabled and config.admin.tls, samesite="Lax")
+
     def _check_password(config: BenchConfig):
         if not config.admin.password:
             return jsonify({"error": "No admin password configured in bench.toml", "enabled": False}), 503
-        if not session.get("authenticated"):
+        if not _is_authenticated(config):
             return jsonify({"error": "Authentication required"}), 401
         return None
 
@@ -210,13 +283,14 @@ def create_app(bench_root: Path) -> Flask:
     def _guard():
         if not request.path.startswith("/api") or request.path in _OPEN_PATHS:
             return None
-        if request.path.startswith("/api/setup/"):
-            return None
+        is_setup = request.path.startswith("/api/setup/")
         try:
             config = _load_config()
-            return _check_enabled(config) or _check_password(config)
         except Exception as exc:
-            return jsonify({"error": str(exc), "enabled": False}), 503
+            return None if is_setup else (jsonify({"error": str(exc), "enabled": False}), 503)
+        if is_setup and not config.admin.password:
+            return None
+        return _check_enabled(config) or _check_password(config)
 
     @app.route("/api/ping")
     def api_ping():
@@ -254,11 +328,12 @@ def create_app(bench_root: Path) -> Flask:
                 "name": config.name,
                 "production": config.production.enabled,
                 "native_process_manager": native_process_manager(),
-                "authenticated": bool(session.get("authenticated")),
+                "authenticated": _is_authenticated(config),
             }
         )
 
     @app.route("/api/login", methods=["POST"])
+    @rate_limit(5, 60, user_ip=True)
     def api_login():
         try:
             config = BenchConfig.from_file(bench_root / "bench.toml")
@@ -266,16 +341,26 @@ def create_app(bench_root: Path) -> Flask:
             return jsonify({"ok": False, "error": str(exc)}), 503
         if not config.admin.password:
             return jsonify({"ok": False, "error": "No admin password configured in bench.toml"}), 503
+        from bench_cli.commands.generate_session import decode_token, ensure_jwt_secret, issue_token
+
         data = request.get_json(silent=True) or {}
-        if data.get("password") == config.admin.password:
-            session["authenticated"] = True
-            return jsonify({"ok": True})
-        return jsonify({"ok": False, "error": "Incorrect password"}), 401
+        sid = data.get("sid")
+        if sid is not None:
+            payload = decode_token(sid, config.admin.jwt_secret)
+            jti = payload.get("jti") if payload else None
+            if not jti or not used_logins.use(jti, payload["exp"]):
+                return jsonify({"ok": False, "error": "Invalid or expired sign-in link"}), 401
+        elif not hmac.compare_digest(str(data.get("password", "")), config.admin.password):
+            return jsonify({"ok": False, "error": "Incorrect password"}), 401
+        resp = jsonify({"ok": True})
+        _set_sid_cookie(resp, issue_token(ensure_jwt_secret(bench_root / "bench.toml")), config)
+        return resp
 
     @app.route("/api/logout", methods=["POST"])
     def api_logout():
-        session.clear()
-        return jsonify({"ok": True})
+        resp = jsonify({"ok": True})
+        resp.delete_cookie("sid")
+        return resp
 
     @app.route("/api/benches/")
     def api_benches():

@@ -24,13 +24,14 @@ def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:
 
 def _client(bench_root: Path, password: str = "secret"):
     from admin.backend.app import create_app
+    from bench_cli.commands.generate_session import ensure_jwt_secret, issue_token
 
     _write_bench_toml(bench_root, bench_root.name, admin_enabled=True, admin_password=password)
+    secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
     app.config["TESTING"] = True
     client = app.test_client()
-    with client.session_transaction() as sess:
-        sess["authenticated"] = True
+    client.set_cookie("sid", issue_token(secret))
     return client
 
 
@@ -175,11 +176,12 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
         toml.replace("enabled = false\nuse_companion_manager",
                      'enabled = true\nprocess_manager = "systemd"\nuse_companion_manager')
     )
+    from bench_cli.commands.generate_session import ensure_jwt_secret, issue_token
+    secret = ensure_jwt_secret(current / "bench.toml")
     app = create_app(current)
     app.config["TESTING"] = True
     client = app.test_client()
-    with client.session_transaction() as sess:
-        sess["authenticated"] = True
+    client.set_cookie("sid", issue_token(secret))
 
     with patch("bench_cli.managers.systemd_process_manager.SystemdProcessManager.setup_admin") as mock_admin, \
          patch("bench_cli.managers.nginx_manager.NginxManager.generate_config") as mock_gen, \
