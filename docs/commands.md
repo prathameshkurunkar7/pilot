@@ -502,6 +502,19 @@ Open the `--full-path` URL in a browser within **5 minutes**: the frontend excha
 
 ---
 
+## `bench set-admin-password`
+
+Sets the admin UI password in `bench.toml`. With `--password` omitted it prompts twice (securely, no echo) and confirms they match; the password is never printed or logged.
+
+```bash
+bench set-admin-password                       # prompts for the password
+bench set-admin-password --password <secret>   # non-interactive
+```
+
+`bench init` already generates a random password when admin is enabled and none is set, so this is for rotating it or setting one explicitly. The change takes effect immediately — the admin reloads `bench.toml` per request, no restart needed.
+
+---
+
 ## `bench setup nginx`
 
 See [docs/production.md](production.md) for the full step-by-step.
