@@ -80,6 +80,7 @@ class InitCommand(Command):
         # opts in and available standalone from the CLI.
         steps: list[tuple[str, Callable[[], None]]] = [
             ("Validate bench.toml", self.bench.config.validate),
+            ("Ensure admin password", self._ensure_admin_password),
             ("Install system packages", self._install_system_packages),
         ]
         if volume_enabled:
@@ -123,6 +124,17 @@ class InitCommand(Command):
             print(f"  Installing {app.config.name}...")
             python_env_manager.install_app(app)
         self.bench.write_apps_txt()
+
+    def _ensure_admin_password(self) -> None:
+        import secrets
+
+        from bench_cli.config.toml_writer import bench_config_to_toml
+
+        admin = self.bench.config.admin
+        if not admin.enabled or admin.password:
+            return
+        admin.password = secrets.token_hex(nbytes=5)
+        (self.bench.path / "bench.toml").write_text(bench_config_to_toml(self.bench.config))
 
     def _configure_redis(self) -> None:
         from bench_cli.managers.redis_manager import RedisManager
