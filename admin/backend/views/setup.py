@@ -65,7 +65,20 @@ def save_config():
     settings = {**existing, **data, "admin_enabled": True}
     content = BenchTomlBuilder(_current_name(bench_root), settings, port_offset=current_port_offset(toml_path)).render()
     toml_path.write_text(content)
-    return jsonify({"ok": True})
+
+    resp = jsonify({"ok": True})
+    # Setting the password closes the open setup phase; hand back a session so the
+    # next request (e.g. /start) authenticates instead of 401ing.
+    if settings.get("admin_password"):
+        _issue_setup_session(resp, toml_path)
+    return resp
+
+
+def _issue_setup_session(resp, toml_path: Path) -> None:
+    from bench_cli.commands.generate_session import ensure_jwt_secret, issue_token
+
+    resp.set_cookie("sid", issue_token(ensure_jwt_secret(toml_path)),
+                    max_age=24 * 3600, httponly=True, samesite="Lax")
 
 
 @setup_bp.route("/validate-mariadb", methods=["POST"])
