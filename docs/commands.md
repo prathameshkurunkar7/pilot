@@ -489,13 +489,13 @@ See [docs/admin.md](admin.md) for the full interface specification.
 
 ---
 
-## `bench generate-session`
+## `bench generate-admin-session`
 
 Issues a short-lived, single-use sign-in token so you can open the admin UI without typing the password — handy from a server shell.
 
 ```bash
-bench generate-session              # prints the token
-bench generate-session --full-path  # prints the full admin URL with ?sid=<token>
+bench generate-admin-session              # prints the token
+bench generate-admin-session --full-path  # prints the full admin URL with ?sid=<token>
 ```
 
 Open the `--full-path` URL in a browser within **5 minutes**: the frontend exchanges the `?sid=` token for a 1-day `HttpOnly` session cookie, and the sign-in token is consumed (single-use). Both are HS256 JWTs signed with `admin.jwt_secret` in `bench.toml` (generated on first run). Requires `admin.password` to be set.

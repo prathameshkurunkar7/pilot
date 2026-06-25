@@ -85,7 +85,7 @@ def ensure_jwt_secret(toml_path) -> str:
 
 
 class GenerateSessionCommand(Command):
-    name = "generate-session"
+    name = "generate-admin-session"
     help = "Issue a 5-minute one-time sign-in token (use --full-path for a sign-in URL)."
 
     @classmethod

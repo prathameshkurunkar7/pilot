@@ -207,7 +207,7 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | `bench upgrade` | Pull latest bench-cli and download the admin frontend |
 | `bench setup config` | Regenerate Procfile and config files from bench.toml |
 | `bench build-admin` | Rebuild admin frontend assets from source |
-| `bench generate-session` | Issue a 5-minute, single-use admin sign-in link (`--full-path` for the URL) |
+| `bench generate-admin-session` | Issue a 5-minute, single-use admin sign-in link (`--full-path` for the URL) |
 | `bench setup nginx` | Generate and install nginx config |
 | `bench setup letsencrypt` | Obtain SSL certificates |
 | `bench setup production` | Full production setup — `--process-manager`, `--admin-domain`, `--tls` |
