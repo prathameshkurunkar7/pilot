@@ -82,13 +82,15 @@ class SetupProductionCommand(Command):
                 self._setup_systemd()
             else:
                 self._setup_supervisor()
+
+            # Free the old manager's ports before the new one binds them.
+            self._migrate_from(old_pm)
             self._start_workload()
             self._setup_nginx()
             self._setup_letsencrypt_if_needed()
 
             self._build_admin_for_production()
 
-            self._migrate_from(old_pm)
             self._persist_production_state()
         except BaseException:
             # A later step failed but the new admin route is already live at the
@@ -169,7 +171,8 @@ class SetupProductionCommand(Command):
         return None
 
     def _migrate_from(self, old_pm: Optional[str]) -> None:
-        """Tear down the previous manager after the new one is up and healthy."""
+        """Tear down the previous manager so it releases the workload ports before
+        the new manager starts and binds them."""
         new_pm = self.bench.config.production.process_manager
         if not old_pm or old_pm == new_pm:
             return
