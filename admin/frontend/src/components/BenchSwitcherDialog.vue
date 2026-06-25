@@ -58,9 +58,10 @@ function isCurrentBench(bench) {
 }
 
 function benchUrl(bench) {
-  // Domain-routed (production) benches live behind nginx on the same scheme as
-  // the current page; dev benches are reachable directly on their admin port.
-  if (bench.domain) return `${window.location.protocol}//${bench.domain}`
+  // Production benches carry a backend-computed admin_url on the scheme nginx
+  // actually serves (http until the cert is in place, so a not-yet-set-up bench
+  // opens over http even from this https page); dev benches use their admin port.
+  if (bench.admin_url) return bench.admin_url
   return `${window.location.protocol}//${currentHost}:${bench.port}`
 }
 

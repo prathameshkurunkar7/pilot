@@ -81,6 +81,20 @@ def _admin_running(bench_dir: Path, toml_path: Path) -> bool | None:
         return None
 
 
+def _admin_cert_exists(bench_dir: Path, toml_path: Path) -> bool:
+    """Whether the admin domain's TLS cert is in place — gates whether nginx
+    serves the admin over https yet. False on any failure (treat as plain http)."""
+    from bench_cli.config.bench_config import BenchConfig
+    from bench_cli.core.bench import Bench
+    from bench_cli.managers.nginx_manager import NginxManager
+
+    try:
+        bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
+        return NginxManager(bench).admin_cert_exists()
+    except Exception:
+        return False
+
+
 def _site_count(bench_dir: Path) -> int:
     """Number of real sites in a bench — a sites/ subdir is a site iff it holds a
     site_config.json (skips assets/, apps.txt, etc.)."""
@@ -293,7 +307,11 @@ def create_app(bench_root: Path) -> Flask:
                 # A production admin stays reachable while its workload is
                 # stopped; a stopped dev bench is unavailable (dead port).
                 reachable = _port_open(port) or _port_open(port + 1)
-                scheme = "https" if tls else "http"
+                # Open over the scheme nginx actually serves: https only once the
+                # cert is in place, else http — a provisioned-but-not-set-up bench
+                # is served plain http even when tls is configured.
+                serves_https = tls and _admin_cert_exists(bench_dir, toml_path)
+                scheme = "https" if serves_https else "http"
                 admin_url = f"{scheme}://{domain}" if production and domain else ""
                 workload_running = _workload_running(bench_dir, toml_path) if production else None
                 admin_running = _admin_running(bench_dir, toml_path) if production else None

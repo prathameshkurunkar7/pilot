@@ -88,12 +88,35 @@ def test_api_benches_includes_production_metadata(tmp_path: Path) -> None:
             f'[admin]\nport = {live_port}\ndomain = "admin-prod.example.com"\ntls = true\n\n'
             f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
-        resp = client.get("/api/benches/")
+        # https only once the cert is in place; pretend it is for this assertion.
+        with patch("admin.backend.app._admin_cert_exists", return_value=True):
+            resp = client.get("/api/benches/")
 
     entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
     assert entry["production"] is True
     assert entry["process_manager"] == "systemd"
     assert entry["admin_url"] == "https://admin-prod.example.com"
+
+
+def test_api_benches_admin_url_is_http_until_cert_exists(tmp_path: Path) -> None:
+    # A tls bench whose cert isn't issued yet is served over plain http, so the
+    # switcher must open it over http (not the current https page's scheme).
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+
+    with _listening_socket() as live_port:
+        prod_dir = benches_dir / "prod-bench"
+        prod_dir.mkdir(parents=True, exist_ok=True)
+        (prod_dir / "bench.toml").write_text(
+            f'[bench]\nname = "prod-bench"\n\n'
+            f'[admin]\nport = {live_port}\ndomain = "admin-prod.example.com"\ntls = true\n\n'
+            f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
+        )
+        with patch("admin.backend.app._admin_cert_exists", return_value=False):
+            resp = client.get("/api/benches/")
+
+    entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
+    assert entry["admin_url"] == "http://admin-prod.example.com"
 
 
 def test_api_benches_includes_site_count(tmp_path: Path) -> None:
