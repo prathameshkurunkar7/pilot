@@ -62,7 +62,7 @@ the proxy/DNS here — only report records. The actual provisioning happens in `
   {
     "cname": [
       { "type": "CNAME", "host": "app.example.com",      "value": "site.bench.example.com" },
-      { "type": "TXT",   "host": "_bench.app.example.com", "value": "bench-verify=abc123" }
+      { "type": "TXT",   "host": "_atlas_verify.app.example.com", "value": "iYL4XzHnfzAimTSD9aBZYG5Try3NvC" }
     ]
   }
   ```
