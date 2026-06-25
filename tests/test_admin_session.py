@@ -144,6 +144,13 @@ def test_login_with_invalid_sid_rejected(tmp_path: Path) -> None:
     assert client.get("/api/benches/").status_code == 401
 
 
+def test_login_rate_limited_after_limit(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    for _ in range(10):
+        assert client.post("/api/login", json={"password": "wrong"}).status_code == 401
+    assert client.post("/api/login", json={"password": "wrong"}).status_code == 429
+
+
 def test_setup_endpoint_requires_auth_once_password_set(tmp_path: Path) -> None:
     client = _client(tmp_path)
     assert client.post("/api/setup/validate-mariadb", json={}).status_code == 401

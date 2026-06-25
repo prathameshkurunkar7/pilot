@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import hmac
 import http.client
 import os
@@ -40,6 +41,52 @@ _NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _ADMIN_DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
 )
+
+
+class _SlidingWindow:
+    """In-memory request counter, keyed by an arbitrary string. Safe for the
+    admin's single gunicorn worker (one process, multiple threads)."""
+
+    def __init__(self, max_hits: int, window: int) -> None:
+        self._max = max_hits
+        self._window = window
+        self._hits: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            recent = [t for t in self._hits.get(key, []) if now - t < self._window]
+            if len(recent) >= self._max:
+                self._hits[key] = recent
+                return False
+            recent.append(now)
+            self._hits[key] = recent
+            return True
+
+
+def _client_ip() -> str:
+    # nginx overwrites X-Real-IP with the real client address (unspoofable);
+    # in dev there is no proxy, so fall back to the direct peer.
+    return request.headers.get("X-Real-IP") or request.remote_addr or "unknown"
+
+
+def rate_limit(attempts: int, seconds: int, user_ip: bool = True):
+    """Allow at most ``attempts`` calls per ``seconds`` (per client IP when
+    ``user_ip``, else globally), returning HTTP 429 once exceeded."""
+
+    def decorator(view):
+        window = _SlidingWindow(attempts, seconds)
+
+        @functools.wraps(view)
+        def wrapper(*args, **kwargs):
+            if not window.allow(_client_ip() if user_ip else "*"):
+                return jsonify({"ok": False, "error": "Too many attempts. Try again later."}), 429
+            return view(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 def _port_open(port: int) -> bool:
@@ -267,6 +314,7 @@ def create_app(bench_root: Path) -> Flask:
         )
 
     @app.route("/api/login", methods=["POST"])
+    @rate_limit(10, 60)
     def api_login():
         try:
             config = BenchConfig.from_file(bench_root / "bench.toml")
