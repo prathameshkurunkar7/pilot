@@ -112,6 +112,25 @@ def test_admin_domain_proxy_under_systemd(tmp_path: Path) -> None:
     assert f"proxy_pass         http://127.0.0.1:{bench.config.admin.internal_port};" in content
 
 
+def test_localhost_ssl_site_gets_https_when_cert_present(tmp_path: Path) -> None:
+    # A pure-.localhost SSL site has no public domains to validate a SAN against,
+    # so cert existence alone enables HTTPS (the e2e suite runs on site1.localhost).
+    data = copy.deepcopy(_SSL_DATA)
+    data["admin"] = {"domain": "admin.example.com", "tls": True}
+    bench = _make_bench(tmp_path, data)
+    bench.create_directories()
+    (tmp_path / "sites" / "site1.localhost").mkdir(parents=True)
+    (tmp_path / "sites" / "site1.localhost" / "site_config.json").write_text('{"ssl": true}')
+
+    manager = NginxManager(bench)
+    manager.cert_exists = lambda site: True  # pretend a cert is present
+    manager.generate_config(ssl_ready=True)
+
+    content = (tmp_path / "config" / "nginx" / "sites" / "site1.localhost.conf").read_text()
+    assert "listen 443 ssl http2" in content
+    assert "return 301 https://$host$request_uri;" in content
+
+
 def test_admin_tls_disabled_serves_sites_http_only(tmp_path: Path) -> None:
     # admin.tls = False is bench-wide: even an SSL site with a cert on disk is
     # served plain-HTTP, because a central proxy terminates TLS upstream.

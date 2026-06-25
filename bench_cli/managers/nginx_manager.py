@@ -575,12 +575,15 @@ class NginxManager:
         return self._cert_files_exist(Path("/etc/letsencrypt/live") / site.name)
 
     def cert_covers(self, site: "SiteConfig") -> bool:
-        """True only if a cert exists AND its SAN list covers every public domain
-        of the site, so a failed --expand can't serve a stale cert over HTTPS."""
+        """True if a cert exists and, when the site has public domains, its SAN list
+        covers every one — so a failed --expand can't serve a stale cert over HTTPS.
+        Pure-.localhost sites have no public exposure, so cert existence is enough."""
         from bench_cli.managers.letsencrypt_manager import cert_covers, public_domains
 
-        domains = public_domains(site)
-        return bool(domains) and self.cert_exists(site) and cert_covers(self.cert_path(site), domains)
+        if not self.cert_exists(site):
+            return False
+        public = public_domains(site)
+        return cert_covers(self.cert_path(site), public) if public else True
 
     @staticmethod
     def _cert_files_exist(live_dir: Path) -> bool:
