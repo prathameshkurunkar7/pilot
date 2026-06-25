@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { Button, FormControl, FormLabel, Password, Slider, ErrorMessage, FeatherIcon } from 'frappe-ui'
 import TaskStream from '../components/TaskStream.vue'
 
-const emit = defineEmits(['done'])
+const emit = defineEmits(['done', 'awaiting-terminal'])
 
 // Starts as 'loading' so a reload resolves the resume phase from the backend
 // before rendering — otherwise the wizard flashes step 1 (passwords) on every
@@ -264,9 +264,9 @@ function onStreamDone(success) {
     return
   }
   step.value = 'done'
-  // The bench is initialized; the user runs `bench start` (or `bench setup
-  // production`) from the terminal next. Shut the wizard server down and, if
-  // they pick `bench start`, the page reloads once the bench is back.
+  // Hand off to the terminal: pause the reconnect overlay before shutting the
+  // wizard server down, so the done-screen instructions stay visible.
+  emit('awaiting-terminal')
   shutdownAndPoll()
 }
 
