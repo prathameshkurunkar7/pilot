@@ -134,10 +134,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
+  <div class="flex flex-col gap-4 sm:gap-6">
 
     <!-- System Stats -->
-    <div v-if="stats" class="rounded-lg border border-outline-gray-1 bg-surface-white px-6 py-5 shadow-sm">
+    <div v-if="stats" class="py-1 sm:rounded-lg sm:border sm:border-outline-gray-1 sm:bg-surface-white sm:px-6 sm:py-5 sm:shadow-sm">
       <div class="mb-4 flex items-center justify-between">
         <h2 class="font-semibold text-ink-gray-9">System</h2>
         <span class="flex items-center gap-1.5 text-xs text-ink-gray-4">
@@ -215,7 +215,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Processes -->
-    <div class="rounded-lg border border-outline-gray-1 bg-surface-white px-6 py-5 shadow-sm">
+    <div class="py-1 sm:rounded-lg sm:border sm:border-outline-gray-1 sm:bg-surface-white sm:px-6 sm:py-5 sm:shadow-sm">
       <div class="mb-4 flex items-center justify-between">
         <h2 class="font-semibold text-ink-gray-9">Processes</h2>
         <div class="flex items-center gap-2">
