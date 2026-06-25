@@ -673,7 +673,7 @@ def _new_site_name_error(bench_root: Path, name: str) -> str | None:
     from bench_cli.core.domain_controller import DomainRouteProvider
     from bench_cli.utils import matches_wildcard
 
-    patterns = DomainRouteProvider.wildcard_domains(name)
+    patterns = DomainRouteProvider.wildcard_domains()
     if patterns and not matches_wildcard(name, patterns):
         return f"Site name must match one of this bench's wildcard domains: {', '.join(patterns)}."
     return None

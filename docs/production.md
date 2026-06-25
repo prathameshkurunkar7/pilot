@@ -581,7 +581,7 @@ class DomainRouteProvider:
         """Write or clear site_config.json's host_name."""
 
     @staticmethod
-    def wildcard_domains(site_name: str = "") -> List[str]:
+    def wildcard_domains() -> List[str]:
         """
         Wildcard domain patterns (e.g. "*.example.com") this host's
         bench-domain-provider extension offers, or [] if none/not installed.

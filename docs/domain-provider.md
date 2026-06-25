@@ -31,15 +31,15 @@ file or env you control.
 
 ```
 bench-domain-provider generate-dns-records <site> <domain>
-bench-domain-provider register             <site> <domain>
-bench-domain-provider deregister           <site> <domain>
-bench-domain-provider wildcard-domains     [site]
+bench-domain-provider register             <domain>
+bench-domain-provider deregister           <domain>
+bench-domain-provider wildcard-domains
 ```
 
-The **site in scope is the first positional argument** (`wildcard-domains` is host-level —
-it takes the site as an optional hint, which may be omitted). The process inherits the
-caller's environment; bench-cli sets no special variables. Any config your binary needs
-(API URL, credentials) is your own concern — read it from a file or env you control.
+Only `generate-dns-records` takes the **site** (its first positional argument, for the
+CNAME target); the rest operate on the domain alone. The process inherits the caller's
+environment; bench-cli sets no special variables. Any config your binary needs (API URL,
+credentials) is your own concern — read it from a file or env you control.
 
 ## `generate-dns-records <site> <domain>` — pre-flight
 
@@ -58,7 +58,7 @@ early feedback.
 - **Exit:** `0` to proceed, non-zero to abort (stderr shown).
 - Prefer to **fail open** on an outage here — the real gate is `register`.
 
-## `register <site> <domain>` — claim **and provision** the route
+## `register <domain>` — claim **and provision** the route
 
 Make `<domain>` actually route to this bench: claim the name and configure the edge proxy
 / load balancer / DNS / cert so traffic reaches the bench. Called **before** the local
@@ -73,7 +73,7 @@ site is created, so a failure leaves no orphan.
 - **Fail closed** on an unreachable control plane: if the route wasn't provisioned, don't
   let the site get created.
 
-## `deregister <site> <domain>` — tear down / rollback
+## `deregister <domain>` — tear down / rollback
 
 Inverse of `register`: remove the proxy/DNS route and release the name. Called after a
 site is dropped, and as the rollback when a create fails midway.
@@ -83,7 +83,7 @@ site is dropped, and as the rollback when a create fails midway.
   missed teardown just leaves a stale route to clean up later. A non-zero here would throw
   an error on an otherwise-successful drop.
 
-## `wildcard-domains [site]` — host-level query
+## `wildcard-domains` — host-level query
 
 The wildcard patterns this host may create subdomains under. bench-cli uses them to
 constrain site names and to suggest subdomains in the UI.
@@ -127,23 +127,21 @@ def main(argv):
         site, domain = argv[2], argv[3]
         return 0  # blank = no records; or print {"cname": [...], "a": [...]}
 
-    if verb == "register" and len(argv) == 4:
-        site, domain = argv[2], argv[3]
+    if verb == "register" and len(argv) == 3:
+        domain = argv[2]
         # provision the route; on conflict:
         #   print(f"{domain} is already taken", file=sys.stderr); return 2
         return 0
 
-    if verb == "deregister" and len(argv) == 4:
+    if verb == "deregister" and len(argv) == 3:
         return 0  # best-effort; never block a drop
 
     if verb == "wildcard-domains":
-        site = argv[2] if len(argv) > 2 else ""
         print(json.dumps(["*.region.example.com"]))  # or nothing for none
         return 0
 
     print("usage: bench-domain-provider generate-dns-records <site> <domain> | "
-          "register <site> <domain> | deregister <site> <domain> | "
-          "wildcard-domains [site]", file=sys.stderr)
+          "register <domain> | deregister <domain> | wildcard-domains", file=sys.stderr)
     return 64
 
 if __name__ == "__main__":
@@ -155,10 +153,10 @@ if __name__ == "__main__":
 ```sh
 ./bench-domain-provider generate-dns-records mysite app.example.com; echo "exit=$?"
 
-./bench-domain-provider wildcard-domains mysite; echo "exit=$?"
+./bench-domain-provider wildcard-domains; echo "exit=$?"
 
 # declined path: expect non-zero + stderr message
-./bench-domain-provider register mysite taken.example.com; echo "exit=$?"
+./bench-domain-provider register taken.example.com; echo "exit=$?"
 ```
 
 Then install it on `PATH` and exercise the real flows: `bench new-site` with a

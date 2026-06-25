@@ -407,7 +407,7 @@ def create_app(bench_root: Path) -> Flask:
         from bench_cli.core.domain_controller import DomainRouteProvider
         from bench_cli.utils import matches_wildcard
 
-        patterns = DomainRouteProvider.wildcard_domains(admin_domain)
+        patterns = DomainRouteProvider.wildcard_domains()
         if patterns and not matches_wildcard(admin_domain, patterns):
             return jsonify({"error": f"Admin domain must match one of: {', '.join(patterns)}."}), 400
 

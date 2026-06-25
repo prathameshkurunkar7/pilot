@@ -17,12 +17,13 @@ if TYPE_CHECKING:
 #
 # Contract for `bench-domain-provider`, invoked as:
 #   bench-domain-provider generate-dns-records <site> <domain>
-#   bench-domain-provider register <site> <domain>
-#   bench-domain-provider deregister <site> <domain>
-#   bench-domain-provider wildcard-domains [site]
+#   bench-domain-provider register <domain>
+#   bench-domain-provider deregister <domain>
+#   bench-domain-provider wildcard-domains
 #
-# - The site is passed as the first positional argument (host-level wildcard-domains
-#   takes it as an optional hint); the process inherits the caller's environment.
+# - Only generate-dns-records needs the site (its first positional arg, for the
+#   CNAME target); the rest operate on the domain alone. The process inherits the
+#   caller's environment.
 # - On success (exit code 0), stdout is either empty or a single JSON value:
 #     generate-dns-records -> {"cname": [...], "a": [...]} — two sets of
 #                              {"type", "host", "value"} records, one per validation
@@ -44,7 +45,7 @@ class DomainRouteProvider:
     def generate_dns_records(self, site_name: str, domain: str) -> dict:
         """Step 1 of attaching a domain: validate it's free, return {"cname": [...], "a": [...]}
         record sets — one per validation method; either may be empty if that route isn't an option."""
-        ran, data = self._ask_provider("generate-dns-records", site_name, domain)
+        ran, data = self._ask_provider("generate-dns-records", domain, site=site_name)
         if ran:
             return data or {}
         self._read(site_name)
@@ -58,7 +59,7 @@ class DomainRouteProvider:
         """Step 2: validate + verify DNS — skipped if the provider already did
         it for us — then persist. Persistence always happens (except registering
         the site's own name as the provider's pick needs no domains-list entry)."""
-        ran, _ = self._ask_provider("register", site_name, domain)
+        ran, _ = self._ask_provider("register", domain)
         if ran:
             domain = normalize_host(domain)
         else:
@@ -77,21 +78,20 @@ class DomainRouteProvider:
         primary = self.primary(site_name)
         if primary and normalize_host(primary) == domain:
             raise BenchError("Cannot remove the primary domain. Make another domain primary first.")
-        self._ask_provider("deregister", site_name, domain)
+        self._ask_provider("deregister", domain)
         config = self._read(site_name)
         config["domains"] = [d for d in (config.get("domains") or []) if normalize_host(self._name(d)) != domain]
         self._write(site_name, config)
 
     @staticmethod
-    def wildcard_domains(site_name: str = "") -> list[str]:
+    def wildcard_domains() -> list[str]:
         """Wildcard domain patterns (e.g. '*.example.com') the provider extension
         offers, or [] if none. Host-level — no bench/site needs to exist yet."""
 
         exe = which(_PROVIDER_BIN)
         if not exe:
             return []
-        argv = [exe, "wildcard-domains", *([site_name] if site_name else [])]
-        result = subprocess.run(argv, capture_output=True, text=True)
+        result = subprocess.run([exe, "wildcard-domains"], capture_output=True, text=True)
         if result.returncode != 0:
             raise BenchError(result.stderr.strip() or f"{_PROVIDER_BIN} wildcard-domains failed.")
         out = result.stdout.strip()
@@ -130,12 +130,12 @@ class DomainRouteProvider:
     def _write(self, site_name: str, config: dict) -> None:
         self._config_path(site_name).write_text(json.dumps(config, indent=1))
 
-    def _ask_provider(self, action: str, site_name: str, domain: str | None = None) -> tuple[bool, object]:
-        """Run `bench-domain-provider <action> <site> [domain]` if installed; (True, JSON or None) if it ran, else (False, None)."""
+    def _ask_provider(self, action: str, domain: str | None = None, *, site: str | None = None) -> tuple[bool, object]:
+        """Run `bench-domain-provider <action> [site] [domain]` if installed; (True, JSON or None) if it ran, else (False, None)."""
         exe = which(_PROVIDER_BIN)
         if not exe:
             return False, None
-        argv = [exe, action, site_name, *([domain] if domain else [])]
+        argv = [exe, action, *([site] if site else []), *([domain] if domain else [])]
         result = subprocess.run(argv, capture_output=True, text=True)
         if result.returncode != 0:
             raise BenchError(result.stderr.strip() or f"{_PROVIDER_BIN} {action} failed.")

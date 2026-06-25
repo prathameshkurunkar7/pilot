@@ -186,7 +186,7 @@ class SetupProductionCommand(Command):
                     f"Admin domain '{domain}' conflicts with this bench's own site '{site.config.name}'. "
                     f"An admin domain must not match a site domain."
                 )
-        patterns = DomainRouteProvider.wildcard_domains(domain)
+        patterns = DomainRouteProvider.wildcard_domains()
         if patterns and not matches_wildcard(domain, patterns):
             raise BenchError(f"Admin domain must match one of this bench's wildcard domains: {', '.join(patterns)}.")
 

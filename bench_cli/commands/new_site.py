@@ -124,7 +124,7 @@ class NewSiteCommand(Command):
                 f"Site '{self.name}' clashes with this bench's admin domain. "
                 f"An admin domain must not match a site domain."
             )
-        patterns = DomainRouteProvider.wildcard_domains(self.name)
+        patterns = DomainRouteProvider.wildcard_domains()
         if patterns and not matches_wildcard(self.name, patterns):
             raise BenchError(f"Site name must match one of this bench's wildcard domains: {', '.join(patterns)}.")
         self._via_wildcard = bool(patterns)
