@@ -63,6 +63,19 @@ def test_check_admin_domain_rejects_sibling_owned(tmp_path: Path) -> None:
         cmd._check_admin_domain()
 
 
+def test_check_admin_domain_grandfathers_existing_non_matching(tmp_path: Path, monkeypatch) -> None:
+    from bench_cli.core.domain_controller import DomainRouteProvider
+
+    monkeypatch.setattr(DomainRouteProvider, "wildcard_domains", staticmethod(lambda: ["*.node1.example.com"]))
+    bench = _make_bench(tmp_path, admin_domain="node1.example.com")  # apex, can't match wildcard
+    SetupProductionCommand(bench)._check_admin_domain()  # existing -> no raise
+
+    cmd = SetupProductionCommand(bench, admin_domain="other.example.com")
+    cmd._resolve_target()
+    with pytest.raises(BenchError, match="must match one of this bench's wildcard"):
+        cmd._check_admin_domain()
+
+
 def test_needs_letsencrypt(tmp_path: Path) -> None:
     # Public admin domain + email → cert needed.
     assert needs_letsencrypt(_make_bench(tmp_path, name="a", admin_domain="admin.example.com", email="x@y.com"))

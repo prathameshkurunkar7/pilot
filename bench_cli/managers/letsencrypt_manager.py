@@ -113,8 +113,10 @@ class LetsEncryptManager:
             except CommandError as exc:
                 print(f"Could not obtain a certificate for '{self.bench.config.admin.domain}', skipping: {exc}")
                 failed.append(self.bench.config.admin.domain)
+        # Don't raise: certs that did issue should still get TLS applied. Domains
+        # that failed stay on HTTP and can be retried later.
         if failed:
-            raise CommandError(f"Certificate issuance failed for: {', '.join(failed)}.")
+            print(f"Certificate issuance failed for: {', '.join(failed)}. These stay on HTTP.")
 
     def obtain_admin(self) -> None:
         from bench_cli.managers.nginx_manager import NginxManager

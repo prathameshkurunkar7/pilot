@@ -52,6 +52,7 @@ class SetupProductionCommand(Command):
         self._pm_arg = process_manager
         self._domain_arg = admin_domain
         self._tls_arg = admin_tls
+        self._existing_admin_domain = bench.config.admin.domain
 
     def run(self) -> None:
         self._require_linux()
@@ -186,6 +187,9 @@ class SetupProductionCommand(Command):
                     f"Admin domain '{domain}' conflicts with this bench's own site '{site.config.name}'. "
                     f"An admin domain must not match a site domain."
                 )
+        # Enforce the wildcard rule only on a new/changed admin domain.
+        if normalize_host(domain) == normalize_host(self._existing_admin_domain):
+            return
         patterns = DomainRouteProvider.wildcard_domains()
         if patterns and not matches_wildcard(domain, patterns):
             raise BenchError(f"Admin domain must match one of this bench's wildcard domains: {', '.join(patterns)}.")
