@@ -39,7 +39,7 @@ const columns = [
   { label: 'Mode', key: 'mode', align: 'left', width: 1 },
   { label: 'Manager', key: 'manager', align: 'left', width: 1 },
   { label: 'Sites', key: 'sites', align: 'left', width: 1 },
-  { label: 'Status', key: 'status', align: 'left', width: 1 },
+  { label: 'Status', key: 'status', align: 'center', width: 1 },
   { label: '', key: 'actions', align: 'right', width: '3rem' },
 ]
 
@@ -226,7 +226,7 @@ watch(show, (open) => {
             </div>
 
             <!-- Status badge -->
-            <div v-else-if="column.key === 'status'" class="w-full">
+            <div v-else-if="column.key === 'status'" class="flex w-full justify-center">
               <Badge :theme="statusTheme(row.bench)" :label="row.status" />
             </div>
 
