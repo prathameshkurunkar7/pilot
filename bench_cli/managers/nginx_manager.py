@@ -109,6 +109,18 @@ class NginxManager:
             self._proxy_servers_cache = DomainRouteProvider.proxy_servers()
         return self._proxy_servers_cache
 
+    def _render_acme_location(self) -> str:
+        """ACME HTTP-01 challenge location. `allow all;` overrides any server-level
+        proxy-only deny so certbot's validation reaches the challenge files."""
+        webroot = self.bench.config.letsencrypt.webroot_path
+        return (
+            f"    location /.well-known/acme-challenge/ {{\n"
+            f"        allow all;\n"
+            f"        root {webroot};\n"
+            f"        try_files $uri =404;\n"
+            f"    }}\n\n"
+        )
+
     def _render_proxy_trust(self) -> str:
         """When edge proxies front this bench, trust only them: accept connections
         from those IPs alone, and read the real client IP from the X-Forwarded-For
@@ -145,7 +157,7 @@ class NginxManager:
         # terminates TLS, so neither sites nor the admin serve HTTPS here.
         tls = self.bench.config.admin.tls
         for site in self.bench.sites():
-            site_ssl_ready = tls and ssl_ready and self.cert_exists(site.config)
+            site_ssl_ready = tls and ssl_ready and self.cert_covers(site.config)
             conf_text = self._generate_site_config(site.config, site_ssl_ready)
             (sites_dir / f"{site.config.name}.conf").write_text(conf_text)
         # The admin is always reached via its (mandatory) domain in production;
@@ -287,7 +299,6 @@ class NginxManager:
         max_body = nginx_config.client_max_body_size
         http_port = nginx_config.http_port
         socketio_port = self.bench.config.socketio_port
-        webroot = self.bench.config.letsencrypt.webroot_path
 
         return (
             f"server {{\n"
@@ -297,10 +308,7 @@ class NginxManager:
             + self._render_proxy_trust()
             + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
-            f"    location /.well-known/acme-challenge/ {{\n"
-            f"        root {webroot};\n"
-            f"        try_files $uri =404;\n"
-            f"    }}\n\n"
+            + self._render_acme_location()
             + self._render_error_pages()
             + self._render_assets_location()
             + self._render_files_location(site)
@@ -312,7 +320,6 @@ class NginxManager:
     def _render_http_redirect_block(self, site: "SiteConfig", nginx_config: object) -> str:
         server_name = " ".join(site.all_domains)
         http_port = nginx_config.http_port
-        webroot = self.bench.config.letsencrypt.webroot_path
 
         return (
             f"server {{\n"
@@ -320,11 +327,8 @@ class NginxManager:
             f"    listen [::]:{http_port};\n"
             f"    server_name {server_name};\n\n"
             + self._render_proxy_trust()
-            + f"    location /.well-known/acme-challenge/ {{\n"
-            f"        root {webroot};\n"
-            f"        try_files $uri =404;\n"
-            f"    }}\n\n"
-            f"    location / {{\n"
+            + self._render_acme_location()
+            + f"    location / {{\n"
             f"        return 301 https://$host$request_uri;\n"
             f"    }}\n"
             f"}}\n\n"
@@ -432,17 +436,11 @@ class NginxManager:
     def _generate_admin_config(self, ssl_ready: bool = False) -> str:
         admin = self.bench.config.admin
         nginx_config = self.bench.config.nginx
-        webroot = self.bench.config.letsencrypt.webroot_path
         http_port = nginx_config.http_port
         https_port = nginx_config.https_port
         domain = admin.domain
 
-        acme_block = (
-            f"    location /.well-known/acme-challenge/ {{\n"
-            f"        root {webroot};\n"
-            f"        try_files $uri =404;\n"
-            f"    }}\n\n"
-        )
+        acme_block = self._render_acme_location()
         proxy_block = self._render_error_pages() + self._render_admin_proxy_location()
 
         # admin.tls = False: a central proxy terminates TLS, so nginx serves the
@@ -575,6 +573,14 @@ class NginxManager:
 
     def cert_exists(self, site: "SiteConfig") -> bool:
         return self._cert_files_exist(Path("/etc/letsencrypt/live") / site.name)
+
+    def cert_covers(self, site: "SiteConfig") -> bool:
+        """True only if a cert exists AND its SAN list covers every public domain
+        of the site, so a failed --expand can't serve a stale cert over HTTPS."""
+        from bench_cli.managers.letsencrypt_manager import cert_covers, public_domains
+
+        domains = public_domains(site)
+        return bool(domains) and self.cert_exists(site) and cert_covers(self.cert_path(site), domains)
 
     @staticmethod
     def _cert_files_exist(live_dir: Path) -> bool:

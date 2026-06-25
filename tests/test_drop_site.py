@@ -1,14 +1,11 @@
-"""Tests for DropSiteCommand._deregister_domains driving a dummy provider."""
+"""Tests for DropSiteCommand provider domain capture/release driving a dummy provider."""
 import json
 import os
 from pathlib import Path
 
-import pytest
-
 from bench_cli.commands.drop_site import DropSiteCommand
 from bench_cli.config.bench_config import BenchConfig
 from bench_cli.core.bench import Bench
-from bench_cli.exceptions import BenchError
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
@@ -52,32 +49,49 @@ def _write_site(bench: Bench, name: str, config: dict) -> None:
     (site_dir / "site_config.json").write_text(json.dumps(config))
 
 
-def test_deregisters_every_domain(tmp_path: Path, monkeypatch) -> None:
-    log = _install_provider(tmp_path, monkeypatch)
+def test_collects_site_name_and_custom_domains(tmp_path: Path, monkeypatch) -> None:
+    _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
     _write_site(bench, "mysite", {"domains": ["app.example.com", "shop.example.com"],
                                   "host_name": "https://app.example.com"})
 
-    DropSiteCommand(bench, "mysite")._deregister_domains()
+    assert DropSiteCommand(bench, "mysite")._provider_domains() == [
+        "mysite",
+        "app.example.com",
+        "shop.example.com",
+    ]
+
+
+def test_releases_every_captured_domain(tmp_path: Path, monkeypatch) -> None:
+    log = _install_provider(tmp_path, monkeypatch)
+    bench = _make_bench(tmp_path)
+
+    DropSiteCommand(bench, "mysite")._release_domains(["mysite", "app.example.com"])
 
     assert log.read_text().splitlines() == [
         "deregister mysite",
         "deregister app.example.com",
-        "deregister shop.example.com",
     ]
 
 
-def test_halts_on_provider_failure(tmp_path: Path, monkeypatch) -> None:
+def test_release_swallows_provider_failure(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
     monkeypatch.setenv("PROVIDER_FAIL", "deregister")
     bench = _make_bench(tmp_path)
-    _write_site(bench, "mysite", {"domains": ["app.example.com"]})
 
-    with pytest.raises(BenchError, match="deregister declined"):
-        DropSiteCommand(bench, "mysite")._deregister_domains()
+    # Best effort after a successful drop: a provider failure must not raise.
+    DropSiteCommand(bench, "mysite")._release_domains(["app.example.com"])
+
+
+def test_no_domains_without_site_config(tmp_path: Path, monkeypatch) -> None:
+    _install_provider(tmp_path, monkeypatch)
+    bench = _make_bench(tmp_path)
+
+    assert DropSiteCommand(bench, "mysite")._provider_domains() == []
 
 
 def test_no_op_for_missing_site(tmp_path: Path, monkeypatch) -> None:
     log = _install_provider(tmp_path, monkeypatch)
-    DropSiteCommand(_make_bench(tmp_path), "ghost")._deregister_domains()
+    cmd = DropSiteCommand(_make_bench(tmp_path), "ghost")
+    cmd._release_domains(cmd._provider_domains())
     assert not log.exists()

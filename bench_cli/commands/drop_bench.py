@@ -188,10 +188,21 @@ class DropBenchCommand(Command):
 
     @staticmethod
     def _local_machine_ips() -> set[str]:
+        import subprocess
+
         ips: set[str] = set()
         try:
             ips |= {info[4][0] for info in socket.getaddrinfo(socket.gethostname(), None)}
         except OSError:
+            pass
+        # Enumerate every configured interface address from the OS. Unlike the
+        # 8.8.8.8 probe below this needs no connectivity, so a sibling reaching
+        # this DB through an interface IP is still recognised on offline/firewalled
+        # hosts — where missing it would wrongly tear down a shared database.
+        try:
+            out = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=2)
+            ips |= set(out.stdout.split())
+        except (OSError, subprocess.SubprocessError):
             pass
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:

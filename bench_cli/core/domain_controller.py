@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import socket
 import subprocess
+import sys
 import urllib.request
 from typing import TYPE_CHECKING
 
@@ -69,7 +70,7 @@ class DomainRouteProvider:
         if domain == normalize_host(site_name):
             self._ask_provider("register", domain)
             return
-        self._validate_new(site_name, domain)
+        domain = self._validate_new(site_name, domain)
         ran, _ = self._ask_provider("register", domain)
         if not ran:
             self._verify(site_name, domain)
@@ -93,6 +94,15 @@ class DomainRouteProvider:
         config = self._read(site_name)
         config["domains"] = [d for d in (config.get("domains") or []) if normalize_host(self._name(d)) != domain]
         self._write(site_name, config)
+
+    def release(self, domain: str) -> None:
+        """Tell the provider to drop a route without touching local config — for
+        teardown after the site directory is already gone. Best effort: a provider
+        failure is swallowed so it can't fail an otherwise-successful drop."""
+        try:
+            self._ask_provider("deregister", normalize_host(domain))
+        except BenchError as exc:
+            print(f"Warning: provider could not release '{domain}': {exc}", file=sys.stderr)
 
     @staticmethod
     def wildcard_domains() -> list[str]:

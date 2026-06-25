@@ -99,6 +99,9 @@ def test_generated_trusted_proxy_config_passes_nginx_t(tmp_path: Path, monkeypat
     assert "real_ip_header     X-Forwarded-For;" in site_conf
     assert "deny               all;" in site_conf
     assert "X-Forwarded-For    $http_x_forwarded_for" in site_conf
+    # The ACME challenge must override the proxy-only deny, else cert issuance fails.
+    acme = site_conf.split("location /.well-known/acme-challenge/", 1)[1]
+    assert "allow all;" in acme.split("}", 1)[0]
 
     conf = _wrapper_conf(tmp_path, nginx_dir / "include.conf")
     result = subprocess.run(

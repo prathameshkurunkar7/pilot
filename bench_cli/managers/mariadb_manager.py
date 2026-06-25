@@ -169,8 +169,11 @@ class MariaDBManager:
         run_command(_privileged(["rm", "-f", f"/etc/init.d/{service}", f"/var/log/{service}.log"]))
 
     def _remove_data_dir(self) -> None:
-        # Guard against wiping the shared server's datadir or any shallow system
-        # path; only a per-instance dir (default /var/lib/mysql-<instance>) goes.
+        # Only a dedicated instance owns a removable datadir; the shared server's
+        # is never ours to wipe. Guard against any shallow or protected system
+        # path so a malformed config can't delete data outside the bench.
+        if not self.is_dedicated:
+            return
         data_dir = self.data_dir()
         resolved = Path(data_dir).resolve()
         if resolved in _PROTECTED_DATA_DIRS or len(resolved.parts) < 3:
