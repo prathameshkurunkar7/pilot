@@ -130,15 +130,18 @@ class SetupProductionCommand(Command):
 
     def _require_production_inputs(self) -> None:
         """Fail early and clearly on inputs the setup wizard no longer collects: an
-        admin domain (always) and a Let's Encrypt email (only with --tls). Better
-        here than deep inside nginx/cert work, or as a silently-skipped cert."""
+        admin domain (always) and a Let's Encrypt email (only when --tls would
+        actually obtain a cert). Better here than deep inside nginx/cert work, or
+        as a silently-skipped cert."""
+        from bench_cli.managers.letsencrypt_manager import letsencrypt_email_required
+
         if not self.bench.config.admin.domain:
             raise BenchError(
                 "An admin domain is required to deploy to production. "
                 "Pass --admin-domain <domain> (e.g. --admin-domain admin.example.com), "
                 "or set admin.domain in bench.toml."
             )
-        if self.bench.config.admin.tls and not self.bench.config.letsencrypt.email:
+        if letsencrypt_email_required(self.bench) and not self.bench.config.letsencrypt.email:
             raise BenchError(
                 "A contact email is required with --tls for Let's Encrypt. "
                 "Pass --letsencrypt-email <email>, or set letsencrypt.email in bench.toml."
