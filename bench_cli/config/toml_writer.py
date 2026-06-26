@@ -16,6 +16,10 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f'default_branch = "{config.default_branch}"')
     parts.append("")
 
+    parts.append("[database]")
+    parts.append(f'engine = "{config.database_engine}"')
+    parts.append("")
+
     for app in config.apps:
         parts.append("[[apps]]")
         parts.append(f'name = "{app.name}"')
@@ -40,6 +44,26 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     if m.data_dir:
         parts.append(f'data_dir = "{m.data_dir}"')
     parts.append("")
+
+    if config.database_engine == "postgres":
+        psql = config.postgres
+        parts.append("[postgres]")
+        parts.append(f'host = "{psql.host}"')
+        parts.append(f"port = {psql.port}")
+        parts.append(f'root_password = "{psql.root_password}"')
+        parts.append(f'admin_user = "{psql.admin_user}"')
+        parts.append(f'socket_path = "{psql.socket_path}"')
+        if psql.version:
+            parts.append(f'version = "{psql.version}"')
+        if psql.instance:
+            parts.append(f'instance = "{psql.instance}"')
+        if psql.data_dir:
+            parts.append(f'data_dir = "{psql.data_dir}"')
+        parts.append("")
+    elif config.database_engine == "sqlite":
+        parts.append("[sqlite]")
+        parts.append(f"timeout_seconds = {config.sqlite.timeout_seconds}")
+        parts.append("")
 
     r = config.redis
     parts.append("[redis]")

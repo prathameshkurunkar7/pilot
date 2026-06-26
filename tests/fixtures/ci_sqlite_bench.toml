@@ -1,0 +1,27 @@
+[bench]
+name = "ci-sqlite-bench"
+python = "3.14"
+http_port = 8000
+socketio_port = 9000
+
+[database]
+engine = "sqlite"
+
+[[apps]]
+name = "frappe"
+repo = "https://github.com/frappe/frappe"
+branch = "develop"
+
+[mariadb]
+root_password = "admin"
+
+[sqlite]
+timeout_seconds = 15
+
+[redis]
+cache_port = 13000
+queue_port = 11000
+
+[[workers]]
+queues = ["default", "short", "long"]
+count = 1

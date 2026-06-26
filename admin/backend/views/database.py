@@ -3,21 +3,29 @@ from __future__ import annotations
 from flask import Blueprint, current_app, jsonify, request
 
 from ..readers.bench_reader import BenchReader
-from ..readers.database_reader import DatabaseReader
+from ..readers.database_reader import DatabaseReader, PostgresDatabaseReader, SQLiteDatabaseReader
 
 database_bp = Blueprint("database", __name__)
 
 
-def _get_database_reader(bench_root) -> DatabaseReader:
+def _get_database_reader(bench_root):
     config = BenchReader(bench_root).config()
+    if config.database_engine == "postgres":
+        return PostgresDatabaseReader(config.postgres)
+    if config.database_engine == "sqlite":
+        return SQLiteDatabaseReader()
     return DatabaseReader(config.mariadb)
 
 
 def _get_mariadb_manager(bench_root):
-    from bench_cli.managers.mariadb_manager import MariaDBManager
+    from bench_cli.managers.database_manager import create_database_manager
 
     config = BenchReader(bench_root).config()
-    return MariaDBManager(config.mariadb)
+    return create_database_manager(config)
+
+
+def _get_database_manager(bench_root):
+    return _get_mariadb_manager(bench_root)
 
 
 @database_bp.route("/binlogs")
@@ -97,7 +105,7 @@ def processlist():
 def kill_process(process_id: int):
     bench_root = current_app.config["BENCH_ROOT"]
     try:
-        _get_mariadb_manager(bench_root).kill_process(process_id)
+        _get_database_manager(bench_root).kill_process(process_id)
     except Exception:
         return jsonify({"ok": False, "error": f"Process with process ID {process_id} has finished"}), 500
     return jsonify({"ok": True})

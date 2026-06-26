@@ -18,7 +18,7 @@ from bench_cli.config.bench_toml_builder import BenchTomlBuilder, current_port_o
 def test_default_ports_returns_all_fields() -> None:
     ports = default_ports()
     assert set(ports) == {
-        "http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port", "mariadb.port",
+        "http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port", "mariadb.port", "postgres.port",
     }
 
 
@@ -30,6 +30,7 @@ def test_default_ports_values_match_known_defaults() -> None:
     assert ports["redis.queue_port"] == 11000
     assert ports["admin.port"] == 7000
     assert ports["mariadb.port"] == 3306
+    assert ports["postgres.port"] == 5432
 
 
 # ── BenchTomlBuilder port_offset ─────────────────────────────────────────────
@@ -56,6 +57,11 @@ def test_port_offset_shifts_all_fields_together(tmp_path: Path) -> None:
     assert data["redis"]["queue_port"] == 11001
     assert data["admin"]["port"] == 7001
     assert data["mariadb"]["port"] == 3307
+
+
+def test_postgres_port_is_offset_when_postgres_is_selected(tmp_path: Path) -> None:
+    data = _render(tmp_path, settings={"database_engine": "postgres"}, port_offset=1)
+    assert data["postgres"]["port"] == 5433
 
 
 def test_port_fields_not_settable_via_settings(tmp_path: Path) -> None:

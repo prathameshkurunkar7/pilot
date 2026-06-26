@@ -21,6 +21,9 @@ repo = "https://github.com/frappe/frappe"
 branch = "version-16"
 
 # ── MariaDB ───────────────────────────────────────────────────────────────────
+[database]
+engine = "mariadb" # "mariadb" (default), "postgres", or experimental "sqlite"
+
 [mariadb]
 host = "localhost"
 port = 3306
@@ -130,6 +133,14 @@ Declares the framework app (frappe) to clone during `bench init`. After init, ad
 | `data_dir` | string | no | `/var/lib/mysql-<instance>` | Datadir for the dedicated instance — a **sibling** of `/var/lib/mysql`, never nested inside it. Must be an absolute path. When `[volume]` is enabled, the dataset's `mariadb/` subdir is bind-mounted here. Ignored in shared mode. |
 
 > **Dedicated vs shared.** On Linux, `bench new` defaults to a dedicated instance, which is required to use ZFS volumes and snapshots. Choose shared (clear `instance` in the setup wizard) to connect to the pre-existing system MariaDB — useful when you already manage MariaDB separately or don't need per-bench snapshots. See [Per-bench MariaDB instances](architecture.md#per-bench-mariadb-instances) for the mechanics.
+
+### `[postgres]`
+
+This section is active when `[database].engine = "postgres"`. Its fields mirror MariaDB's connection fields: `host` (default `localhost`), `port` (default `5432`), `root_password`, `admin_user` (default `postgres`), `socket_path`, `version`, `instance`, and `data_dir`. On Linux, `bench new --database postgres` creates a dedicated cluster by default; clearing `instance` uses a shared PostgreSQL service. Existing `[mariadb]` configurations remain valid and select MariaDB when `[database]` is absent.
+
+### `[sqlite]`
+
+Set `[database].engine = "sqlite"` to use Frappe's experimental SQLite backend. No service, port, credentials, or data directory is configured: Frappe stores each site database under `sites/<site>/db/`. `timeout_seconds` defaults to `15`. Server-oriented admin tools, database process controls, and external database volume mounts are unavailable for this backend.
 
 ### `[redis]`
 

@@ -42,6 +42,7 @@ _CONF_DIR = "/etc/mysql/mariadb.conf.d"
 
 
 class MariaDBManager:
+    engine = "mariadb"
     def __init__(self, config: MariaDBConfig) -> None:
         self.config = config
 

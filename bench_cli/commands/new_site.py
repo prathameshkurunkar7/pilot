@@ -22,6 +22,7 @@ class NewSiteCommand(Command):
         parser.add_argument("name", help="Site name (e.g. site2.localhost).")
         parser.add_argument("--admin-password", default="admin", help="Frappe admin password.")
         parser.add_argument("--apps", nargs="*", help="Apps to assign (defaults to framework app).")
+        parser.add_argument("--database-engine", choices=("mariadb", "postgres", "sqlite"), help="Database engine for this site.")
 
     @classmethod
     def from_args(cls, args, bench):
@@ -29,14 +30,15 @@ class NewSiteCommand(Command):
         if not app_names:
             framework = bench.config.framework_app.name
             app_names = [framework] if framework else []
-        return cls(bench, args.name, app_names, args.admin_password)
+        return cls(bench, args.name, app_names, args.admin_password, args.database_engine)
 
-    def __init__(self, bench: "Bench", name: str, apps: list[str], admin_password: str = "admin") -> None:
+    def __init__(self, bench: "Bench", name: str, apps: list[str], admin_password: str = "admin", database_engine: str | None = None) -> None:
         self.bench = bench
         self.name = name
         self.apps = apps
         self.admin_password = admin_password
         self._via_wildcard = False
+        self.database_engine = database_engine
 
     def run(self) -> None:
         from bench_cli.config.site_config import SiteConfig
@@ -45,7 +47,7 @@ class NewSiteCommand(Command):
         self._validate()
         ssl = self._should_enable_ssl()
         self._register_with_provider()
-        site = Site(SiteConfig(name=self.name, apps=self.apps, admin_password=self.admin_password, ssl=ssl), self.bench)
+        site = Site(SiteConfig(name=self.name, apps=self.apps, admin_password=self.admin_password, ssl=ssl), self.bench, self.database_engine)
         print(f"Creating site '{self.name}'...")
         sys.stdout.flush()
         site.create()
@@ -110,6 +112,9 @@ class NewSiteCommand(Command):
     def _validate(self) -> None:
         from bench_cli.core.domain_controller import DomainRouteProvider
         from bench_cli.utils import host_owner, matches_wildcard, normalize_host
+
+        if self.database_engine and self.database_engine not in ("mariadb", "postgres", "sqlite"):
+            raise BenchError(f"Unsupported database engine '{self.database_engine}'.")
 
         if (self.bench.sites_path / self.name / "site_config.json").exists():
             raise BenchError(f"Site '{self.name}' already exists.")

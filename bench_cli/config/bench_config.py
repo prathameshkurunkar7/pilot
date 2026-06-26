@@ -9,6 +9,8 @@ from bench_cli.config.app_config import AppConfig
 from bench_cli.config.gunicorn_config import GunicornConfig
 from bench_cli.config.letsencrypt_config import LetsEncryptConfig
 from bench_cli.config.mariadb_config import MariaDBConfig
+from bench_cli.config.postgres_config import PostgresConfig
+from bench_cli.config.sqlite_config import SQLiteConfig
 from bench_cli.config.nginx_config import NginxConfig
 from bench_cli.config.production_config import ProductionConfig
 from bench_cli.config.redis_config import RedisConfig
@@ -38,6 +40,9 @@ class BenchConfig:
     mariadb: MariaDBConfig
     redis: RedisConfig
     workers: WorkerConfig
+    postgres: PostgresConfig = field(default_factory=PostgresConfig)
+    sqlite: SQLiteConfig = field(default_factory=SQLiteConfig)
+    database_engine: str = "mariadb"
     apps: List[AppConfig] = field(default_factory=list)
     http_port: int = 8000
     socketio_port: int = 9000
@@ -70,7 +75,11 @@ class BenchConfig:
             )
             for a in data.get("apps", [])
         ]
+        database_data = data.get("database", {})
+        database_engine = database_data.get("engine", "mariadb")
         mariadb = MariaDBConfig(**data.get("mariadb", {}))
+        postgres = PostgresConfig(**data.get("postgres", {}))
+        sqlite = SQLiteConfig(**data.get("sqlite", {}))
         redis = cls._parse_redis(data.get("redis", {}))
         workers = cls._parse_workers(data.get("workers", []))
         production = cls._parse_production(data.get("production"))
@@ -90,6 +99,9 @@ class BenchConfig:
             default_branch=bench_data.get("default_branch", ""),
             apps=apps,
             mariadb=mariadb,
+            postgres=postgres,
+            sqlite=sqlite,
+            database_engine=database_engine,
             redis=redis,
             workers=workers,
             production=production,
@@ -218,6 +230,7 @@ class BenchConfig:
         self._validate_gunicorn()
         self._validate_mariadb_version()
         self._validate_mariadb_instance()
+        self._validate_database()
         self._validate_redis_version()
         self._validate_production()
         self._validate_admin_domain()
@@ -351,6 +364,24 @@ class BenchConfig:
             )
         if self.mariadb.data_dir and not Path(self.mariadb.data_dir).is_absolute():
             raise ConfigError(f"mariadb.data_dir '{self.mariadb.data_dir}' must be an absolute path.")
+
+    def _validate_database(self) -> None:
+        if self.database_engine not in ("mariadb", "postgres", "sqlite"):
+            raise ConfigError("database.engine must be 'mariadb', 'postgres', or 'sqlite'.")
+        if self.database_engine == "sqlite":
+            if self.sqlite.timeout_seconds < 1:
+                raise ConfigError("sqlite.timeout_seconds must be positive.")
+            return
+        if self.database_engine != "postgres":
+            return
+        if self.postgres.version and not _VERSION_PATTERN.match(self.postgres.version):
+            raise ConfigError(f"postgres.version '{self.postgres.version}' is invalid.")
+        if self.postgres.instance and not _BENCH_NAME_PATTERN.match(self.postgres.instance):
+            raise ConfigError(f"postgres.instance '{self.postgres.instance}' is invalid.")
+        if self.postgres.data_dir and not Path(self.postgres.data_dir).is_absolute():
+            raise ConfigError(f"postgres.data_dir '{self.postgres.data_dir}' must be an absolute path.")
+        if not (_PORT_MIN <= self.postgres.port <= _PORT_MAX):
+            raise ConfigError(f"postgres.port {self.postgres.port} is out of range.")
 
     def _validate_redis_version(self) -> None:
         if self.redis.version and not _VERSION_PATTERN.match(self.redis.version):

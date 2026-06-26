@@ -24,14 +24,17 @@ def _directory_size(path: str) -> int:
 
 
 def _path_sizes(bench_root: Path, config: BenchConfig) -> list[dict]:
-    from bench_cli.managers.mariadb_manager import MariaDBManager
+    from bench_cli.managers.database_manager import create_database_manager
 
     benches_dir = str(bench_root)
-    mariadb = MariaDBManager(config.mariadb)
-    mariadb_dir = mariadb.data_dir() if mariadb.is_dedicated else "/var/lib/mysql"
+    database = create_database_manager(config)
+    if database.engine == "sqlite":
+        return [{"label": "Benches", "path": benches_dir, "used_bytes": _directory_size(benches_dir)}]
+    defaults = {"mariadb": "/var/lib/mysql", "postgres": "/var/lib/postgresql"}
+    database_dir = database.data_dir() if database.is_dedicated else defaults[database.engine]
     return [
         {"label": "Benches", "path": benches_dir, "used_bytes": _directory_size(benches_dir)},
-        {"label": "MariaDB", "path": mariadb_dir, "used_bytes": _directory_size(mariadb_dir)},
+        {"label": database.engine.title(), "path": database_dir, "used_bytes": _directory_size(database_dir)},
     ]
 
 

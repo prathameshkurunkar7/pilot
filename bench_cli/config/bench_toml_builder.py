@@ -27,6 +27,12 @@ FLAT_KEYS = {
     # render() then offset a *second* time — so every wizard /save compounded the
     # offset onto mariadb.port alone (e.g. 3306→3312→3318), drifting it off-grid
     # and colliding with sibling instances.
+    "database_engine": "database_engine",
+    "postgres_password": "postgres.root_password",
+    "postgres_admin_user": "postgres.admin_user",
+    "postgres_instance": "postgres.instance",
+    "postgres_socket_path": "postgres.socket_path",
+    "postgres_data_dir": "postgres.data_dir",
     "admin_enabled": "admin.enabled",
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",
@@ -50,6 +56,7 @@ _DEFAULT_DATA: dict = {
     "bench": {"name": "", "python": "3.14"},
     "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": FRAMEWORK_BRANCHES[0]}],
     "mariadb": {"root_password": "root"},
+    "postgres": {"root_password": "root"},
 }
 
 
@@ -65,7 +72,7 @@ def _default_config(name: str = "") -> BenchConfig:
 # and dotted paths — callers needing them (e.g. NewCommand's port offset
 # logic) should go through default_ports()/BenchTomlBuilder, not duplicate
 # the numbers themselves.
-_PORT_FIELDS = ("http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port", "mariadb.port")
+_PORT_FIELDS = ("http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port", "mariadb.port", "postgres.port")
 
 
 def default_ports() -> dict[str, int]:

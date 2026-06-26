@@ -21,8 +21,12 @@ class ReinstallSiteTask(BaseTask):
         sys.stdout.flush()
         cmd = [*self.bench.frappe_call, "frappe", "--site", self.site, "reinstall", "--yes",
                "--admin-password", self.admin_password]
-        if self.bench.config.mariadb.root_password:
-            cmd += ["--mariadb-root-password", self.bench.config.mariadb.root_password]
+        cmd += ["--db-type", self.bench.config.database_engine]
+        if self.bench.config.database_engine != "sqlite":
+            database = self.bench.config.postgres if self.bench.config.database_engine == "postgres" else self.bench.config.mariadb
+            cmd += ["--db-root-username", database.admin_user]
+            if database.root_password:
+                cmd += ["--db-root-password", database.root_password]
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
         print(f"\nSite '{self.site}' reinstalled.")
 

@@ -74,6 +74,14 @@ def test_build_argv_get_app_with_branch(tmp_path: Path) -> None:
     assert "version-16" in argv
 
 
+def test_build_argv_new_site_with_database_engine(tmp_path: Path) -> None:
+    argv = TaskRunner(tmp_path)._build_argv(
+        "new-site", {"name": "sqlite.localhost", "admin_password": "admin", "database_engine": "sqlite"}
+    )
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.new_site_task"]
+    assert argv[-2:] == ["--database-engine", "sqlite"]
+
+
 def test_build_argv_build_no_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("build", {})

@@ -19,16 +19,15 @@ if TYPE_CHECKING:
 
 
 def _build_orchestrator(bench: Bench) -> SnapshotOrchestrator:
-    from bench_cli.managers.mariadb_manager import MariaDBManager
+    from bench_cli.managers.database_manager import create_database_manager
     from bench_cli.managers.snapshot_orchestrator import SnapshotOrchestrator
     from bench_cli.managers.volume_manager import VolumeManager
 
     volume = VolumeManager(bench.config.volume)
-    mariadb = MariaDBManager(bench.config.mariadb)
-    return SnapshotOrchestrator(volume, mariadb, bench)
+    return SnapshotOrchestrator(volume, create_database_manager(bench.config), bench)
 
 
-def _stop_mariadb(manager=None) -> None:
+def _stop_database(manager=None) -> None:
     from bench_cli.platform import service_command
 
     try:
@@ -40,7 +39,7 @@ def _stop_mariadb(manager=None) -> None:
         pass
 
 
-def _start_mariadb(manager=None) -> None:
+def _start_database(manager=None) -> None:
     from bench_cli.platform import service_command
 
     try:
@@ -79,7 +78,8 @@ class VolumeSetupCommand:
         snapshot/rollback is atomic across the bench files and the database."""
         mount = manager.get_mountpoint(self.config.dataset_path)
         self._bind_bench(manager, mount)
-        self._bind_mariadb(manager, mount)
+        if not self.bench_config or self.bench_config.database_engine != "sqlite":
+            self._bind_database(manager, mount)
 
     def _bind_bench(self, manager: "VolumeManager", mount: Path) -> None:
         sub = mount / "benches"
@@ -92,30 +92,42 @@ class VolumeSetupCommand:
         manager.bind_mount(sub, self.bench_path)
         manager.persist_bind_mount(sub, self.bench_path)
 
-    def _bind_mariadb(self, manager: "VolumeManager", mount: Path) -> None:
-        sub = mount / "mariadb"
-        db_manager = self._mariadb_manager()
-        datadir = Path(db_manager.data_dir() if db_manager else "/var/lib/mysql")
-        run_command(["sudo", "install", "-d", "-m", "750", "-o", "mysql", "-g", "mysql", str(sub)])
+    def _bind_database(self, manager: "VolumeManager", mount: Path) -> None:
+        """Bind the selected engine's datadir into the bench dataset."""
+        engine = self.bench_config.database_engine if self.bench_config else "mariadb"
+        # Preserve the existing MariaDB dataset layout; PostgreSQL gets its own
+        # engine-named subdirectory so upgrading bench-cli never hides data.
+        sub = mount / engine
+        db_manager = self._database_manager()
+        defaults = {"mariadb": "/var/lib/mysql", "postgres": "/var/lib/postgresql"}
+        datadir = Path(db_manager.data_dir() if db_manager else defaults[engine])
+        owner = "postgres" if engine == "postgres" else "mysql"
+        run_command(["sudo", "install", "-d", "-m", "750", "-o", owner, "-g", owner, str(sub)])
 
         has_data = datadir.exists() and any(datadir.iterdir())
         if has_data:
-            print(f"Existing data found at {datadir}, stopping MariaDB for migration...")
-            _stop_mariadb(db_manager)
+            print(f"Existing data found at {datadir}, stopping database for migration...")
+            _stop_database(db_manager)
             run_command(["sudo", "rsync", "-a", f"{datadir}/", f"{sub}/"])
 
         manager.bind_mount(sub, datadir)
         manager.persist_bind_mount(sub, datadir)
 
         if has_data:
-            _start_mariadb(db_manager)
+            _start_database(db_manager)
 
-    def _mariadb_manager(self):
-        if self.bench_config is None or not self.bench_config.mariadb.instance:
+    def _database_manager(self):
+        if self.bench_config is None:
             return None
-        from bench_cli.managers.mariadb_manager import MariaDBManager
+        from bench_cli.managers.database_manager import create_database_manager
+        manager = create_database_manager(self.bench_config)
+        if not manager.is_dedicated:
+            return None
+        return manager
 
-        return MariaDBManager(self.bench_config.mariadb)
+    # Compatibility shim for callers/tests that still use the former private name.
+    def _bind_mariadb(self, manager: "VolumeManager", mount: Path) -> None:
+        self._bind_database(manager, mount)
 
     def _resolve_backing(self) -> None:
         from bench_cli.managers.volume_manager import resolve_auto_backing

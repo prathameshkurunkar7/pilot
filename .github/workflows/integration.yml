@@ -125,3 +125,50 @@ jobs:
           echo "::group::bench logs"
           tail -n 80 benches/ci-bench/logs/*.log 2>/dev/null || true
           echo "::endgroup::"
+
+  database-backends:
+    name: ${{ matrix.engine }} backend
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [postgres, sqlite]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y redis-server git postgresql postgresql-client
+          sudo systemctl start redis-server postgresql
+          sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'admin';"
+
+      - name: Install yarn and bench
+        run: |
+          npm install -g yarn
+          pip install -e ".[test,admin]"
+
+      - name: Create backend bench
+        run: |
+          mkdir -p benches/ci-${{ matrix.engine }}-bench
+          cp tests/fixtures/ci_${{ matrix.engine }}_bench.toml benches/ci-${{ matrix.engine }}-bench/bench.toml
+
+      - name: Initialize bench
+        run: bench init -b ci-${{ matrix.engine }}-bench
+        timeout-minutes: 45
+
+      - name: Run backend lifecycle integration test
+        run: pytest tests/integration/test_database_backends.py -v
+        env:
+          BENCH_TEST_ROOT: ${{ github.workspace }}/benches/ci-${{ matrix.engine }}-bench
+          INTEGRATION_DATABASE_ENGINE: ${{ matrix.engine }}

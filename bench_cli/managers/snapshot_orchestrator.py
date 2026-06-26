@@ -4,7 +4,7 @@ import typing
 
 if typing.TYPE_CHECKING:
     from bench_cli.core.bench import Bench
-    from bench_cli.managers.mariadb_manager import MariaDBManager
+    from bench_cli.managers.database_manager import DatabaseManager
     from bench_cli.managers.volume_manager import VolumeManager
 
 
@@ -18,11 +18,11 @@ class SnapshotOrchestrator:
     def __init__(
         self,
         volume: VolumeManager,
-        mariadb: MariaDBManager | None = None,
+        database: DatabaseManager | None = None,
         bench: Bench | None = None,
     ) -> None:
         self._volume = volume
-        self._mariadb = mariadb
+        self._database = database
         self._bench = bench
 
     @property
@@ -30,8 +30,8 @@ class SnapshotOrchestrator:
         return self._volume.config.dataset_path
 
     def create_snapshot(self, tag: str) -> None:
-        if self._mariadb:
-            with self._mariadb.snapshot_lock():
+        if self._database:
+            with self._database.snapshot_lock():
                 self._volume.snapshot(self._dataset, tag)
         else:
             self._volume.snapshot(self._dataset, tag)
@@ -40,13 +40,13 @@ class SnapshotOrchestrator:
         if self._bench:
             self._bench.set_maintenance_mode(True)
         try:
-            if self._mariadb:
-                self._mariadb.stop()
+            if self._database:
+                self._database.stop()
             try:
                 self._volume.rollback_snapshot(self._dataset, tag)
             finally:
-                if self._mariadb:
-                    self._mariadb.start()
+                if self._database:
+                    self._database.start()
         finally:
             if self._bench:
                 self._bench.set_maintenance_mode(False)
@@ -55,11 +55,11 @@ class SnapshotOrchestrator:
 def get_orchestrator(bench_root):
     from bench_cli.config.bench_config import BenchConfig
     from bench_cli.core.bench import Bench
-    from bench_cli.managers.mariadb_manager import MariaDBManager
+    from bench_cli.managers.database_manager import create_database_manager
     from bench_cli.managers.volume_manager import VolumeManager
 
     bench_config = BenchConfig.from_file(bench_root / "bench.toml")
     volume = VolumeManager(bench_config.volume)
-    mariadb = MariaDBManager(bench_config.mariadb)
+    database = create_database_manager(bench_config)
     bench = Bench(bench_config, bench_root)
-    return SnapshotOrchestrator(volume, mariadb, bench)
+    return SnapshotOrchestrator(volume, database, bench)

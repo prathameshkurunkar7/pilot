@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { Button, Dialog, FormControl, LoadingText, ErrorMessage, Switch, TabButtons, Select } from 'frappe-ui'
 import FilePickerField from '../components/FilePickerField.vue'
@@ -45,6 +45,7 @@ const sitePrefix = ref('')
 const wildcardDomains = ref([])
 const selectedSuffix = ref('')
 const adminPassword = ref('')
+const databaseEngine = ref('mariadb')
 const creating = ref(false)
 const createError = ref('')
 const restoreFromBackup = ref(false)
@@ -57,9 +58,22 @@ const uploadDb = ref(null)
 const uploadPublic = ref(null)
 const uploadPrivate = ref(null)
 
+async function loadCreateOptions() {
+  try {
+    const options = await fetch('/api/sites/create-options').then(r => r.json())
+    databaseEngine.value = options.default_database_engine || 'mariadb'
+  } catch { databaseEngine.value = 'mariadb' }
+}
+
 function siteStatus(s) {
   return !s.exists ? 'offline' : s.broken ? 'broken' : 'online'
 }
+
+function databaseLabel(engine) {
+  return engine === 'postgres' ? 'PostgreSQL' : engine === 'sqlite' ? 'SQLite' : 'MariaDB'
+}
+
+const showDatabaseBadges = computed(() => new Set(sites.value.map(s => s.db_type || 'mariadb')).size > 1)
 
 const STATUS_DOT = { online: 'bg-surface-green-3', broken: 'bg-surface-red-4', offline: 'bg-ink-gray-3' }
 
@@ -110,7 +124,7 @@ async function createSite() {
       res = await fetch('/api/sites/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: siteName.value.trim(), admin_password: adminPassword.value.trim() }),
+        body: JSON.stringify({ name: siteName.value.trim(), admin_password: adminPassword.value.trim(), database_engine: databaseEngine.value }),
       })
     } else if (restoreMode.value === 'existing') {
       const set = backupSets.value.find(s => s.timestamp === selectedBackupTs.value)
@@ -157,6 +171,7 @@ function openCreate() {
   sitePrefix.value = ''
   adminPassword.value = ''
   loadWildcardDomains()
+  loadCreateOptions()
   createError.value = ''
   restoreFromBackup.value = false
   restoreMode.value = 'existing'
@@ -195,7 +210,7 @@ async function checkAppUpdates() {
 
 const updateError = ref('')
 
-onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
+onMounted(() => { loadSites(); loadCreateOptions(); loadRegistry(); checkAppUpdates() })
 </script>
 
 <template>
@@ -203,7 +218,7 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
     <!-- defer: after login, this page mounts in the same render pass as the
          AppLayout header, before #header-actions is attached to the document -->
     <Teleport defer to="#header-actions">
-      <Button variant="outline" :loading="checkingUpdates" @click="showUpdate = true">
+      <Button variant="outline" class="text-sm" :loading="checkingUpdates" @click="showUpdate = true">
         <template #prefix>
           <span v-if="appsWithUpdates.length"
             class="relative flex h-2 w-2 shrink-0">
@@ -213,7 +228,7 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
         </template>
         Update Bench
       </Button>
-      <Button variant="outline" @click="openCreate">Create Site</Button>
+      <Button variant="outline" class="text-sm" @click="openCreate">Create Site</Button>
     </Teleport>
     <ErrorMessage v-if="updateError" :message="updateError" />
 
@@ -230,7 +245,13 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
       >
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
-            <span class="font-medium text-ink-gray-9 truncate">{{ s.name }}</span>
+            <span class="truncate text-sm font-medium text-ink-gray-9">{{ s.name }}</span>
+            <span
+              v-if="showDatabaseBadges"
+              class="shrink-0 rounded bg-surface-gray-2 px-1.5 py-0.5 text-[11px] font-normal leading-4 text-ink-gray-5"
+            >
+              {{ databaseLabel(s.db_type) }}
+            </span>
             <span
               class="group relative inline-flex h-2 w-2 shrink-0 self-center rounded-full"
               :class="STATUS_DOT[siteStatus(s)]"
@@ -271,6 +292,18 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
               <span v-else class="flex shrink-0 items-center whitespace-nowrap text-sm text-ink-gray-6">{{ wildcardDomains[0] }}</span>
             </div>
           </div>
+          <FormControl
+            v-if="!restoreFromBackup"
+            label="Database Engine"
+            type="select"
+            v-model="databaseEngine"
+            :options="[
+              { label: 'MariaDB', value: 'mariadb' },
+              { label: 'PostgreSQL (experimental)', value: 'postgres' },
+              { label: 'SQLite (experimental)', value: 'sqlite' },
+            ]"
+            description="Choose the database engine for this site."
+          />
           <FormControl label="Admin Password" type="password" v-model="adminPassword" placeholder="admin" description="Leave blank to use 'admin'" />
 
           <div class="border-t pt-4">
@@ -330,8 +363,8 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
 
           <ErrorMessage v-if="createError" :message="createError" />
           <div class="flex justify-end gap-2">
-            <Button variant="ghost" @click="showCreate = false">Cancel</Button>
-            <Button variant="solid" :loading="creating" @click="createSite">Create Site</Button>
+            <Button variant="ghost" class="text-sm" @click="showCreate = false">Cancel</Button>
+            <Button variant="solid" class="text-sm" :loading="creating" @click="createSite">Create Site</Button>
           </div>
         </div>
       </template>

@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from bench_cli.config.mariadb_config import MariaDBConfig
+from bench_cli.config.postgres_config import PostgresConfig
 
 
 @dataclass
@@ -128,6 +129,56 @@ class DatabaseReader:
             return []
         content = log_path.read_text(errors="replace")
         return _parse_slow_query_log(content, limit)
+
+
+class PostgresDatabaseReader:
+    """PostgreSQL counterpart for the portable admin database operations."""
+
+    def __init__(self, config: PostgresConfig) -> None:
+        self._config = config
+
+    def _connect(self):
+        import psycopg
+        return psycopg.connect(
+            host=self._config.socket_path or self._config.host,
+            port=self._config.port,
+            user=self._config.admin_user,
+            password=self._config.root_password,
+            dbname="postgres",
+            row_factory=psycopg.rows.dict_row,
+        )
+
+    def list_binary_logs(self) -> list[BinaryLogInfo]:
+        return []  # PostgreSQL WAL is not a user-facing binary-log stream.
+
+    def read_binary_log_events(self, log_name: str, limit: int = 200, offset: int = 0) -> list[BinlogEvent]:
+        return []
+
+    def read_processlist(self) -> list[dict]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT pid AS \"Id\", usename AS \"User\", client_addr::text AS \"Host\",
+                       datname AS db, state AS \"Command\", EXTRACT(EPOCH FROM now() - query_start)::int AS \"Time\",
+                       wait_event AS \"State\", query AS \"Info\"
+                FROM pg_stat_activity WHERE pid <> pg_backend_pid()
+            """)
+            return cursor.fetchall()
+
+    def kill_process(self, process_id: int) -> None:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT pg_terminate_backend(%s)", (process_id,))
+
+    def read_slow_queries(self, limit: int = 50) -> list[SlowQuery]:
+        return []
+
+
+class SQLiteDatabaseReader:
+    """SQLite is site-local, so server-wide admin database tools are empty."""
+
+    def list_binary_logs(self) -> list[BinaryLogInfo]: return []
+    def read_binary_log_events(self, log_name: str, limit: int = 200, offset: int = 0) -> list[BinlogEvent]: return []
+    def read_processlist(self) -> list[dict]: return []
+    def read_slow_queries(self, limit: int = 50) -> list[SlowQuery]: return []
 
 
 def _parse_slow_query_log(content: str, limit: int) -> list[SlowQuery]:

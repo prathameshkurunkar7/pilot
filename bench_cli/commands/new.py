@@ -22,6 +22,7 @@ class NewCommand(Command):
             help="Admin domain for this bench. Optional for development; "
                  "required by 'bench setup production' (pass it there if omitted here).",
         )
+        parser.add_argument("--database", choices=("mariadb", "postgres", "sqlite"), default="mariadb", help="Database backend for new sites.")
 
     @classmethod
     def from_args(cls, args, bench):
@@ -31,16 +32,18 @@ class NewCommand(Command):
             cli_root() / "benches" / args.name,
             args.name,
             admin_domain=args.admin_domain,
+            database_engine=args.database,
         )
 
     def __init__(self, target_directory: Path, name: str, process_manager: str = "",
-                 admin_domain: str = "", admin_tls: bool | None = None) -> None:
+                 admin_domain: str = "", admin_tls: bool | None = None, database_engine: str = "mariadb") -> None:
         self.target_directory = target_directory
         self.name = name
         self.process_manager = process_manager
         self.admin_domain = admin_domain
         # None → inherit the server-wide value from a sibling bench (default False).
         self.admin_tls = admin_tls
+        self.database_engine = database_engine
 
     def run(self) -> None:
         from bench_cli.config.bench_toml_builder import BenchTomlBuilder, default_ports
@@ -67,6 +70,7 @@ class NewCommand(Command):
             "admin_enabled": True,
             "admin_domain": self.admin_domain,
             "admin_tls": admin_tls,
+            "database_engine": self.database_engine,
         }
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager
@@ -81,12 +85,20 @@ class NewCommand(Command):
         # Linux uses a per-bench instance (systemd mariadb@<name>, or a generated
         # OpenRC mariadb-<name> on Alpine). macOS (Homebrew) has no per-instance
         # mechanism, so it stays on the shared server.
-        if is_linux():
+        if is_linux() and self.database_engine == "mariadb":
             settings.update(
                 {
                     "mariadb_instance": self.name,
                     "mariadb_socket_path": f"/run/mysqld/mysqld-{self.name}.sock",
                     "mariadb_data_dir": f"/var/lib/mysql-{self.name}",
+                }
+            )
+        elif is_linux() and self.database_engine == "postgres":
+            settings.update(
+                {
+                    "postgres_instance": self.name,
+                    "postgres_socket_path": f"/run/postgresql/{self.name}",
+                    "postgres_data_dir": f"/var/lib/postgresql/{self.name}",
                 }
             )
         bench_toml.write_text(BenchTomlBuilder(self.name, settings, port_offset=offset).render())

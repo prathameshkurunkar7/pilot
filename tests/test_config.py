@@ -220,6 +220,23 @@ def test_mariadb_data_dir_must_be_absolute() -> None:
     assert "mariadb.data_dir" in str(exc_info.value)
 
 
+def test_postgres_backend_is_parsed_and_validated() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["database"] = {"engine": "postgres"}
+    data["postgres"] = {"port": 5432, "root_password": "secret", "instance": "test-bench", "data_dir": "/var/lib/postgresql/test-bench"}
+    config = load_from_dict(data)
+    assert config.database_engine == "postgres"
+    assert config.postgres.admin_user == "postgres"
+
+
+def test_sqlite_backend_is_parsed_and_validated() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["database"] = {"engine": "sqlite"}
+    config = load_from_dict(data)
+    assert config.database_engine == "sqlite"
+    assert config.sqlite.timeout_seconds == 15
+
+
 def test_invalid_redis_version() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["redis"]["version"] = "not-a-version"

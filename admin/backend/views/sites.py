@@ -37,6 +37,19 @@ def index():
     return jsonify(payload)
 
 
+@sites_bp.route("/create-options")
+def create_options():
+    """Expose the bench default without coupling the UI to TOML parsing."""
+    from bench_cli.config.bench_config import BenchConfig
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        default_engine = BenchConfig.from_file(bench_root / "bench.toml").database_engine
+    except Exception:
+        default_engine = "mariadb"
+    return jsonify({"default_database_engine": default_engine, "engines": ["mariadb", "postgres", "sqlite"]})
+
+
 @sites_bp.route("/<name>")
 def detail(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -67,7 +80,18 @@ def detail(name: str):
     site_dict = asdict(site)
     site_dict["site_config"] = _public_config(site.site_config)
     site_dict["ssl"] = bool(site.site_config.get("ssl"))
-    return jsonify({"site": site_dict, "installable_apps": installable, "http_port": http_port, "nginx_enabled": nginx_enabled, "admin_tls": admin_tls})
+    try:
+        database_backends = {s.db_type or "mariadb" for s in SiteReader(bench_root).read_all()}
+    except Exception:
+        database_backends = {site.db_type or "mariadb"}
+    return jsonify({
+        "site": site_dict,
+        "installable_apps": installable,
+        "http_port": http_port,
+        "nginx_enabled": nginx_enabled,
+        "admin_tls": admin_tls,
+        "show_database_badge": len(database_backends) > 1,
+    })
 
 
 @sites_bp.route("/<name>/apps")
@@ -127,6 +151,9 @@ def create():
 
     name = (data.get("name") or "").strip()
     admin_password = (data.get("admin_password") or "admin").strip() or "admin"
+    database_engine = (data.get("database_engine") or "").strip()
+    if database_engine not in {"mariadb", "postgres", "sqlite"}:
+        return jsonify({"ok": False, "error": "Choose MariaDB, PostgreSQL, or SQLite."})
     err = validate_site_name(name) or _new_site_name_error(bench_root, name)
     if err:
         return jsonify({"ok": False, "error": err})
@@ -134,7 +161,7 @@ def create():
     try:
         task_id = TaskRunner(bench_root).run(
             "new-site",
-            {"name": name, "admin_password": admin_password},
+            {"name": name, "admin_password": admin_password, "database_engine": database_engine},
             callbacks={"on_failure": new_site_failure_callback},
         )
     except Exception as e:

@@ -110,7 +110,7 @@ bench start              # not yet initialized → launches the setup wizard
 `http://localhost:8002`. The wizard walks you through three steps:
 
 1. **Admin password** — password for the bench admin UI
-2. **Database** — choose between a dedicated MariaDB instance (default, recommended) or the shared system MariaDB; set the MariaDB root user (default `root`) and password
+2. **Database** — choose MariaDB (default), PostgreSQL, or experimental SQLite. MariaDB/PostgreSQL can use a dedicated instance or shared service; SQLite is stored within each site and needs no server credentials
 3. **Customize** — Frappe branch/repo; optionally enable ZFS volumes (dedicated DB only)
 
 It then runs the full initialization with a live progress view.

@@ -24,6 +24,7 @@ const site = ref(null)
 const nginxEnabled = ref(false)
 const adminTls = ref(false)
 const installable = ref([])
+const showDatabaseBadge = ref(false)
 const loading = ref(true)
 const error = ref('')
 
@@ -401,6 +402,11 @@ const tabs = computed(() => [
   { label: 'Actions' },
 ])
 const TAB_SLUGS = computed(() => tabs.value.map((t) => t.label.toLowerCase()))
+
+function databaseLabel(engine) {
+  return engine === 'postgres' ? 'PostgreSQL' : engine === 'sqlite' ? 'SQLite' : 'MariaDB'
+}
+
 const initialHash = route.hash.slice(1).toLowerCase()
 const initialIdx = TAB_SLUGS.value.indexOf(initialHash)
 const activeTab = ref(initialIdx >= 0 ? initialIdx : 0)
@@ -675,6 +681,7 @@ async function load() {
     nginxEnabled.value = d.nginx_enabled ?? false
     adminTls.value = d.admin_tls ?? false
     installable.value = d.installable_apps
+    showDatabaseBadge.value = !!d.show_database_badge
     // Tab list is final now (Domains is nginx-only); re-resolve the deep-link
     // hash against it, since it was first matched before nginxEnabled loaded.
     const idx = TAB_SLUGS.value.indexOf(initialHash)
@@ -776,8 +783,8 @@ onMounted(() => {
         <div class="flex items-start justify-between gap-4 px-5 py-4">
           <div class="flex min-w-0 flex-col gap-1.5">
             <div class="flex items-center gap-2">
-              <h1 class="flex min-w-0 items-center gap-1.5 font-semibold text-ink-gray-9">
-                <span class="break-all">{{ siteName }}</span>
+              <h1 class="flex min-w-0 items-center gap-1.5 text-lg font-semibold text-ink-gray-9">
+                <span class="break-all text-lg">{{ siteName }}</span>
                 <span class="group relative inline-flex h-2 w-2 shrink-0 rounded-full"
                   :class="!site.exists ? 'bg-ink-gray-3' : site.broken ? 'bg-surface-red-4' : 'bg-surface-green-3'">
                   <span
@@ -786,11 +793,17 @@ onMounted(() => {
                   </span>
                 </span>
               </h1>
+              <span
+                v-if="showDatabaseBadge"
+                class="shrink-0 rounded bg-surface-gray-2 px-1.5 py-0.5 text-[11px] font-normal leading-4 text-ink-gray-5"
+              >
+                {{ databaseLabel(site.db_type) }}
+              </span>
               <Badge v-if="site.ssl" label="SSL" theme="blue" />
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-2">
-            <Button variant="outline" @click="showLogin = true">
+            <Button variant="outline" class="text-sm" @click="showLogin = true">
               Login
             </Button>
           </div>
@@ -808,7 +821,7 @@ onMounted(() => {
             <div v-if="tab.label === 'Apps'">
               <div class="flex items-center justify-between px-4 py-2.5">
                 <h3 class="text-sm font-semibold text-ink-gray-9">Installed Apps</h3>
-                <Button variant="ghost" size="sm" @click="showInstall = true">
+                <Button variant="ghost" size="sm" class="text-sm" @click="showInstall = true">
                   <template #prefix><LucidePlus class="h-4 w-4" /></template>
                   Install App
                 </Button>
@@ -851,7 +864,7 @@ onMounted(() => {
             <div v-else-if="tab.label === 'Config'" class="flex flex-col">
               <div class="flex items-center justify-between px-4 py-2.5">
                 <h3 class="text-sm font-semibold text-ink-gray-9">Site Config</h3>
-                <Button variant="ghost" size="sm" @click="openConfigEntry()">
+                <Button variant="ghost" size="sm" class="text-sm" @click="openConfigEntry()">
                   <template #prefix>
                     <LucidePlus class="h-4 w-4" />
                   </template>
@@ -910,7 +923,7 @@ onMounted(() => {
               <div class="flex items-center justify-between">
                 <h3 class="text-sm font-semibold text-ink-gray-9">Backups</h3>
                 <div class="flex items-center gap-1">
-                  <Button variant="ghost" size="sm" :loading="actionLoading === 'backup'" @click="doAction('backup')">
+                  <Button variant="ghost" size="sm" class="text-sm" :loading="actionLoading === 'backup'" @click="doAction('backup')">
                     Backup now
                   </Button>
                   <Button variant="ghost" size="sm" :loading="backupsLoading" @click="loadBackups" title="Refresh">
@@ -995,7 +1008,7 @@ onMounted(() => {
                     <p class="text-sm font-medium text-ink-gray-8">Backup Site</p>
                     <p class="mt-0.5 text-sm text-ink-gray-5">Create an on-demand backup of the database and files.</p>
                   </div>
-                  <Button variant="outline" class="shrink-0" :loading="actionLoading === 'backup'"
+                  <Button variant="outline" class="shrink-0 text-sm" :loading="actionLoading === 'backup'"
                     @click="doAction('backup')">
                     Backup
                   </Button>
@@ -1012,7 +1025,7 @@ onMounted(() => {
                     </p>
                   </div>
                   <Badge v-if="site.ssl" label="Enabled" theme="green" class="shrink-0" />
-                  <Button v-else variant="outline" class="shrink-0" :disabled="!nginxEnabled" :loading="sslLoading"
+                  <Button v-else variant="outline" class="shrink-0 text-sm" :disabled="!nginxEnabled" :loading="sslLoading"
                     @click="enableSsl()">
                     Enable SSL
                   </Button>
@@ -1034,7 +1047,7 @@ onMounted(() => {
                         Wipe all data and reinstall frappe from scratch. Installed apps are preserved but all records are lost.
                       </p>
                     </div>
-                    <Button variant="subtle" theme="red" class="shrink-0" @click="reinstallConfirmText = ''; showReinstall = true">
+                    <Button variant="subtle" theme="red" class="shrink-0 text-sm" @click="reinstallConfirmText = ''; showReinstall = true">
                       Reinstall
                     </Button>
                   </div>
@@ -1047,7 +1060,7 @@ onMounted(() => {
                         Permanently delete <strong>{{ siteName }}</strong> and all its data. This cannot be undone.
                       </p>
                     </div>
-                    <Button variant="subtle" theme="red" class="shrink-0" @click="showDrop = true">
+                    <Button variant="subtle" theme="red" class="shrink-0 text-sm" @click="showDrop = true">
                       Drop Site
                     </Button>
                   </div>
@@ -1061,7 +1074,7 @@ onMounted(() => {
                         cleanup.
                       </p>
                     </div>
-                    <Button variant="solid" theme="red" class="shrink-0" @click="showForceDrop = true">
+                    <Button variant="solid" theme="red" class="shrink-0 text-sm" @click="showForceDrop = true">
                       Force Delete
                     </Button>
                   </div>
@@ -1095,9 +1108,10 @@ onMounted(() => {
           <FormControl class="mt-3" type="text" label="Type the site name to confirm" v-model="reinstallConfirmText"
             :placeholder="siteName" autocomplete="off" />
           <div class="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" @click="showReinstall = false">Cancel</Button>
+            <Button variant="ghost" class="text-sm" @click="showReinstall = false">Cancel</Button>
             <Button variant="solid" theme="red" :loading="actionLoading === 'reinstall'"
               :disabled="reinstallConfirmText !== siteName || !reinstallAdminPassword"
+              class="text-sm"
               @click="showReinstall = false; doAction('reinstall', { admin_password: reinstallAdminPassword })">Reinstall</Button>
           </div>
         </div>
@@ -1119,9 +1133,9 @@ onMounted(() => {
             :placeholder="siteName" autocomplete="off"
             @keydown.enter="dropConfirmText === siteName && (showDrop = false, doAction('drop'))" />
           <div class="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" @click="showDrop = false">Cancel</Button>
+            <Button variant="ghost" class="text-sm" @click="showDrop = false">Cancel</Button>
             <Button variant="solid" theme="red" :loading="actionLoading === 'drop'"
-              :disabled="dropConfirmText !== siteName" @click="showDrop = false; doAction('drop')">Drop Site</Button>
+              :disabled="dropConfirmText !== siteName" class="text-sm" @click="showDrop = false; doAction('drop')">Drop Site</Button>
           </div>
         </div>
       </template>
@@ -1136,9 +1150,9 @@ onMounted(() => {
         </p>
         <ErrorMessage v-if="forceDropError" :message="forceDropError" class="mt-2" />
         <div class="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" @click="showForceDrop = false">Cancel</Button>
+          <Button variant="ghost" class="text-sm" @click="showForceDrop = false">Cancel</Button>
           <Button variant="solid" theme="red" :loading="forceDropLoading"
-            @click="showForceDrop = false; forceDrop()">Force Delete</Button>
+            class="text-sm" @click="showForceDrop = false; forceDrop()">Force Delete</Button>
         </div>
       </template>
     </Dialog>
@@ -1157,8 +1171,8 @@ onMounted(() => {
       </template>
       <template #actions>
         <div class="flex justify-end gap-2">
-          <Button variant="ghost" @click="showSslEmail = false">Cancel</Button>
-          <Button variant="solid" :loading="sslLoading" :disabled="!sslEmail" @click="enableSsl(sslEmail)">
+          <Button variant="ghost" class="text-sm" @click="showSslEmail = false">Cancel</Button>
+          <Button variant="solid" class="text-sm" :loading="sslLoading" :disabled="!sslEmail" @click="enableSsl(sslEmail)">
             Enable SSL
           </Button>
         </div>
@@ -1172,8 +1186,8 @@ onMounted(() => {
             @keydown.enter="loginToSite" />
           <ErrorMessage :message="loginError" class="mt-2" />
           <div class="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" @click="showLogin = false">Cancel</Button>
-            <Button variant="solid" :loading="loginLoading" :disabled="!loginPassword" @click="loginToSite">
+            <Button variant="ghost" class="text-sm" @click="showLogin = false">Cancel</Button>
+            <Button variant="solid" class="text-sm" :loading="loginLoading" :disabled="!loginPassword" @click="loginToSite">
               Login
             </Button>
           </div>
@@ -1195,8 +1209,8 @@ onMounted(() => {
           </p>
           <ErrorMessage :message="configEntryError" />
           <div class="mt-1 flex justify-end gap-2">
-            <Button variant="ghost" @click="showConfigEntry = false">Cancel</Button>
-            <Button variant="solid" :loading="configSaving" @click="saveConfigEntry">Save</Button>
+            <Button variant="ghost" class="text-sm" @click="showConfigEntry = false">Cancel</Button>
+            <Button variant="solid" class="text-sm" :loading="configSaving" @click="saveConfigEntry">Save</Button>
           </div>
         </div>
       </template>
@@ -1288,8 +1302,8 @@ onMounted(() => {
         </p>
         <ErrorMessage v-if="deleteConfigError" :message="deleteConfigError" class="mt-2" />
         <div class="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" @click="showDeleteConfig = false">Cancel</Button>
-          <Button variant="solid" theme="red" :loading="deletingConfig" @click="deleteConfigEntry">Delete</Button>
+          <Button variant="ghost" class="text-sm" @click="showDeleteConfig = false">Cancel</Button>
+          <Button variant="solid" theme="red" class="text-sm" :loading="deletingConfig" @click="deleteConfigEntry">Delete</Button>
         </div>
       </template>
     </Dialog>
@@ -1303,8 +1317,8 @@ onMounted(() => {
         </p>
         <ErrorMessage v-if="deleteBackupError" :message="deleteBackupError" class="mt-2" />
         <div class="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" @click="showDeleteBackup = false">Cancel</Button>
-          <Button variant="solid" theme="red" :loading="deletingBackup" @click="deleteBackupSet">Delete</Button>
+          <Button variant="ghost" class="text-sm" @click="showDeleteBackup = false">Cancel</Button>
+          <Button variant="solid" theme="red" class="text-sm" :loading="deletingBackup" @click="deleteBackupSet">Delete</Button>
         </div>
       </template>
     </Dialog>
@@ -1356,14 +1370,14 @@ onMounted(() => {
           <ErrorMessage :message="scheduleError" />
 
           <div class="flex items-center justify-between gap-2 pt-1">
-            <Button v-if="currentSchedule" variant="subtle" theme="red" :loading="scheduleRemoving"
+            <Button v-if="currentSchedule" variant="subtle" theme="red" class="text-sm" :loading="scheduleRemoving"
               @click="removeSchedule">
               Disable
             </Button>
             <span v-else></span>
             <div class="flex items-center gap-2">
-              <Button variant="ghost" @click="showSchedule = false">Cancel</Button>
-              <Button variant="solid" :loading="scheduleSaving" @click="saveSchedule">
+              <Button variant="ghost" class="text-sm" @click="showSchedule = false">Cancel</Button>
+              <Button variant="solid" class="text-sm" :loading="scheduleSaving" @click="saveSchedule">
                 {{ currentSchedule ? 'Save' : 'Enable' }}
               </Button>
             </div>
@@ -1380,9 +1394,9 @@ onMounted(() => {
             Uninstall <strong>{{ uninstallTarget }}</strong> from <strong>{{ siteName }}</strong>?
           </p>
           <div class="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" @click="showUninstall = false">Cancel</Button>
+            <Button variant="ghost" class="text-sm" @click="showUninstall = false">Cancel</Button>
             <Button variant="solid" theme="red"
-              @click="showUninstall = false; doAction('uninstall-app', { app: uninstallTarget })">Uninstall</Button>
+              class="text-sm" @click="showUninstall = false; doAction('uninstall-app', { app: uninstallTarget })">Uninstall</Button>
           </div>
           <div class="mt-4 rounded-md border border-outline-gray-2 bg-surface-gray-1 p-3">
             <p class="text-xs font-medium text-ink-gray-6">Force Remove</p>

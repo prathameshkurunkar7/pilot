@@ -1,0 +1,30 @@
+[bench]
+name = "ci-postgres-bench"
+python = "3.14"
+http_port = 8000
+socketio_port = 9000
+
+[database]
+engine = "postgres"
+
+[[apps]]
+name = "frappe"
+repo = "https://github.com/frappe/frappe"
+branch = "develop"
+
+[mariadb]
+root_password = "admin"
+
+[postgres]
+host = "127.0.0.1"
+port = 5432
+root_password = "admin"
+admin_user = "postgres"
+
+[redis]
+cache_port = 13000
+queue_port = 11000
+
+[[workers]]
+queues = ["default", "short", "long"]
+count = 1
