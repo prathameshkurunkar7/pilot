@@ -13,6 +13,7 @@ Apps and sites are **not** tracked in `bench.toml` after `bench init` — they a
 [bench]
 name = "my-bench"       # used in process names and log prefixes
 python = "3.14"         # Python version to use for the virtualenv
+db_type = "mariadb"     # database engine for this bench's sites: "mariadb" or "postgres"
 
 # ── Framework app (cloned during bench init) ──────────────────────────────────
 [[apps]]
@@ -31,7 +32,7 @@ admin_user = "root"      # MariaDB user bench connects as for admin ops; change 
 # socket_path = "/run/mysqld/mysqld-my-bench.sock"  # per-instance socket (auto-derived from instance name)
 # data_dir = "/var/lib/mysql-my-bench"              # per-instance datadir (auto-derived; used as bind-mount target with ZFS)
 
-# ── PostgreSQL (opt-in per-site engine; installed & provisioned by init) ──────
+# ── PostgreSQL (used when bench.db_type = "postgres"; installed by init) ──────
 # Shared across benches (one server, port 5432); `bench new` generates the password.
 [postgres]
 host = "localhost"
@@ -110,6 +111,7 @@ quota = "60G"           # hard cap — lower it to fit more benches in the pool
 |-------|------|----------|---------|-------------|
 | `name` | string | yes | — | Human-readable bench name. Used in process labels and log file names. Must match `^[a-zA-Z][a-zA-Z0-9_-]*$`. |
 | `python` | string | yes | — | Python version string (e.g. `"3.14"`). Must be available on the system or installable via `deadsnakes/ppa`. |
+| `db_type` | string | no | `mariadb` | Database engine for **all** sites on this bench: `"mariadb"` or `"postgres"`. Chosen at `bench new` (`--database`), in the setup wizard, or the admin New Bench dialog. `bench init` installs and provisions only this engine. |
 
 ### `[[apps]]`
 
@@ -142,7 +144,7 @@ Declares the framework app (frappe) to clone during `bench init`. After init, ad
 
 ### `[postgres]`
 
-**MariaDB is the default engine for new sites; PostgreSQL is opt-in per-site** (`bench new-site --db-type postgres`, or the **Database** selector in the admin Create Site dialog). `bench init` still installs a shared PostgreSQL server (apt/Homebrew/apk) and provisions it: it starts and enables the service, ensures the `admin_user` superuser exists, and sets its password to `root_password` — so the engine is ready whenever a site opts into it.
+Used when the bench's engine is PostgreSQL (`[bench] db_type = "postgres"`). `bench init` installs a shared PostgreSQL server (apt/Homebrew/apk) and provisions it: it starts and enables the service, ensures the `admin_user` superuser exists, and sets its password to `root_password`. The engine is chosen per bench, not per site — every site on a PostgreSQL bench uses PostgreSQL (and a MariaDB bench never installs PostgreSQL).
 
 Unlike MariaDB, there are no per-bench PostgreSQL instances: all benches on a host share one server (port 5432) and are isolated at the database level (one db per site). `bench new` generates `root_password` automatically.
 

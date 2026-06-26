@@ -513,6 +513,10 @@ def create_app(bench_root: Path) -> Flask:
             # cached client can never deploy an unmanageable bench.
             process_manager = "openrc"
 
+        db_type = (data.get("db_type") or "mariadb").strip()
+        if db_type not in ("mariadb", "postgres"):
+            return jsonify({"error": "Database must be 'mariadb' or 'postgres'."}), 400
+
         admin_domain = (data.get("admin_domain") or "").strip()
         if not admin_domain:
             return jsonify({"error": "Admin domain is required so the bench is reachable in production."}), 400
@@ -539,7 +543,7 @@ def create_app(bench_root: Path) -> Flask:
 
         try:
             NewCommand(new_dir, name, process_manager=process_manager,
-                       admin_domain=admin_domain, admin_tls=admin_tls).run()
+                       admin_domain=admin_domain, admin_tls=admin_tls, db_type=db_type).run()
         except BenchError as exc:
             return jsonify({"error": str(exc)}), 400
 

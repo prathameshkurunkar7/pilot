@@ -24,16 +24,23 @@ def complete_dev_wizard(
     page: Page,
     *,
     admin_password: str,
-    mariadb_password: str,
+    mariadb_password: str = "",
+    db_type: str = "mariadb",
     db_mode: str = "shared",
     volumes: bool = False,
+    postgres_password: str = "",
+    postgres_admin_user: str = "postgres",
     framework_branch: str | None = None,
 ) -> None:
     """Complete the wizard for a development bench. The wizard only configures a
     dev bench — production is a separate `bench setup production` step — so there
     are no domain/TLS/process-manager prompts to drive here.
 
-    db_mode:
+    db_type:
+        'mariadb'   — drive the MariaDB fields (db_mode below).
+        'postgres'  — drive the PostgreSQL fields (superuser + password).
+
+    db_mode (MariaDB only):
         'shared'    — validate against an existing system MariaDB (CI default).
         'dedicated' — provision a fresh per-bench MariaDB instance.
     volumes:
@@ -52,17 +59,23 @@ def complete_dev_wizard(
     page.get_by_role("button", name="Next").click()
 
     # ── Step 2: Database ────────────────────────────────────────────────────────
-    # Shared validates against the running system server; dedicated provisions a
-    # fresh instance (the entered password becomes its new root password).
-    _choose_select(
-        page,
-        "Database",
-        "Dedicated instance" if db_mode == "dedicated" else "Shared system MariaDB",
-    )
-    page.get_by_label("MariaDB root password").fill(mariadb_password)
+    _choose_select(page, "Database engine", "PostgreSQL" if db_type == "postgres" else "MariaDB")
+    if db_type == "postgres":
+        page.get_by_label("PostgreSQL superuser").fill(postgres_admin_user)
+        page.get_by_label("PostgreSQL password").fill(postgres_password)
+    else:
+        # The shared/dedicated choice only renders on Linux.
+        if page.get_by_role("combobox", name="MariaDB setup").is_visible():
+            _choose_select(
+                page,
+                "MariaDB setup",
+                "Dedicated instance" if db_mode == "dedicated" else "Shared system MariaDB",
+            )
+        page.get_by_label("MariaDB root password").fill(mariadb_password)
     page.get_by_role("button", name="Next").click()
     # A wrong password surfaces inline and keeps us on this step.
     expect(page.get_by_text("Incorrect MariaDB credentials.")).to_be_hidden()
+    expect(page.get_by_text("Incorrect PostgreSQL credentials.")).to_be_hidden()
 
     # ── Step 3: Customize ───────────────────────────────────────────────────────
     # The wizard always provisions a development bench (no production/process-manager

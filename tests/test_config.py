@@ -518,3 +518,27 @@ def test_admin_internal_port_is_port_plus_one() -> None:
 
     assert AdminConfig(port=8002).internal_port == 8003
     assert AdminConfig(port=9100).internal_port == 9101
+
+
+# ── Bench-level database engine ───────────────────────────────────────────────
+
+
+def test_db_type_defaults_to_mariadb() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.db_type == "mariadb"
+
+
+def test_db_type_postgres_roundtrip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["bench"]["db_type"] = "postgres"
+    config = load_from_dict(data)
+    assert config.db_type == "postgres"
+    assert 'db_type = "postgres"' in bench_config_to_toml(config)
+
+
+def test_invalid_db_type_rejected() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["bench"]["db_type"] = "sqlite"
+    with pytest.raises(ConfigError) as exc_info:
+        load_from_dict(data)
+    assert "bench.db_type" in str(exc_info.value)

@@ -15,6 +15,7 @@ const benchName = ref('')
 const isLinux = ref(true)
 const dedicatedWillInstall = ref(false)  // true when a new dedicated instance will be created
 const sharedWillInstall = ref(false)     // true when the system/shared MariaDB isn't installed yet
+const postgresWillInstall = ref(false)   // true when PostgreSQL isn't installed yet
 
 // Whether init will install + secure MariaDB for the selected mode (and so set
 // its root password to the entered value). macOS has no dedicated mode, so it
@@ -25,6 +26,9 @@ const dbWillInstall = computed(() => {
 })
 const dbPasswordDescription = computed(() =>
   dbWillInstall.value ? 'MariaDB will be installed and its root password set to this value.' : undefined
+)
+const pgPasswordDescription = computed(() =>
+  postgresWillInstall.value ? 'PostgreSQL will be installed and its superuser password set to this value.' : undefined
 )
 
 // ── setup-task streaming state ─────────────────────────────────────────────
@@ -38,9 +42,12 @@ const showDetails = ref(false)
 
 const form = ref({
   admin_password: '',
+  db_type: 'mariadb',  // 'mariadb' | 'postgres' — the bench's single engine
   mariadb_password: '',
   mariadb_admin_user: 'root',
-  dedicated_db: 'dedicated',  // 'dedicated' | 'shared' — Linux only, UI-only field
+  dedicated_db: 'dedicated',  // 'dedicated' | 'shared' — Linux/MariaDB only, UI-only field
+  postgres_password: '',
+  postgres_admin_user: 'postgres',
   app_repo: 'https://github.com/frappe/frappe',
   app_branch: 'develop',
   volume_enabled: false,
@@ -163,7 +170,7 @@ watch(() => [form.value.volume_backing, form.value.volume_device, form.value.vol
 // ── step flow ──────────────────────────────────────────────────────────────
 const configSteps = computed(() => {
   const steps = ['passwords', 'database', 'customize']
-  if (isLinux.value && form.value.dedicated_db === 'dedicated' && form.value.volume_enabled)
+  if (isLinux.value && form.value.db_type === 'mariadb' && form.value.dedicated_db === 'dedicated' && form.value.volume_enabled)
     steps.push('storage')
   return steps
 })
@@ -182,7 +189,7 @@ const titles = {
   done: 'Setup complete',
 }
 const subtitles = {
-  database: 'Configure your MariaDB connection',
+  database: 'Choose and configure your database',
   storage: 'Choose where your bench keeps its data',
 }
 const title = computed(() => titles[step.value] || benchName.value)
@@ -290,38 +297,59 @@ async function nextStep() {
   }
 
   if (step.value === 'database') {
-    if (!form.value.mariadb_password) {
-      error.value = 'MariaDB password is required'
+    const dbError = form.value.db_type === 'postgres' ? await _validatePostgres() : await _validateMariadb()
+    if (dbError) {
+      error.value = dbError
       return
-    }
-    // Always validate before leaving the database step. The endpoint reports
-    // 'will_install' (fresh — nothing to validate), 'valid', or 'invalid'.
-    // dedicated only applies to a Linux dedicated instance; shared system
-    // MariaDB (Linux 'shared' and all of macOS) validates the live credentials.
-    const dedicated = isLinux.value && form.value.dedicated_db === 'dedicated'
-    loading.value = true
-    try {
-      const { state } = await postJson('/api/setup/validate-mariadb', {
-        mariadb_password: form.value.mariadb_password,
-        mariadb_admin_user: form.value.mariadb_admin_user,
-        dedicated_db: dedicated,
-      })
-      if (dedicated) dedicatedWillInstall.value = state === 'will_install'
-      else sharedWillInstall.value = state === 'will_install'
-      if (state === 'invalid') {
-        error.value = 'Incorrect MariaDB credentials.'
-        return
-      }
-    } catch {
-      // Validation is best-effort against transport errors; init still guards
-      // the password. An explicit 'invalid' above always blocks.
-    } finally {
-      loading.value = false
     }
   }
 
   error.value = ''
   step.value = configSteps.value[configSteps.value.indexOf(step.value) + 1]
+}
+
+async function _validateMariadb() {
+  if (!form.value.mariadb_password) return 'MariaDB password is required'
+  // 'will_install' (fresh — nothing to validate), 'valid', or 'invalid'. dedicated
+  // only applies to a Linux dedicated instance; shared (Linux 'shared' + macOS)
+  // validates the live credentials.
+  const dedicated = isLinux.value && form.value.dedicated_db === 'dedicated'
+  loading.value = true
+  try {
+    const { state } = await postJson('/api/setup/validate-mariadb', {
+      mariadb_password: form.value.mariadb_password,
+      mariadb_admin_user: form.value.mariadb_admin_user,
+      dedicated_db: dedicated,
+    })
+    if (dedicated) dedicatedWillInstall.value = state === 'will_install'
+    else sharedWillInstall.value = state === 'will_install'
+    if (state === 'invalid') return 'Incorrect MariaDB credentials.'
+  } catch {
+    // Best-effort against transport errors; init still guards the password.
+  } finally {
+    loading.value = false
+  }
+  return null
+}
+
+async function _validatePostgres() {
+  // Postgres is a shared server (no dedicated instance). A fresh server reports
+  // 'will_install' (init installs it and sets this superuser password); an
+  // existing one validates the credentials.
+  loading.value = true
+  try {
+    const { state } = await postJson('/api/setup/validate-postgres', {
+      postgres_password: form.value.postgres_password,
+      postgres_admin_user: form.value.postgres_admin_user,
+    })
+    postgresWillInstall.value = state === 'will_install'
+    if (state === 'invalid') return 'Incorrect PostgreSQL credentials.'
+  } catch {
+    // Best-effort; init still guards the connection.
+  } finally {
+    loading.value = false
+  }
+  return null
 }
 
 function prevStep() {
@@ -332,7 +360,14 @@ function prevStep() {
 async function saveConfig() {
   const payload = { ...form.value }
   delete payload.dedicated_db
-  if (isLinux.value) {
+  if (form.value.db_type === 'postgres') {
+    // Postgres benches run against the shared server — no per-bench MariaDB
+    // instance and no ZFS volume (volumes bind the MariaDB datadir).
+    payload.mariadb_instance = ''
+    payload.mariadb_socket_path = ''
+    payload.mariadb_data_dir = ''
+    payload.volume_enabled = false
+  } else if (isLinux.value) {
     if (form.value.dedicated_db === 'dedicated') {
       payload.mariadb_instance = benchName.value
       payload.mariadb_socket_path = `/run/mysqld/mysqld-${benchName.value}.sock`
@@ -441,27 +476,51 @@ function backToConfig() {
 
         <div v-else-if="step === 'database'" class="flex flex-col gap-4">
           <FormControl
-            v-if="isLinux"
             type="select"
-            label="Database"
-            v-model="form.dedicated_db"
+            label="Database engine"
+            v-model="form.db_type"
             :options="[
-              { label: 'Dedicated instance (recommended)', value: 'dedicated' },
-              { label: 'Shared system MariaDB', value: 'shared' },
+              { label: 'MariaDB', value: 'mariadb' },
+              { label: 'PostgreSQL', value: 'postgres' },
             ]"
+            description="bench installs and provisions this engine; all sites on the bench use it."
           />
-          <FormControl
-            v-if="(!isLinux || form.dedicated_db === 'shared') && !dbWillInstall"
-            label="MariaDB admin user"
-            v-model="form.mariadb_admin_user"
-          />
-          <Password
-            label="MariaDB root password"
-            v-model="form.mariadb_password"
-            placeholder="password"
-            :description="dbPasswordDescription"
-            @keydown.enter="nextStep"
-          />
+
+          <template v-if="form.db_type === 'mariadb'">
+            <FormControl
+              v-if="isLinux"
+              type="select"
+              label="MariaDB setup"
+              v-model="form.dedicated_db"
+              :options="[
+                { label: 'Dedicated instance (recommended)', value: 'dedicated' },
+                { label: 'Shared system MariaDB', value: 'shared' },
+              ]"
+            />
+            <FormControl
+              v-if="(!isLinux || form.dedicated_db === 'shared') && !dbWillInstall"
+              label="MariaDB admin user"
+              v-model="form.mariadb_admin_user"
+            />
+            <Password
+              label="MariaDB root password"
+              v-model="form.mariadb_password"
+              placeholder="password"
+              :description="dbPasswordDescription"
+              @keydown.enter="nextStep"
+            />
+          </template>
+
+          <template v-else>
+            <FormControl label="PostgreSQL superuser" v-model="form.postgres_admin_user" />
+            <Password
+              label="PostgreSQL password"
+              v-model="form.postgres_password"
+              placeholder="password"
+              :description="pgPasswordDescription"
+              @keydown.enter="nextStep"
+            />
+          </template>
           <ErrorMessage v-if="error" :message="error" />
         </div>
 

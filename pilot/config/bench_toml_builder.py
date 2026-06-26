@@ -16,6 +16,7 @@ FLAT_KEYS = {
     "bench_name": "name",
     "python": "python_version",
     "socketio_backend": "socketio_backend",
+    "db_type": "db_type",
     "mariadb_password": "mariadb.root_password",
     "mariadb_admin_user": "mariadb.admin_user",
     "mariadb_instance": "mariadb.instance",

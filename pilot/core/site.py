@@ -31,7 +31,7 @@ class Site:
     def create(self) -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "new-site", self.config.name)
         cmd += ["--admin-password", self.config.admin_password]
-        cmd += self._postgres_db_args() if self.config.db_type == "postgres" else self._mariadb_db_args()
+        cmd += self._postgres_db_args() if self.bench.config.db_type == "postgres" else self._mariadb_db_args()
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
     def _mariadb_db_args(self) -> list[str]:
@@ -85,8 +85,8 @@ class Site:
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
     def _db_root_args(self) -> list[str]:
-        """Root username/password for restore/reinstall, keyed to the site's engine."""
-        if self.config.db_type == "postgres":
+        """Root username/password for restore/reinstall, keyed to the bench's engine."""
+        if self.bench.config.db_type == "postgres":
             pg = self.bench.config.postgres
             return ["--db-root-username", pg.admin_user, "--db-root-password", self._postgres_root_password()]
         mariadb = self.bench.config.mariadb

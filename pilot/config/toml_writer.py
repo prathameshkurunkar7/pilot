@@ -12,6 +12,7 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f"http_port = {config.http_port}")
     parts.append(f"socketio_port = {config.socketio_port}")
     parts.append(f'socketio_backend = "{config.socketio_backend}"')
+    parts.append(f'db_type = "{config.db_type}"')
     if config.default_branch:
         parts.append(f'default_branch = "{config.default_branch}"')
     parts.append("")

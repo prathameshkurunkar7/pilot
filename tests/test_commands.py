@@ -114,6 +114,38 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
     assert data["admin"]["port"] == 7001
 
 
+def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A `--database postgres` bench records db_type, generates a postgres
+    password, and (even on Linux) gets no dedicated MariaDB instance."""
+    from bench_cli.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("bench_cli.commands.new.is_linux", lambda: True)
+    benches_dir = tmp_path / "benches"
+    NewCommand(benches_dir / "pg", "pg", db_type="postgres").run()
+
+    with open(benches_dir / "pg" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["bench"]["db_type"] == "postgres"
+    assert data["postgres"]["root_password"]  # generated for provisioning
+    assert not data["mariadb"].get("instance")  # shared, no dedicated instance
+
+
+def test_new_command_mariadb_bench_has_no_postgres_password(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench_cli.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("bench_cli.commands.new.is_linux", lambda: False)
+    NewCommand(tmp_path / "benches" / "m", "m").run()
+
+    with open(tmp_path / "benches" / "m" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["bench"]["db_type"] == "mariadb"
+    assert not data["postgres"]["root_password"]  # not provisioned for mariadb benches
+
+
 def test_new_command_writes_dedicated_mariadb_instance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """New benches default to their own MariaDB instance with an isolated
     socket/datadir and an offset port."""

@@ -16,7 +16,6 @@ class NewSiteFromBackupCommand:
         admin_password: str = "admin",
         public_files: str | None = None,
         private_files: str | None = None,
-        db_type: str = "mariadb",
     ) -> None:
         self.bench = bench
         self.name = name
@@ -24,17 +23,16 @@ class NewSiteFromBackupCommand:
         self.admin_password = admin_password
         self.public_files = public_files
         self.private_files = private_files
-        self.db_type = db_type
 
     def run(self) -> None:
         from pilot.commands.new_site import NewSiteCommand
         from pilot.config.site_config import SiteConfig
         from pilot.core.site import Site
 
-        # The fresh site must be created with the same engine as the backup, so the
-        # restore (which reads db_type from the new site's config) lines up.
-        NewSiteCommand(self.bench, self.name, [], self.admin_password, self.db_type).run()
+        # The site is created with (and restored into) the bench's single engine;
+        # the backup must have been taken from a bench of that same engine.
+        NewSiteCommand(self.bench, self.name, [], self.admin_password).run()
         print(f"Restoring backup: {self.db_file}")
         sys.stdout.flush()
-        site = Site(SiteConfig(name=self.name, apps=[], db_type=self.db_type), self.bench)
+        site = Site(SiteConfig(name=self.name, apps=[]), self.bench)
         site.restore(self.db_file, self.public_files, self.private_files)

@@ -44,6 +44,8 @@ class BenchConfig:
     http_port: int = 8000
     socketio_port: int = 9000
     socketio_backend: str = "node"
+    # The single database engine for this bench's sites: "mariadb" or "postgres".
+    db_type: str = "mariadb"
     default_branch: str = ""
     production: ProductionConfig = field(default_factory=ProductionConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
@@ -90,6 +92,7 @@ class BenchConfig:
             http_port=bench_data.get("http_port", 8000),
             socketio_port=bench_data.get("socketio_port", 9000),
             socketio_backend=bench_data.get("socketio_backend", "node"),
+            db_type=bench_data.get("db_type", "mariadb"),
             default_branch=bench_data.get("default_branch", ""),
             apps=apps,
             mariadb=mariadb,
@@ -216,6 +219,7 @@ class BenchConfig:
         self._validate_app_names_unique()
         self._validate_ports()
         self._validate_socketio_backend()
+        self._validate_db_type()
         self._validate_redis_ports()
         self._validate_worker_counts()
         self._validate_letsencrypt_email()
@@ -265,6 +269,10 @@ class BenchConfig:
     def _validate_socketio_backend(self) -> None:
         if self.socketio_backend not in ("python", "node"):
             raise ConfigError(f"bench.socketio_backend '{self.socketio_backend}' is invalid. Must be 'python' or 'node'.")
+
+    def _validate_db_type(self) -> None:
+        if self.db_type not in ("mariadb", "postgres"):
+            raise ConfigError(f"bench.db_type '{self.db_type}' is invalid. Must be 'mariadb' or 'postgres'.")
 
     def _validate_redis_ports(self) -> None:
         ports = [self.redis.cache_port, self.redis.queue_port]

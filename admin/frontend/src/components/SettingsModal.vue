@@ -30,21 +30,20 @@ const BASE_TABS = [
   { key: 'bench', label: 'Bench' },
   { key: 'apps', label: 'Apps' },
   { key: 'appearance', label: 'Appearance' },
-  { key: 'mariadb', label: 'MariaDB' },
-  { key: 'postgres', label: 'PostgreSQL' },
   { key: 'redis', label: 'Redis' },
   { key: 'workers', label: 'Workers' },
   { key: 'updates', label: 'Updates' },
 ]
 const isLinux = ref(false)
 const TABS = computed(() => {
-  let tabs = isLinux.value
-    ? [...BASE_TABS, { key: 'volume', label: 'ZFS Volume' }]
-    : BASE_TABS
-
-    return tabs
-}
-)
+  // A bench runs a single engine — show only that engine's tab (after Appearance).
+  const dbTab = form.value?.bench?.db_type === 'postgres'
+    ? { key: 'postgres', label: 'PostgreSQL' }
+    : { key: 'mariadb', label: 'MariaDB' }
+  const tabs = [...BASE_TABS.slice(0, 3), dbTab, ...BASE_TABS.slice(3)]
+  if (isLinux.value) tabs.push({ key: 'volume', label: 'ZFS Volume' })
+  return tabs
+})
 
 const activeTab = ref('bench')
 
@@ -67,7 +66,8 @@ async function load() {
     if (Array.isArray(data.workers))
       data.workers = data.workers.map(g => ({ queues: (g.queues || []).join(', '), count: g.count }))
     // root_password is write-only — keep it blank so an untouched save preserves it
-    if (data.postgres) data.postgres.root_password = ''
+    // Degrade gracefully if an older backend omits the postgres block.
+    data.postgres = { host: 'localhost', port: 5432, admin_user: 'postgres', password_set: false, ...(data.postgres || {}), root_password: '' }
     form.value = data
   } catch (e) {
     loadError.value = e.message
@@ -93,10 +93,11 @@ function validateSettings() {
   const ports = [
     [form.value.bench.http_port, 'HTTP Port'],
     [form.value.bench.socketio_port, 'SocketIO Port'],
-    [form.value.postgres.port, 'PostgreSQL Port'],
     [form.value.redis.cache_port, 'Redis Cache Port'],
     [form.value.redis.queue_port, 'Redis Queue Port'],
   ]
+  if (form.value.bench?.db_type === 'postgres' && form.value.postgres)
+    ports.push([form.value.postgres.port, 'PostgreSQL Port'])
   for (const [port, name] of ports) {
     const n = Number(port)
     if (!Number.isInteger(n) || n < 1 || n > 65535)
@@ -371,7 +372,7 @@ watch(() => props.modelValue, (val) => {
               <!-- PostgreSQL -->
               <div v-else-if="activeTab === 'postgres'" class="flex flex-col gap-4">
                 <p class="rounded-md bg-surface-gray-2 px-3 py-2 text-xs text-ink-gray-5">
-                  bench installs and provisions PostgreSQL during init; MariaDB is the default engine for new sites. These fields control how bench connects to PostgreSQL when a site uses it.
+                  This bench runs on PostgreSQL, installed and provisioned by bench during init. These fields control how bench connects to it.
                 </p>
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormControl label="Host" v-model="form.postgres.host" />

@@ -259,7 +259,7 @@ def _build_settings_response(config: BenchConfig) -> dict:
     return {
         "is_linux": is_linux(),
         "native_process_manager": native_process_manager(),
-        "bench": {"name": config.name, "python": config.python_version, "http_port": config.http_port, "socketio_port": config.socketio_port, "default_branch": config.default_branch},
+        "bench": {"name": config.name, "python": config.python_version, "http_port": config.http_port, "socketio_port": config.socketio_port, "default_branch": config.default_branch, "db_type": config.db_type},
         "mariadb": {
             "host": config.mariadb.host,
             "port": config.mariadb.port,

@@ -111,6 +111,29 @@ def validate_mariadb():
     return jsonify({"state": "invalid"})
 
 
+@setup_bp.route("/validate-postgres", methods=["POST"])
+def validate_postgres():
+    """Tell the wizard whether the entered PostgreSQL credentials will work.
+
+    PostgreSQL is a shared server (no per-bench instance). Not installed yet →
+    bench init installs it and sets this superuser password → will_install. An
+    existing server validates the live credentials.
+    """
+    from bench_cli.config.postgres_config import PostgresConfig
+    from bench_cli.managers.postgres_manager import PostgresManager
+
+    data = request.get_json(silent=True) or {}
+    password = data.get("postgres_password", "")
+    admin_user = data.get("postgres_admin_user") or "postgres"
+
+    manager = PostgresManager(PostgresConfig(root_password=password, admin_user=admin_user))
+    if not manager.is_installed():
+        return jsonify({"state": "will_install"})
+    if manager.check_credentials(password):
+        return jsonify({"state": "valid"})
+    return jsonify({"state": "invalid"})
+
+
 def _is_fresh_install(manager, dedicated: bool) -> bool:
     """True when init will install/provision + secure MariaDB itself (rather than
     connecting to an already-configured server)."""
@@ -159,9 +182,12 @@ def _mariadb_config(bench_root: Path, password: str, admin_user: str = "root", d
 
 
 def _validate(data: dict) -> str | None:
-    for field in ("mariadb_password", "admin_password"):
-        if not data.get(field):
-            return f"{field} is required"
+    if not data.get("admin_password"):
+        return "admin_password is required"
+    # A MariaDB bench needs a root password; PostgreSQL benches don't (init sets
+    # the superuser password, falling back to a placeholder for trust/peer auth).
+    if data.get("db_type", "mariadb") == "mariadb" and not data.get("mariadb_password"):
+        return "mariadb_password is required"
     if data.get("volume_enabled", True):
         if not data.get("volume_pool"):
             return "volume_pool is required"

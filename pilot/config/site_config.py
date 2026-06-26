@@ -7,7 +7,6 @@ class SiteConfig:
     name: str
     apps: List[str]
     admin_password: str = "admin"
-    db_type: str = "mariadb"
     domains: List[str] = field(default_factory=list)
     ssl: bool = False
     default: bool = False

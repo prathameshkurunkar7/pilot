@@ -67,7 +67,9 @@ class InitCommand(Command):
         self._check_passwordless_sudo()
 
         volume_enabled = is_linux() and self.bench.config.volume.enabled
-        dedicated_db = is_linux() and bool(self.bench.config.mariadb.instance)
+        # A dedicated MariaDB instance is only provisioned for MariaDB benches;
+        # PostgreSQL benches run against the shared server (no per-bench instance).
+        dedicated_db = is_linux() and self.bench.config.db_type == "mariadb" and bool(self.bench.config.mariadb.instance)
         # Passwordless sudo is set up by install.sh and enforced above by
         # _check_passwordless_sudo, so the steps below never block on a prompt.
         python_env_manager = PythonEnvManager(self.bench)
@@ -189,15 +191,18 @@ class InitCommand(Command):
     # Python.h: Alpine ships a system python that `uv venv` reuses, so C
     # extensions (mysqlclient, etc.) need the matching dev headers to compile.
     _ALPINE_BUILD_PACKAGES = (
-        "build-base", "pkgconf", "mariadb-dev", "postgresql-dev", "git", "bash", "tzdata",
+        "build-base", "pkgconf", "git", "bash", "tzdata",
         "python3-dev", "linux-headers", "libffi-dev", "openssl-dev", "libxml2-dev",
         "libxslt-dev", "jpeg-dev", "zlib-dev", "freetype-dev", "tiff-dev",
         "lcms2-dev", "openjpeg-dev",
     )
+    # Engine-specific client/build headers — only the bench's engine is installed.
+    _DB_BUILD_PACKAGES = {
+        "mariadb": {"debian": "libmariadb-dev", "alpine": "mariadb-dev"},
+        "postgres": {"debian": "libpq-dev", "alpine": "postgresql-dev"},
+    }
 
     def _install_system_packages(self) -> None:
-        from bench_cli.managers.mariadb_manager import MariaDBManager
-        from bench_cli.managers.postgres_manager import PostgresManager
         from bench_cli.managers.python_env_manager import PythonEnvManager
         from bench_cli.managers.redis_manager import RedisManager
         from bench_cli.platform import get_package_manager, is_alpine, is_linux
@@ -205,6 +210,31 @@ class InitCommand(Command):
         pkg = get_package_manager()
         if is_linux():
             pkg.update()
+
+        # A bench runs exactly one engine; install/provision only that one.
+        if self.bench.config.db_type == "postgres":
+            self._install_postgres()
+        else:
+            self._install_mariadb()
+
+        RedisManager(self.bench.config.redis, self.bench).install()
+        db_pkgs = self._DB_BUILD_PACKAGES[self.bench.config.db_type]
+        if is_alpine():
+            pkg.install(*self._ALPINE_BUILD_PACKAGES, db_pkgs["alpine"])
+        elif is_linux():
+            # python3-dev provides Python.h for C-extension wheels when uv reuses a
+            # system python; the db package provides the client headers (mysqlclient/psycopg).
+            pkg.install("build-essential", "pkg-config", "git", "python3-dev", db_pkgs["debian"])
+        PythonEnvManager(self.bench).ensure_python()
+
+    def _install_postgres(self) -> None:
+        from bench_cli.managers.postgres_manager import PostgresManager
+
+        PostgresManager(self.bench.config.postgres).provision()
+
+    def _install_mariadb(self) -> None:
+        from bench_cli.managers.mariadb_manager import MariaDBManager
+        from bench_cli.platform import is_linux
 
         mariadb_manager = MariaDBManager(self.bench.config.mariadb)
         freshly_installed = not mariadb_manager.is_installed()
@@ -215,39 +245,22 @@ class InitCommand(Command):
             # setup (see _do_run) so a ZFS-backed datadir, if any, is mounted
             # before mariadb-install-db runs against it.
             if freshly_installed and is_linux():
-                # apt auto-starts the shared mariadb service on port 3306 after
-                # installation. Stop and disable it so the dedicated instance can
-                # claim its port without a conflict when provision_instance runs.
+                # apt auto-starts the shared mariadb service on port 3306; stop and
+                # disable it so the dedicated instance can claim its port.
                 mariadb_manager.stop_shared()
+            return
 
+        port_config_written = mariadb_manager.configure_shared_port()
+        if port_config_written:
+            # Config was written — restart to apply the new port (also starts a
+            # stopped service).
+            mariadb_manager.restart()
         else:
-            port_config_written = mariadb_manager.configure_shared_port()
-            if port_config_written:
-                # Config was written (or updated) — restart to apply the new port.
-                # systemctl/rc-service restart also starts a stopped service.
-                mariadb_manager.restart()
-            else:
-                mariadb_manager.start()
-            if freshly_installed or mariadb_manager.is_unsecured():
-                # Either the binary was just installed, or it was installed earlier
-                # for a dedicated instance but the shared datadir is still unsecured
-                # (root uses unix-socket auth with no password).
-                mariadb_manager.secure_installation()
-            elif not mariadb_manager.check_credentials():
-                raise RuntimeError(
-                    "MariaDB is already installed but the configured root password is incorrect. "
-                    "Fix mariadb.root_password in bench.toml (or secure the existing MariaDB) and retry."
-                )
-        # PostgreSQL is the default engine for new sites, so install and provision
-        # a shared server (mariadb stays installed above as the alternative engine).
-        PostgresManager(self.bench.config.postgres).provision()
-
-        RedisManager(self.bench.config.redis, self.bench).install()
-        if is_alpine():
-            pkg.install(*self._ALPINE_BUILD_PACKAGES)
-        elif is_linux():
-            # python3-dev provides Python.h for C-extension wheels when uv reuses
-            # a system python (it isn't needed when uv downloads a managed one).
-            # libpq-dev provides pg_config/headers for psycopg when frappe uses postgres.
-            pkg.install("build-essential", "pkg-config", "libmariadb-dev", "libpq-dev", "git", "python3-dev")
-        PythonEnvManager(self.bench).ensure_python()
+            mariadb_manager.start()
+        if freshly_installed or mariadb_manager.is_unsecured():
+            mariadb_manager.secure_installation()
+        elif not mariadb_manager.check_credentials():
+            raise RuntimeError(
+                "MariaDB is already installed but the configured root password is incorrect. "
+                "Fix mariadb.root_password in bench.toml (or secure the existing MariaDB) and retry."
+            )
