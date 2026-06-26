@@ -36,6 +36,15 @@ const snapshotsEnabled = ref(false)
 const runningCount = ref(0)
 let pollTimer = null
 
+// The database engine is a bench-wide choice (every site uses it), so show it
+// once here rather than per site.
+const DB_ENGINES = {
+  postgres: { label: 'PostgreSQL', logo: '/logos/postgresql.svg' },
+  mariadb: { label: 'MariaDB', logo: '/logos/mariadb.svg' },
+}
+const dbType = ref('')
+const dbEngine = computed(() => DB_ENGINES[dbType.value] || null)
+
 const sections = computed(() => [
   { items: primaryNavItems },
   {
@@ -76,6 +85,13 @@ async function loadVolumeConfig() {
   } catch { }
 }
 
+async function loadBenchInfo() {
+  try {
+    const response = await fetch('/api/status')
+    if (response.ok) dbType.value = (await response.json()).db_type || ''
+  } catch { }
+}
+
 async function logout() {
   await fetch('/api/logout', { method: 'POST' })
   emit('logout')
@@ -84,6 +100,7 @@ async function logout() {
 onMounted(() => {
   pollRunning()
   loadVolumeConfig()
+  loadBenchInfo()
   pollTimer = setInterval(pollRunning, 4000)
 })
 onUnmounted(() => clearInterval(pollTimer))
@@ -102,7 +119,14 @@ onUnmounted(() => clearInterval(pollTimer))
           </template>
         </SidebarItem>
       </template>
-      <template #footer-items />
+      <template #footer-items>
+        <div v-if="dbEngine" class="flex items-center gap-2 px-2 py-1.5 text-xs text-ink-gray-6">
+          <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-white p-0.5 ring-1 ring-black/5">
+            <img :src="dbEngine.logo" :alt="dbEngine.label" class="h-full w-full object-contain" />
+          </span>
+          <span class="truncate">{{ dbEngine.label }}</span>
+        </div>
+      </template>
     </Sidebar>
   </div>
 </template>

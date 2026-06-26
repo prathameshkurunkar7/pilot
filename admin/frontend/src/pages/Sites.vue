@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
-import { Button, Dialog, FormControl, LoadingText, ErrorMessage, Switch, TabButtons, Select, Tooltip } from 'frappe-ui'
+import { Button, Dialog, FormControl, LoadingText, ErrorMessage, Switch, TabButtons, Select } from 'frappe-ui'
 import FilePickerField from '../components/FilePickerField.vue'
 import UpdateAppDialog from '../components/UpdateAppDialog.vue'
 import { useTaskProgress } from '../composables/useTaskProgress.js'
@@ -59,14 +59,6 @@ const uploadPrivate = ref(null)
 
 function siteStatus(s) {
   return !s.exists ? 'offline' : s.broken ? 'broken' : 'online'
-}
-
-const DB_ENGINES = {
-  postgres: { label: 'PostgreSQL', logo: '/logos/postgresql.svg' },
-  mariadb: { label: 'MariaDB', logo: '/logos/mariadb.svg' },
-}
-function dbEngine(s) {
-  return DB_ENGINES[s.db_type] || DB_ENGINES.mariadb
 }
 
 const STATUS_DOT = { online: 'bg-surface-green-3', broken: 'bg-surface-red-4', offline: 'bg-ink-gray-3' }
@@ -236,11 +228,6 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
         :to="`/sites/${s.name}`"
         class="flex items-center gap-4 border-b border-outline-gray-1 last:border-b-0 bg-surface-white px-4 py-5 transition-colors hover:bg-surface-gray-1 no-underline"
       >
-        <Tooltip :text="dbEngine(s).label">
-          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-1 ring-1 ring-black/5">
-            <img :src="dbEngine(s).logo" :alt="dbEngine(s).label" class="h-full w-full object-contain" />
-          </span>
-        </Tooltip>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
             <span class="font-medium text-ink-gray-9 truncate">{{ s.name }}</span>
