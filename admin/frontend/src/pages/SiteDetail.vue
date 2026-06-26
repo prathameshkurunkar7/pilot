@@ -21,6 +21,11 @@ const { watchTask } = useTaskProgress()
 const { registry, logoMap, titleMap, loadRegistry } = useAppRegistry()
 
 const site = ref(null)
+const DB_ENGINES = {
+  postgres: { label: 'PostgreSQL', logo: '/logos/postgresql.svg' },
+  mariadb: { label: 'MariaDB', logo: '/logos/mariadb.svg' },
+}
+const dbEngine = computed(() => DB_ENGINES[site.value?.db_type] || DB_ENGINES.mariadb)
 const nginxEnabled = ref(false)
 const adminTls = ref(false)
 const installable = ref([])
@@ -786,6 +791,12 @@ onMounted(() => {
                   </span>
                 </span>
               </h1>
+              <span class="inline-flex items-center gap-1.5 rounded bg-surface-gray-2 py-0.5 pl-0.5 pr-1.5 text-xs text-ink-gray-7">
+                <span class="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-white ring-1 ring-black/5">
+                  <img :src="dbEngine.logo" :alt="dbEngine.label" class="h-3 w-3 object-contain" />
+                </span>
+                {{ dbEngine.label }}
+              </span>
               <Badge v-if="site.ssl" label="SSL" theme="blue" />
             </div>
           </div>

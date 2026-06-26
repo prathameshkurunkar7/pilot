@@ -1,4 +1,5 @@
 import argparse
+import secrets
 import socket
 from pathlib import Path
 
@@ -67,6 +68,9 @@ class NewCommand(Command):
             "admin_enabled": True,
             "admin_domain": self.admin_domain,
             "admin_tls": admin_tls,
+            # bench provisions a shared PostgreSQL server during init; this becomes
+            # its superuser password (MariaDB is the default engine, Postgres opt-in).
+            "postgres_password": secrets.token_hex(nbytes=8),
         }
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager

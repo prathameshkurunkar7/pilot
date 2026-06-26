@@ -31,6 +31,15 @@ admin_user = "root"      # MariaDB user bench connects as for admin ops; change 
 # socket_path = "/run/mysqld/mysqld-my-bench.sock"  # per-instance socket (auto-derived from instance name)
 # data_dir = "/var/lib/mysql-my-bench"              # per-instance datadir (auto-derived; used as bind-mount target with ZFS)
 
+# ── PostgreSQL (opt-in per-site engine; installed & provisioned by init) ──────
+# Shared across benches (one server, port 5432); `bench new` generates the password.
+[postgres]
+host = "localhost"
+port = 5432
+root_password = ""       # superuser password bench sets and new-site connects with
+admin_user = "postgres"  # PostgreSQL superuser bench provisions and connects as
+# version = "16"         # major version for the Homebrew formula on macOS
+
 # ── Redis ─────────────────────────────────────────────────────────────────────
 [redis]
 port = 13000            # single Redis instance for all services (simplest)
@@ -130,6 +139,20 @@ Declares the framework app (frappe) to clone during `bench init`. After init, ad
 | `data_dir` | string | no | `/var/lib/mysql-<instance>` | Datadir for the dedicated instance — a **sibling** of `/var/lib/mysql`, never nested inside it. Must be an absolute path. When `[volume]` is enabled, the dataset's `mariadb/` subdir is bind-mounted here. Ignored in shared mode. |
 
 > **Dedicated vs shared.** On Linux, `bench new` defaults to a dedicated instance, which is required to use ZFS volumes and snapshots. Choose shared (clear `instance` in the setup wizard) to connect to the pre-existing system MariaDB — useful when you already manage MariaDB separately or don't need per-bench snapshots. See [Per-bench MariaDB instances](architecture.md#per-bench-mariadb-instances) for the mechanics.
+
+### `[postgres]`
+
+**MariaDB is the default engine for new sites; PostgreSQL is opt-in per-site** (`bench new-site --db-type postgres`, or the **Database** selector in the admin Create Site dialog). `bench init` still installs a shared PostgreSQL server (apt/Homebrew/apk) and provisions it: it starts and enables the service, ensures the `admin_user` superuser exists, and sets its password to `root_password` — so the engine is ready whenever a site opts into it.
+
+Unlike MariaDB, there are no per-bench PostgreSQL instances: all benches on a host share one server (port 5432) and are isolated at the database level (one db per site). `bench new` generates `root_password` automatically.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `host` | string | no | `localhost` | PostgreSQL server host. |
+| `port` | int | no | `5432` | PostgreSQL server port (shared across benches; not auto-offset). |
+| `root_password` | string | no | — | Superuser password bench sets during provisioning and new-site connects with. `bench new` generates one; if empty, provisioning skips superuser setup and you must set it (Settings → PostgreSQL) before creating Postgres sites. |
+| `admin_user` | string | no | `postgres` | PostgreSQL superuser bench provisions and connects as. |
+| `version` | string | no | `16` | Major version used to select the Homebrew formula (`postgresql@<version>`) on macOS. On Linux the distro's default `postgresql` package is installed. |
 
 ### `[redis]`
 

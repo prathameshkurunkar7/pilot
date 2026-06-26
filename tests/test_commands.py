@@ -984,3 +984,32 @@ def test_drop_bench_skips_volume_when_not_using_zfs(tmp_path: Path, monkeypatch:
     DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=True)
 
     assert called["made"] is False
+
+
+# ── BuildAdminCommand node-version guard ──────────────────────────────────────
+
+
+def test_build_admin_rejects_old_node(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench_cli.commands.admin import BuildAdminCommand
+
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: MagicMock(stdout="v18.20.8\n"))
+    with pytest.raises(BenchError, match="Node.js"):
+        BuildAdminCommand(force_build=True)._check_node_version()
+
+
+def test_build_admin_accepts_supported_node(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench_cli.commands.admin import BuildAdminCommand
+
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: MagicMock(stdout="v20.11.0\n"))
+    BuildAdminCommand(force_build=True)._check_node_version()  # no raise
+
+
+def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench_cli.commands.admin import BuildAdminCommand
+
+    def _missing(*a, **k):
+        raise FileNotFoundError("node")
+
+    monkeypatch.setattr("subprocess.run", _missing)
+    with pytest.raises(BenchError, match="Node.js is required"):
+        BuildAdminCommand(force_build=True)._check_node_version()

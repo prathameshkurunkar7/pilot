@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
-import { Button, Dialog, FormControl, LoadingText, ErrorMessage, Switch, TabButtons, Select } from 'frappe-ui'
+import { Button, Dialog, FormControl, LoadingText, ErrorMessage, Switch, TabButtons, Select, Tooltip } from 'frappe-ui'
 import FilePickerField from '../components/FilePickerField.vue'
 import UpdateAppDialog from '../components/UpdateAppDialog.vue'
 import { useTaskProgress } from '../composables/useTaskProgress.js'
@@ -45,6 +45,7 @@ const sitePrefix = ref('')
 const wildcardDomains = ref([])
 const selectedSuffix = ref('')
 const adminPassword = ref('')
+const dbType = ref('mariadb')
 const creating = ref(false)
 const createError = ref('')
 const restoreFromBackup = ref(false)
@@ -59,6 +60,14 @@ const uploadPrivate = ref(null)
 
 function siteStatus(s) {
   return !s.exists ? 'offline' : s.broken ? 'broken' : 'online'
+}
+
+const DB_ENGINES = {
+  postgres: { label: 'PostgreSQL', logo: '/logos/postgresql.svg' },
+  mariadb: { label: 'MariaDB', logo: '/logos/mariadb.svg' },
+}
+function dbEngine(s) {
+  return DB_ENGINES[s.db_type] || DB_ENGINES.mariadb
 }
 
 const STATUS_DOT = { online: 'bg-surface-green-3', broken: 'bg-surface-red-4', offline: 'bg-ink-gray-3' }
@@ -79,6 +88,9 @@ watch(backupSourceSite, async (site) => {
   selectedBackupTs.value = ''
   backupSets.value = []
   if (!site) return
+  // A backup can only be restored into its own engine — adopt the source site's.
+  const src = sites.value.find(s => s.name === site)
+  if (src?.db_type) dbType.value = src.db_type
   loadingBackups.value = true
   try {
     const res = await fetch(`/api/sites/${encodeURIComponent(site)}/backups`)
@@ -110,14 +122,14 @@ async function createSite() {
       res = await fetch('/api/sites/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: siteName.value.trim(), admin_password: adminPassword.value.trim() }),
+        body: JSON.stringify({ name: siteName.value.trim(), admin_password: adminPassword.value.trim(), db_type: dbType.value }),
       })
     } else if (restoreMode.value === 'existing') {
       const set = backupSets.value.find(s => s.timestamp === selectedBackupTs.value)
       const db = set.files.find(f => f.kind === 'database')
       const pub = set.files.find(f => f.kind === 'public-file')
       const priv = set.files.find(f => f.kind === 'private-file')
-      const body = { command: 'new-site-from-backup', name: siteName.value.trim(), db_file: db.path }
+      const body = { command: 'new-site-from-backup', name: siteName.value.trim(), db_file: db.path, db_type: dbType.value }
       if (adminPassword.value.trim()) body.admin_password = adminPassword.value.trim()
       if (pub) body.public_files = pub.path
       if (priv) body.private_files = priv.path
@@ -126,6 +138,7 @@ async function createSite() {
       const fd = new FormData()
       fd.append('name', siteName.value.trim())
       fd.append('admin_password', adminPassword.value.trim())
+      fd.append('db_type', dbType.value)
       fd.append('db_file', uploadDb.value)
       if (uploadPublic.value) fd.append('public_files', uploadPublic.value)
       if (uploadPrivate.value) fd.append('private_files', uploadPrivate.value)
@@ -156,6 +169,7 @@ function openCreate() {
   siteName.value = ''
   sitePrefix.value = ''
   adminPassword.value = ''
+  dbType.value = 'mariadb'
   loadWildcardDomains()
   createError.value = ''
   restoreFromBackup.value = false
@@ -228,6 +242,11 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
         :to="`/sites/${s.name}`"
         class="flex items-center gap-4 border-b border-outline-gray-1 last:border-b-0 bg-surface-white px-4 py-5 transition-colors hover:bg-surface-gray-1 no-underline"
       >
+        <Tooltip :text="dbEngine(s).label">
+          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white p-1 ring-1 ring-black/5">
+            <img :src="dbEngine(s).logo" :alt="dbEngine(s).label" class="h-full w-full object-contain" />
+          </span>
+        </Tooltip>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
             <span class="font-medium text-ink-gray-9 truncate">{{ s.name }}</span>
@@ -272,6 +291,14 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
             </div>
           </div>
           <FormControl label="Admin Password" type="password" v-model="adminPassword" placeholder="admin" description="Leave blank to use 'admin'" />
+          <FormControl
+            v-if="!restoreFromBackup || restoreMode === 'upload'"
+            label="Database"
+            type="select"
+            v-model="dbType"
+            :options="[{ label: 'MariaDB', value: 'mariadb' }, { label: 'PostgreSQL', value: 'postgres' }]"
+            :description="restoreFromBackup ? 'Must match the engine the backup was created with.' : 'PostgreSQL must be configured in Settings before use.'"
+          />
 
           <div class="border-t pt-4">
             <Switch v-model="restoreFromBackup" label="Restore from backup" />

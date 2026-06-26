@@ -153,12 +153,16 @@ class TaskRunner:
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_task", str(self._bench_root), args["name"]]
             if args.get("admin_password"):
                 argv += ["--admin-password", args["admin_password"]]
+            if args.get("db_type"):
+                argv += ["--db-type", args["db_type"]]
             return argv
         if command == "drop-site":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.drop_site_task", str(self._bench_root), args["site"]]
         if command == "reinstall-site":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.reinstall_site_task", str(self._bench_root), args["site"]]
             argv += ["--admin-password", args["admin_password"]]
+            if args.get("db_type"):
+                argv += ["--db-type", args["db_type"]]
             return argv
         if command == "delete-backup":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.delete_backup_task", str(self._bench_root), args["site"], *args["filenames"]]
@@ -194,6 +198,8 @@ class TaskRunner:
                 argv += ["--public-files", args["public_files"]]
             if args.get("private_files"):
                 argv += ["--private-files", args["private_files"]]
+            if args.get("db_type"):
+                argv += ["--db-type", args["db_type"]]
             return argv
         if command == "update-cli":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.update_cli_task", str(self._bench_root)]

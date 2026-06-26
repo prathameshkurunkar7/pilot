@@ -1,4 +1,8 @@
-from pilot.utils import run_command
+import sys
+
+from bench_cli.config.site_config import SiteConfig
+from bench_cli.core.site import Site
+
 from .base_task import BaseTask
 
 
@@ -8,22 +12,20 @@ class ReinstallSiteTask(BaseTask):
         p = super()._parser()
         p.add_argument("site")
         p.add_argument("--admin-password", default="admin")
+        p.add_argument("--db-type", default="mariadb", choices=["mariadb", "postgres"])
         return p
 
     def __init__(self, bench, bench_root, args):
         super().__init__(bench, bench_root, args)
         self.site = args.site
         self.admin_password = args.admin_password
+        self.db_type = args.db_type
 
     def run(self) -> None:
         print(f"Reinstalling site '{self.site}'...")
-        import sys
         sys.stdout.flush()
-        cmd = [*self.bench.frappe_call, "frappe", "--site", self.site, "reinstall", "--yes",
-               "--admin-password", self.admin_password]
-        if self.bench.config.mariadb.root_password:
-            cmd += ["--mariadb-root-password", self.bench.config.mariadb.root_password]
-        run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
+        site = Site(SiteConfig(name=self.site, apps=[], db_type=self.db_type), self.bench)
+        site.reinstall(self.admin_password)
         print(f"\nSite '{self.site}' reinstalled.")
 
 

@@ -501,3 +501,97 @@ def test_api_benches_drop_runs_pilot(tmp_path: Path) -> None:
     assert resp.get_json() == {"ok": True}
     argv = mock_run.call_args.args[0]
     assert argv[-4:] == ["--yes", "-b", "prod-bench", "drop"]
+
+# ── POST /api/sites/create — database engine ──────────────────────────────────
+
+
+def test_create_site_forwards_db_type(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    captured: dict = {}
+
+    def fake_run(self, command, args, callbacks=None):
+        captured["command"] = command
+        captured["args"] = args
+        return "task_123"
+
+    with patch("admin.backend.views.sites._new_site_name_error", return_value=None), \
+         patch("admin.backend.views.sites.TaskRunner.run", new=fake_run):
+        resp = client.post("/api/sites/create", json={"name": "pg.localhost", "db_type": "postgres"})
+
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert captured["command"] == "new-site"
+    assert captured["args"]["db_type"] == "postgres"
+
+
+def test_create_site_defaults_to_mariadb(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    captured: dict = {}
+
+    def fake_run(self, command, args, callbacks=None):
+        captured["args"] = args
+        return "task_123"
+
+    with patch("admin.backend.views.sites._new_site_name_error", return_value=None), \
+         patch("admin.backend.views.sites.TaskRunner.run", new=fake_run):
+        resp = client.post("/api/sites/create", json={"name": "m.localhost"})
+
+    assert resp.get_json()["ok"] is True
+    assert captured["args"]["db_type"] == "mariadb"
+
+
+def test_create_site_rejects_unknown_db_type(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    with patch("admin.backend.views.sites._new_site_name_error", return_value=None):
+        resp = client.post("/api/sites/create", json={"name": "x.localhost", "db_type": "mysql"})
+
+    data = resp.get_json()
+    assert data["ok"] is False
+    assert "mysql" in data["error"]
+
+
+# ── Restore / reinstall db_type plumbing ──────────────────────────────────────
+
+
+def test_create_from_upload_forwards_db_type(tmp_path: Path) -> None:
+    import io
+
+    client = _client(tmp_path / "benches" / "current")
+    captured: dict = {}
+
+    def fake_run(self, command, args, callbacks=None):
+        captured["command"], captured["args"] = command, args
+        return "task_x"
+
+    with patch("admin.backend.views.sites._new_site_name_error", return_value=None), \
+         patch("admin.backend.views.sites.TaskRunner.run", new=fake_run):
+        resp = client.post(
+            "/api/sites/create-from-upload",
+            data={"name": "up.localhost", "db_type": "postgres", "db_file": (io.BytesIO(b"dump"), "backup.sql.gz")},
+            content_type="multipart/form-data",
+        )
+
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert captured["command"] == "new-site-from-backup"
+    assert captured["args"]["db_type"] == "postgres"
+
+
+def test_reinstall_infers_db_type_from_site(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    site_dir = bench_root / "sites" / "pg.localhost"
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text('{"db_type": "postgres", "installed_apps": ["frappe"]}')
+    captured: dict = {}
+
+    def fake_run(self, command, args, callbacks=None):
+        captured["args"] = args
+        return "task_x"
+
+    with patch("admin.backend.views.sites.TaskRunner.run", new=fake_run):
+        resp = client.post("/api/sites/pg.localhost/reinstall", json={"admin_password": "x"})
+
+    assert resp.get_json()["ok"] is True
+    assert captured["args"]["db_type"] == "postgres"

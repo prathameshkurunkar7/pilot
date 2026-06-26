@@ -41,6 +41,16 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f'data_dir = "{m.data_dir}"')
     parts.append("")
 
+    pg = config.postgres
+    parts.append("[postgres]")
+    parts.append(f'host = "{pg.host}"')
+    parts.append(f"port = {pg.port}")
+    parts.append(f'root_password = "{pg.root_password}"')
+    parts.append(f'admin_user = "{pg.admin_user}"')
+    if pg.version:
+        parts.append(f'version = "{pg.version}"')
+    parts.append("")
+
     r = config.redis
     parts.append("[redis]")
     parts.append(f"cache_port = {r.cache_port}")

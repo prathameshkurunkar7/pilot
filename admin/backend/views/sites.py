@@ -127,14 +127,17 @@ def create():
 
     name = (data.get("name") or "").strip()
     admin_password = (data.get("admin_password") or "admin").strip() or "admin"
+    db_type = (data.get("db_type") or "mariadb").strip()
     err = validate_site_name(name) or _new_site_name_error(bench_root, name)
+    if not err and db_type not in ("mariadb", "postgres"):
+        err = f"Unsupported database type '{db_type}'. Choose 'mariadb' or 'postgres'."
     if err:
         return jsonify({"ok": False, "error": err})
 
     try:
         task_id = TaskRunner(bench_root).run(
             "new-site",
-            {"name": name, "admin_password": admin_password},
+            {"name": name, "admin_password": admin_password, "db_type": db_type},
             callbacks={"on_failure": new_site_failure_callback},
         )
     except Exception as e:
@@ -148,7 +151,10 @@ def create_from_upload():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     name = (request.form.get("name") or "").strip()
     admin_password = (request.form.get("admin_password") or "admin").strip() or "admin"
+    db_type = (request.form.get("db_type") or "mariadb").strip()
     err = validate_site_name(name) or _new_site_name_error(bench_root, name)
+    if not err and db_type not in ("mariadb", "postgres"):
+        err = f"Unsupported database type '{db_type}'. Choose 'mariadb' or 'postgres'."
     if err:
         return jsonify({"ok": False, "error": err})
 
@@ -162,7 +168,7 @@ def create_from_upload():
     db_path = upload_dir / db_upload.filename
     db_upload.save(str(db_path))
 
-    args = {"name": name, "admin_password": admin_password, "db_file": str(db_path)}
+    args = {"name": name, "admin_password": admin_password, "db_file": str(db_path), "db_type": db_type}
 
     pub_upload = request.files.get("public_files")
     if pub_upload:
@@ -200,8 +206,11 @@ def reinstall_site(name: str):
         return jsonify({"ok": False, "error": "Site not found."}), 404
     data = request.get_json(silent=True) or {}
     admin_password = (data.get("admin_password") or "admin").strip() or "admin"
+    # Reinstall recreates the existing site's database, so it must use that site's
+    # own engine — read it from the site rather than trusting the caller.
+    db_type = SiteReader(bench_root).read_one(name).db_type
     try:
-        task_id = TaskRunner(bench_root).run("reinstall-site", {"site": name, "admin_password": admin_password})
+        task_id = TaskRunner(bench_root).run("reinstall-site", {"site": name, "admin_password": admin_password, "db_type": db_type})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})

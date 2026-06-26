@@ -58,6 +58,34 @@ def test_build_argv_uninstall_app(tmp_path: Path) -> None:
     assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", "mysite.localhost", "uninstall-app", "erpnext", "--yes", "--no-backup"]
 
 
+def test_build_argv_new_site_passes_db_type(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("new-site", {"name": "pg.localhost", "admin_password": "x", "db_type": "postgres"})
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.new_site_task"]
+    assert "pg.localhost" in argv
+    assert argv[argv.index("--db-type") + 1] == "postgres"
+
+
+def test_build_argv_new_site_omits_db_type_when_absent(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("new-site", {"name": "site1.localhost"})
+    assert "--db-type" not in argv
+
+
+def test_build_argv_new_site_from_backup_passes_db_type(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("new-site-from-backup", {"name": "s.localhost", "db_file": "/tmp/db.sql.gz", "db_type": "postgres"})
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.new_site_from_backup_task"]
+    assert argv[argv.index("--db-type") + 1] == "postgres"
+
+
+def test_build_argv_reinstall_site_passes_db_type(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("reinstall-site", {"site": "s.localhost", "admin_password": "x", "db_type": "postgres"})
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.reinstall_site_task"]
+    assert argv[argv.index("--db-type") + 1] == "postgres"
+
+
 def test_build_argv_get_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext"})

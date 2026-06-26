@@ -189,17 +189,18 @@ class InitCommand(Command):
     # Python.h: Alpine ships a system python that `uv venv` reuses, so C
     # extensions (mysqlclient, etc.) need the matching dev headers to compile.
     _ALPINE_BUILD_PACKAGES = (
-        "build-base", "pkgconf", "mariadb-dev", "git", "bash", "tzdata",
+        "build-base", "pkgconf", "mariadb-dev", "postgresql-dev", "git", "bash", "tzdata",
         "python3-dev", "linux-headers", "libffi-dev", "openssl-dev", "libxml2-dev",
         "libxslt-dev", "jpeg-dev", "zlib-dev", "freetype-dev", "tiff-dev",
         "lcms2-dev", "openjpeg-dev",
     )
 
     def _install_system_packages(self) -> None:
-        from pilot.managers.mariadb_manager import MariaDBManager
-        from pilot.managers.python_env_manager import PythonEnvManager
-        from pilot.managers.redis_manager import RedisManager
-        from pilot.platform import get_package_manager, is_alpine, is_linux
+        from bench_cli.managers.mariadb_manager import MariaDBManager
+        from bench_cli.managers.postgres_manager import PostgresManager
+        from bench_cli.managers.python_env_manager import PythonEnvManager
+        from bench_cli.managers.redis_manager import RedisManager
+        from bench_cli.platform import get_package_manager, is_alpine, is_linux
 
         pkg = get_package_manager()
         if is_linux():
@@ -237,11 +238,16 @@ class InitCommand(Command):
                     "MariaDB is already installed but the configured root password is incorrect. "
                     "Fix mariadb.root_password in bench.toml (or secure the existing MariaDB) and retry."
                 )
+        # PostgreSQL is the default engine for new sites, so install and provision
+        # a shared server (mariadb stays installed above as the alternative engine).
+        PostgresManager(self.bench.config.postgres).provision()
+
         RedisManager(self.bench.config.redis, self.bench).install()
         if is_alpine():
             pkg.install(*self._ALPINE_BUILD_PACKAGES)
         elif is_linux():
             # python3-dev provides Python.h for C-extension wheels when uv reuses
             # a system python (it isn't needed when uv downloads a managed one).
-            pkg.install("build-essential", "pkg-config", "libmariadb-dev", "git", "python3-dev")
+            # libpq-dev provides pg_config/headers for psycopg when frappe uses postgres.
+            pkg.install("build-essential", "pkg-config", "libmariadb-dev", "libpq-dev", "git", "python3-dev")
         PythonEnvManager(self.bench).ensure_python()

@@ -21,6 +21,7 @@ class NewSiteCommand(Command):
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("name", help="Site name (e.g. site2.localhost).")
         parser.add_argument("--admin-password", default="admin", help="Frappe admin password.")
+        parser.add_argument("--db-type", default="mariadb", choices=["mariadb", "postgres"], help="Database engine (default: mariadb).")
         parser.add_argument("--apps", nargs="*", help="Apps to assign (defaults to framework app).")
 
     @classmethod
@@ -29,13 +30,14 @@ class NewSiteCommand(Command):
         if not app_names:
             framework = bench.config.framework_app.name
             app_names = [framework] if framework else []
-        return cls(bench, args.name, app_names, args.admin_password)
+        return cls(bench, args.name, app_names, args.admin_password, args.db_type)
 
-    def __init__(self, bench: "Bench", name: str, apps: list[str], admin_password: str = "admin") -> None:
+    def __init__(self, bench: "Bench", name: str, apps: list[str], admin_password: str = "admin", db_type: str = "mariadb") -> None:
         self.bench = bench
         self.name = name
         self.apps = apps
         self.admin_password = admin_password
+        self.db_type = db_type
         self._via_wildcard = False
 
     def run(self) -> None:
@@ -45,7 +47,7 @@ class NewSiteCommand(Command):
         self._validate()
         ssl = self._should_enable_ssl()
         self._register_with_provider()
-        site = Site(SiteConfig(name=self.name, apps=self.apps, admin_password=self.admin_password, ssl=ssl), self.bench)
+        site = Site(SiteConfig(name=self.name, apps=self.apps, admin_password=self.admin_password, db_type=self.db_type, ssl=ssl), self.bench)
         print(f"Creating site '{self.name}'...")
         sys.stdout.flush()
         site.create()
