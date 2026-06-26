@@ -58,15 +58,8 @@ class Site:
             "--db-host", postgres.host,
             "--db-port", str(postgres.port),
             "--db-root-username", postgres.admin_user,
-            "--db-root-password", self._postgres_root_password(),
+            "--db-root-password", self.bench.postgres_root_password(),
         ]
-
-    def _postgres_root_password(self) -> str:
-        # frappe's postgres setup falls back to an interactive getpass() — which
-        # hangs the background task — when the password is empty. Pass a non-empty
-        # placeholder instead: trust/peer auth ignores it, while a password-auth
-        # server returns a clear authentication error.
-        return self.bench.config.postgres.root_password or "trust_auth"
 
     def restore(self, db_file: str, public_files: str | None = None, private_files: str | None = None) -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "restore", db_file)
@@ -76,21 +69,13 @@ class Site:
             cmd += ["--with-private-files", private_files]
         # restore reads the engine from the site's config (frappe.init); it only
         # needs the matching root credentials, not a --db-type flag.
-        cmd += self._db_root_args()
+        cmd += self.bench.db_root_args()
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
     def reinstall(self, admin_password: str = "admin") -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "reinstall", "--yes", "--admin-password", admin_password)
-        cmd += self._db_root_args()
+        cmd += self.bench.db_root_args()
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
-
-    def _db_root_args(self) -> list[str]:
-        """Root username/password for restore/reinstall, keyed to the bench's engine."""
-        if self.bench.config.db_type == "postgres":
-            pg = self.bench.config.postgres
-            return ["--db-root-username", pg.admin_user, "--db-root-password", self._postgres_root_password()]
-        mariadb = self.bench.config.mariadb
-        return ["--db-root-username", mariadb.admin_user, "--db-root-password", mariadb.root_password]
 
     def install_app(self, app: "App") -> None:
         run_command(

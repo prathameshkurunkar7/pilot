@@ -398,3 +398,13 @@ def test_site_create_postgres_empty_password_uses_placeholder(tmp_path: Path, mo
     cmd = captured["cmd"]
     # frappe prompts on an empty password (hanging the task); a placeholder avoids it.
     assert cmd[cmd.index("--db-root-password") + 1] == "trust_auth"
+
+
+def test_bench_db_root_args_postgres(tmp_path: Path) -> None:
+    bench = _postgres_bench(tmp_path, root_password="pgpw")
+    assert bench.db_root_args() == ["--db-root-username", "postgres", "--db-root-password", "pgpw"]
+
+
+def test_bench_db_root_args_mariadb(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    assert bench.db_root_args() == ["--db-root-username", "root", "--db-root-password", "root"]
