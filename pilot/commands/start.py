@@ -96,7 +96,7 @@ class RunCommand(Command):
         # when dist is missing or the frontend source changed since the last build,
         # so `bench start` reflects local UI edits without a manual `build-admin`.
         # A non-source install (no admin/frontend) just downloads the prebuilt copy.
-        from bench_cli.commands.admin import BuildAdminCommand, _cli_root, download_admin_frontend
+        from pilot.commands.admin import BuildAdminCommand, _cli_root, download_admin_frontend
 
         cli_root = _cli_root()
         dist = cli_root / "admin" / "backend" / "static" / "dist"
@@ -116,7 +116,7 @@ class RunCommand(Command):
 
     @staticmethod
     def _rebuild_admin(build_command) -> None:
-        from bench_cli.exceptions import BenchError
+        from pilot.exceptions import BenchError
 
         print("Admin UI source changed since last build; rebuilding...")
         try:

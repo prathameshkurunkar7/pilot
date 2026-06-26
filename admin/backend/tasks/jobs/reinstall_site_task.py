@@ -1,7 +1,7 @@
 import sys
 
-from bench_cli.config.site_config import SiteConfig
-from bench_cli.core.site import Site
+from pilot.config.site_config import SiteConfig
+from pilot.core.site import Site
 
 from .base_task import BaseTask
 

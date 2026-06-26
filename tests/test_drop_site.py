@@ -101,7 +101,7 @@ def _capture_drop_cmd(tmp_path: Path, monkeypatch, bench: Bench) -> dict:
     (bench.path / "bench.toml").write_text('[bench]\nname = "test-bench"\n')
     _write_site(bench, "mysite", {})
     captured: dict = {}
-    monkeypatch.setattr("bench_cli.utils.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
+    monkeypatch.setattr("pilot.utils.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
     DropSiteCommand(bench, "mysite").run()
     return captured
 

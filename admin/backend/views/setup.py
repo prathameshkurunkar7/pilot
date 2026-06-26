@@ -119,8 +119,8 @@ def validate_postgres():
     bench init installs it and sets this superuser password → will_install. An
     existing server validates the live credentials.
     """
-    from bench_cli.config.postgres_config import PostgresConfig
-    from bench_cli.managers.postgres_manager import PostgresManager
+    from pilot.config.postgres_config import PostgresConfig
+    from pilot.managers.postgres_manager import PostgresManager
 
     data = request.get_json(silent=True) or {}
     password = data.get("postgres_password", "")

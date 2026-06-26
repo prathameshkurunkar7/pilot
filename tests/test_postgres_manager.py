@@ -4,10 +4,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bench_cli.config.postgres_config import PostgresConfig
-from bench_cli.managers.postgres_manager import PostgresManager
+from pilot.config.postgres_config import PostgresConfig
+from pilot.managers.postgres_manager import PostgresManager
 
-MODULE = "bench_cli.managers.postgres_manager"
+MODULE = "pilot.managers.postgres_manager"
 
 
 def _mgr(**kwargs) -> PostgresManager:

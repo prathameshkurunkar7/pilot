@@ -4,18 +4,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
-from bench_cli.config.admin_config import AdminConfig
-from bench_cli.config.app_config import AppConfig
-from bench_cli.config.gunicorn_config import GunicornConfig
-from bench_cli.config.letsencrypt_config import LetsEncryptConfig
-from bench_cli.config.mariadb_config import MariaDBConfig
-from bench_cli.config.nginx_config import NginxConfig
-from bench_cli.config.postgres_config import PostgresConfig
-from bench_cli.config.production_config import ProductionConfig
-from bench_cli.config.redis_config import RedisConfig
-from bench_cli.config.volume_config import DatasetConfig, ImageConfig, VolumeConfig
-from bench_cli.config.worker_config import WorkerConfig, WorkerGroup
-from bench_cli.exceptions import ConfigError
+from pilot.config.admin_config import AdminConfig
+from pilot.config.app_config import AppConfig
+from pilot.config.gunicorn_config import GunicornConfig
+from pilot.config.letsencrypt_config import LetsEncryptConfig
+from pilot.config.mariadb_config import MariaDBConfig
+from pilot.config.nginx_config import NginxConfig
+from pilot.config.postgres_config import PostgresConfig
+from pilot.config.production_config import ProductionConfig
+from pilot.config.redis_config import RedisConfig
+from pilot.config.volume_config import DatasetConfig, ImageConfig, VolumeConfig
+from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.exceptions import ConfigError
 
 _BENCH_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
 _EMAIL_PATTERN = re.compile(r"^[^@]+@[^@]+\.[^@]+$")

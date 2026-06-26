@@ -297,7 +297,7 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
 
 def _capture_site_cmd(monkeypatch) -> dict:
     captured: dict = {}
-    monkeypatch.setattr("bench_cli.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
+    monkeypatch.setattr("pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
     return captured
 
 
@@ -327,7 +327,7 @@ def test_site_create_postgres_builds_db_args(tmp_path: Path, monkeypatch: pytest
 def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = make_bench(tmp_path)  # bench db_type defaults to mariadb
     captured = _capture_site_cmd(monkeypatch)
-    monkeypatch.setattr("bench_cli.managers.mariadb_manager.MariaDBManager._detect_socket", lambda self: "")
+    monkeypatch.setattr("pilot.managers.mariadb_manager.MariaDBManager._detect_socket", lambda self: "")
 
     Site(SiteConfig(name="mdb.localhost", apps=["frappe"]), bench).create()
 

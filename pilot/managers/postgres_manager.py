@@ -5,8 +5,8 @@ import subprocess
 import time
 from pathlib import Path
 
-from bench_cli.config.postgres_config import PostgresConfig
-from bench_cli.platform import (
+from pilot.config.postgres_config import PostgresConfig
+from pilot.platform import (
     _privileged,
     get_package_manager,
     is_alpine,
@@ -17,7 +17,7 @@ from bench_cli.platform import (
     service_running,
     which,
 )
-from bench_cli.utils import run_command
+from pilot.utils import run_command
 
 DEFAULT_VERSION = "16"
 _SERVICE = "postgresql"

@@ -203,9 +203,9 @@ class InitCommand(Command):
     }
 
     def _install_system_packages(self) -> None:
-        from bench_cli.managers.python_env_manager import PythonEnvManager
-        from bench_cli.managers.redis_manager import RedisManager
-        from bench_cli.platform import get_package_manager, is_alpine, is_linux
+        from pilot.managers.python_env_manager import PythonEnvManager
+        from pilot.managers.redis_manager import RedisManager
+        from pilot.platform import get_package_manager, is_alpine, is_linux
 
         pkg = get_package_manager()
         if is_linux():
@@ -228,13 +228,13 @@ class InitCommand(Command):
         PythonEnvManager(self.bench).ensure_python()
 
     def _install_postgres(self) -> None:
-        from bench_cli.managers.postgres_manager import PostgresManager
+        from pilot.managers.postgres_manager import PostgresManager
 
         PostgresManager(self.bench.config.postgres).provision()
 
     def _install_mariadb(self) -> None:
-        from bench_cli.managers.mariadb_manager import MariaDBManager
-        from bench_cli.platform import is_linux
+        from pilot.managers.mariadb_manager import MariaDBManager
+        from pilot.platform import is_linux
 
         mariadb_manager = MariaDBManager(self.bench.config.mariadb)
         freshly_installed = not mariadb_manager.is_installed()

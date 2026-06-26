@@ -117,11 +117,11 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
 def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A `--database postgres` bench records db_type, generates a postgres
     password, and (even on Linux) gets no dedicated MariaDB instance."""
-    from bench_cli.commands.new import NewCommand
+    from pilot.commands.new import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("bench_cli.commands.new.is_linux", lambda: True)
+    monkeypatch.setattr("pilot.commands.new.is_linux", lambda: True)
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "pg", "pg", db_type="postgres").run()
 
@@ -133,11 +133,11 @@ def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 
 def test_new_command_mariadb_bench_has_no_postgres_password(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from bench_cli.commands.new import NewCommand
+    from pilot.commands.new import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("bench_cli.commands.new.is_linux", lambda: False)
+    monkeypatch.setattr("pilot.commands.new.is_linux", lambda: False)
     NewCommand(tmp_path / "benches" / "m", "m").run()
 
     with open(tmp_path / "benches" / "m" / "bench.toml", "rb") as f:
@@ -1022,7 +1022,7 @@ def test_drop_bench_skips_volume_when_not_using_zfs(tmp_path: Path, monkeypatch:
 
 
 def test_build_admin_rejects_old_node(monkeypatch: pytest.MonkeyPatch) -> None:
-    from bench_cli.commands.admin import BuildAdminCommand
+    from pilot.commands.admin import BuildAdminCommand
 
     monkeypatch.setattr("subprocess.run", lambda *a, **k: MagicMock(stdout="v18.20.8\n"))
     with pytest.raises(BenchError, match="Node.js"):
@@ -1030,14 +1030,14 @@ def test_build_admin_rejects_old_node(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_build_admin_accepts_supported_node(monkeypatch: pytest.MonkeyPatch) -> None:
-    from bench_cli.commands.admin import BuildAdminCommand
+    from pilot.commands.admin import BuildAdminCommand
 
     monkeypatch.setattr("subprocess.run", lambda *a, **k: MagicMock(stdout="v20.11.0\n"))
     BuildAdminCommand(force_build=True)._check_node_version()  # no raise
 
 
 def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    from bench_cli.commands.admin import BuildAdminCommand
+    from pilot.commands.admin import BuildAdminCommand
 
     def _missing(*a, **k):
         raise FileNotFoundError("node")
@@ -1072,7 +1072,7 @@ def _admin_source_checkout(tmp_path: Path, src_mtime: int, built_mtime: int) -> 
 
 
 def test_admin_source_is_newer_detects_edits(tmp_path: Path) -> None:
-    from bench_cli.commands.start import RunCommand
+    from pilot.commands.start import RunCommand
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
     frontend = cli_root / "admin" / "frontend"
@@ -1085,8 +1085,8 @@ def test_admin_source_is_newer_detects_edits(tmp_path: Path) -> None:
 
 
 def test_start_rebuilds_admin_when_source_changed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from bench_cli.commands import admin as admin_mod
-    from bench_cli.commands.start import RunCommand
+    from pilot.commands import admin as admin_mod
+    from pilot.commands.start import RunCommand
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
     build = MagicMock()
@@ -1099,8 +1099,8 @@ def test_start_rebuilds_admin_when_source_changed(tmp_path: Path, monkeypatch: p
 
 
 def test_start_skips_admin_rebuild_when_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from bench_cli.commands import admin as admin_mod
-    from bench_cli.commands.start import RunCommand
+    from pilot.commands import admin as admin_mod
+    from pilot.commands.start import RunCommand
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=1, built_mtime=100)
     build = MagicMock()

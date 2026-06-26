@@ -141,7 +141,7 @@ def test_status_reports_bench_db_type(tmp_path: Path) -> None:
 
 def test_status_reports_postgres_engine(tmp_path: Path) -> None:
     from admin.backend.app import create_app
-    from bench_cli.config.toml_writer import bench_config_to_toml
+    from pilot.config.toml_writer import bench_config_to_toml
 
     bench_root = tmp_path / "benches" / "pg"
     _initialized_bench(bench_root, "secret", "k3y")
