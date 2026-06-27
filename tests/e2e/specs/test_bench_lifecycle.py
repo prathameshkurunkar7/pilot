@@ -45,8 +45,7 @@ DB_TYPE = os.environ.get("E2E_DB_TYPE", "mariadb")  # 'mariadb' | 'postgres'
 DB_MODE = os.environ.get("E2E_DB_MODE", "shared")  # 'shared' | 'dedicated' (MariaDB only)
 VOLUMES = _truthy("E2E_VOLUMES")  # ZFS — dedicated only, mirrors production
 # Distinct name per variant so local runs of different variants don't collide.
-# Postgres is a single shared server (no shared/dedicated split), so key it on the engine.
-BENCH_NAME = "e2e-postgres" if DB_TYPE == "postgres" else f"e2e-{DB_MODE}{'-zfs' if VOLUMES else ''}"
+BENCH_NAME = f"e2e-postgres-{DB_MODE}" if DB_TYPE == "postgres" else f"e2e-{DB_MODE}{'-zfs' if VOLUMES else ''}"
 
 SITE = "site1.localhost"
 SITE_ADMIN_PASSWORD = "admin"

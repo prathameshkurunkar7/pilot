@@ -40,9 +40,10 @@ def complete_dev_wizard(
         'mariadb'   — drive the MariaDB fields (db_mode below).
         'postgres'  — drive the PostgreSQL fields (superuser + password).
 
-    db_mode (MariaDB only):
-        'shared'    — validate against an existing system MariaDB (CI default).
-        'dedicated' — provision a fresh per-bench MariaDB instance.
+    db_mode:
+        'shared'    — use the existing system server (CI default).
+        'dedicated' — provision a fresh per-bench instance (MariaDB) or cluster
+                      (PostgreSQL, systemd Linux only).
     volumes:
         When True (dedicated only), enable ZFS volumes — the production setup —
         which adds the storage step. We pick image backing (a disk-image-backed
@@ -61,6 +62,13 @@ def complete_dev_wizard(
     # ── Step 2: Database ────────────────────────────────────────────────────────
     _choose_select(page, "Database engine", "PostgreSQL" if db_type == "postgres" else "MariaDB")
     if db_type == "postgres":
+        # The dedicated/shared choice only renders where supported (systemd Linux).
+        if page.get_by_role("combobox", name="PostgreSQL setup").is_visible():
+            _choose_select(
+                page,
+                "PostgreSQL setup",
+                "Dedicated cluster" if db_mode == "dedicated" else "Shared system PostgreSQL",
+            )
         page.get_by_label("PostgreSQL superuser").fill(postgres_admin_user)
         page.get_by_label("PostgreSQL password").fill(postgres_password)
     else:

@@ -55,6 +55,8 @@ const saveSuccess = ref('')
 
 const form = ref(null)
 
+const dbEngineLabel = computed(() => (form.value?.bench?.db_type === 'postgres' ? 'PostgreSQL' : 'MariaDB'))
+
 async function load() {
   loading.value = true
   loadError.value = ''
@@ -96,8 +98,6 @@ function validateSettings() {
     [form.value.redis.cache_port, 'Redis Cache Port'],
     [form.value.redis.queue_port, 'Redis Queue Port'],
   ]
-  if (form.value.bench?.db_type === 'postgres' && form.value.postgres)
-    ports.push([form.value.postgres.port, 'PostgreSQL Port'])
   for (const [port, name] of ports) {
     const n = Number(port)
     if (!Number.isInteger(n) || n < 1 || n > 65535)
@@ -345,6 +345,7 @@ watch(() => props.modelValue, (val) => {
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormControl label="Name" :modelValue="form.bench.name" disabled />
                   <FormControl label="Python Version" :modelValue="form.bench.python" disabled />
+                  <FormControl label="Database" :modelValue="dbEngineLabel" disabled />
                   <FormControl type="number" label="HTTP Port" v-model="form.bench.http_port" />
                   <FormControl type="number" label="SocketIO Port" v-model="form.bench.socketio_port" />
                 </div>
@@ -372,18 +373,12 @@ watch(() => props.modelValue, (val) => {
               <!-- PostgreSQL -->
               <div v-else-if="activeTab === 'postgres'" class="flex flex-col gap-4">
                 <p class="rounded-md bg-surface-gray-2 px-3 py-2 text-xs text-ink-gray-5">
-                  This bench runs on PostgreSQL, installed and provisioned by bench during init. These fields control how bench connects to it.
+                  PostgreSQL connection settings are set during bench initialization and cannot be changed here.
                 </p>
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormControl label="Host" v-model="form.postgres.host" />
-                  <FormControl type="number" label="Port" v-model="form.postgres.port" />
-                  <FormControl label="Admin User" v-model="form.postgres.admin_user" />
-                  <FormControl
-                    type="password"
-                    label="Root Password"
-                    v-model="form.postgres.root_password"
-                    :placeholder="form.postgres.password_set ? '•••••••• (leave blank to keep)' : 'not set'"
-                  />
+                  <FormControl label="Host" :modelValue="form.postgres.host" disabled />
+                  <FormControl type="number" label="Port" :modelValue="form.postgres.port" disabled />
+                  <FormControl label="Admin User" :modelValue="form.postgres.admin_user" disabled />
                 </div>
               </div>
 

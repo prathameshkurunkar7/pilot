@@ -1,17 +1,26 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from pilot.config.postgres_config import PostgresConfig
-from pilot.managers.postgres_manager import PostgresManager
+from pilot.managers.postgres_manager import (
+    PostgresManager,
+    pick_dedicated_postgres_port,
+    supports_dedicated_postgres,
+)
 
 MODULE = "pilot.managers.postgres_manager"
 
 
 def _mgr(**kwargs) -> PostgresManager:
     return PostgresManager(PostgresConfig(**kwargs))
+
+
+def _dedicated(instance: str = "b1", **kwargs) -> PostgresManager:
+    return PostgresManager(PostgresConfig(instance=instance, **kwargs))
 
 
 # ── install ───────────────────────────────────────────────────────────────────
@@ -134,3 +143,105 @@ def test_provision_orchestrates_steps() -> None:
     en.assert_called_once()
     st.assert_called_once()
     sec.assert_called_once()
+
+
+# ── Alpine package naming ───────────────────────────────────────────────────────
+
+
+def test_install_uses_versioned_packages_on_alpine() -> None:
+    m, pkg = _mgr(), MagicMock()
+    with patch.object(m, "is_installed", return_value=False), patch(f"{MODULE}.is_macos", return_value=False), \
+         patch(f"{MODULE}.is_alpine", return_value=True), patch.object(m, "_alpine_major", return_value="17"), \
+         patch(f"{MODULE}.get_package_manager", return_value=pkg):
+        m.install()
+    pkg.install.assert_called_once_with("postgresql17", "postgresql17-client")
+
+
+def test_alpine_dev_package_is_versioned() -> None:
+    with patch.object(PostgresManager, "_alpine_major", return_value="17"):
+        assert _mgr().alpine_dev_package() == "postgresql17-dev"
+
+
+def test_alpine_major_prefers_configured_version() -> None:
+    assert _mgr(version="16.2")._alpine_major() == "16"
+
+
+# ── dedicated cluster ───────────────────────────────────────────────────────────
+
+
+def test_is_dedicated() -> None:
+    assert _mgr().is_dedicated is False
+    assert _dedicated("b1").is_dedicated is True
+
+
+def test_service_unit_shared_and_dedicated() -> None:
+    assert _mgr().service_unit() == "postgresql"
+    with patch.object(PostgresManager, "_cluster_version", return_value="16"):
+        assert _dedicated("b1").service_unit() == "postgresql@16-b1"
+
+
+def test_supports_dedicated_postgres_needs_systemd() -> None:
+    with patch(f"{MODULE}.is_linux", return_value=True), patch(f"{MODULE}.is_alpine", return_value=False):
+        assert supports_dedicated_postgres() is True
+    with patch(f"{MODULE}.is_linux", return_value=True), patch(f"{MODULE}.is_alpine", return_value=True):
+        assert supports_dedicated_postgres() is False
+    with patch(f"{MODULE}.is_linux", return_value=False), patch(f"{MODULE}.is_alpine", return_value=False):
+        assert supports_dedicated_postgres() is False
+
+
+def test_pick_dedicated_postgres_port_skips_shared_and_siblings(tmp_path) -> None:
+    siblings = [("a", SimpleNamespace(postgres=SimpleNamespace(instance="a", port=5433)))]
+    with patch("pilot.utils.iter_sibling_benches", return_value=siblings), patch(f"{MODULE}._port_is_live", return_value=False):
+        # 5432 (shared) and 5433 (sibling) are taken, so 5434 is next.
+        assert pick_dedicated_postgres_port(tmp_path) == 5434
+
+
+def test_provision_routes_to_instance_when_dedicated() -> None:
+    m = _dedicated("b1", root_password="pw")
+    with patch.object(m, "install"), patch.object(m, "_provision_instance") as prov, \
+         patch.object(m, "_wait_until_reachable"), patch.object(m, "secure"):
+        m.provision()
+    prov.assert_called_once()
+
+
+def test_provision_instance_creates_cluster_on_its_port() -> None:
+    m = _dedicated("b1", port=5440)
+    with patch(f"{MODULE}.supports_dedicated_postgres", return_value=True), \
+         patch.object(m, "_cluster_row", return_value=[]), patch.object(m, "_detected_version", return_value="16"), \
+         patch.object(m, "enable"), patch(f"{MODULE}.run_command") as rc:
+        m._provision_instance()
+    args = rc.call_args[0][0]
+    assert "pg_createcluster" in args and "16" in args and "b1" in args
+    assert args[args.index("-p") + 1] == "5440"
+    assert "--start" in args
+
+
+def test_provision_instance_rejects_when_unsupported() -> None:
+    m = _dedicated("b1")
+    with patch(f"{MODULE}.supports_dedicated_postgres", return_value=False):
+        with pytest.raises(RuntimeError, match="systemd"):
+            m._provision_instance()
+
+
+def test_remove_instance_drops_cluster() -> None:
+    m = _dedicated("b1")
+    with patch(f"{MODULE}.supports_dedicated_postgres", return_value=True), \
+         patch.object(m, "_cluster_version", return_value="16"), patch(f"{MODULE}.run_command") as rc:
+        m.remove_instance()
+    args = rc.call_args[0][0]
+    assert "pg_dropcluster" in args and "16" in args and "b1" in args and "--stop" in args
+
+
+def test_remove_instance_noop_for_shared() -> None:
+    with patch(f"{MODULE}.run_command") as rc:
+        _mgr().remove_instance()
+    rc.assert_not_called()
+
+
+def test_run_sql_as_superuser_targets_cluster_port() -> None:
+    m = _dedicated("b1", port=5440)
+    with patch(f"{MODULE}.is_linux", return_value=True), patch(f"{MODULE}.subprocess.run") as run:
+        m._run_sql_as_superuser("SELECT 1;")
+    cmd = run.call_args[0][0]
+    assert cmd[:4] == ["sudo", "-u", "postgres", "psql"]
+    assert cmd[cmd.index("-p") + 1] == "5440"

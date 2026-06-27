@@ -11,3 +11,6 @@ class PostgresConfig:
     root_password: str = ""
     admin_user: str = "postgres"
     version: Optional[str] = None
+    # Empty = shared system server (port 5432). When set, this bench gets its own
+    # PostgreSQL cluster (systemd Linux only) on its own port.
+    instance: str = ""

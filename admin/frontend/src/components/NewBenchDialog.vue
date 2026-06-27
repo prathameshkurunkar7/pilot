@@ -16,7 +16,6 @@ const name = ref('')
 // The host's native production manager: 'openrc' on Alpine, 'systemd' elsewhere.
 const nativeProcessManager = ref('systemd')
 const processManager = ref('systemd')
-const dbType = ref('mariadb')
 const adminDomain = ref('')
 const adminPrefix = ref('')
 const wildcardDomains = ref([])
@@ -103,7 +102,6 @@ watch(show, (open) => {
   if (!open) { provisioning.value = false; return }
   name.value = ''
   processManager.value = nativeProcessManager.value
-  dbType.value = 'mariadb'
   adminDomain.value = ''
   adminPrefix.value = ''
   error.value = ''
@@ -193,7 +191,7 @@ async function createBench() {
     const response = await fetch('/api/benches/new', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: benchName, process_manager: processManager.value, admin_domain: domain, db_type: dbType.value }),
+      body: JSON.stringify({ name: benchName, process_manager: processManager.value, admin_domain: domain }),
     })
     const data = await response.json()
     if (!response.ok) {
@@ -280,13 +278,6 @@ async function createBench() {
               </button>
             </div>
           </div>
-          <FormControl
-            label="Database"
-            type="select"
-            v-model="dbType"
-            :options="[{ label: 'MariaDB', value: 'mariadb' }, { label: 'PostgreSQL', value: 'postgres' }]"
-            description="The engine for all sites on this bench; bench installs and provisions it."
-          />
           <div>
             <template v-if="wildcardDomains.length === 0">
               <FormControl

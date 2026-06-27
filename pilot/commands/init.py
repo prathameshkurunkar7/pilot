@@ -196,16 +196,11 @@ class InitCommand(Command):
         "libxslt-dev", "jpeg-dev", "zlib-dev", "freetype-dev", "tiff-dev",
         "lcms2-dev", "openjpeg-dev",
     )
-    # Engine-specific client/build headers — only the bench's engine is installed.
-    _DB_BUILD_PACKAGES = {
-        "mariadb": {"debian": "libmariadb-dev", "alpine": "mariadb-dev"},
-        "postgres": {"debian": "libpq-dev", "alpine": "postgresql-dev"},
-    }
 
     def _install_system_packages(self) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager
         from pilot.managers.redis_manager import RedisManager
-        from pilot.platform import get_package_manager, is_alpine, is_linux
+        from pilot.platform import get_package_manager, is_linux
 
         pkg = get_package_manager()
         if is_linux():
@@ -213,24 +208,36 @@ class InitCommand(Command):
 
         # A bench runs exactly one engine; install/provision only that one.
         if self.bench.config.db_type == "postgres":
-            self._install_postgres()
+            self._postgres_manager().provision()
         else:
             self._install_mariadb()
 
         RedisManager(self.bench.config.redis, self.bench).install()
-        db_pkgs = self._DB_BUILD_PACKAGES[self.bench.config.db_type]
-        if is_alpine():
-            pkg.install(*self._ALPINE_BUILD_PACKAGES, db_pkgs["alpine"])
-        elif is_linux():
-            # python3-dev provides Python.h for C-extension wheels when uv reuses a
-            # system python; the db package provides the client headers (mysqlclient/psycopg).
-            pkg.install("build-essential", "pkg-config", "git", "python3-dev", db_pkgs["debian"])
+        self._install_build_headers(pkg)
         PythonEnvManager(self.bench).ensure_python()
 
-    def _install_postgres(self) -> None:
+    def _install_build_headers(self, pkg) -> None:
+        # frappe imports mysqlclient in its __init__.py for every engine, so the
+        # MariaDB client headers are always required; postgres benches additionally
+        # need libpq headers for psycopg.
+        from pilot.platform import is_alpine, is_linux
+
+        postgres = self.bench.config.db_type == "postgres"
+        if is_alpine():
+            packages = [*self._ALPINE_BUILD_PACKAGES, "mariadb-dev"]
+            if postgres:
+                packages.append(self._postgres_manager().alpine_dev_package())
+            pkg.install(*packages)
+        elif is_linux():
+            packages = ["build-essential", "pkg-config", "git", "python3-dev", "libmariadb-dev"]
+            if postgres:
+                packages.append("libpq-dev")
+            pkg.install(*packages)
+
+    def _postgres_manager(self):
         from pilot.managers.postgres_manager import PostgresManager
 
-        PostgresManager(self.bench.config.postgres).provision()
+        return PostgresManager(self.bench.config.postgres)
 
     def _install_mariadb(self) -> None:
         from pilot.managers.mariadb_manager import MariaDBManager

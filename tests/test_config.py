@@ -234,6 +234,35 @@ def test_invalid_postgres_port_rejected() -> None:
     assert "postgres.port" in str(exc_info.value)
 
 
+def test_postgres_instance_defaults_to_shared() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    assert config.postgres.instance == ""
+
+
+def test_postgres_instance_roundtrip() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["postgres"] = {"instance": "my-bench", "port": 5433, "root_password": "secret"}
+    config = load_from_dict(data)
+    assert config.postgres.instance == "my-bench"
+    toml = bench_config_to_toml(config)
+    assert 'instance = "my-bench"' in toml
+
+
+def test_postgres_instance_omitted_from_toml_when_shared() -> None:
+    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
+    pg_section = bench_config_to_toml(config).split("[postgres]")[1].split("[")[0]
+    assert "instance =" not in pg_section
+
+
+def test_invalid_postgres_instance_name() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["postgres"] = {"instance": "1bad name"}
+    config = BenchConfig._from_dict(data)
+    with pytest.raises(ConfigError) as exc_info:
+        config.validate()
+    assert "postgres.instance" in str(exc_info.value)
+
+
 def test_invalid_mariadb_instance_name() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["mariadb"]["instance"] = "1bad name"

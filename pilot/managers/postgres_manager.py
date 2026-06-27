@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -21,17 +23,84 @@ from pilot.utils import run_command
 
 DEFAULT_VERSION = "16"
 _SERVICE = "postgresql"
+# The shared system server owns 5432; dedicated clusters start above it.
+_SHARED_PORT = 5432
+
+
+def supports_dedicated_postgres() -> bool:
+    """Dedicated clusters use postgresql-common (pg_createcluster) under systemd.
+    Alpine (OpenRC) and macOS run PostgreSQL benches on the shared server."""
+    return is_linux() and not is_alpine()
+
+
+def pick_dedicated_postgres_port(bench_path: Path) -> int:
+    """Smallest free port at/above 5433 for a new dedicated cluster — clear of the
+    shared server (5432), sibling clusters, and anything currently listening."""
+    from pilot.utils import iter_sibling_benches
+
+    used = {_SHARED_PORT}
+    for _, config in iter_sibling_benches(bench_path):
+        postgres = getattr(config, "postgres", None)
+        if postgres and postgres.instance:
+            used.add(postgres.port)
+    port = _SHARED_PORT + 1
+    while port in used or _port_is_live(port):
+        port += 1
+    return port
+
+
+def _port_is_live(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+            return True
+    except OSError:
+        return False
 
 
 class PostgresManager:
-    """Manage the shared system PostgreSQL bench installs and provisions.
+    """Manage the PostgreSQL server bench installs and provisions.
 
-    Unlike MariaDB, there are no per-bench instances — benches share one server
-    and are isolated at the database level (frappe creates one db per site).
+    A bench either shares the system server (isolated per-database) or, when
+    postgres.instance is set, runs its own cluster on its own port. Dedicated
+    clusters use postgresql-common (pg_createcluster) and so need systemd.
     """
 
     def __init__(self, config: PostgresConfig) -> None:
         self.config = config
+
+    @property
+    def is_dedicated(self) -> bool:
+        return bool(self.config.instance)
+
+    def _detected_version(self) -> str:
+        """Major version to create a cluster with: the configured version, else the
+        newest server apt installed under /usr/lib/postgresql/<major>."""
+        if self.config.version:
+            return self.config.version.split(".")[0]
+        base = Path("/usr/lib/postgresql")
+        if base.is_dir():
+            majors = sorted(int(p.name) for p in base.iterdir() if p.name.isdigit())
+            if majors:
+                return str(majors[-1])
+        return DEFAULT_VERSION
+
+    def _cluster_row(self) -> list[str]:
+        """This instance's `pg_lsclusters` row (Ver Cluster Port Status …), or []."""
+        result = subprocess.run(["pg_lsclusters", "--no-header"], capture_output=True, text=True)
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[1] == self.config.instance:
+                return parts
+        return []
+
+    def _cluster_version(self) -> str | None:
+        row = self._cluster_row()
+        return row[0] if row else None
+
+    def service_unit(self) -> str:
+        if not self.is_dedicated:
+            return _SERVICE
+        return f"{_SERVICE}@{self._cluster_version() or self._detected_version()}-{self.config.instance}"
 
     # ── install ──────────────────────────────────────────────────────────────
 
@@ -44,7 +113,28 @@ class PostgresManager:
         if is_macos():
             get_package_manager().install(self._brew_package())
             return
+        if is_alpine():
+            # Alpine ships only versioned packages (no unversioned `postgresql`).
+            get_package_manager().install(*self.alpine_packages())
+            return
         get_package_manager().install("postgresql", "postgresql-client")
+
+    def alpine_packages(self) -> list[str]:
+        major = self._alpine_major()
+        return [f"postgresql{major}", f"postgresql{major}-client"]
+
+    def alpine_dev_package(self) -> str:
+        """libpq build headers for psycopg — versioned on Alpine."""
+        return f"postgresql{self._alpine_major()}-dev"
+
+    def _alpine_major(self) -> str:
+        """The PostgreSQL major to install on Alpine: the configured version, else
+        the newest apk offers (Alpine has no unversioned postgresql package)."""
+        if self.config.version:
+            return self.config.version.split(".")[0]
+        result = subprocess.run(["apk", "list", "--available", "postgresql*"], capture_output=True, text=True)
+        majors = sorted({int(m) for m in re.findall(r"\bpostgresql(\d+)-", result.stdout)})
+        return str(majors[-1]) if majors else DEFAULT_VERSION
 
     def _version(self) -> str:
         return self.config.version or DEFAULT_VERSION
@@ -66,28 +156,51 @@ class PostgresManager:
     # ── service control ──────────────────────────────────────────────────────
 
     def is_running(self) -> bool:
+        if self.is_dedicated:
+            return self._cluster_status() == "online"
         return self._brew_service_running() if is_macos() else service_running(_SERVICE)
 
     def start(self) -> None:
-        if is_macos():
+        if self.is_dedicated:
+            self._ctlcluster("start")
+        elif is_macos():
             run_command(["brew", "services", "start", self._brew_package()])
         else:
             run_command(service_command("start", _SERVICE))
 
     def restart(self) -> None:
-        if is_macos():
+        if self.is_dedicated:
+            self._ctlcluster("restart")
+        elif is_macos():
             run_command(["brew", "services", "restart", self._brew_package()])
         else:
             run_command(service_command("restart", _SERVICE))
 
+    def stop(self) -> None:
+        if self.is_dedicated:
+            self._ctlcluster("stop")
+        elif is_macos():
+            run_command(["brew", "services", "stop", self._brew_package()])
+        else:
+            run_command(service_command("stop", _SERVICE))
+
     def enable(self) -> None:
-        # `brew services start` already persists across logins.
+        # `brew services start` already persists across logins. The system
+        # postgresql service auto-starts every cluster (shared or dedicated).
         if is_macos():
             return
         try:
             run_command(service_enable_command(_SERVICE))
         except Exception:
             pass
+
+    def _ctlcluster(self, action: str) -> None:
+        version = self._cluster_version() or self._detected_version()
+        run_command(_privileged(["pg_ctlcluster", version, self.config.instance, action]))
+
+    def _cluster_status(self) -> str | None:
+        row = self._cluster_row()
+        return row[3] if len(row) >= 4 else None
 
     def _brew_service_running(self) -> bool:
         result = subprocess.run(["brew", "services", "list"], capture_output=True, text=True)
@@ -102,13 +215,41 @@ class PostgresManager:
     def provision(self) -> None:
         """Install, start, enable and secure the server. Idempotent — safe to re-run."""
         self.install()
-        if is_alpine():
-            self._ensure_alpine_cluster()
-        self.enable()
-        if not self.is_running():
-            self.start()
+        if self.is_dedicated:
+            self._provision_instance()
+        else:
+            if is_alpine():
+                self._ensure_alpine_cluster()
+            self.enable()
+            if not self.is_running():
+                self.start()
         self._wait_until_reachable()
         self.secure()
+
+    def _provision_instance(self) -> None:
+        """Create (or restart) this bench's dedicated cluster on its own port via
+        postgresql-common, then enable autostart. systemd Linux only."""
+        if not supports_dedicated_postgres():
+            raise RuntimeError("Dedicated PostgreSQL clusters require systemd (postgresql-common); use the shared server instead.")
+        if self._cluster_row():
+            if not self.is_running():
+                self.start()
+        else:
+            run_command(_privileged([
+                "pg_createcluster", self._detected_version(), self.config.instance,
+                "-p", str(self.config.port), "--start",
+            ]))
+        self.enable()
+
+    def remove_instance(self) -> None:
+        """Stop and delete this bench's dedicated cluster. Best-effort and
+        idempotent; a no-op for shared benches."""
+        if not self.is_dedicated or not supports_dedicated_postgres():
+            return
+        version = self._cluster_version()
+        if not version:
+            return
+        run_command(_privileged(["pg_dropcluster", version, self.config.instance, "--stop"]))
 
     def secure(self) -> None:
         """Ensure the admin role exists with the configured password so frappe can
@@ -156,9 +297,10 @@ class PostgresManager:
 
     def _run_sql_as_superuser(self, sql: str) -> None:
         # The bootstrap superuser is the `postgres` OS account on Linux (peer auth
-        # over the local socket) and the current user on macOS (Homebrew).
+        # over the local socket) and the current user on macOS (Homebrew). -p
+        # targets this bench's cluster — 5432 for shared, its own port if dedicated.
         cmd = ["sudo", "-u", "postgres", "psql"] if is_linux() else [self._psql() or "psql"]
-        cmd += ["-v", "ON_ERROR_STOP=1", "-d", "postgres"]
+        cmd += ["-p", str(self.config.port), "-v", "ON_ERROR_STOP=1", "-d", "postgres"]
         subprocess.run(cmd, input=sql, text=True, check=True)
 
     def _wait_until_reachable(self, timeout: float = 30.0) -> None:

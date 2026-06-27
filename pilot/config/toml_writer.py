@@ -50,6 +50,8 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f'admin_user = "{pg.admin_user}"')
     if pg.version:
         parts.append(f'version = "{pg.version}"')
+    if pg.instance:
+        parts.append(f'instance = "{pg.instance}"')
     parts.append("")
 
     r = config.redis

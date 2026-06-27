@@ -116,12 +116,14 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
 
 def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A `--database postgres` bench records db_type, generates a postgres
-    password, and (even on Linux) gets no dedicated MariaDB instance."""
+    password, and gets no dedicated MariaDB instance."""
     from pilot.commands.new import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
     monkeypatch.setattr("pilot.commands.new.is_linux", lambda: True)
+    # Shared server (no dedicated cluster) for a deterministic shape across hosts.
+    monkeypatch.setattr("pilot.managers.postgres_manager.supports_dedicated_postgres", lambda: False)
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "pg", "pg", db_type="postgres").run()
 
@@ -130,6 +132,26 @@ def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert data["bench"]["db_type"] == "postgres"
     assert data["postgres"]["root_password"]  # generated for provisioning
     assert not data["mariadb"].get("instance")  # shared, no dedicated instance
+    assert not data["postgres"].get("instance")  # shared server
+
+
+def test_new_command_dedicated_postgres_cluster(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Where supported (systemd Linux), a postgres bench defaults to its own
+    cluster with an assigned, non-shared port."""
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr("pilot.commands.new.is_linux", lambda: True)
+    monkeypatch.setattr("pilot.managers.postgres_manager.supports_dedicated_postgres", lambda: True)
+    monkeypatch.setattr("pilot.managers.postgres_manager.pick_dedicated_postgres_port", lambda path: 5439)
+    benches_dir = tmp_path / "benches"
+    NewCommand(benches_dir / "pg", "pg", db_type="postgres").run()
+
+    with open(benches_dir / "pg" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["postgres"]["instance"] == "pg"
+    assert data["postgres"]["port"] == 5439
 
 
 def test_new_command_mariadb_bench_has_no_postgres_password(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

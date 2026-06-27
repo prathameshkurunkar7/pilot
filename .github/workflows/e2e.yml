@@ -32,13 +32,21 @@ jobs:
             db_mode: dedicated
             volumes: "1"
             extra_app: "0"
-          # PostgreSQL bench (shared server, no per-bench instance); exercises
-          # app install/uninstall on the postgres engine end to end.
+          # PostgreSQL bench on the shared system server; exercises app
+          # install/uninstall on the postgres engine end to end.
           - variant: postgres
             db_type: postgres
             db_mode: shared
             volumes: "0"
             extra_app: "1"
+          # PostgreSQL with a dedicated per-bench cluster (pg_createcluster); the
+          # dedicated counterpart of the shared-server postgres variant. Skips the
+          # extra-app step (covered by `postgres`) to stay quick.
+          - variant: postgres-dedicated
+            db_type: postgres
+            db_mode: dedicated
+            volumes: "0"
+            extra_app: "0"
 
     steps:
       - uses: actions/checkout@v4

@@ -81,6 +81,13 @@ class NewCommand(Command):
         if self.db_type == "postgres":
             # bench provisions PostgreSQL during init; this becomes its superuser password.
             settings["postgres_password"] = secrets.token_hex(nbytes=8)
+            # Default to a dedicated per-bench cluster where supported (systemd
+            # Linux); elsewhere (Alpine/macOS) sites use the shared server.
+            from pilot.managers.postgres_manager import pick_dedicated_postgres_port, supports_dedicated_postgres
+
+            if supports_dedicated_postgres():
+                settings["postgres_instance"] = self.name
+                settings["postgres_port"] = pick_dedicated_postgres_port(self.target_directory)
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager
         # The Let's Encrypt account email is a server-wide setting; inherit it

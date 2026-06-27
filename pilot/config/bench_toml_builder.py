@@ -33,6 +33,7 @@ FLAT_KEYS = {
     "postgres_password": "postgres.root_password",
     "postgres_admin_user": "postgres.admin_user",
     "postgres_port": "postgres.port",
+    "postgres_instance": "postgres.instance",
     "admin_enabled": "admin.enabled",
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",

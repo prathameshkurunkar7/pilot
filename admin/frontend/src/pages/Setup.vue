@@ -13,6 +13,7 @@ const error = ref('')
 const loading = ref(false)
 const benchName = ref('')
 const isLinux = ref(true)
+const isAlpine = ref(false)  // dedicated PostgreSQL needs systemd; not available on Alpine
 const dedicatedWillInstall = ref(false)  // true when a new dedicated instance will be created
 const sharedWillInstall = ref(false)     // true when the system/shared MariaDB isn't installed yet
 const postgresWillInstall = ref(false)   // true when PostgreSQL isn't installed yet
@@ -30,6 +31,8 @@ const dbPasswordDescription = computed(() =>
 const pgPasswordDescription = computed(() =>
   postgresWillInstall.value ? 'PostgreSQL will be installed and its superuser password set to this value.' : undefined
 )
+// Dedicated PostgreSQL clusters are only offered where supported (systemd Linux).
+const pgDedicated = computed(() => isLinux.value && !isAlpine.value && form.value.dedicated_db === 'dedicated')
 
 // ── setup-task streaming state ─────────────────────────────────────────────
 // The wizard initializes the bench as one task, streaming `[N/M] description`
@@ -203,6 +206,7 @@ async function loadConfig() {
     const data = await res.json()
     benchName.value = data.bench_name || ''
     isLinux.value = data.is_linux !== false
+    isAlpine.value = data.is_alpine === true
     availableDevices.value = data.available_devices || []
     rootfsFreeBytes.value = data.rootfs_free_bytes || 0
     for (const key of Object.keys(form.value)) {
@@ -210,7 +214,8 @@ async function loadConfig() {
     }
     clampImageSize()
     if (isLinux.value) {
-      form.value.dedicated_db = data.mariadb_instance ? 'dedicated' : 'shared'
+      const instance = data.db_type === 'postgres' ? data.postgres_instance : data.mariadb_instance
+      form.value.dedicated_db = instance ? 'dedicated' : 'shared'
     }
     // One task, one resume rule: if it's still running, reattach to its stream.
     // Otherwise start at the first config step.
@@ -333,14 +338,15 @@ async function _validateMariadb() {
 }
 
 async function _validatePostgres() {
-  // Postgres is a shared server (no dedicated instance). A fresh server reports
-  // 'will_install' (init installs it and sets this superuser password); an
-  // existing one validates the credentials.
+  if (!form.value.postgres_password) return 'PostgreSQL password is required'
+  // A fresh server reports 'will_install' (init installs it and sets this
+  // superuser password); an existing one validates the credentials.
   loading.value = true
   try {
     const { state } = await postJson('/api/setup/validate-postgres', {
       postgres_password: form.value.postgres_password,
       postgres_admin_user: form.value.postgres_admin_user,
+      dedicated: pgDedicated.value,
     })
     postgresWillInstall.value = state === 'will_install'
     if (state === 'invalid') return 'Incorrect PostgreSQL credentials.'
@@ -361,13 +367,16 @@ async function saveConfig() {
   const payload = { ...form.value }
   delete payload.dedicated_db
   if (form.value.db_type === 'postgres') {
-    // Postgres benches run against the shared server — no per-bench MariaDB
-    // instance and no ZFS volume (volumes bind the MariaDB datadir).
+    // Postgres benches use no per-bench MariaDB instance and no ZFS volume
+    // (volumes bind the MariaDB datadir). A dedicated cluster gets its own port,
+    // assigned by the backend; the shared server stays on 5432.
     payload.mariadb_instance = ''
     payload.mariadb_socket_path = ''
     payload.mariadb_data_dir = ''
     payload.volume_enabled = false
+    payload.postgres_instance = pgDedicated.value ? benchName.value : ''
   } else if (isLinux.value) {
+    payload.postgres_instance = ''
     if (form.value.dedicated_db === 'dedicated') {
       payload.mariadb_instance = benchName.value
       payload.mariadb_socket_path = `/run/mysqld/mysqld-${benchName.value}.sock`
@@ -483,7 +492,6 @@ function backToConfig() {
               { label: 'MariaDB', value: 'mariadb' },
               { label: 'PostgreSQL', value: 'postgres' },
             ]"
-            description="bench installs and provisions this engine; all sites on the bench use it."
           />
 
           <template v-if="form.db_type === 'mariadb'">
@@ -512,6 +520,16 @@ function backToConfig() {
           </template>
 
           <template v-else>
+            <FormControl
+              v-if="isLinux && !isAlpine"
+              type="select"
+              label="PostgreSQL setup"
+              v-model="form.dedicated_db"
+              :options="[
+                { label: 'Dedicated cluster (recommended)', value: 'dedicated' },
+                { label: 'Shared system PostgreSQL', value: 'shared' },
+              ]"
+            />
             <FormControl label="PostgreSQL superuser" v-model="form.postgres_admin_user" />
             <Password
               label="PostgreSQL password"
