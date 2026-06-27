@@ -195,8 +195,12 @@ class PostgresManager:
             pass
 
     def _ctlcluster(self, action: str) -> None:
+        # --skip-systemctl-redirect runs pg_ctl directly instead of going through
+        # `systemctl start postgresql@<ver>-<cluster>`, whose templated unit fails
+        # ("Assertion failed on job") in container/CI environments. Boot autostart
+        # still works via the enabled postgresql meta-service (start.conf=auto).
         version = self._cluster_version() or self._detected_version()
-        run_command(_privileged(["pg_ctlcluster", version, self.config.instance, action]))
+        run_command(_privileged(["pg_ctlcluster", "--skip-systemctl-redirect", version, self.config.instance, action]))
 
     def _cluster_status(self) -> str | None:
         row = self._cluster_row()
@@ -231,14 +235,14 @@ class PostgresManager:
         postgresql-common, then enable autostart. systemd Linux only."""
         if not supports_dedicated_postgres():
             raise RuntimeError("Dedicated PostgreSQL clusters require systemd (postgresql-common); use the shared server instead.")
-        if self._cluster_row():
-            if not self.is_running():
-                self.start()
-        else:
+        if not self._cluster_row():
             run_command(_privileged([
                 "pg_createcluster", self._detected_version(), self.config.instance,
-                "-p", str(self.config.port), "--start",
+                "-p", str(self.config.port),
             ]))
+        # Start directly (not via systemd's templated unit — see _ctlcluster).
+        if not self.is_running():
+            self.start()
         self.enable()
 
     def remove_instance(self) -> None:

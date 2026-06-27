@@ -204,16 +204,28 @@ def test_provision_routes_to_instance_when_dedicated() -> None:
     prov.assert_called_once()
 
 
-def test_provision_instance_creates_cluster_on_its_port() -> None:
+def test_provision_instance_creates_then_starts_cluster() -> None:
     m = _dedicated("b1", port=5440)
     with patch(f"{MODULE}.supports_dedicated_postgres", return_value=True), \
          patch.object(m, "_cluster_row", return_value=[]), patch.object(m, "_detected_version", return_value="16"), \
+         patch.object(m, "is_running", return_value=False), patch.object(m, "start") as start, \
          patch.object(m, "enable"), patch(f"{MODULE}.run_command") as rc:
         m._provision_instance()
     args = rc.call_args[0][0]
     assert "pg_createcluster" in args and "16" in args and "b1" in args
     assert args[args.index("-p") + 1] == "5440"
-    assert "--start" in args
+    # Started directly afterwards, not via pg_createcluster --start (systemd).
+    assert "--start" not in args
+    start.assert_called_once()
+
+
+def test_ctlcluster_skips_systemctl_redirect() -> None:
+    m = _dedicated("b1")
+    with patch.object(m, "_cluster_version", return_value="16"), patch(f"{MODULE}.run_command") as rc:
+        m.start()
+    args = rc.call_args[0][0]
+    assert args[:2] == ["sudo", "pg_ctlcluster"]
+    assert "--skip-systemctl-redirect" in args and args[-1] == "start"
 
 
 def test_provision_instance_rejects_when_unsupported() -> None:
