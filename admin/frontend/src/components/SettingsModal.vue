@@ -54,6 +54,7 @@ const saveError = ref('')
 const saveSuccess = ref('')
 
 const form = ref(null)
+const originalProcessManager = ref(null)
 
 const dbEngineLabel = computed(() => (form.value?.bench?.db_type === 'postgres' ? 'PostgreSQL' : 'MariaDB'))
 
@@ -71,6 +72,7 @@ async function load() {
     // Degrade gracefully if an older backend omits the postgres block.
     data.postgres = { host: 'localhost', port: 5432, admin_user: 'postgres', password_set: false, ...(data.postgres || {}), root_password: '' }
     form.value = data
+    originalProcessManager.value = data.production?.process_manager ?? 'none'
   } catch (e) {
     loadError.value = e.message
   } finally {
@@ -131,7 +133,8 @@ async function save() {
     if (!d.ok) { saveError.value = d.error; return }
 
     const pm = form.value.production.process_manager
-    const setupCommand = pm !== 'none' ? 'setup-production' : null
+    const pmChanged = pm !== originalProcessManager.value
+    const setupCommand = pmChanged && pm !== 'none' ? 'setup-production' : null
 
     if (setupCommand) {
       const taskRes = await fetch('/api/tasks/run', {

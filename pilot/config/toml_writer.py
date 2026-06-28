@@ -107,8 +107,9 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append("")
 
     v = config.volume
+    parts.append("[volume]")
+    parts.append(f"enabled = {'true' if v.enabled else 'false'}")
     if v.enabled:
-        parts.append("[volume]")
         parts.append(f'pool = "{v.pool}"')
         parts.append(f'backing = "{v.backing}"')
         if v.backing == "image":
@@ -123,6 +124,6 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append("[volume.dataset]")
         parts.append(f'reservation = "{v.dataset.reservation}"')
         parts.append(f'quota = "{v.dataset.quota}"')
-        parts.append("")
+    parts.append("")
 
     return "\n".join(parts)

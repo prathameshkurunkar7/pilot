@@ -197,8 +197,13 @@ class BenchConfig:
         image_data = data.get("image", {})
         # Older tomls predate `backing`: an explicit device implies device backing.
         backing = data.get("backing") or ("device" if data.get("device") else "auto")
+        if "enabled" in data:
+            enabled = bool(data["enabled"])
+        else:
+            # Legacy: [volume] section without enabled key means it was enabled.
+            enabled = True
         return VolumeConfig(
-            enabled=data.get("enabled", True),
+            enabled=enabled,
             pool=data.get("pool", "bench-pool"),
             name=data.get("name", ""),
             backing=backing,
