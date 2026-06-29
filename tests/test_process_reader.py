@@ -243,10 +243,10 @@ def _patch_managers(systemd_running: bool, supervisor_running: bool):
     mock_supervisor = MagicMock()
     mock_supervisor.is_running.return_value = supervisor_running
     return (
-        patch("bench_cli.config.bench_config.BenchConfig.from_file"),
-        patch("bench_cli.core.bench.Bench"),
-        patch("bench_cli.managers.process_managers.systemd.SystemdProcessManager", return_value=mock_systemd),
-        patch("bench_cli.managers.process_managers.supervisor.SupervisorProcessManager", return_value=mock_supervisor),
+        patch("pilot.config.bench_config.BenchConfig.from_file"),
+        patch("pilot.core.bench.Bench"),
+        patch("pilot.managers.process_managers.systemd.SystemdProcessManager", return_value=mock_systemd),
+        patch("pilot.managers.process_managers.supervisor.SupervisorProcessManager", return_value=mock_supervisor),
         mock_systemd,
         mock_supervisor,
     )

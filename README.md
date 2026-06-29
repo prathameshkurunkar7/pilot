@@ -1,6 +1,6 @@
-# bench-cli
+# Pilot
 
-[![Unit Tests](https://github.com/frappe/bench-cli/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/frappe/bench-cli/actions/workflows/unit-tests.yml)
+[![Unit Tests](https://github.com/frappe/pilot/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/frappe/pilot/actions/workflows/unit-tests.yml)
 
 A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environments with Admin UI. Single `bench.toml`. No Docker.
 
@@ -8,12 +8,12 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 
 ## Improvements from legacy bench
 
-| | Legacy | bench-cli |
+| | Legacy | Pilot |
 |---|---|---|
 | Dependencies | ~20 Python packages | Zero — stdlib only |
 | Marketplace | None | App registry `registry/apps.json` |
 | Config | None | Single `bench.toml` |
-| Folder layout | Wherever you `bench init` | All benches under `bench-cli/benches/` |
+| Folder layout | Wherever you `bench init` | All benches under `pilot/benches/` |
 | Process manager | Honcho / Supervisor | Built-in Procfile runner |
 | Python env | pip + virtualenv | [uv](https://github.com/astral-sh/uv) (auto-installed) |
 | Admin UI | None | Built-in — app status, sites, logs, task runner, process memory/CPU, live settings |
@@ -28,19 +28,19 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash
 ```
 
 On bare Alpine (no curl/bash preinstalled) bootstrap with busybox `wget` + `sh`
 instead — the installer apk-installs git, curl, bash, sudo and the build deps itself:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | sh
+wget -qO- https://raw.githubusercontent.com/frappe/pilot/main/install.sh | sh
 ```
 
 This single command:
 
-- Clones bench-cli to `~/bench-cli` and adds `bench` to your `PATH`
+- Clones pilot to `~/pilot` and adds `bench` to your `PATH`
 - Installs [`uv`](https://github.com/astral-sh/uv) and Node.js if missing
 - Creates the isolated admin environment (`.admin-venv`) used by the setup wizard and admin UI
 - Configures **passwordless sudo** for your user (see below)
@@ -69,14 +69,14 @@ Pass flags after `--`, or set the matching environment variables, to skip all pr
 
 ```bash
 # Unattended, as root: create/use user "frappe" and finish silently
-curl -fsSL https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | bash -s -- --user frappe -y
+curl -fsSL https://raw.githubusercontent.com/frappe/pilot/main/install.sh | bash -s -- --user frappe -y
 ```
 
 ### Manual install
 
 ```bash
-git clone https://github.com/frappe/bench-cli ~/bench-cli
-echo 'export PATH="$HOME/bench-cli:$PATH"' >> ~/.zshrc && source ~/.zshrc
+git clone https://github.com/frappe/pilot ~/pilot
+echo 'export PATH="$HOME/pilot:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
 If you install manually, make sure your user has **passwordless sudo** — bench needs it (see
@@ -204,7 +204,7 @@ Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files a
 | `bench rename-site <old> <new>` | Rename a site (checks the hostname is free across all benches) |
 | `bench build` | Download pre-built assets (use `--force` to rebuild from source) |
 | `bench update [--apps ..]` | git pull → reinstall deps → rebuild assets → migrate all sites; fails fast on the first error; on ZFS benches takes a snapshot first and auto-rolls back on failure |
-| `bench upgrade` | Pull latest bench-cli and download the admin frontend |
+| `bench upgrade` | Pull latest pilot and download the admin frontend |
 | `bench setup config` | Regenerate Procfile and config files from bench.toml |
 | `bench build-admin` | Rebuild admin frontend assets from source |
 | `bench generate-admin-session` | Issue a 5-minute, single-use admin sign-in link (`--full-path` for the URL) |
@@ -224,12 +224,12 @@ With multiple benches: `bench -b my-bench start`
 ## Extending the CLI
 
 Commands are **self-registering** — adding one means creating a single file under
-`bench_cli/commands/`. No edits to `cli.py` or any central list. Subclass `Command`,
+`pilot/commands/`. No edits to `cli.py` or any central list. Subclass `Command`,
 declare its name/help/arguments, and a registry auto-discovers it:
 
 ```python
-# bench_cli/commands/hello.py
-from bench_cli.commands.base import Command
+# pilot/commands/hello.py
+from pilot.commands.base import Command
 
 
 class HelloCommand(Command):
@@ -306,14 +306,14 @@ The built-in admin UI runs on port 8002 (configurable via `[admin] port`).
 | Tasks | Multi-step task view with collapsible output per step; task history |
 | Database | MariaDB process list, slow queries, binary log viewer |
 | Settings | Tabbed — Bench ports, MariaDB (read-only), Redis ports, Workers, Nginx, HTTPS toggle (`admin.tls` + Let's Encrypt), Production process manager, ZFS Volume (Linux); saves to `bench.toml` and restarts affected processes automatically |
-| Updates | Check for bench-cli updates and apply in one click |
+| Updates | Check for pilot updates and apply in one click |
 
 All forms validate input before submission — site names are checked for valid hostname format, repository URLs for valid git URL format, branch names for legal characters, cron expressions for valid 5-field syntax, and port numbers for the 1–65535 range.
 
 ## Directory layout
 
 ```
-bench-cli/
+pilot/
 └── benches/
     └── my-bench/
         ├── bench.toml              # infra config (python, db, redis, workers)
@@ -383,7 +383,7 @@ pip install -e ".[test]"
 pytest tests/ --ignore=tests/integration
 
 # Run with coverage
-pytest tests/ --ignore=tests/integration --cov=bench_cli --cov-report=term-missing
+pytest tests/ --ignore=tests/integration --cov=pilot --cov-report=term-missing
 ```
 
 Unit tests run against mocked filesystems — no MariaDB, Redis, or network required.

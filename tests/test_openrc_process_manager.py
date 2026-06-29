@@ -3,8 +3,8 @@ from __future__ import annotations
 import getpass
 from pathlib import Path
 
-from bench_cli.managers.process_manager import ProcessDefinition
-from bench_cli.managers.process_managers.openrc import OpenRCRenderer
+from pilot.managers.process_manager import ProcessDefinition
+from pilot.managers.process_managers.openrc import OpenRCRenderer
 
 
 def _pd(name: str = "web", command: str = "/usr/bin/gunicorn frappe.app") -> ProcessDefinition:

@@ -11,7 +11,7 @@ import pytest
 
 from admin.backend.tasks.manager.task_runner import TaskRunner, TASK_RETENTION_LIMIT
 from admin.backend.tasks.manager.task_reader import TaskReader
-from bench_cli.exceptions import TaskNotFoundError, TaskNotRunningError
+from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 
 
 # ── TaskRunner._generate_task_id ────────────────────────────────────────────
@@ -56,6 +56,15 @@ def test_build_argv_uninstall_app(tmp_path: Path) -> None:
     argv = runner._build_argv("uninstall-app", {"site": "mysite.localhost", "app": "erpnext"})
     python = str(tmp_path / "env" / "bin" / "python")
     assert argv == [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", "mysite.localhost", "uninstall-app", "erpnext", "--yes", "--no-backup"]
+
+
+def test_build_argv_new_site_carries_no_db_type(tmp_path: Path) -> None:
+    # The engine is a bench-level setting now, so site tasks never pass --db-type.
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv("new-site", {"name": "site1.localhost", "admin_password": "x"})
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.new_site_task"]
+    assert "site1.localhost" in argv
+    assert "--db-type" not in argv
 
 
 def test_build_argv_get_app(tmp_path: Path) -> None:
