@@ -565,9 +565,17 @@ def test_db_type_postgres_roundtrip() -> None:
     assert 'db_type = "postgres"' in bench_config_to_toml(config)
 
 
-def test_invalid_db_type_rejected() -> None:
+def test_db_type_sqlite_roundtrip() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["bench"]["db_type"] = "sqlite"
+    config = load_from_dict(data)
+    assert config.db_type == "sqlite"
+    assert 'db_type = "sqlite"' in bench_config_to_toml(config)
+
+
+def test_invalid_db_type_rejected() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["bench"]["db_type"] = "mongodb"
     with pytest.raises(ConfigError) as exc_info:
         load_from_dict(data)
     assert "bench.db_type" in str(exc_info.value)

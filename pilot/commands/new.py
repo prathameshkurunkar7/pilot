@@ -26,7 +26,7 @@ class NewCommand(Command):
         parser.add_argument(
             "--database",
             default="mariadb",
-            choices=["mariadb", "postgres"],
+            choices=["mariadb", "postgres", "sqlite"],
             help="Database engine for this bench's sites (default: mariadb).",
         )
 

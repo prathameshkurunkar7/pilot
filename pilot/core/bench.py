@@ -57,6 +57,8 @@ class Bench:
         if self.config.db_type == "postgres":
             pg = self.config.postgres
             return ["--db-root-username", pg.admin_user, "--db-root-password", self.postgres_root_password()]
+        if self.config.db_type == "sqlite":
+            return []
         mariadb = self.config.mariadb
         return ["--db-root-username", mariadb.admin_user, "--db-root-password", mariadb.root_password]
 

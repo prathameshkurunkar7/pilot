@@ -28,10 +28,16 @@ class Site:
         """Build a frappe bench_helper command."""
         return [*self.bench.frappe_call, *args]
 
-    def create(self) -> None:
+    def create(self, db_type: str | None = None) -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "new-site", self.config.name)
         cmd += ["--admin-password", self.config.admin_password]
-        cmd += self._postgres_db_args() if self.bench.config.db_type == "postgres" else self._mariadb_db_args()
+        effective = db_type or self.bench.config.db_type
+        if effective == "postgres":
+            cmd += self._postgres_db_args()
+        elif effective == "sqlite":
+            cmd += self._sqlite_db_args()
+        else:
+            cmd += self._mariadb_db_args()
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
     def _mariadb_db_args(self) -> list[str]:
@@ -60,6 +66,9 @@ class Site:
             "--db-root-username", postgres.admin_user,
             "--db-root-password", self.bench.postgres_root_password(),
         ]
+
+    def _sqlite_db_args(self) -> list[str]:
+        return ["--db-type", "sqlite"]
 
     def restore(self, db_file: str, public_files: str | None = None, private_files: str | None = None) -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "restore", db_file)

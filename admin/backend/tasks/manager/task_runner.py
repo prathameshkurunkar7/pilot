@@ -153,6 +153,8 @@ class TaskRunner:
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.new_site_task", str(self._bench_root), args["name"]]
             if args.get("admin_password"):
                 argv += ["--admin-password", args["admin_password"]]
+            if args.get("db_type"):
+                argv += ["--db-type", args["db_type"]]
             return argv
         if command == "drop-site":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.drop_site_task", str(self._bench_root), args["site"]]

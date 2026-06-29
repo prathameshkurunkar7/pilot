@@ -36,11 +36,14 @@ const BASE_TABS = [
 ]
 const isLinux = ref(false)
 const TABS = computed(() => {
-  // A bench runs a single engine — show only that engine's tab (after Appearance).
-  const dbTab = form.value?.bench?.db_type === 'postgres'
+  const dbType = form.value?.bench?.db_type
+  const dbTab = dbType === 'postgres'
     ? { key: 'postgres', label: 'PostgreSQL' }
+    : dbType === 'sqlite' ? null
     : { key: 'mariadb', label: 'MariaDB' }
-  const tabs = [...BASE_TABS.slice(0, 3), dbTab, ...BASE_TABS.slice(3)]
+  const tabs = [...BASE_TABS.slice(0, 3)]
+  if (dbTab) tabs.push(dbTab)
+  tabs.push(...BASE_TABS.slice(3))
   if (isLinux.value) tabs.push({ key: 'volume', label: 'ZFS Volume' })
   return tabs
 })
@@ -55,7 +58,12 @@ const saveSuccess = ref('')
 
 const form = ref(null)
 
-const dbEngineLabel = computed(() => (form.value?.bench?.db_type === 'postgres' ? 'PostgreSQL' : 'MariaDB'))
+const dbEngineLabel = computed(() => {
+  const t = form.value?.bench?.db_type
+  if (t === 'postgres') return 'PostgreSQL'
+  if (t === 'sqlite') return 'SQLite'
+  return 'MariaDB'
+})
 
 async function load() {
   loading.value = true

@@ -132,14 +132,20 @@ def create():
 
     name = (data.get("name") or "").strip()
     admin_password = (data.get("admin_password") or "admin").strip() or "admin"
+    db_type = (data.get("db_type") or "").strip()
+    if db_type and db_type not in ("mariadb", "postgres", "sqlite"):
+        return jsonify({"ok": False, "error": f"Invalid db_type '{db_type}'."})
     err = validate_site_name(name) or _new_site_name_error(bench_root, name)
     if err:
         return jsonify({"ok": False, "error": err})
 
+    task_args: dict = {"name": name, "admin_password": admin_password}
+    if db_type:
+        task_args["db_type"] = db_type
     try:
         task_id = TaskRunner(bench_root).run(
             "new-site",
-            {"name": name, "admin_password": admin_password},
+            task_args,
             callbacks={"on_failure": new_site_failure_callback},
         )
     except Exception as e:

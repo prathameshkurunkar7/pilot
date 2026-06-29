@@ -202,9 +202,9 @@ def _assign_postgres_port(bench_root: Path, settings: dict) -> None:
 def _validate(data: dict) -> str | None:
     if not data.get("admin_password"):
         return "admin_password is required"
-    # Each engine needs its superuser password: frappe connects over TCP, where a
-    # blank password fails password auth and would only surface at first site
-    # creation. init sets this password on a fresh install.
+    # Each server-based engine needs its superuser password: frappe connects over
+    # TCP, where a blank password fails password auth and would only surface at
+    # first site creation. init sets this password on a fresh install.
     db_type = data.get("db_type", "mariadb")
     if db_type == "mariadb" and not data.get("mariadb_password"):
         return "mariadb_password is required"

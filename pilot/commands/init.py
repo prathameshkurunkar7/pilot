@@ -209,6 +209,8 @@ class InitCommand(Command):
         # A bench runs exactly one engine; install/provision only that one.
         if self.bench.config.db_type == "postgres":
             self._postgres_manager().provision()
+        elif self.bench.config.db_type == "sqlite":
+            pass
         else:
             self._install_mariadb()
 

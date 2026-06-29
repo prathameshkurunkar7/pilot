@@ -47,6 +47,8 @@ const selectedSuffix = ref('')
 const adminPassword = ref('')
 const creating = ref(false)
 const createError = ref('')
+const benchDbType = ref('')
+const siteDbType = ref('')
 const restoreFromBackup = ref(false)
 const restoreMode = ref('existing')
 const backupSourceSite = ref('')
@@ -110,7 +112,7 @@ async function createSite() {
       res = await fetch('/api/sites/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: siteName.value.trim(), admin_password: adminPassword.value.trim() }),
+        body: JSON.stringify({ name: siteName.value.trim(), admin_password: adminPassword.value.trim(), db_type: siteDbType.value }),
       })
     } else if (restoreMode.value === 'existing') {
       const set = backupSets.value.find(s => s.timestamp === selectedBackupTs.value)
@@ -158,6 +160,12 @@ function openCreate() {
   adminPassword.value = ''
   loadWildcardDomains()
   createError.value = ''
+  benchDbType.value = ''
+  siteDbType.value = ''
+  fetch('/api/status').then(r => r.json()).then(d => {
+    benchDbType.value = d.db_type || 'mariadb'
+    siteDbType.value = benchDbType.value
+  }).catch(() => {})
   restoreFromBackup.value = false
   restoreMode.value = 'existing'
   backupSourceSite.value = ''
@@ -272,6 +280,30 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
             </div>
           </div>
           <FormControl label="Admin Password" type="password" v-model="adminPassword" placeholder="admin" description="Leave blank to use 'admin'" />
+
+          <div v-if="siteDbType">
+            <span class="mb-1.5 block text-xs text-ink-gray-5">Database</span>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                class="rounded-lg border p-3 text-left transition-colors"
+                :class="siteDbType !== 'sqlite' ? 'border-outline-gray-3 bg-surface-gray-2' : 'border-outline-gray-2 hover:bg-surface-gray-1'"
+                @click="siteDbType = benchDbType !== 'sqlite' ? benchDbType : 'mariadb'"
+              >
+                <span class="block text-sm font-medium text-ink-gray-9">{{ benchDbType === 'postgres' ? 'PostgreSQL' : 'MariaDB' }}</span>
+                <span class="block text-xs text-ink-gray-5">Recommended</span>
+              </button>
+              <button
+                type="button"
+                class="rounded-lg border p-3 text-left transition-colors"
+                :class="siteDbType === 'sqlite' ? 'border-outline-gray-3 bg-surface-gray-2' : 'border-outline-gray-2 hover:bg-surface-gray-1'"
+                @click="siteDbType = 'sqlite'"
+              >
+                <span class="block text-sm font-medium text-ink-gray-9">SQLite</span>
+                <span class="block text-xs text-ink-gray-5">Experimental</span>
+              </button>
+            </div>
+          </div>
 
           <div class="border-t pt-4">
             <Switch v-model="restoreFromBackup" label="Restore from backup" />

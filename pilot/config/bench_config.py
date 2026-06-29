@@ -272,8 +272,8 @@ class BenchConfig:
             raise ConfigError(f"bench.socketio_backend '{self.socketio_backend}' is invalid. Must be 'python' or 'node'.")
 
     def _validate_db_type(self) -> None:
-        if self.db_type not in ("mariadb", "postgres"):
-            raise ConfigError(f"bench.db_type '{self.db_type}' is invalid. Must be 'mariadb' or 'postgres'.")
+        if self.db_type not in ("mariadb", "postgres", "sqlite"):
+            raise ConfigError(f"bench.db_type '{self.db_type}' is invalid. Must be 'mariadb', 'postgres', or 'sqlite'.")
 
     def _validate_redis_ports(self) -> None:
         ports = [self.redis.cache_port, self.redis.queue_port]

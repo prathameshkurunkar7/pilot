@@ -176,8 +176,8 @@ def new():
         process_manager = "openrc"
 
     db_type = (data.get("db_type") or "mariadb").strip()
-    if db_type not in ("mariadb", "postgres"):
-        return jsonify({"error": "Database must be 'mariadb' or 'postgres'."}), 400
+    if db_type not in ("mariadb", "postgres", "sqlite"):
+        return jsonify({"error": "Database must be 'mariadb', 'postgres', or 'sqlite'."}), 400
 
     admin_domain = (data.get("admin_domain") or "").strip()
     if not admin_domain:
