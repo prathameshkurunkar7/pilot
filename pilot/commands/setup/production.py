@@ -6,7 +6,6 @@ import sys
 from typing import TYPE_CHECKING, Optional
 
 from pilot.commands.base import Command
-from pilot.core.monitor import ConfigureMonitor
 from pilot.exceptions import BenchError
 from pilot.utils import host_owner
 
@@ -202,6 +201,8 @@ class SetupProductionCommand(Command):
         """Install the shared bench-monitor timer unit. Idempotent — safe to call on every bench setup.
         New benches are auto-discovered by the daemon; no re-install required when adding a bench.
         """
+        from pilot.core.monitor import ConfigureMonitor
+
         ConfigureMonitor().install()
 
     def _persist_production_state(self) -> None:

@@ -14,8 +14,6 @@ from pathlib import Path
 
 from pilot.exceptions import BenchError
 from pilot.loader import cli_root
-from pilot.managers.admin_env_manager import AdminEnvManager
-from pilot.managers.process_manager import ProcessManagerFactory
 from pilot.platform import is_linux
 from pilot.utils import run_command, iter_sibling_benches
 
@@ -80,6 +78,8 @@ class ConfigureMonitor:
         return ["systemctl", "--user", *args]
 
     def _render_unit(self) -> str:
+        from pilot.managers.admin_env_manager import AdminEnvManager
+
         root = cli_root()
         return MONITOR_DAEMON_TEMPLATE.format(
             cli_root=root,
@@ -138,6 +138,8 @@ class ToMonitor:
         self.admin_service_name = f"{self.bench.config.name}-admin"
 
     def systemd_processes(self):
+        from pilot.managers.process_manager import ProcessManagerFactory
+
         bench_process_manager: SystemdProcessManager = ProcessManagerFactory.create(self.bench)
         systemd_dir = self.bench.config_path / "systemd"
 
@@ -168,6 +170,8 @@ class ToMonitor:
         return pids
 
     def supervisord_processes(self):
+        from pilot.managers.process_manager import ProcessManagerFactory
+
         pids = {}
         bench_process_manager: SupervisorProcessManager = ProcessManagerFactory.create(self.bench)
 
