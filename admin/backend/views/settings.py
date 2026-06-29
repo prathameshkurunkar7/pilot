@@ -6,7 +6,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from pilot.config.bench_config import BenchConfig
-from pilot.config.toml_writer import bench_config_to_toml
+from pilot.config.toml_store import BenchTomlStore
 from pilot.config.worker_config import WorkerGroup
 from pilot.managers.redis_manager import RedisManager
 from pilot.managers.volume_manager import VolumeManager
@@ -297,7 +297,7 @@ def _build_settings_response(config: BenchConfig) -> dict:
 def get_settings():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        config = BenchConfig.from_file(bench_root / "bench.toml")
+        config = BenchTomlStore.for_bench(bench_root).read()
     except Exception as error:
         return jsonify({"error": str(error)}), 500
     return jsonify(_build_settings_response(config))
@@ -307,8 +307,9 @@ def get_settings():
 def update_settings():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
+    store = BenchTomlStore.for_bench(bench_root)
     try:
-        config = BenchConfig.from_file(bench_root / "bench.toml")
+        config = store.read()
     except Exception as error:
         return jsonify({"ok": False, "error": str(error)}), 500
 
@@ -325,7 +326,7 @@ def update_settings():
             return jsonify({"ok": False, "error": error}), 400
 
     try:
-        (bench_root / "bench.toml").write_text(bench_config_to_toml(config))
+        store.write(config)
     except Exception as error:
         return jsonify({"ok": False, "error": f"Failed to write config: {error}"}), 500
 

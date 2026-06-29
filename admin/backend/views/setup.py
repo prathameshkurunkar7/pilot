@@ -7,6 +7,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, stream_wit
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
 from pilot.config.bench_toml_builder import FRAMEWORK_BRANCHES, BenchTomlBuilder, current_port_offset
+from pilot.config.toml_store import BenchTomlStore
 
 setup_bp = Blueprint("setup", __name__)
 
@@ -64,8 +65,8 @@ def save_config():
 
     settings = {**existing, **data, "admin_enabled": True}
     _assign_postgres_port(bench_root, settings)
-    content = BenchTomlBuilder(_current_name(bench_root), settings, port_offset=current_port_offset(toml_path)).render()
-    toml_path.write_text(content)
+    config = BenchTomlBuilder(_current_name(bench_root), settings, port_offset=current_port_offset(toml_path)).build()
+    BenchTomlStore(toml_path).write(config)
 
     resp = jsonify({"ok": True})
     # Setting the password closes the open setup phase; hand back a session so the
@@ -397,10 +398,7 @@ def _volume_suggestions(toml_path: Path) -> dict:
     slider_bounds = {"rootfs_free_bytes": rootfs_free_bytes()}
 
     try:
-        import tomllib
-
-        with open(toml_path, "rb") as f:
-            has_volume_config = "volume" in tomllib.load(f)
+        has_volume_config = "volume" in BenchTomlStore(toml_path).read_raw()
     except Exception:
         has_volume_config = False
 

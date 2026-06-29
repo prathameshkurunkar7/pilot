@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
-import tomllib
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
@@ -177,8 +176,9 @@ class RunCommand(Command):
             print("\nSetup complete. Run 'bench start' to start your bench.\n", flush=True)
 
     def _admin_port(self) -> int:
+        from pilot.config.toml_store import BenchTomlStore
+
         try:
-            with open(self.bench.path / "bench.toml", "rb") as f:
-                return tomllib.load(f).get("admin", {}).get("port", 7000)
+            return BenchTomlStore.for_bench(self.bench.path).read_raw().get("admin", {}).get("port", 7000)
         except Exception:
             return 7000

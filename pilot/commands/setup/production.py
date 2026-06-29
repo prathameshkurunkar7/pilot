@@ -3,12 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import tomllib
 from typing import TYPE_CHECKING, Optional
 
 from pilot.commands.base import Command
 from pilot.exceptions import BenchError
-from pilot.utils import host_owner, write_toml
+from pilot.utils import host_owner
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -271,13 +270,15 @@ class SetupProductionCommand(Command):
 
     def _persist(self, updates: dict) -> None:
         """Merge ``updates`` into bench.toml in place, preserving all other fields."""
-        toml_path = self.bench.path / "bench.toml"
-        data = tomllib.loads(toml_path.read_text())
+        from pilot.config.toml_store import BenchTomlStore
+
+        store = BenchTomlStore.for_bench(self.bench.path)
+        data = store.read_raw()
         for section, values in updates.items():
             data.setdefault(section, {}).update(values)
         # Drop the deprecated production.nginx key — nginx is always on in prod.
         data.get("production", {}).pop("nginx", None)
-        write_toml(toml_path, data)
+        store.write_raw(data)
 
     def _write_dns_multitenancy(self) -> None:
         common_config_path = self.bench.sites_path / "common_site_config.json"

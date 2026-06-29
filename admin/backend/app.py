@@ -7,7 +7,6 @@ import os
 import re
 import socket
 import subprocess
-import tomllib
 import signal
 import threading
 import time
@@ -31,6 +30,7 @@ from .views.volume import volume_bp
 from pilot.commands.admin import _cli_root
 from pilot.commands.new import NewCommand
 from pilot.config.bench_config import BenchConfig
+from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import BenchError, ConfigError
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -171,20 +171,17 @@ def _site_count(bench_dir: Path) -> int:
 
 def _persist_toml(bench_dir: Path, updates: dict) -> None:
     """Merge ``updates`` into a bench's bench.toml in place, preserving other keys."""
-    from pilot.utils import write_toml
-
-    toml_path = bench_dir / "bench.toml"
-    data = tomllib.loads(toml_path.read_text())
+    store = BenchTomlStore.for_bench(bench_dir)
+    data = store.read_raw()
     for section, values in updates.items():
         data.setdefault(section, {}).update(values)
-    write_toml(toml_path, data)
+    store.write_raw(data)
 
 
 def _wizard_status(bench_root: Path) -> dict:
     name = bench_root.name
     try:
-        with open(bench_root / "bench.toml", "rb") as f:
-            name = tomllib.load(f).get("bench", {}).get("name", name)
+        name = BenchTomlStore.for_bench(bench_root).read_raw().get("bench", {}).get("name", name)
     except Exception:
         pass
     return {"wizard": True, "name": name, "enabled": True, "authenticated": True}
@@ -374,8 +371,7 @@ def create_app(bench_root: Path) -> Flask:
             if not toml_path.exists():
                 continue
             try:
-                with open(toml_path, "rb") as f:
-                    config = tomllib.load(f)
+                config = BenchTomlStore(toml_path).read_raw()
                 admin = config.get("admin", {})
                 prod = config.get("production", {})
                 port = admin.get("port")
@@ -430,8 +426,7 @@ def create_app(bench_root: Path) -> Flask:
             return jsonify({"ok": False, "error": f"Bench '{name}' not found."}), 404
 
         try:
-            with open(toml_path, "rb") as f:
-                target_config = tomllib.load(f)
+            target_config = BenchTomlStore(toml_path).read_raw()
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
         if not target_config.get("production", {}).get("enabled"):
@@ -548,8 +543,7 @@ def create_app(bench_root: Path) -> Flask:
         except BenchError as exc:
             return jsonify({"error": str(exc)}), 400
 
-        with open(new_dir / "bench.toml", "rb") as f:
-            new_toml = tomllib.load(f)
+        new_toml = BenchTomlStore.for_bench(new_dir).read_raw()
         new_port = new_toml["admin"]["port"]
 
         cli_root = _cli_root()
@@ -628,8 +622,7 @@ def create_app(bench_root: Path) -> Flask:
     def _nginx_http_port() -> int:
         # Shared host: one nginx serves every bench on the same http_port.
         try:
-            with open(bench_root / "bench.toml", "rb") as f:
-                return int(tomllib.load(f).get("nginx", {}).get("http_port", 80))
+            return int(BenchTomlStore.for_bench(bench_root).read_raw().get("nginx", {}).get("http_port", 80))
         except Exception:
             return 80
 
@@ -654,8 +647,7 @@ def create_app(bench_root: Path) -> Flask:
         # Read the flag straight from toml (no full validation) so a slightly
         # incomplete current config can't block creating a new bench.
         try:
-            with open(bench_root / "bench.toml", "rb") as f:
-                prod = tomllib.load(f).get("production", {})
+            prod = BenchTomlStore.for_bench(bench_root).read_raw().get("production", {})
             pm = str(prod.get("process_manager", "")).lower()
             return bool(prod.get("enabled", pm not in ("", "none")))
         except Exception:

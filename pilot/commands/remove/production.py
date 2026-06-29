@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import tomllib
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
-from pilot.utils import write_toml
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -54,13 +52,15 @@ class RemoveProductionCommand(Command):
     def _persist_disabled(self) -> None:
         """Set production.enabled = false but keep admin.domain so the bench can be
         redeployed without reconfiguration."""
-        toml_path = self.bench.path / "bench.toml"
-        data = tomllib.loads(toml_path.read_text())
+        from pilot.config.toml_store import BenchTomlStore
+
+        store = BenchTomlStore.for_bench(self.bench.path)
+        data = store.read_raw()
         production = data.setdefault("production", {})
         production["enabled"] = False
         production.pop("process_manager", None)
         production.pop("nginx", None)
-        write_toml(toml_path, data)
+        store.write_raw(data)
 
     def _print_summary(self) -> None:
         from pilot.admin_url import admin_url

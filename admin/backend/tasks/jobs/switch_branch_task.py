@@ -1,9 +1,8 @@
 import subprocess
 import sys
-import tomllib
 
+from pilot.config.toml_store import BenchTomlStore
 from pilot.managers.python_env_manager import PythonEnvManager
-from pilot.utils import write_toml
 from .base_task import BaseTask
 
 
@@ -55,14 +54,13 @@ class SwitchBranchTask(BaseTask):
         sys.stdout.flush()
         subprocess.run([uv, "pip", "install", "--python", python_bin, "-e", str(app_path)], check=False)
 
-        bench_toml = self.bench_root / "bench.toml"
-        with bench_toml.open("rb") as fh:
-            raw = tomllib.load(fh)
+        store = BenchTomlStore.for_bench(self.bench_root)
+        raw = store.read_raw()
         for app_entry in raw.get("apps", []):
             if app_entry.get("name") == self.name:
                 app_entry["branch"] = self.branch
                 break
-        write_toml(bench_toml, raw)
+        store.write_raw(raw)
         print(f"Updated bench.toml: {self.name} -> {self.branch}")
         sys.stdout.flush()
 

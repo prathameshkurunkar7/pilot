@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import argparse
 import getpass
-import tomllib
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
 from pilot.exceptions import BenchError
-from pilot.utils import write_toml
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -30,14 +28,16 @@ class SetAdminPasswordCommand(Command):
         self.password = password
 
     def run(self) -> None:
+        from pilot.config.toml_store import BenchTomlStore
+
         password = self.password or self._prompt()
         if not password:
             raise BenchError("Password must not be empty.")
 
-        toml_path = self.bench.path / "bench.toml"
-        data = tomllib.loads(toml_path.read_text())
+        store = BenchTomlStore.for_bench(self.bench.path)
+        data = store.read_raw()
         data.setdefault("admin", {})["password"] = password
-        write_toml(toml_path, data)
+        store.write_raw(data)
         self.bench.config.admin.password = password
         print("Admin password updated.")
 

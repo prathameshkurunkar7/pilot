@@ -414,13 +414,13 @@ def enable_ssl(name: str):
     if not config_path.exists():
         return jsonify({"ok": False, "error": "Site not found."}), 404
 
-    from pilot.config.bench_config import BenchConfig
-    from pilot.config.toml_writer import bench_config_to_toml
+    from pilot.config.toml_store import BenchTomlStore
 
     from ..validators import validate_email
 
+    store = BenchTomlStore.for_bench(bench_root)
     try:
-        config = BenchConfig.from_file(bench_root / "bench.toml")
+        config = store.read()
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -432,7 +432,7 @@ def enable_ssl(name: str):
             return jsonify({"ok": False, "error": err, "needs_email": True})
         config.letsencrypt.email = email
         try:
-            (bench_root / "bench.toml").write_text(bench_config_to_toml(config))
+            store.write(config)
         except Exception as e:
             return jsonify({"ok": False, "error": f"Failed to save email: {e}"}), 500
 

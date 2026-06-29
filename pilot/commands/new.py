@@ -53,6 +53,7 @@ class NewCommand(Command):
 
     def run(self) -> None:
         from pilot.config.bench_toml_builder import BenchTomlBuilder, default_ports
+        from pilot.config.toml_store import BenchTomlStore
 
         bench_toml = self.target_directory / "bench.toml"
         if bench_toml.exists():
@@ -109,7 +110,7 @@ class NewCommand(Command):
                     "mariadb_data_dir": f"/var/lib/mysql-{self.name}",
                 }
             )
-        bench_toml.write_text(BenchTomlBuilder(self.name, settings, port_offset=offset).render())
+        BenchTomlStore(bench_toml).write(BenchTomlBuilder(self.name, settings, port_offset=offset).build())
 
         admin_port = default_ports()["admin.port"] + offset
         print(f"\nBench '{self.name}' created at {self.target_directory}")

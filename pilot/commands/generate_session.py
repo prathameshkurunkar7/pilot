@@ -7,13 +7,11 @@ import hmac
 import json
 import secrets
 import time
-import tomllib
 import urllib.parse
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
 from pilot.exceptions import BenchError
-from pilot.utils import write_toml
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -74,13 +72,16 @@ def issue_login_token(secret: str) -> str:
 
 
 def ensure_jwt_secret(toml_path) -> str:
-    data = tomllib.loads(toml_path.read_text())
+    from pilot.config.toml_store import BenchTomlStore
+
+    store = BenchTomlStore(toml_path)
+    data = store.read_raw()
     secret = data.get("admin", {}).get("jwt_secret")
     if secret:
         return secret
     secret = secrets.token_urlsafe(32)
     data.setdefault("admin", {})["jwt_secret"] = secret
-    write_toml(toml_path, data)
+    store.write_raw(data)
     return secret
 
 
