@@ -48,7 +48,6 @@ VOLUMES = _truthy("E2E_VOLUMES")  # ZFS — dedicated only, mirrors production
 BENCH_NAME = f"e2e-postgres-{DB_MODE}" if DB_TYPE == "postgres" else f"e2e-{DB_MODE}{'-zfs' if VOLUMES else ''}"
 
 SITE = "site1.localhost"
-SITE_ADMIN_PASSWORD = "admin"
 MARIADB_PASSWORD = os.environ.get("E2E_MARIADB_PASSWORD", "admin")
 POSTGRES_PASSWORD = os.environ.get("E2E_POSTGRES_PASSWORD", "admin")
 
@@ -94,7 +93,7 @@ def test_logs_into_admin(bench, page):
 
 
 def test_creates_a_new_site(bench, page):
-    create_site(page, bench.admin_url, SITE, SITE_ADMIN_PASSWORD)
+    create_site(page, bench.admin_url, SITE)
     assert site_exists(page, bench.admin_url, SITE)
     # A fresh site always has frappe installed.
     assert "frappe" in installed_apps(page, bench.admin_url, SITE)
