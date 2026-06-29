@@ -439,15 +439,16 @@ class Monitor:
     def collect_system_metrics(self) -> None:
         if not self.is_system_log_authority:
             return
-        metrics = {
-            "load_avg": self._load_average(),
-            "cpu_percent": self._system_cpu_percent(),
-            "memory": self._memory_usage(),
-            "storage": self._storage_usage(),
-        }
-        stats = json.loads(self.system_log_path.read_text()) if self.system_log_path.exists() else {}
-        stats[datetime.now().isoformat()] = metrics
-        self.system_log_path.write_text(json.dumps(stats, indent=2))
+        self._append(
+            self.system_log_path,
+            {
+                "time": datetime.now().isoformat(),
+                "load_avg": self._load_average(),
+                "cpu_percent": self._system_cpu_percent(),
+                "memory": self._memory_usage(),
+                "storage": self._storage_usage(),
+            },
+        )
 
     def collect_application_metrics(self) -> None:
         processes = []
@@ -458,10 +459,17 @@ class Monitor:
                 continue
             processes.append(self._process_metrics(service, pid))
 
-        metrics = {"bench": self.bench.config.name, "processes": processes}
-        stats = json.loads(self.log_path.read_text()) if self.log_path.exists() else {}
-        stats[datetime.now().isoformat()] = metrics
-        self.log_path.write_text(json.dumps(stats, indent=2))
+        self._append(
+            self.log_path,
+            {"time": datetime.now().isoformat(), "bench": self.bench.config.name, "processes": processes},
+        )
+
+    @staticmethod
+    def _append(path: Path, record: dict) -> None:
+        # One compact JSON line per sample (JSON Lines). O(1) append — never reads
+        # or rewrites the whole file, so cost and disk use don't grow with history.
+        with path.open("a") as log_file:
+            log_file.write(json.dumps(record) + "\n")
 
 
 def resolve_monitor_log_path(bench_config: "BenchConfig"):
@@ -485,7 +493,9 @@ def _production_monitors() -> list[Monitor]:
     sentinel = cli_root() / "benches" / ".monitor-placeholder"
     return [
         Monitor(bench=Bench(bench_config, bench_path))
-        for bench_path, bench_config in iter_sibling_benches(sentinel)
+        for bench_path, bench_config in iter_sibling_benches(
+            sentinel,
+        )
         if bench_config.production.enabled
     ]
 
