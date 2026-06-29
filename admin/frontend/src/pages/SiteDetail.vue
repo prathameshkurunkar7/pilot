@@ -46,10 +46,7 @@ const uninstallTarget = ref('')
 const forceUninstallLoading = ref(false)
 const forceUninstallError = ref('')
 
-const showLogin = ref(false)
-const loginPassword = ref('')
 const loginLoading = ref(false)
-const loginError = ref('')
 
 const sslLoading = ref(false)
 const sslError = ref('')
@@ -243,24 +240,15 @@ async function setPrimary(domain) {
 }
 
 async function loginToSite() {
-  loginError.value = ''
+  actionError.value = ''
   loginLoading.value = true
   try {
-    const res = await fetch(`/api/sites/${siteName}/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: loginPassword.value }),
-    })
+    const res = await fetch(`/api/sites/${siteName}/login`, { method: 'POST' })
     const d = await res.json()
-    if (d.ok) {
-      showLogin.value = false
-      loginPassword.value = ''
-      window.open(d.url, '_blank')
-    } else {
-      loginError.value = d.error
-    }
+    if (d.ok) window.open(d.url, '_blank')
+    else actionError.value = d.error
   } catch (e) {
-    loginError.value = e.message
+    actionError.value = e.message
   } finally {
     loginLoading.value = false
   }
@@ -790,7 +778,7 @@ onMounted(() => {
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-2">
-            <Button variant="outline" @click="showLogin = true">
+            <Button variant="outline" :loading="loginLoading" @click="loginToSite">
               Login
             </Button>
           </div>
@@ -1161,22 +1149,6 @@ onMounted(() => {
           <Button variant="solid" :loading="sslLoading" :disabled="!sslEmail" @click="enableSsl(sslEmail)">
             Enable SSL
           </Button>
-        </div>
-      </template>
-    </Dialog>
-
-    <Dialog v-model="showLogin" :options="{ title: 'Login to Site', size: 'sm' }">
-      <template #body-content>
-        <div @pointerdown.stop>
-          <FormControl label="Administrator password" type="password" v-model="loginPassword" placeholder="admin"
-            @keydown.enter="loginToSite" />
-          <ErrorMessage :message="loginError" class="mt-2" />
-          <div class="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" @click="showLogin = false">Cancel</Button>
-            <Button variant="solid" :loading="loginLoading" :disabled="!loginPassword" @click="loginToSite">
-              Login
-            </Button>
-          </div>
         </div>
       </template>
     </Dialog>

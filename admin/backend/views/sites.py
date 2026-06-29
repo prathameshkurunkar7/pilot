@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import secrets
+import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
@@ -357,20 +358,39 @@ def force_uninstall_app(name: str):
     return jsonify({"ok": True})
 
 
+def _get_site_sid(bench_root: Path, site: str, user: str = "Administrator") -> tuple[str | None, str]:
+    import re
+
+    # bench binary lives at project root; bench_root is <project>/benches/<name>
+    bench_bin = bench_root.parent.parent / "bench"
+    bench_name = bench_root.name
+    benches_dir = bench_root.parent
+
+    result = subprocess.run(
+        [str(bench_bin), "-b", bench_name, "--site", site, "browse", "--user", user],
+        capture_output=True, text=True, timeout=30, cwd=str(benches_dir),
+    )
+    output = (result.stdout or "") + (result.stderr or "")
+    if m := re.search(r"sid=([a-zA-Z0-9]+)", output):
+        sid = m.group(1)
+        if sid and sid not in (user, "Guest"):
+            return sid, ""
+    return None, f"bench={bench_bin} exit={result.returncode}\n{output[:500]}"
+
+
 @sites_bp.route("/<name>/login", methods=["POST"])
 @require_scope(site_name)
 def login_to_site(name: str):
+    import json
+
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not (bench_root / "sites" / name / "site_config.json").exists():
+    site_config_path = bench_root / "sites" / name / "site_config.json"
+    if not site_config_path.exists():
         return jsonify({"ok": False, "error": "Site not found."}), 404
 
-    data = request.get_json(silent=True) or {}
-    password = (data.get("password") or "").strip()
-    if not password:
-        return jsonify({"ok": False, "error": "Password is required."})
-
-    import http.client
-    import urllib.parse
+    sid, debug = _get_site_sid(bench_root, name)
+    if not sid:
+        return jsonify({"ok": False, "error": "Could not create login session.", "debug": debug})
 
     from pilot.config.toml_store import BenchTomlStore
 
@@ -382,42 +402,9 @@ def login_to_site(name: str):
         http_port = 8000
         nginx_enabled = False
 
-    try:
-        conn = http.client.HTTPConnection("localhost", http_port, timeout=10)
-        conn.request(
-            "POST",
-            "/api/method/login",
-            body=urllib.parse.urlencode({"usr": "Administrator", "pwd": password}),
-            headers={
-                "Host": name,
-                "X-Frappe-Site-Name": name,
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-        )
-        resp = conn.getresponse()
-    except OSError as e:
-        return jsonify({"ok": False, "error": f"Could not reach site web server: {e}"})
-
-    if resp.status == 401:
-        return jsonify({"ok": False, "error": "Incorrect password."})
-    if resp.status != 200:
-        return jsonify({"ok": False, "error": f"Site returned HTTP {resp.status}."})
-
-    sid = None
-    for header, value in resp.getheaders():
-        if header.lower() == "set-cookie" and value.startswith("sid="):
-            sid = value.split("=", 1)[1].split(";")[0]
-            break
-
-    if not sid or sid == "Guest":
-        return jsonify({"ok": False, "error": "Login failed — wrong password?"})
-
-    # Behind nginx the site is served by domain on 80/443; only dev talks to the gunicorn port directly.
     if nginx_enabled:
-        import json
-
         try:
-            ssl = bool(json.loads((bench_root / "sites" / name / "site_config.json").read_text()).get("ssl"))
+            ssl = bool(json.loads(site_config_path.read_text()).get("ssl"))
         except Exception:
             ssl = False
         url = f"{'https' if ssl else 'http'}://{name}/desk?sid={sid}"
