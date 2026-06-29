@@ -17,30 +17,40 @@ from pilot.loader import cli_root
 from pilot.managers.admin_env_manager import AdminEnvManager
 from pilot.managers.process_manager import ProcessManagerFactory
 from pilot.platform import is_linux
-from pilot.utils import run_command
+from pilot.utils import run_command, iter_sibling_benches
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench
     from pilot.managers.supervisor_process_manager import SupervisorProcessManager
     from pilot.managers.systemd_process_manager import SystemdProcessManager
 
-# A plain long-running `systemd --user` daemon: no socket activation (it samples
-# continuously) and no idle timeout. It runs from the cli root so both `pilot`
-# and `admin` import, using the admin venv's Python (which has psutil/pymysql).
+# Oneshot `systemd --user` service driven by bench-monitor.timer (every 10s).
+# Runs from the cli root so both `pilot` and `admin` import, using the admin
+# venv's Python (which has psutil/pymysql).
+MONITOR_TIMER_TEMPLATE = """\
+[Unit]
+Description=bench monitor timer
+
+[Timer]
+OnBootSec=10s
+OnUnitInactiveSec=10s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+"""
+
 MONITOR_DAEMON_TEMPLATE = """\
 [Unit]
-Description={bench_name} monitor
+Description=bench monitor
 
 [Service]
-Type=simple
+Type=oneshot
 WorkingDirectory={cli_root}
 Environment=PYTHONPATH={cli_root}
-Environment=BENCH_MONITOR_ROOT={bench_root}
-ExecStart={python} -m pilot.core.monitor {bench_root}
-Restart=on-failure
-RestartSec=5
-StandardOutput=append:{bench_logs}/monitor.log
-StandardError=append:{bench_logs}/monitor.log.error.log
+ExecStart={python} -m pilot.core.monitor
+StandardOutput=append:/var/log/bench-monitor.log
+StandardError=append:/var/log/bench-monitor.error.log
 
 [Install]
 WantedBy=default.target
@@ -51,19 +61,14 @@ SYSTEMD_PID_PATTERN = re.compile(r"^MainPID=(?P<pid>\d+)", re.MULTILINE)
 
 
 class ConfigureMonitor:
-    """Generates and installs a `systemd --user` unit for the monitor daemon.
+    """Installs a single system-wide `systemd --user` unit that monitors all benches."""
 
-    Mirrors SystemdProcessManager: the unit file lives under the bench's
-    config/ dir and is symlinked into ~/.config/systemd/user/. The unit name is
-    namespaced by bench so multiple benches don't clash on a shared `monitor.service`.
-    """
-
-    def __init__(self, bench_root: Path):
-        from pilot.core.bench import Bench, BenchConfig
-
-        self.bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
-        self.unit_name = f"{self.bench.config.name}-monitor.service"
-        self.monitor_service_path = self.bench.config_path / "monitor" / self.unit_name
+    def __init__(self):
+        self.unit_name = "bench-monitor.service"
+        self.timer_unit_name = "bench-monitor.timer"
+        monitor_dir = cli_root() / "config" / "monitor"
+        self.monitor_service_path = monitor_dir / self.unit_name
+        self.monitor_timer_path = monitor_dir / self.timer_unit_name
         self.user_unit_dir = Path.home() / ".config" / "systemd" / "user"
 
     def _systemctl_env(self) -> dict:
@@ -77,10 +82,7 @@ class ConfigureMonitor:
     def _render_unit(self) -> str:
         root = cli_root()
         return MONITOR_DAEMON_TEMPLATE.format(
-            bench_name=self.bench.config.name,
             cli_root=root,
-            bench_root=self.bench.path,
-            bench_logs=self.bench.logs_path,
             python=AdminEnvManager(root).python,
         )
 
@@ -95,11 +97,24 @@ class ConfigureMonitor:
             link.unlink()
         link.symlink_to(self.monitor_service_path.resolve())
 
+    def _write_timer_unit(self) -> None:
+        self.monitor_timer_path.parent.mkdir(parents=True, exist_ok=True)
+        self.monitor_timer_path.write_text(MONITOR_TIMER_TEMPLATE)
+
+    def _install_user_timer_unit(self) -> None:
+        self.user_unit_dir.mkdir(parents=True, exist_ok=True)
+        link = self.user_unit_dir / self.timer_unit_name
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        link.symlink_to(self.monitor_timer_path.resolve())
+
     def install(self) -> None:
         self._write_unit()
         self._install_user_unit()
+        self._write_timer_unit()
+        self._install_user_timer_unit()
 
-        # Keep the user manager running after logout so the daemon survives, then
+        # Keep the user manager running after logout so the timer survives, then
         # make sure it's up before talking to `systemctl --user`.
         subprocess.run(
             ["sudo", "loginctl", "enable-linger", getpass.getuser()],
@@ -114,7 +129,7 @@ class ConfigureMonitor:
 
         env = self._systemctl_env()
         run_command(self._systemctl("daemon-reload"), env=env)
-        run_command(self._systemctl("enable", "--now", self.unit_name), env=env)
+        run_command(self._systemctl("enable", "--now", self.timer_unit_name), env=env)
 
 
 class ToMonitor:
@@ -182,9 +197,12 @@ class ToMonitor:
 class Monitor:
     """Implementation class for monitoring fetches and stores the details found in the proc dir"""
 
+    _AUTHORITY_FILE = Path("/var/log/.bench-authority")
+
     def __init__(self, bench: "Bench"):
         self.bench = bench
         self._cpu_snapshots: dict[int, tuple[int, int]] = {}
+        self._system_cpu_snapshot: tuple[int, int] | None = None
         self.setup()
 
     def _create_log_dataset_if_required(self) -> None:
@@ -205,6 +223,10 @@ class Monitor:
             return mountpoint / f"{bench_name}-stats.log"
         return Path(f"/var/log/{bench_name}-stats.log")
 
+    @property
+    def system_logs_path(self) -> Path:
+        return Path("/var/log/bench-system-stats.log")
+
     def setup_log_rotation(self) -> None:
         """Log size per bench for now is 500M we can expose via settings later"""
         log_file = self.logs_path
@@ -220,6 +242,23 @@ class Monitor:
 """
         config_path = Path(f"/etc/logrotate.d/{self.bench.config.name}-stats")
         subprocess.run(["sudo", "tee", str(config_path)], input=config.encode(), capture_output=True, check=True)
+
+        system_config = f"""\
+{self.system_logs_path} {{
+    size 500M
+    rotate 3
+    compress
+    missingok
+    notifempty
+    copytruncate
+}}
+"""
+        subprocess.run(
+            ["sudo", "tee", "/etc/logrotate.d/bench-system-stats"],
+            input=system_config.encode(),
+            capture_output=True,
+            check=True,
+        )
 
     def setup(self) -> None:
         if not is_linux():
@@ -275,35 +314,100 @@ class Monitor:
             "open_fds": self._open_fds(pid),
         }
 
-    def collect(self) -> dict:
+    def _load_average(self) -> tuple[float, float, float]:
+        parts = Path("/proc/loadavg").read_text().split()
+        return float(parts[0]), float(parts[1]), float(parts[2])
+
+    def _system_cpu_percent(self) -> float:
+        fields = Path("/proc/stat").read_text().splitlines()[0].split()[1:]
+        ticks = [int(x) for x in fields]
+        idle = ticks[3] + (ticks[4] if len(ticks) > 4 else 0)
+        total = sum(ticks)
+        prev = self._system_cpu_snapshot
+        self._system_cpu_snapshot = (idle, total)
+        if prev is None:
+            return 0.0
+        delta_idle = idle - prev[0]
+        delta_total = total - prev[1]
+        return round((1 - delta_idle / delta_total) * 100, 2) if delta_total > 0 else 0.0
+
+    def _memory_usage(self) -> dict:
+        data = {}
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if ":" in line:
+                key, val = line.split(":", 1)
+                data[key.strip()] = int(val.strip().split()[0])
+        total_mb = round(data.get("MemTotal", 0) / 1024, 2)
+        available_mb = round(data.get("MemAvailable", 0) / 1024, 2)
+        used_mb = round(total_mb - available_mb, 2)
+        return {
+            "total_mb": total_mb,
+            "used_mb": used_mb,
+            "available_mb": available_mb,
+            "percent": round(used_mb / total_mb * 100, 2) if total_mb else 0.0,
+        }
+
+    @property
+    def is_system_log_authority(self):
+        system_log_authority_path = self._AUTHORITY_FILE
+        if not system_log_authority_path.exists():
+            system_log_authority_path.write_text(self.bench.config.name)
+            return True
+
+        authority_bench = system_log_authority_path.read_text()
+        if self.bench.config.name == authority_bench:
+            return True
+
+        for _, bench_config in iter_sibling_benches(self.bench.path):
+            # In case the bench has been dropped or being used in dev mode
+            # If that's not the case then the logging authority should remain with that bench.
+            if bench_config.name == authority_bench and bench_config.production.process_manager in (
+                "systemd",
+                "supervisor",
+            ):
+                return False
+
+        # We won't be using it for monitoring therefore update the monitoring authority
+        system_log_authority_path.write_text(self.bench.config.name)
+        return True
+
+    def collect_system_metrics(self) -> None:
+        if not self.is_system_log_authority:
+            return
+        metrics = {
+            "load_avg": self._load_average(),
+            "cpu_percent": self._system_cpu_percent(),
+            "memory": self._memory_usage(),
+        }
+        stats = json.loads(self.system_logs_path.read_text()) if self.system_logs_path.exists() else {}
+        stats[datetime.now().isoformat()] = metrics
+        self.system_logs_path.write_text(json.dumps(stats, indent=2))
+
+    def collect_application_metrics(self) -> None:
         processes = []
+
         for service, pid in ToMonitor(self.bench).to_monitor().items():
             if not Path(f"/proc/{pid}").exists():
                 processes.append({"service": service, "pid": pid, "missing": True})
                 continue
             processes.append(self._process_metrics(service, pid))
-        return {"bench": self.bench.config.name, "processes": processes}
 
-    def dump(self) -> None:
-        path = self.logs_path
-        stats = json.loads(path.read_text()) if path.exists() else {}
-        stats[datetime.now().isoformat()] = self.collect()
-        path.write_text(json.dumps(stats, indent=2))
+        metrics = {"bench": self.bench.config.name, "processes": processes}
+        stats = json.loads(self.logs_path.read_text()) if self.logs_path.exists() else {}
+        stats[datetime.now().isoformat()] = metrics
+        self.logs_path.write_text(json.dumps(stats, indent=2))
 
 
-def main(bench_name: Path) -> None:
-    from pilot.core.bench import Bench, BenchConfig
+def main() -> None:
+    from pilot.core.bench import Bench
 
-    bench_root = cli_root() / "benches" / bench_name
-    bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
-    monitor = Monitor(bench=bench)
-    monitor.dump()
+    # Sentinel path yields all benches in the benches/ directory
+    sentinel = cli_root() / "benches" / ".monitor"
+    for bench_path, bench_config in iter_sibling_benches(sentinel):
+        monitor = Monitor(bench=Bench(bench_config, bench_path))
+        monitor.collect_application_metrics()
+        monitor.collect_system_metrics()
 
 
 if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) != 2:
-        raise SystemExit("Usage: python -m pilot.core.monitor <bench_root>")
-
-    main(Path(sys.argv[1]))
+    main()
