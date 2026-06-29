@@ -9,6 +9,7 @@ from pilot.config.app_config import AppConfig
 from pilot.config.gunicorn_config import GunicornConfig
 from pilot.config.letsencrypt_config import LetsEncryptConfig
 from pilot.config.mariadb_config import MariaDBConfig
+from pilot.config.monitor_config import MonitorConfig
 from pilot.config.nginx_config import NginxConfig
 from pilot.config.postgres_config import PostgresConfig
 from pilot.config.production_config import ProductionConfig
@@ -23,9 +24,7 @@ _VERSION_PATTERN = re.compile(r"^\d+(\.\d+)*$")
 _ZFS_SIZE_PATTERN = re.compile(r"^[1-9]\d*[KMGTkmgt]?$")
 # Lenient hostname: dotted labels of alphanumerics/hyphens. Allows dev names
 # like "admin1.localhost" and real domains like "admin.example.com".
-_HOSTNAME_PATTERN = re.compile(
-    r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
-)
+_HOSTNAME_PATTERN = re.compile(r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
 _REDIS_PORT_MIN = 1024
 _REDIS_PORT_MAX = 65535
 _PORT_MIN = 1
@@ -48,6 +47,7 @@ class BenchConfig:
     db_type: str = "mariadb"
     default_branch: str = ""
     production: ProductionConfig = field(default_factory=ProductionConfig)
+    monitor: MonitorConfig = field(default_factory=MonitorConfig)
     nginx: NginxConfig = field(default_factory=NginxConfig)
     gunicorn: GunicornConfig = field(default_factory=GunicornConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
@@ -79,6 +79,7 @@ class BenchConfig:
         redis = cls._parse_redis(data.get("redis", {}))
         workers = cls._parse_workers(data.get("workers", []))
         production = cls._parse_production(data.get("production"))
+        monitor = cls._parse_monitor(data.get("monitor", {}))
         gunicorn = cls._parse_gunicorn(data.get("gunicorn", {}), bench_data.get("http_port", 8000))
         letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
         admin = cls._parse_admin(data.get("admin", {}))
@@ -100,6 +101,7 @@ class BenchConfig:
             redis=redis,
             workers=workers,
             production=production,
+            monitor=monitor,
             gunicorn=gunicorn,
             letsencrypt=letsencrypt,
             admin=admin,
@@ -154,6 +156,16 @@ class BenchConfig:
             enabled=enabled,
             process_manager=pm,
             use_companion_manager=data.get("use_companion_manager", False),
+        )
+
+    @staticmethod
+    def _parse_monitor(data: dict) -> MonitorConfig:
+        return MonitorConfig(
+            system_log_path=Path(data.get("system_log_path", "/var/log/bench-system-stats.log")),
+            authority_file_path=Path(data.get("authority_file_path", "/var/log/.bench-authority")),
+            system_log_max_size=data.get("system_log_max_size", "500M"),
+            application_log_max_size=data.get("application_log_max_size", "500M"),
+            log_path=Path(data["log_path"]) if "log_path" in data else None,
         )
 
     @staticmethod
@@ -251,7 +263,9 @@ class BenchConfig:
 
     def _validate_bench_name(self) -> None:
         if not _BENCH_NAME_PATTERN.match(self.name):
-            raise ConfigError(f"bench.name '{self.name}' is invalid. Must start with a letter and contain only letters, digits, underscores, or hyphens.")
+            raise ConfigError(
+                f"bench.name '{self.name}' is invalid. Must start with a letter and contain only letters, digits, underscores, or hyphens."
+            )
 
     def _validate_app_names_unique(self) -> None:
         names = [app.name for app in self.apps]
@@ -318,8 +332,7 @@ class BenchConfig:
                 )
         elif pm and pm not in VALID_PROCESS_MANAGERS:
             raise ConfigError(
-                f"production.process_manager '{pm}' is invalid (bench '{self.name}'). "
-                f"Must be one of {', '.join(VALID_PROCESS_MANAGERS)}."
+                f"production.process_manager '{pm}' is invalid (bench '{self.name}'). Must be one of {', '.join(VALID_PROCESS_MANAGERS)}."
             )
 
     def _validate_admin_domain(self) -> None:
@@ -345,17 +358,11 @@ class BenchConfig:
         if not self.gunicorn.worker_class:
             raise ConfigError("gunicorn.worker_class must not be empty.")
         if not isinstance(self.gunicorn.malloc_arena_max, int) or self.gunicorn.malloc_arena_max < 0:
-            raise ConfigError(
-                f"gunicorn.malloc_arena_max must be a non-negative integer, got '{self.gunicorn.malloc_arena_max}'."
-            )
+            raise ConfigError(f"gunicorn.malloc_arena_max must be a non-negative integer, got '{self.gunicorn.malloc_arena_max}'.")
         if not isinstance(self.gunicorn.max_requests, int) or self.gunicorn.max_requests < 0:
-            raise ConfigError(
-                f"gunicorn.max_requests must be a non-negative integer, got '{self.gunicorn.max_requests}'."
-            )
+            raise ConfigError(f"gunicorn.max_requests must be a non-negative integer, got '{self.gunicorn.max_requests}'.")
         if not isinstance(self.gunicorn.max_requests_jitter, int) or self.gunicorn.max_requests_jitter < 0:
-            raise ConfigError(
-                f"gunicorn.max_requests_jitter must be a non-negative integer, got '{self.gunicorn.max_requests_jitter}'."
-            )
+            raise ConfigError(f"gunicorn.max_requests_jitter must be a non-negative integer, got '{self.gunicorn.max_requests_jitter}'.")
 
     def _validate_mariadb_version(self) -> None:
         if self.mariadb.version and not _VERSION_PATTERN.match(self.mariadb.version):
@@ -365,8 +372,7 @@ class BenchConfig:
         instance = self.mariadb.instance
         if instance and not _BENCH_NAME_PATTERN.match(instance):
             raise ConfigError(
-                f"mariadb.instance '{instance}' is invalid. Must start with a letter and contain only "
-                "letters, digits, underscores, or hyphens."
+                f"mariadb.instance '{instance}' is invalid. Must start with a letter and contain only letters, digits, underscores, or hyphens."
             )
         if self.mariadb.data_dir and not Path(self.mariadb.data_dir).is_absolute():
             raise ConfigError(f"mariadb.data_dir '{self.mariadb.data_dir}' must be an absolute path.")
@@ -375,8 +381,7 @@ class BenchConfig:
         instance = self.postgres.instance
         if instance and not _BENCH_NAME_PATTERN.match(instance):
             raise ConfigError(
-                f"postgres.instance '{instance}' is invalid. Must start with a letter and contain only "
-                "letters, digits, underscores, or hyphens."
+                f"postgres.instance '{instance}' is invalid. Must start with a letter and contain only letters, digits, underscores, or hyphens."
             )
 
     def _validate_redis_version(self) -> None:

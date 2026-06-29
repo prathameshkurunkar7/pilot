@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from unittest.mock import patch, PropertyMock
+from unittest.mock import patch
 
 from pilot.config.bench_config import BenchConfig
 from pilot.config.mariadb_config import MariaDBConfig
@@ -25,7 +25,8 @@ def _make_bench(path: Path, name: str = "my-bench") -> Bench:
 def _make_monitor(bench: Bench, authority_file: Path) -> Monitor:
     with patch.object(Monitor, "setup"):
         monitor = Monitor(bench)
-    monitor._AUTHORITY_FILE = authority_file
+    monitor.bench.config.monitor.authority_file_path = authority_file
+    monitor.bench.config.monitor.log_path = bench.path / f"{bench.config.name}-stats.log"
     return monitor
 
 
@@ -127,10 +128,10 @@ def test_collect_system_metrics_writes_to_system_log_file(tmp_path: Path) -> Non
     authority_file = tmp_path / ".bench-authority"
     system_log_file = tmp_path / "bench-system-stats.log"
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    monitor.bench.config.monitor.system_log_path = system_log_file
     _fake_proc_reads(monitor)
 
-    with patch.object(Monitor, "system_logs_path", new_callable=PropertyMock, return_value=system_log_file):
-        monitor.collect_system_metrics()
+    monitor.collect_system_metrics()
 
     assert system_log_file.exists()
     entry = next(iter(json.loads(system_log_file.read_text()).values()))
@@ -144,12 +145,12 @@ def test_collect_system_metrics_does_not_write_app_log(tmp_path: Path) -> None:
     authority_file = tmp_path / ".bench-authority"
     system_log_file = tmp_path / "bench-system-stats.log"
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    monitor.bench.config.monitor.system_log_path = system_log_file
     _fake_proc_reads(monitor)
 
-    with patch.object(Monitor, "system_logs_path", new_callable=PropertyMock, return_value=system_log_file):
-        monitor.collect_system_metrics()
+    monitor.collect_system_metrics()
 
-    assert not monitor.logs_path.exists()
+    assert not monitor.log_path.exists()
 
 
 def test_collect_system_metrics_skipped_when_not_authority(tmp_path: Path) -> None:
@@ -157,10 +158,10 @@ def test_collect_system_metrics_skipped_when_not_authority(tmp_path: Path) -> No
     authority_file.write_text("other-bench")
     system_log_file = tmp_path / "bench-system-stats.log"
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    monitor.bench.config.monitor.system_log_path = system_log_file
 
     siblings = [_sibling("other-bench", "systemd")]
     with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter(siblings)):
-        with patch.object(Monitor, "system_logs_path", new_callable=PropertyMock, return_value=system_log_file):
-            monitor.collect_system_metrics()
+        monitor.collect_system_metrics()
 
     assert not system_log_file.exists()

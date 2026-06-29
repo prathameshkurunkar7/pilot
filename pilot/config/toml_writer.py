@@ -126,4 +126,16 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         parts.append(f'quota = "{v.dataset.quota}"')
     parts.append("")
 
+    # Only add monitoring section if production is enabled
+    if p.enabled:
+        mon = config.monitor
+        parts.append("[monitor]")
+        parts.append(f'system_log_path = "{mon.system_log_path}"')
+        parts.append(f'authority_file_path = "{mon.authority_file_path}"')
+        parts.append(f'system_log_max_size = "{mon.system_log_max_size}"')
+        parts.append(f'application_log_max_size = "{mon.application_log_max_size}"')
+        if mon.log_path:
+            parts.append(f'log_path = "{mon.log_path}"')
+        parts.append("")
+
     return "\n".join(parts)

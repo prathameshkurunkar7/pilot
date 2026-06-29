@@ -198,12 +198,13 @@ class SetupProductionCommand(Command):
             SystemdProcessManager(self.bench).remove_units()
 
     def _setup_monitoring(self):
-        """Install the shared bench-monitor timer unit. Idempotent — safe to call on every bench setup.
-        New benches are auto-discovered by the daemon; no re-install required when adding a bench.
-        """
-        from pilot.core.monitor import ConfigureMonitor
+        """Install the shared bench-monitor timer unit and persist monitor config to bench.toml."""
+        from pilot.config.toml_store import BenchTomlStore
+        from pilot.core.monitor import ConfigureMonitor, resolve_monitor_log_path
 
         ConfigureMonitor().install()
+        self.bench.config.monitor.log_path = resolve_monitor_log_path(self.bench.config)
+        BenchTomlStore(self.bench.path).write(self.bench.config)
 
     def _persist_production_state(self) -> None:
         """Write the production state to bench.toml LAST, so the switcher never

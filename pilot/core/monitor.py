@@ -15,10 +15,10 @@ from pathlib import Path
 from pilot.exceptions import BenchError
 from pilot.loader import cli_root
 from pilot.platform import is_linux
-from pilot.utils import run_command, iter_sibling_benches
+from pilot.utils import iter_sibling_benches, run_command
 
 if typing.TYPE_CHECKING:
-    from pilot.core.bench import Bench
+    from pilot.core.bench import Bench, BenchConfig
     from pilot.managers.supervisor_process_manager import SupervisorProcessManager
     from pilot.managers.systemd_process_manager import SystemdProcessManager
 
@@ -64,7 +64,7 @@ class ConfigureMonitor:
     def __init__(self):
         self.unit_name = "bench-monitor.service"
         self.timer_unit_name = "bench-monitor.timer"
-        monitor_dir = cli_root() / "config" / "monitor"
+        monitor_dir = cli_root() / "benches" / ".monitor"
         self.monitor_service_path = monitor_dir / self.unit_name
         self.monitor_timer_path = monitor_dir / self.timer_unit_name
         self.user_unit_dir = Path.home() / ".config" / "systemd" / "user"
@@ -201,42 +201,27 @@ class ToMonitor:
 class Monitor:
     """Implementation class for monitoring fetches and stores the details found in the proc dir"""
 
-    _AUTHORITY_FILE = Path("/var/log/.bench-authority")
-
     def __init__(self, bench: "Bench"):
         self.bench = bench
         self._cpu_snapshots: dict[int, tuple[int, int]] = {}
         self._system_cpu_snapshot: tuple[int, int] | None = None
         self.setup()
 
-    def _create_log_dataset_if_required(self) -> None:
-        from pilot.managers.volume_manager import VolumeManager
+    @property
+    def log_path(self) -> Path:
+        from pilot.config.monitor_config import MonitorConfig
 
-        volume = self.bench.config.volume
-        VolumeManager(volume).create_dataset(f"{volume.pool}/logs")
+        return self.bench.config.monitor.log_path or MonitorConfig.default_log_path(self.bench.config.name)
 
     @property
-    def logs_path(self) -> Path:
-        bench_name = self.bench.config.name
-        if self.bench.config.volume.enabled:
-            self._create_log_dataset_if_required()
-            from pilot.managers.volume_manager import VolumeManager
-
-            volume = self.bench.config.volume
-            mountpoint = VolumeManager(volume).get_mountpoint(f"{volume.pool}/logs")
-            return mountpoint / f"{bench_name}-stats.log"
-        return Path(f"/var/log/{bench_name}-stats.log")
-
-    @property
-    def system_logs_path(self) -> Path:
-        return Path("/var/log/bench-system-stats.log")
+    def system_log_path(self) -> Path:
+        return self.bench.config.monitor.system_log_path
 
     def setup_log_rotation(self) -> None:
-        """Log size per bench for now is 500M we can expose via settings later"""
-        log_file = self.logs_path
-        config = f"""\
-{log_file} {{
-    size 500M
+        monitor_cfg = self.bench.config.monitor
+        app_config = f"""\
+{self.log_path} {{
+    size {monitor_cfg.application_log_max_size}
     rotate 3
     compress
     missingok
@@ -244,12 +229,16 @@ class Monitor:
     copytruncate
 }}
 """
-        config_path = Path(f"/etc/logrotate.d/{self.bench.config.name}-stats")
-        subprocess.run(["sudo", "tee", str(config_path)], input=config.encode(), capture_output=True, check=True)
+        subprocess.run(
+            ["sudo", "tee", f"/etc/logrotate.d/{self.bench.config.name}-stats"],
+            input=app_config.encode(),
+            capture_output=True,
+            check=True,
+        )
 
         system_config = f"""\
-{self.system_logs_path} {{
-    size 500M
+{self.system_log_path} {{
+    size {monitor_cfg.system_log_max_size}
     rotate 3
     compress
     missingok
@@ -268,7 +257,7 @@ class Monitor:
         if not is_linux():
             BenchError("Monitoring is only supported on linux based machines.")
 
-        log_dir = self.logs_path.parent
+        log_dir = self.log_path.parent
         log_dir.mkdir(parents=True, exist_ok=True)
         subprocess.run(["sudo", "chown", f"{os.getuid()}:{os.getgid()}", str(log_dir)], check=True)
         self.setup_log_rotation()
@@ -353,7 +342,7 @@ class Monitor:
 
     @property
     def is_system_log_authority(self):
-        system_log_authority_path = self._AUTHORITY_FILE
+        system_log_authority_path = self.bench.config.monitor.authority_file_path
         if not system_log_authority_path.exists():
             system_log_authority_path.write_text(self.bench.config.name)
             return True
@@ -383,9 +372,9 @@ class Monitor:
             "cpu_percent": self._system_cpu_percent(),
             "memory": self._memory_usage(),
         }
-        stats = json.loads(self.system_logs_path.read_text()) if self.system_logs_path.exists() else {}
+        stats = json.loads(self.system_log_path.read_text()) if self.system_log_path.exists() else {}
         stats[datetime.now().isoformat()] = metrics
-        self.system_logs_path.write_text(json.dumps(stats, indent=2))
+        self.system_log_path.write_text(json.dumps(stats, indent=2))
 
     def collect_application_metrics(self) -> None:
         processes = []
@@ -397,20 +386,36 @@ class Monitor:
             processes.append(self._process_metrics(service, pid))
 
         metrics = {"bench": self.bench.config.name, "processes": processes}
-        stats = json.loads(self.logs_path.read_text()) if self.logs_path.exists() else {}
+        stats = json.loads(self.log_path.read_text()) if self.log_path.exists() else {}
         stats[datetime.now().isoformat()] = metrics
-        self.logs_path.write_text(json.dumps(stats, indent=2))
+        self.log_path.write_text(json.dumps(stats, indent=2))
+
+
+def resolve_monitor_log_path(bench_config: "BenchConfig"):
+    from pilot.config.monitor_config import MonitorConfig
+
+    bench_name = bench_config.name
+    if bench_config.volume.enabled:
+        from pilot.managers.volume_manager import VolumeManager
+
+        volume = bench_config.volume
+        VolumeManager(volume).create_dataset(f"{volume.pool}/logs")
+        mountpoint = VolumeManager(volume).get_mountpoint(f"{volume.pool}/logs")
+        return mountpoint / f"{bench_name}-stats.log"
+    return MonitorConfig.default_log_path(bench_name)
 
 
 def main() -> None:
     from pilot.core.bench import Bench
 
     # Sentinel path yields all benches in the benches/ directory
-    sentinel = cli_root() / "benches" / ".monitor"
+    sentinel = cli_root() / "benches" / ".monitor-placeholder"
     for bench_path, bench_config in iter_sibling_benches(sentinel):
-        monitor = Monitor(bench=Bench(bench_config, bench_path))
-        monitor.collect_application_metrics()
-        monitor.collect_system_metrics()
+        # Only monitor production enabled benches at all times
+        if bench_config.production.enabled:
+            monitor = Monitor(bench=Bench(bench_config, bench_path))
+            monitor.collect_application_metrics()
+            monitor.collect_system_metrics()
 
 
 if __name__ == "__main__":
