@@ -584,9 +584,9 @@ def create_app(bench_root: Path) -> Flask:
                     from pilot.managers.process_managers.supervisor import SupervisorProcessManager as PM
                 PM(bench).start_admin()
                 nginx = NginxManager(bench)
-                nginx.write_config()
+                nginx.generate_config()
                 nginx.install_config()
-                nginx.reload_manager_config()
+                nginx.reload()
                 # The admin now runs under the chosen process manager, so record
                 # the bench as production — otherwise `bench status`/`stop` fall
                 # back to the foreground (Procfile) manager and misreport it. The
