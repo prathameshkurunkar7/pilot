@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import subprocess
-import tomllib
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify
+
+from pilot.config.toml_store import BenchTomlStore
 
 from ..readers.process_reader import ProcessReader
 
@@ -13,8 +14,7 @@ processes_bp = Blueprint("processes", __name__)
 
 def _bench_name(bench_root: Path) -> str:
     try:
-        with open(bench_root / "bench.toml", "rb") as f:
-            return tomllib.load(f).get("bench", {}).get("name", "bench")
+        return BenchTomlStore.for_bench(bench_root).read_raw().get("bench", {}).get("name", "bench")
     except Exception:
         return "bench"
 

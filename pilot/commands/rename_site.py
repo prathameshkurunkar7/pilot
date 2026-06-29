@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import tomllib
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
@@ -90,18 +89,17 @@ class RenameSiteCommand(Command):
             path.write_text(json.dumps(data, indent=2) + "\n")
 
     def _rename_in_bench_toml(self) -> None:
-        from pilot.utils import write_toml
+        from pilot.config.toml_store import BenchTomlStore
 
-        bench_toml = self.bench.path / "bench.toml"
-        with bench_toml.open("rb") as fh:
-            raw = tomllib.load(fh)
+        store = BenchTomlStore.for_bench(self.bench.path)
+        raw = store.read_raw()
         renamed = False
         for site in raw.get("sites", []):
             if site.get("name") == self.old_name:
                 site["name"] = self.new_name
                 renamed = True
         if renamed:
-            write_toml(bench_toml, raw)
+            store.write_raw(raw)
 
     def _remove_stale_nginx_conf(self) -> None:
         # generate_config writes per-site confs but never prunes; drop the old one.

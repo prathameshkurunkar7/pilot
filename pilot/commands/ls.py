@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 
 from pilot.commands.base import Command
@@ -53,14 +52,14 @@ class ListCommand(Command):
         return rows
 
     def _describe(self, bench_dir: Path, toml_path: Path) -> dict:
-        from pilot.config.bench_config import BenchConfig
+        from pilot.config.toml_store import BenchTomlStore
         from pilot.core.bench import Bench
 
         name = bench_dir.name
         mode, manager, address, state, sites = "unknown", "-", "", "stopped", 0
         try:
             # Parse-only (no validate) so a half-configured bench still lists.
-            config = BenchConfig._from_dict(tomllib.loads(toml_path.read_text()))
+            config = BenchTomlStore(toml_path).read(validate=False)
             name = config.name or name
             prod = config.production
             if prod.enabled:

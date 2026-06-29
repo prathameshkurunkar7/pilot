@@ -182,7 +182,7 @@ class BenchTomlBuilder:
         self._settings = settings or {}
         self._port_offset = port_offset
 
-    def render(self) -> str:
+    def build(self) -> BenchConfig:
         config = _default_config(self._name)
         for key, value in self._settings.items():
             _apply_setting(config, key, value)
@@ -191,7 +191,10 @@ class BenchTomlBuilder:
                 _set_path(config, field, _get_path(config, field) + self._port_offset)
         if self._name:
             config.name = self._name
-        return bench_config_to_toml(config)
+        return config
+
+    def render(self) -> str:
+        return bench_config_to_toml(self.build())
 
     @classmethod
     def read_settings(cls, toml_path: Path) -> dict:

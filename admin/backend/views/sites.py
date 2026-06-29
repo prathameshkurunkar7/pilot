@@ -52,10 +52,10 @@ def detail(name: str):
     except Exception:
         installable = []
 
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.toml_store import BenchTomlStore
 
     try:
-        bench_config = BenchConfig.from_file(bench_root / "bench.toml")
+        bench_config = BenchTomlStore.for_bench(bench_root).read()
         http_port = bench_config.http_port
         nginx_enabled = bench_config.production.enabled
         admin_tls = bench_config.admin.tls
@@ -352,10 +352,10 @@ def login_to_site(name: str):
     import http.client
     import urllib.parse
 
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.toml_store import BenchTomlStore
 
     try:
-        bench_config = BenchConfig.from_file(bench_root / "bench.toml")
+        bench_config = BenchTomlStore.for_bench(bench_root).read()
         http_port = bench_config.http_port
         nginx_enabled = bench_config.production.enabled
     except Exception:
@@ -414,13 +414,13 @@ def enable_ssl(name: str):
     if not config_path.exists():
         return jsonify({"ok": False, "error": "Site not found."}), 404
 
-    from pilot.config.bench_config import BenchConfig
-    from pilot.config.toml_writer import bench_config_to_toml
+    from pilot.config.toml_store import BenchTomlStore
 
     from ..validators import validate_email
 
+    store = BenchTomlStore.for_bench(bench_root)
     try:
-        config = BenchConfig.from_file(bench_root / "bench.toml")
+        config = store.read()
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -432,7 +432,7 @@ def enable_ssl(name: str):
             return jsonify({"ok": False, "error": err, "needs_email": True})
         config.letsencrypt.email = email
         try:
-            (bench_root / "bench.toml").write_text(bench_config_to_toml(config))
+            store.write(config)
         except Exception as e:
             return jsonify({"ok": False, "error": f"Failed to save email: {e}"}), 500
 
@@ -464,11 +464,11 @@ def enable_ssl(name: str):
 
 
 def _domain_routes(bench_root: Path):
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.toml_store import BenchTomlStore
     from pilot.core.bench import Bench
     from pilot.core.domain_controller import DomainRouteProvider
 
-    bench = Bench(BenchConfig.from_file(bench_root / "bench.toml"), bench_root)
+    bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
     return DomainRouteProvider(bench)
 
 
@@ -653,7 +653,7 @@ def delete_backup_schedule(name: str):
 def _new_site_name_error(bench_root: Path, name: str) -> str | None:
     """Validate a new-site name before any task starts, so the error lands in the UI
     instead of failing mid-run. Mirrors NewSiteCommand._validate."""
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.toml_store import BenchTomlStore
     from pilot.utils import host_owner, normalize_host
 
     if (bench_root / "sites" / name / "site_config.json").exists():
@@ -664,7 +664,7 @@ def _new_site_name_error(bench_root: Path, name: str) -> str | None:
         return f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). All benches share one nginx, so hostnames must be unique."
 
     try:
-        admin_domain = BenchConfig.from_file(bench_root / "bench.toml").admin.domain
+        admin_domain = BenchTomlStore.for_bench(bench_root).read().admin.domain
     except Exception:
         admin_domain = ""
     if admin_domain and normalize_host(name) == normalize_host(admin_domain):

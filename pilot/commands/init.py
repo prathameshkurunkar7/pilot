@@ -130,13 +130,13 @@ class InitCommand(Command):
     def _ensure_admin_password(self) -> None:
         import secrets
 
-        from pilot.config.toml_writer import bench_config_to_toml
+        from pilot.config.toml_store import BenchTomlStore
 
         admin = self.bench.config.admin
         if not admin.enabled or admin.password:
             return
         admin.password = secrets.token_hex(nbytes=5)
-        (self.bench.path / "bench.toml").write_text(bench_config_to_toml(self.bench.config))
+        BenchTomlStore.for_bench(self.bench.path).write(self.bench.config)
 
     def _configure_redis(self) -> None:
         from pilot.managers.redis_manager import RedisManager

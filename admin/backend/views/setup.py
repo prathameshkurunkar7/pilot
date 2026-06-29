@@ -7,6 +7,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, stream_wit
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
 from pilot.config.bench_toml_builder import FRAMEWORK_BRANCHES, BenchTomlBuilder, current_port_offset
+from pilot.config.toml_store import BenchTomlStore
 
 setup_bp = Blueprint("setup", __name__)
 
@@ -55,17 +56,17 @@ def save_config():
     # Preserve any settings the wizard didn't send (e.g. python version, fields
     # not shown in the current step). Incoming data wins on conflicts.
     toml_path = bench_root / "bench.toml"
+    store = BenchTomlStore(toml_path)
     existing: dict = {}
     if toml_path.exists():
         try:
-            existing = BenchTomlBuilder.read_settings(toml_path)
+            existing = store.read_flat()
         except Exception:
             pass
 
     settings = {**existing, **data, "admin_enabled": True}
     _assign_postgres_port(bench_root, settings)
-    content = BenchTomlBuilder(_current_name(bench_root), settings, port_offset=current_port_offset(toml_path)).render()
-    toml_path.write_text(content)
+    store.write_flat(_current_name(bench_root), settings, port_offset=current_port_offset(toml_path))
 
     resp = jsonify({"ok": True})
     # Setting the password closes the open setup phase; hand back a session so the
@@ -175,7 +176,7 @@ def _mariadb_config(bench_root: Path, password: str, admin_user: str = "root", d
         toml_path = bench_root / "bench.toml"
         if toml_path.exists():
             try:
-                settings = BenchTomlBuilder.read_settings(toml_path)
+                settings = BenchTomlStore(toml_path).read_flat()
                 config.instance = settings.get("mariadb_instance", "") or ""
                 config.socket_path = settings.get("mariadb_socket_path", "") or ""
             except Exception:
@@ -243,7 +244,7 @@ def start_setup():
     # Pre-flight validation so config/volume errors surface in the wizard instead
     # of failing deep inside the task.
     try:
-        config = BenchConfig.from_file(bench_root / "bench.toml")
+        config = BenchTomlStore.for_bench(bench_root).read()
         config.validate()
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -345,7 +346,7 @@ def _read_defaults(bench_root: Path) -> dict:
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():
         try:
-            result.update(BenchTomlBuilder.read_settings(toml_path))
+            result.update(BenchTomlStore(toml_path).read_flat())
             if not result.get("bench_name"):
                 result["bench_name"] = bench_root.name
         except Exception:
@@ -397,10 +398,7 @@ def _volume_suggestions(toml_path: Path) -> dict:
     slider_bounds = {"rootfs_free_bytes": rootfs_free_bytes()}
 
     try:
-        import tomllib
-
-        with open(toml_path, "rb") as f:
-            has_volume_config = "volume" in tomllib.load(f)
+        has_volume_config = "volume" in BenchTomlStore(toml_path).read_raw()
     except Exception:
         has_volume_config = False
 
@@ -414,6 +412,6 @@ def _current_name(bench_root: Path) -> str:
     if not toml_path.exists():
         return bench_root.name
     try:
-        return BenchTomlBuilder.read_settings(toml_path).get("bench_name") or bench_root.name
+        return BenchTomlStore(toml_path).read_flat().get("bench_name") or bench_root.name
     except Exception:
         return bench_root.name

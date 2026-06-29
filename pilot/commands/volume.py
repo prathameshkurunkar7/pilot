@@ -125,9 +125,9 @@ class VolumeSetupCommand:
             return
         print(f"  {choice}")
         if self.bench_config is not None:
-            from pilot.config.toml_writer import bench_config_to_toml
+            from pilot.config.toml_store import BenchTomlStore
 
-            (self.bench_path / "bench.toml").write_text(bench_config_to_toml(self.bench_config))
+            BenchTomlStore.for_bench(self.bench_path).write(self.bench_config)
             print("  Saved resolved volume settings to bench.toml")
 
 

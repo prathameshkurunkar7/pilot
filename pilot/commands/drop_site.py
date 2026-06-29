@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import tomllib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -50,13 +49,12 @@ class DropSiteCommand:
             routes.release(domain)
 
     def _remove_from_bench_toml(self) -> None:
-        from pilot.utils import write_toml
+        from pilot.config.toml_store import BenchTomlStore
 
-        bench_toml = self.bench.path / "bench.toml"
-        with bench_toml.open("rb") as fh:
-            raw = tomllib.load(fh)
+        store = BenchTomlStore.for_bench(self.bench.path)
+        raw = store.read_raw()
         raw["sites"] = [s for s in raw.get("sites", []) if s.get("name") != self.name]
-        write_toml(bench_toml, raw)
+        store.write_raw(raw)
 
     def _reload_nginx(self) -> None:
         if not self.bench.config.production.enabled:
