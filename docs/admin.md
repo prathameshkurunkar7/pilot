@@ -519,6 +519,7 @@ Views catch `ConfigError`, `FileNotFoundError`, and database connection errors a
 - **Password is mandatory.** The admin refuses all requests with HTTP 503 if `[admin] password` is not set in `bench.toml`. There is no way to bypass authentication.
 - Sessions are Flask cookie-based. The session key is a random 32-byte hex string generated at startup — sessions are invalidated on process restart.
 - `bench generate-admin-session` issues a 5-minute, single-use `?sid=` token that the frontend exchanges for a 1-day `HttpOnly` session cookie — an alternative to password login, signed with `admin.jwt_secret` in `bench.toml`. See [docs/commands.md](commands.md#bench-generate-admin-session).
+- `bench issue-site-token` issues a scoped JWT (`scope: "site"`) for programmatic site-to-bench API calls. The token is restricted to the named site and cannot access other sites or bench-level endpoints. Use it as `Authorization: Bearer <token>`. See [docs/commands.md](commands.md#bench-issue-site-token).
 - `LogReader.read_tail` and `stream_tail` validate that the requested filename contains no path separators and resolves to a file inside `logs/`. Any traversal attempt returns HTTP 400.
 - Command execution uses `TaskRunner._build_argv`, which only accepts whitelisted commands. No user-supplied string is passed to a shell.
 - `task_id` values are validated against `^\d{8}-\d{6}-[0-9a-f]{6}$` before being used as directory names.

@@ -144,3 +144,28 @@ class GenerateSessionCommand(Command):
         secret = ensure_jwt_secret(self.bench.path / "bench.toml")
         self.bench.config.admin.jwt_secret = secret
         return secret
+
+
+class IssueSiteTokenCommand(Command):
+    name = "issue-site-token"
+    help = "Issue a scoped JWT for site-to-bench API calls."
+
+    @classmethod
+    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("site", help="Site name to scope the token to.")
+        parser.add_argument("--ttl", type=int, default=DEFAULT_TTL,
+                            help="Token TTL in seconds (default: 86400).")
+
+    @classmethod
+    def from_args(cls, args, bench):
+        return cls(bench, args.site, ttl=args.ttl)
+
+    def __init__(self, bench: "Bench", site: str, ttl: int = DEFAULT_TTL) -> None:
+        self.bench = bench
+        self.site = site
+        self.ttl = ttl
+
+    def run(self) -> None:
+        secret = ensure_jwt_secret(self.bench.path / "bench.toml")
+        self.bench.config.admin.jwt_secret = secret
+        print(issue_site_token(secret, self.site, ttl=self.ttl))
