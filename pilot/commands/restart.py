@@ -7,8 +7,8 @@ from pilot.commands.base import Command
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
-    from pilot.managers.supervisor_process_manager import SupervisorProcessManager
-    from pilot.managers.systemd_process_manager import SystemdProcessManager
+    from pilot.managers.process_managers.supervisor import SupervisorProcessManager
+    from pilot.managers.process_managers.systemd import SystemdProcessManager
 
 _DEV_MESSAGE = (
     "Restart is available only for production benches managed by\n"
@@ -42,15 +42,15 @@ class RestartCommand(Command):
             print(_DEV_MESSAGE)
             return
 
-        from pilot.managers.process_manager import ProcessManagerFactory
+        from pilot.managers.process_manager import ProcessManager
 
-        manager: SystemdProcessManager | SupervisorProcessManager = ProcessManagerFactory.create(self.bench)
+        manager: SystemdProcessManager | SupervisorProcessManager = ProcessManager.for_bench(self.bench)
         if not manager.is_configured():
             print(_incomplete_message(self.bench))
             return
 
-        manager.generate_config()
-        manager.reload()
+        manager.write_config()
+        manager.reload_manager_config()
         manager.restart()
         if self.admin:
             manager.restart_admin()

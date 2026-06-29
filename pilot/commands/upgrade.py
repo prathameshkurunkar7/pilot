@@ -49,9 +49,10 @@ class UpgradeCommand(Command):
         if not self.bench:
             return
         try:
-            from pilot.managers.process_manager import ProcessManager, ProcessManagerFactory
+            from pilot.managers.process_manager import ProcessManager
+            from pilot.managers.process_manager import ProcessManager
 
-            manager = ProcessManagerFactory.detect_running(self.bench)
+            manager = ProcessManager.detect_running(self.bench)
             if type(manager) is ProcessManager:
                 return
             print("Restarting bench processes...")

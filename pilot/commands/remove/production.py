@@ -29,15 +29,15 @@ class RemoveProductionCommand(Command):
 
     def _remove_process_manager(self, pm: str) -> None:
         if pm == "openrc":
-            from pilot.managers.openrc_process_manager import OpenRCProcessManager
+            from pilot.managers.process_managers.openrc import OpenRCProcessManager
 
             OpenRCProcessManager(self.bench).remove_services()
         elif pm == "systemd":
-            from pilot.managers.systemd_process_manager import SystemdProcessManager
+            from pilot.managers.process_managers.systemd import SystemdProcessManager
 
             SystemdProcessManager(self.bench).remove_units()
         else:
-            from pilot.managers.supervisor_process_manager import SupervisorProcessManager
+            from pilot.managers.process_managers.supervisor import SupervisorProcessManager
 
             SupervisorProcessManager(self.bench).shutdown()
 

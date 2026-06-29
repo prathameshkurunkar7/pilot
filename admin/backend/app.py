@@ -120,11 +120,11 @@ def _workload_running(bench_dir: Path, toml_path: Path) -> bool | None:
     gate start/stop/restart controls for other benches in the switcher. None
     if the check itself fails (e.g. process manager CLI not installed)."""
     from pilot.core.bench import Bench
-    from pilot.managers.process_manager import ProcessManagerFactory
+    from pilot.managers.process_manager import ProcessManager
 
     try:
         bench = Bench(BenchTomlStore(toml_path).read(), bench_dir)
-        return ProcessManagerFactory.create(bench).is_running()
+        return ProcessManager.for_bench(bench).is_running()
     except Exception:
         return None
 
@@ -135,11 +135,11 @@ def _admin_running(bench_dir: Path, toml_path: Path) -> bool | None:
     show 'Admin active' instead of 'Stopped' for a provisioned-but-not-started
     bench. None if the check fails."""
     from pilot.core.bench import Bench
-    from pilot.managers.process_manager import ProcessManagerFactory
+    from pilot.managers.process_manager import ProcessManager
 
     try:
-        bench = Bench(BenchTomlStore(toml_path).read(), bench_dir)
-        return ProcessManagerFactory.create(bench).admin_is_running()
+        bench = Bench(BenchConfig.from_file(toml_path), bench_dir)
+        return ProcessManager.for_bench(bench).is_admin_running()
     except Exception:
         return None
 
@@ -568,12 +568,12 @@ def create_app(bench_root: Path) -> Flask:
                 # via the factory, which gates on enabled.
                 configured_pm = bench.config.production.process_manager
                 if configured_pm == "systemd":
-                    from pilot.managers.systemd_process_manager import SystemdProcessManager as PM
+                    from pilot.managers.process_managers.systemd import SystemdProcessManager as PM
                 elif configured_pm == "openrc":
-                    from pilot.managers.openrc_process_manager import OpenRCProcessManager as PM
+                    from pilot.managers.process_managers.openrc import OpenRCProcessManager as PM
                 else:
-                    from pilot.managers.supervisor_process_manager import SupervisorProcessManager as PM
-                PM(bench).setup_admin()
+                    from pilot.managers.process_managers.supervisor import SupervisorProcessManager as PM
+                PM(bench).start_admin()
                 nginx = NginxManager(bench)
                 nginx.generate_config()
                 nginx.install_config()

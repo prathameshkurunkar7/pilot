@@ -144,9 +144,9 @@ class InitCommand(Command):
         RedisManager(self.bench.config.redis, self.bench).generate_configs()
 
     def _generate_process_config(self) -> None:
-        from pilot.managers.process_manager import ProcessManagerFactory
+        from pilot.managers.process_manager import ProcessManager
 
-        ProcessManagerFactory.create(self.bench).generate_config()
+        ProcessManager.for_bench(self.bench).write_config()
 
     def _check_passwordless_sudo(self) -> None:
         from pilot.platform import has_passwordless_sudo, is_linux

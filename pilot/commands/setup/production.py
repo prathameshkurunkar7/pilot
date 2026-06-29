@@ -156,12 +156,12 @@ class SetupProductionCommand(Command):
         # Alpine has only OpenRC; probing the systemd/supervisor managers there
         # would shell out to CLIs that aren't installed.
         if is_alpine():
-            from pilot.managers.openrc_process_manager import OpenRCProcessManager
+            from pilot.managers.process_managers.openrc import OpenRCProcessManager
 
             return "openrc" if OpenRCProcessManager(self.bench).is_configured() else None
 
-        from pilot.managers.supervisor_process_manager import SupervisorProcessManager
-        from pilot.managers.systemd_process_manager import SystemdProcessManager
+        from pilot.managers.process_managers.supervisor import SupervisorProcessManager
+        from pilot.managers.process_managers.systemd import SystemdProcessManager
 
         if SystemdProcessManager(self.bench).is_configured():
             return "systemd"
@@ -177,15 +177,15 @@ class SetupProductionCommand(Command):
             return
         print(f"Migrating from {old_pm} to {new_pm}: removing old manager resources...")
         if old_pm == "supervisor":
-            from pilot.managers.supervisor_process_manager import SupervisorProcessManager
+            from pilot.managers.process_managers.supervisor import SupervisorProcessManager
 
             SupervisorProcessManager(self.bench).shutdown()
         elif old_pm == "openrc":
-            from pilot.managers.openrc_process_manager import OpenRCProcessManager
+            from pilot.managers.process_managers.openrc import OpenRCProcessManager
 
             OpenRCProcessManager(self.bench).remove_services()
         else:
-            from pilot.managers.systemd_process_manager import SystemdProcessManager
+            from pilot.managers.process_managers.systemd import SystemdProcessManager
 
             SystemdProcessManager(self.bench).remove_units()
 
@@ -296,35 +296,35 @@ class SetupProductionCommand(Command):
         if not pkg.is_installed("supervisor"):
             pkg.install("supervisor")
             subprocess.run(["sudo", "systemctl", "disable", "--now", "supervisor"], check=False)
-        from pilot.managers.supervisor_process_manager import SupervisorProcessManager
+        from pilot.managers.process_managers.supervisor import SupervisorProcessManager
 
         mgr = SupervisorProcessManager(self.bench)
-        mgr.generate_config()
+        mgr.write_config()
         mgr.install_config()
-        mgr.reload()
+        mgr.reload_manager_config()
 
     def _setup_systemd(self) -> None:
-        from pilot.managers.systemd_process_manager import SystemdProcessManager
+        from pilot.managers.process_managers.systemd import SystemdProcessManager
 
         mgr = SystemdProcessManager(self.bench)
-        mgr.generate_config()
+        mgr.write_config()
         mgr.install_config()
-        mgr.reload()
+        mgr.reload_manager_config()
 
     def _setup_openrc(self) -> None:
-        from pilot.managers.openrc_process_manager import OpenRCProcessManager
+        from pilot.managers.process_managers.openrc import OpenRCProcessManager
 
         mgr = OpenRCProcessManager(self.bench)
-        mgr.generate_config()
+        mgr.write_config()
         mgr.install_config()
-        mgr.reload()
+        mgr.reload_manager_config()
 
     def _start_workload(self) -> None:
         """Start the workload (and admin) so the bench is actually serving once
         setup completes — otherwise sites 502 until a separate `bench start`."""
-        from pilot.managers.process_manager import ProcessManagerFactory
+        from pilot.managers.process_manager import ProcessManager
 
-        ProcessManagerFactory.create(self.bench).start()
+        ProcessManager.for_bench(self.bench).start()
 
     def _setup_nginx(self) -> None:
         from pilot.commands.setup.nginx import SetupNginxCommand

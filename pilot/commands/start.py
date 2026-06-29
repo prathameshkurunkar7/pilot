@@ -60,15 +60,15 @@ class RunCommand(Command):
         # under the process manager. Pick by the configured manager rather than
         # via the factory, which gates on production.enabled.
         if process_manager == "systemd":
-            from pilot.managers.systemd_process_manager import SystemdProcessManager
+            from pilot.managers.process_managers.systemd import SystemdProcessManager
 
             manager = SystemdProcessManager(self.bench)
         elif process_manager == "openrc":
-            from pilot.managers.openrc_process_manager import OpenRCProcessManager
+            from pilot.managers.process_managers.openrc import OpenRCProcessManager
 
             manager = OpenRCProcessManager(self.bench)
         else:
-            from pilot.managers.supervisor_process_manager import SupervisorProcessManager
+            from pilot.managers.process_managers.supervisor import SupervisorProcessManager
 
             manager = SupervisorProcessManager(self.bench)
 
@@ -78,7 +78,7 @@ class RunCommand(Command):
             # once the bench is initialized and `setup production` is run.
             from pilot.admin_url import admin_url
 
-            manager.setup_admin()
+            manager.start_admin()
             print(f"Admin running at {admin_url(self.bench.config)}")
             print("Finish setup there; the bench starts serving once it's initialized.")
             return

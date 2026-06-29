@@ -18,14 +18,14 @@ class UpdateConfigCommand(Command):
 
     def run(self) -> None:
         from pilot.managers.nginx_manager import NginxManager
-        from pilot.managers.process_manager import ProcessManagerFactory
+        from pilot.managers.process_manager import ProcessManager
         from pilot.managers.redis_manager import RedisManager
 
         print("Updating Redis configs...")
         RedisManager(self.bench.config.redis, self.bench).generate_configs()
 
         print("Updating process manager config...")
-        ProcessManagerFactory.create(self.bench).generate_config()
+        ProcessManager.for_bench(self.bench).write_config()
 
         print("Updating common_site_config.json...")
         self.bench.write_common_site_config()
