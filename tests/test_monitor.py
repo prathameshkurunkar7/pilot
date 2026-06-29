@@ -122,6 +122,7 @@ def _fake_proc_reads(monitor: Monitor) -> None:
     monitor._load_average = lambda: (0.5, 0.4, 0.3)  # type: ignore[method-assign]
     monitor._system_cpu_percent = lambda: 12.5  # type: ignore[method-assign]
     monitor._memory_usage = lambda: {"total_mb": 8192.0, "used_mb": 4096.0, "available_mb": 4096.0, "percent": 50.0}  # type: ignore[method-assign]
+    monitor._storage_usage = lambda: {"disk": {"total_mb": 51200.0, "used_mb": 20480.0, "free_mb": 30720.0, "percent": 40.0}}  # type: ignore[method-assign]
 
 
 def test_collect_system_metrics_writes_to_system_log_file(tmp_path: Path) -> None:
@@ -165,3 +166,95 @@ def test_collect_system_metrics_skipped_when_not_authority(tmp_path: Path) -> No
         monitor.collect_system_metrics()
 
     assert not system_log_file.exists()
+
+
+def test_collect_system_metrics_includes_storage(tmp_path: Path) -> None:
+    authority_file = tmp_path / ".bench-authority"
+    system_log_file = tmp_path / "bench-system-stats.log"
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
+    monitor.bench.config.monitor.system_log_path = system_log_file
+    _fake_proc_reads(monitor)
+
+    monitor.collect_system_metrics()
+
+    entry = next(iter(json.loads(system_log_file.read_text()).values()))
+    assert "storage" in entry
+    assert "disk" in entry["storage"]
+    assert entry["storage"]["disk"]["percent"] == 40.0
+
+
+# ── storage metrics ───────────────────────────────────────────────────────────
+
+
+def test_disk_usage_returns_expected_fields(tmp_path: Path) -> None:
+    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    result = monitor._disk_usage(tmp_path)
+    assert result["total_mb"] > 0
+    assert result["used_mb"] >= 0
+    assert result["free_mb"] >= 0
+    assert 0.0 <= result["percent"] <= 100.0
+    assert abs(result["total_mb"] - result["used_mb"] - result["free_mb"]) < 1.0
+
+
+def test_storage_usage_always_includes_disk(tmp_path: Path) -> None:
+    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    result = monitor._storage_usage()
+    assert "disk" in result
+    assert result["disk"]["total_mb"] > 0
+
+
+def test_storage_usage_no_zfs_key_when_no_bench_has_volume(tmp_path: Path) -> None:
+    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    assert not monitor.bench.config.volume.enabled
+    with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter([])):
+        result = monitor._storage_usage()
+    assert "zfs" not in result
+
+
+def test_storage_usage_includes_zfs_when_this_bench_has_volume(tmp_path: Path) -> None:
+    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    monitor.bench.config.volume.enabled = True
+    monitor.bench.config.volume.pool = "bench-pool"
+
+    fake_zfs = {"pool": "bench-pool", "total_mb": 102400.0, "used_mb": 10240.0, "free_mb": 92160.0, "percent": 10.0}
+    monitor._zfs_pool_usage = lambda pool: fake_zfs  # type: ignore[method-assign]
+
+    result = monitor._storage_usage()
+    assert result["zfs"] == fake_zfs
+    assert "disk" in result
+
+
+def test_storage_usage_includes_zfs_when_sibling_has_volume(tmp_path: Path) -> None:
+    monitor = _make_monitor(_make_bench(tmp_path), tmp_path / ".auth")
+    assert not monitor.bench.config.volume.enabled
+
+    sibling_path, sibling_config = _sibling("other-bench", "systemd")
+    sibling_config.volume.enabled = True
+    sibling_config.volume.pool = "bench-pool"
+
+    fake_zfs = {"pool": "bench-pool", "total_mb": 102400.0, "used_mb": 10240.0, "free_mb": 92160.0, "percent": 10.0}
+    monitor._zfs_pool_usage = lambda pool: fake_zfs  # type: ignore[method-assign]
+
+    with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter([(sibling_path, sibling_config)])):
+        result = monitor._storage_usage()
+
+    assert result["zfs"] == fake_zfs
+    assert "disk" in result
+
+
+def test_zfs_pool_usage_parses_zpool_output(tmp_path: Path) -> None:
+    import subprocess as sp
+
+    monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), tmp_path / ".auth")
+
+    fake_output = "107374182400\t10737418240\t96636764160\n"  # 100G total, 10G used, ~90G free
+    fake_result = sp.CompletedProcess(args=[], returncode=0, stdout=fake_output, stderr="")
+
+    with patch("pilot.core.monitor.subprocess.run", return_value=fake_result):
+        result = monitor._zfs_pool_usage("bench-pool")
+
+    assert result["pool"] == "bench-pool"
+    assert result["total_mb"] == round(107374182400 / 1024**2, 2)
+    assert result["used_mb"] == round(10737418240 / 1024**2, 2)
+    assert result["free_mb"] == round(96636764160 / 1024**2, 2)
+    assert result["percent"] == round(10737418240 / 107374182400 * 100, 2)

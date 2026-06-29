@@ -336,6 +336,47 @@ class Monitor:
             "percent": round(used_mb / total_mb * 100, 2) if total_mb else 0.0,
         }
 
+    def _disk_usage(self, path: Path) -> dict:
+        st = os.statvfs(path)
+        total_bytes = st.f_blocks * st.f_frsize
+        free_bytes = st.f_bfree * st.f_frsize
+        used_bytes = total_bytes - free_bytes
+        return {
+            "total_mb": round(total_bytes / 1024**2, 2),
+            "used_mb": round(used_bytes / 1024**2, 2),
+            "free_mb": round(free_bytes / 1024**2, 2),
+            "percent": round(used_bytes / total_bytes * 100, 2) if total_bytes else 0.0,
+        }
+
+    def _zfs_pool_usage(self, pool: str) -> dict:
+        result = subprocess.run(
+            ["zpool", "list", "-H", "-p", "-o", "size,allocated,free", pool],
+            capture_output=True, text=True, check=True,
+        )
+        size, allocated, free = (int(x) for x in result.stdout.strip().split())
+        return {
+            "pool": pool,
+            "total_mb": round(size / 1024**2, 2),
+            "used_mb": round(allocated / 1024**2, 2),
+            "free_mb": round(free / 1024**2, 2),
+            "percent": round(allocated / size * 100, 2) if size else 0.0,
+        }
+
+    def _find_zfs_pool(self) -> str | None:
+        if self.bench.config.volume.enabled:
+            return self.bench.config.volume.pool
+        for _, config in iter_sibling_benches(self.bench.path):
+            if config.volume.enabled:
+                return config.volume.pool
+        return None
+
+    def _storage_usage(self) -> dict:
+        result: dict = {"disk": self._disk_usage(self.bench.path)}
+        pool = self._find_zfs_pool()
+        if pool:
+            result["zfs"] = self._zfs_pool_usage(pool)
+        return result
+
     @property
     def is_system_log_authority(self):
         system_log_authority_path = self.bench.config.monitor.authority_file_path
@@ -367,6 +408,7 @@ class Monitor:
             "load_avg": self._load_average(),
             "cpu_percent": self._system_cpu_percent(),
             "memory": self._memory_usage(),
+            "storage": self._storage_usage(),
         }
         stats = json.loads(self.system_log_path.read_text()) if self.system_log_path.exists() else {}
         stats[datetime.now().isoformat()] = metrics
