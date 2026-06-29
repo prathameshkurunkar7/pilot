@@ -131,7 +131,7 @@ def create():
     data = request.get_json(silent=True) or {}
 
     name = (data.get("name") or "").strip()
-    admin_password = (data.get("admin_password") or "admin").strip() or "admin"
+    admin_password = secrets.token_urlsafe(16)
     db_type = (data.get("db_type") or "").strip()
     if db_type and db_type not in ("mariadb", "postgres", "sqlite"):
         return jsonify({"ok": False, "error": f"Invalid db_type '{db_type}'."})

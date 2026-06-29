@@ -44,7 +44,6 @@ const siteName = ref('')
 const sitePrefix = ref('')
 const wildcardDomains = ref([])
 const selectedSuffix = ref('')
-const adminPassword = ref('')
 const creating = ref(false)
 const createError = ref('')
 const benchDbType = ref('')
@@ -112,7 +111,7 @@ async function createSite() {
       res = await fetch('/api/sites/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: siteName.value.trim(), admin_password: adminPassword.value.trim(), db_type: siteDbType.value }),
+        body: JSON.stringify({ name: siteName.value.trim(), db_type: siteDbType.value }),
       })
     } else if (restoreMode.value === 'existing') {
       const set = backupSets.value.find(s => s.timestamp === selectedBackupTs.value)
@@ -120,14 +119,12 @@ async function createSite() {
       const pub = set.files.find(f => f.kind === 'public-file')
       const priv = set.files.find(f => f.kind === 'private-file')
       const body = { command: 'new-site-from-backup', name: siteName.value.trim(), db_file: db.path }
-      if (adminPassword.value.trim()) body.admin_password = adminPassword.value.trim()
       if (pub) body.public_files = pub.path
       if (priv) body.private_files = priv.path
       res = await fetch('/api/tasks/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     } else {
       const fd = new FormData()
       fd.append('name', siteName.value.trim())
-      fd.append('admin_password', adminPassword.value.trim())
       fd.append('db_file', uploadDb.value)
       if (uploadPublic.value) fd.append('public_files', uploadPublic.value)
       if (uploadPrivate.value) fd.append('private_files', uploadPrivate.value)
@@ -157,7 +154,6 @@ function openCreate() {
   showCreate.value = true
   siteName.value = ''
   sitePrefix.value = ''
-  adminPassword.value = ''
   loadWildcardDomains()
   createError.value = ''
   benchDbType.value = ''
@@ -279,8 +275,6 @@ onMounted(() => { loadSites(); loadRegistry(); checkAppUpdates() })
               <span v-else class="flex shrink-0 items-center whitespace-nowrap text-sm text-ink-gray-6">{{ wildcardDomains[0] }}</span>
             </div>
           </div>
-          <FormControl label="Admin Password" type="password" v-model="adminPassword" placeholder="admin" description="Leave blank to use 'admin'" />
-
           <div v-if="siteDbType">
             <span class="mb-1.5 block text-xs text-ink-gray-5">Database</span>
             <div class="grid grid-cols-2 gap-2">
