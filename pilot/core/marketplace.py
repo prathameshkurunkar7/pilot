@@ -62,7 +62,7 @@ class Resolver:
         self,
         app: str,
         required_spec: str,
-        visited: set[str],
+        visited: dict[str, str],
         path: list[str],
         result: list["Resolver"],
     ):
@@ -70,6 +70,11 @@ class Resolver:
             cycle = " -> ".join(path[path.index(app) :] + [app])
             raise BenchError(f"Circular dependency detected: {cycle}")
         if app in visited:
+            if required_spec and Version(visited[app]) not in SpecifierSet(required_spec):
+                raise BenchError(
+                    f"Version conflict: '{app}' {visited[app]!r} already selected "
+                    f"but {required_spec!r} is required by '{path[-1]}'."
+                )
             return
 
         path.append(app)
@@ -86,11 +91,11 @@ class Resolver:
                 f"Needed by '{path[-2]}'."
             )
 
-        for dep, spec in resolver.dependencies.items():
-            self._resolve(dep, spec, visited, path, result)
+        for dep, dep_spec in resolver.dependencies.items():
+            self._resolve(dep, dep_spec, visited, path, result)
         result.append(resolver)
 
-        visited.add(app)
+        visited[app] = resolver.version
         path.pop()
 
     def resolve(self) -> list["Resolver"]:
@@ -100,7 +105,7 @@ class Resolver:
                 f"'{self.app}' is not compatible with the current Frappe version.\nRequired: {self.required_version} Current: {self.frappe_version}"
             )
         result: list["Resolver"] = []
-        visited: set[str] = set()
+        visited: dict[str, str] = {}
         for dep, spec in self.dependencies.items():
             self._resolve(dep, spec, visited, [self.app], result)
         result.append(self)
@@ -169,3 +174,20 @@ class Marketplace:
         for resolver in resolvers:
             resolver._registry = dependency_lookup
         return resolvers
+
+
+if __name__ == "__main__":
+    from pilot.core.bench import Bench, BenchConfig
+
+    bench = Bench(
+        BenchConfig.from_file(Path("/home/frappe/bench-cli/benches/test/bench.toml")),
+        Path("/home/frappe/bench-cli/benches/test"),
+    )
+    marketplace = Marketplace(bench)
+    # print(len(marketplace.registry))
+    # print(len(marketplace.read_installable_apps()))
+    for app in marketplace.read_all_apps():
+        if app.app == "kenya_compliance_via_slade":
+            import pprint
+
+            pprint.pprint(app.resolve())

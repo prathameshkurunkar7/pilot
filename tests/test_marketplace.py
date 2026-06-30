@@ -174,6 +174,20 @@ def test_resolve_raises_when_no_dep_version_satisfies_spec():
         root.resolve()
 
 
+def test_resolve_raises_on_version_conflict_in_diamond():
+    # B picks payments 1.5.0, A requires payments >=2.0.0 — conflict
+    payments_old = make_resolver(app="payments", version="1.5.0")
+    payments_new = make_resolver(app="payments", version="2.0.0")
+    b = make_resolver(app="B", dependencies={"payments": ">=1.0.0,<2.0.0"})
+    a = make_resolver(app="A", dependencies={"payments": ">=2.0.0"})
+    root = make_resolver(app="root", dependencies={"B": "", "A": ""})
+    registry = {"payments": [payments_old, payments_new], "B": [b], "A": [a]}
+    root._registry = b._registry = a._registry = registry
+
+    with pytest.raises(BenchError, match="conflict"):
+        root.resolve()
+
+
 def test_resolve_accepts_dep_with_empty_spec():
     dep = make_resolver(app="payments", version="1.0.0")
     root = make_resolver(app="erpnext", dependencies={"payments": ""})
