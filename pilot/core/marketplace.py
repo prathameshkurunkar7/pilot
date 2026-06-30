@@ -28,11 +28,42 @@ class Resolver:
     repo: str
     target_type: Literal["tag", "branch", "target"]
     target: str
+    version: str
     frappe_version: str
+    dependencies: dict[str, str] = field(default_factory=dict)
+    # Required purely for resolution this is a pointer to the main parsed app -> resolver mapping
+    _registry: dict[str, "Resolver"] = field(default_factory=dict, init=False, repr=False)
 
-    def resolve(self):
-        """Resolve installation pattern taking the dependencies into account"""
-        ...
+    def _resolve(
+        self,
+        app: str,
+        visited: set[str],
+        path: list[str],
+        result: list["Resolver"],
+    ):
+        if app in path:
+            cycle = " -> ".join(path[path.index(app) :] + [app])
+            raise ValueError(f"Circular dependency detected: {cycle}")
+        if app in visited:
+            return
+
+        path.append(app)
+        resolver = self._registry.get(app)
+        if resolver:
+            for dep in resolver.dependencies:
+                self._resolve(dep, visited, path, result)
+            result.append(resolver)
+        visited.add(app)
+        path.pop()
+
+    def resolve(self) -> list["Resolver"]:
+        """Returns dependencies in install order (deepest first, self last)."""
+        result: list["Resolver"] = []
+        visited: set[str] = set()
+        for dep in self.dependencies:
+            self._resolve(dep, visited, [self.app], result)
+        result.append(self)
+        return result
 
 
 @dataclass
@@ -62,10 +93,11 @@ class Marketplace:
 
     def read_installable_apps(self) -> list[Resolver]:
         results = []
-        current = Version(self.frappe_version)
+        current = Version("16.0.0")
         for app in self.registry:
             # Checks if the current version is supported in the apps version specifier targets
-            # preloaded while parsing the registry.
+            # preloaded while parsing the registry. If two branches support the same frappe version
+            # We will only return the top most entry. Users will be notified about this during PRs
             match = next((t for t in app.get("targets", []) if current in t["_spec"]), None)
             if match:
                 results.append(
@@ -74,9 +106,16 @@ class Marketplace:
                         repo=app["repo"],
                         target_type=match["target_type"],
                         target=match["target"],
+                        version=match["version"],
                         frappe_version=self.frappe_version,
+                        dependencies=match.get("dependencies", {}),
                     )
                 )
+
+        lookup = {r.app: r for r in results}
+        for r in results:
+            # This is just sharing the pointer its' fine
+            r._registry = lookup
         return results
 
 
@@ -88,5 +127,10 @@ if __name__ == "__main__":
         Path("/home/frappe/bench-cli/benches/test"),
     )
     marketplace = Marketplace(bench)
-    print(len(marketplace.registry))
-    print(len(Marketplace(bench).read_installable_apps()))
+    # print(len(marketplace.registry))
+    # print(len(marketplace.read_installable_apps()))
+    for app in marketplace.read_installable_apps():
+        if app.app == "kenya_compliance_via_slade":
+            import pprint
+
+            pprint.pprint(app.resolve())
