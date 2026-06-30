@@ -41,6 +41,16 @@ export function useSite(name) {
     }
   }
 
+  async function reload() {
+    try {
+      const data = await sitesApi.detail(name)
+      store.site.value = data.site
+      store.installable.value = data.installable_apps || []
+      store.nginxEnabled.value = data.nginx_enabled ?? false
+      store.adminTls.value = data.admin_tls ?? false
+    } catch { /* silent */ }
+  }
+
   async function loadApps() {
     store.appsLoading.value = true
     try {
@@ -133,6 +143,7 @@ export function useSite(name) {
     status,
     version,
     load,
+    reload,
     loadApps,
     loadBackups,
     login,

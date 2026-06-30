@@ -12,7 +12,7 @@
     <div class="relative -mx-6 -mt-6 px-6 pt-6 pb-7 overflow-hidden">
       <div class="absolute inset-0 pointer-events-none dot-field" aria-hidden="true" />
       <div
-        class="relative flex items-center justify-between gap-3 bg-surface-base p-4 border rounded-xl border-outline-gray-2">
+        class="relative flex justify-between items-center gap-3 bg-surface-base p-4 border rounded-xl border-outline-gray-2">
         <div class="flex items-center gap-3 min-w-0">
           <span
             class="place-items-center grid bg-surface-elevation-1 border rounded-xl border-outline-gray-2 size-10 sm:size-12 text-ink-gray-6 shrink-0">
@@ -51,6 +51,7 @@
     <!-- Sections -->
     <SiteApps v-if="activeTab === 'apps'" :site-name="siteName" />
     <SiteBackups v-else-if="activeTab === 'backups'" :site-name="siteName" />
+    <SiteConfig v-else-if="activeTab === 'config'" :site-name="siteName" />
   </div>
 
   <Teleport defer to="#header-actions">
@@ -69,6 +70,7 @@ import { Badge, Button, Dropdown, ErrorMessage, LoadingText, TabButtons } from '
 import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
 import SiteApps from '@/components/sites/Apps.vue'
 import SiteBackups from '@/components/sites/Backups.vue'
+import SiteConfig from '@/components/sites/Config.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useSite } from '@/composables/useSite'
 import { useBench } from '@/composables/useBench'
@@ -96,7 +98,6 @@ const tabs = [
   { value: 'apps', label: 'Apps' },
   { value: 'backups', label: 'Backups' },
   { value: 'config', label: 'Config' },
-  { value: 'domains', label: 'Domains' },
   { value: 'settings', label: 'Settings' },
 ]
 
