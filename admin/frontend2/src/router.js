@@ -17,6 +17,12 @@ const routes = [
     meta: { title: 'Login', fullScreen: true },
   },
   { path: '/', redirect: '/sites' },
+  {
+    path: '/sites/:name',
+    name: 'SiteDetail',
+    component: () => import('./pages/SiteDetail.vue'),
+    meta: { title: 'Site', group: 'Sites' },
+  },
   ...navigationRoutes(),
 ]
 

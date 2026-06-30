@@ -4,7 +4,7 @@ export const navigation = {
   Sites: {
     path: '/sites',
     icon: 'lucide-layout-grid',
-    component: () => import('./pages/Home.vue'),
+    component: () => import('./pages/Sites.vue'),
   },
   Marketplace: {
     path: '/marketplace',
