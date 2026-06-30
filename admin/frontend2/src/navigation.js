@@ -6,7 +6,11 @@ export const navigation = {
     icon: 'lucide-layout-grid',
     component: () => import('./pages/Home.vue'),
   },
-  Marketplace: { path: '/marketplace', icon: 'lucide-store', component: Placeholder },
+  Marketplace: {
+    path: '/marketplace',
+    icon: 'lucide-store',
+    component: () => import('./pages/Marketplace.vue'),
+  },
   Insights: {
     children: {
       Analytics: {
