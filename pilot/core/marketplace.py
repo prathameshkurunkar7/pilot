@@ -38,7 +38,7 @@ class Resolver:
     logo_url: str = ""
     category: str = ""
     stars: int = 0
-    _registry: dict[str, "Resolver"] = field(default_factory=dict, init=False, repr=False)
+    _registry: dict[str, list["Resolver"]] = field(default_factory=dict, init=False, repr=False)
 
     def to_dict(self) -> dict:
         return {
@@ -61,6 +61,7 @@ class Resolver:
     def _resolve(
         self,
         app: str,
+        required_spec: str,
         visited: set[str],
         path: list[str],
         result: list["Resolver"],
@@ -72,15 +73,21 @@ class Resolver:
             return
 
         path.append(app)
-        resolver = self._registry.get(app)
+        candidate_resolvers = self._registry.get(app, [])
+        spec = SpecifierSet(required_spec) if required_spec else None
+        resolver = next(
+            (r for r in candidate_resolvers if spec is None or Version(r.version) in spec),
+            None,
+        )
         if not resolver:
             raise BenchError(
-                f"Dependency '{app}' has no version compatible with Frappe {self.frappe_version}.\n"
-                "It currently not support your current Frappe version."
+                f"Dependency '{app}' has no version satisfying {required_spec!r} "
+                f"compatible with Frappe {self.frappe_version}.\n"
+                f"Needed by '{path[-2]}'."
             )
 
-        for dep in resolver.dependencies:
-            self._resolve(dep, visited, path, result)
+        for dep, spec in resolver.dependencies.items():
+            self._resolve(dep, spec, visited, path, result)
         result.append(resolver)
 
         visited.add(app)
@@ -94,8 +101,8 @@ class Resolver:
             )
         result: list["Resolver"] = []
         visited: set[str] = set()
-        for dep in self.dependencies:
-            self._resolve(dep, visited, [self.app], result)
+        for dep, spec in self.dependencies.items():
+            self._resolve(dep, spec, visited, [self.app], result)
         result.append(self)
         return result
 
@@ -123,40 +130,45 @@ class Marketplace:
                 target["_spec"] = SpecifierSet(target["frappe_core"], prereleases=True)
         return raw
 
-    def read_all_apps(self) -> list[Resolver]:
-        results = []
-        current = Version(self.frappe_version)
-        for app in self.registry:
-            # Checks if the current version is supported in the apps version specifier targets
-            # preloaded while parsing the registry. If two branches support the same frappe version
-            # We will only return the top most entry. Users will be notified about this during PRs
-            targets = app.get("targets", [])
-            match = next((t for t in targets if current in t["_spec"]), None)
-            target = match or (targets[0] if targets else {})
-            results.append(
-                Resolver(
-                    app=app["name"],
-                    repo=app["repo"],
-                    target_type=target.get("target_type", ""),
-                    target=target.get("target", ""),
-                    version=target.get("version", ""),
-                    frappe_version=self.frappe_version,
-                    required_version=target.get("frappe_core", ""),
-                    dependencies=target.get("dependencies", {}),
-                    title=app.get("title", app["name"]),
-                    description=app.get("description", ""),
-                    logo_url=app.get("logo_url", ""),
-                    category=app.get("category", ""),
-                    stars=app.get("stars", 0),
-                    is_installable=bool(match),
-                )
-            )
+    def _make_resolver(self, app: dict, target: dict, is_installable: bool) -> "Resolver":
+        return Resolver(
+            app=app["name"],
+            repo=app["repo"],
+            target_type=target.get("target_type", ""),
+            target=target.get("target", ""),
+            version=target.get("version", ""),
+            frappe_version=self.frappe_version,
+            required_version=target.get("frappe_core", ""),
+            dependencies=target.get("dependencies", {}),
+            title=app.get("title", app["name"]),
+            description=app.get("description", ""),
+            logo_url=app.get("logo_url", ""),
+            category=app.get("category", ""),
+            stars=app.get("stars", 0),
+            is_installable=is_installable,
+        )
 
-        lookup = {r.app: r for r in results if r.is_installable}
-        for r in results:
-            # This is just sharing the pointer its' fine
-            r._registry = lookup
-        return results
+    def read_all_apps(self) -> list[Resolver]:
+        resolvers = []
+        dependency_lookup: dict[str, list[Resolver]] = {}
+        current_frappe = Version("16.0.0")
+
+        for app in self.registry:
+            targets = app.get("targets", [])
+            compatible_targets = [t for t in targets if current_frappe in t["_spec"]]
+            best_match = compatible_targets[0] if compatible_targets else None
+            display_target = best_match or (targets[0] if targets else {})
+
+            resolvers.append(self._make_resolver(app, display_target, is_installable=bool(best_match)))
+
+            if compatible_targets:
+                dependency_lookup[app["name"]] = [
+                    self._make_resolver(app, t, is_installable=True) for t in compatible_targets
+                ]
+
+        for resolver in resolvers:
+            resolver._registry = dependency_lookup
+        return resolvers
 
 
 if __name__ == "__main__":
