@@ -52,6 +52,7 @@
     <SiteApps v-if="activeTab === 'apps'" :site-name="siteName" />
     <SiteBackups v-else-if="activeTab === 'backups'" :site-name="siteName" />
     <SiteConfig v-else-if="activeTab === 'config'" :site-name="siteName" />
+    <SiteSettings v-else-if="activeTab === 'settings'" :site-name="siteName" />
   </div>
 
   <Teleport defer to="#header-actions">
@@ -71,6 +72,7 @@ import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
 import SiteApps from '@/components/sites/Apps.vue'
 import SiteBackups from '@/components/sites/Backups.vue'
 import SiteConfig from '@/components/sites/Config.vue'
+import SiteSettings from '@/components/sites/Settings.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useSite } from '@/composables/useSite'
 import { useBench } from '@/composables/useBench'

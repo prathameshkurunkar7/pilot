@@ -21,6 +21,7 @@ declare module 'vue' {
     ReconnectOverlay: typeof import('./src/components/ReconnectOverlay.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    Settings: typeof import('./src/components/sites/Settings.vue')['default']
     TaskStream: typeof import('./src/components/TaskStream.vue')['default']
     TerminalOutput: typeof import('./src/components/TerminalOutput.vue')['default']
     UpdatesAvailableButton: typeof import('./src/components/UpdatesAvailableButton.vue')['default']
