@@ -1,7 +1,21 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Home from './pages/Home.vue'
+import { navigationRoutes } from './navigation'
+
+const routes = [
+  {
+    path: '/setup',
+    name: 'Setup',
+    component: () => import('./pages/Setup.vue'),
+    meta: { title: 'Setup' },
+  },
+  ...navigationRoutes(),
+]
 
 export const router = createRouter({
   history: createWebHistory(),
-  routes: [{ path: '/', component: Home }],
+  routes,
+})
+
+router.afterEach((to) => {
+  document.title = to.meta?.title ? `${to.meta.title} - Bench Admin` : 'Bench Admin'
 })

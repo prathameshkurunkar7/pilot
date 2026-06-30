@@ -1,3 +1,11 @@
+<script setup>
+import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
+
+const { setBreadcrumbs } = useBreadcrumbs()
+
+setBreadcrumbs([{ label: 'Sites', route: { name: 'Sites' } }])
+</script>
+
 <template>
-  <p class="text-gray-600">Hello from Bench Admin v2</p>
+  <p class="text-ink-gray-6">Sites page</p>
 </template>

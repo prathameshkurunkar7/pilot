@@ -1,0 +1,65 @@
+const Placeholder = () => import('./pages/Placeholder.vue')
+
+export const navigation = {
+  Sites: { path: '/', icon: 'lucide-layout-grid', component: () => import('./pages/Home.vue') },
+  Marketplace: { path: '/marketplace', icon: 'lucide-store', component: Placeholder },
+  Insights: {
+    children: {
+      Analytics: {
+        path: '/dev-tools/analytics',
+        icon: 'lucide-chart-line',
+        component: Placeholder,
+      },
+      Logs: {
+        path: '/dev-tools/logs',
+        icon: 'lucide-scroll-text',
+        component: Placeholder,
+      },
+      Tasks: { path: '/tasks', icon: 'lucide-list-checks', component: Placeholder },
+    },
+  },
+  'Dev tools': {
+    children: {
+      'DB analyzer': {
+        path: '/database/analyzer',
+        icon: 'lucide-database',
+        component: Placeholder,
+      },
+      'SQL playground': {
+        path: '/database/sql-playground',
+        icon: 'lucide-terminal',
+        component: Placeholder,
+      },
+    },
+  },
+}
+
+export function navigationRoutes(tree = navigation, group = '') {
+  return Object.entries(tree).flatMap(([title, node]) =>
+    node.children
+      ? navigationRoutes(node.children, title)
+      : [{ path: node.path, name: title, component: node.component, meta: { title, group } }],
+  )
+}
+
+export function sidebarSections(tree = navigation) {
+  const sections = []
+  const looseItems = []
+  for (const [title, node] of Object.entries(tree)) {
+    if (node.children) {
+      sections.push({
+        label: title,
+        collapsible: node.collapsible ?? false,
+        items: Object.entries(node.children).map(([label, child]) => ({
+          label,
+          icon: child.icon,
+          to: child.path,
+        })),
+      })
+    } else {
+      looseItems.push({ label: title, icon: node.icon, to: node.path })
+    }
+  }
+  if (looseItems.length) sections.unshift({ items: looseItems })
+  return sections
+}
