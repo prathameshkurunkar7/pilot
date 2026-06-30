@@ -2,7 +2,7 @@
 import { useRoute, useRouter } from 'vue-router'
 import { Sidebar, SidebarItem, useTheme } from 'frappe-ui'
 import { sidebarSections } from '@/navigation'
-import { request } from '@/api/client'
+import { authApi } from '@/api/auth'
 const { setTheme } = useTheme()
 
 const route = useRoute()
@@ -15,7 +15,7 @@ function isActive(to) {
 }
 
 async function logout() {
-  await request.post('logout')
+  await authApi.logout()
   window.location.reload()
 }
 

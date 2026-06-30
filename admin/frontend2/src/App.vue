@@ -1,7 +1,7 @@
 <template>
   <FrappeUIProvider>
     <ReconnectOverlay :paused="awaitingTerminal" />
-    <RouterView v-if="isSetupRoute" />
+    <RouterView v-if="isFullScreen" />
     <MainLayout v-else>
       <RouterView />
     </MainLayout>
@@ -17,7 +17,7 @@ import MainLayout from './layouts/MainLayout.vue'
 import { useSetupHandoff } from './composables/useSetupHandoff'
 
 const route = useRoute()
-const isSetupRoute = computed(() => route.name === 'Setup')
+const isFullScreen = computed(() => route.meta.fullScreen === true)
 const { awaitingTerminal } = useSetupHandoff()
 const { initializeTheme } = useTheme()
 
