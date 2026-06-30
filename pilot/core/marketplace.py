@@ -37,7 +37,7 @@ class Resolver:
     description: str = ""
     logo_url: str = ""
     category: str = ""
-    stars: int = 0
+    stars: int | None = 0
     _registry: dict[str, list["Resolver"]] = field(default_factory=dict, init=False, repr=False)
 
     def to_dict(self) -> dict:
@@ -55,7 +55,7 @@ class Resolver:
             "description": self.description,
             "logo_url": self.logo_url,
             "category": self.category,
-            "stars": self.stars,
+            "stars": self.stars or 0,
         }
 
     def _resolve(
