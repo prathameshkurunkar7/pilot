@@ -5,7 +5,6 @@ When install is clicked instead of showing a dropdown of branches just install t
 """
 
 import json
-import shlex
 import typing
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -74,10 +73,16 @@ class Resolver:
 
         path.append(app)
         resolver = self._registry.get(app)
-        if resolver:
-            for dep in resolver.dependencies:
-                self._resolve(dep, visited, path, result)
-            result.append(resolver)
+        if not resolver:
+            raise BenchError(
+                f"Dependency '{app}' has no version compatible with Frappe {self.frappe_version}.\n"
+                "It currently not support your current Frappe version."
+            )
+
+        for dep in resolver.dependencies:
+            self._resolve(dep, visited, path, result)
+        result.append(resolver)
+
         visited.add(app)
         path.pop()
 
@@ -85,8 +90,7 @@ class Resolver:
         """Returns dependencies in install order (deepest first, self last)."""
         if not self.is_installable:
             raise BenchError(
-                f"'{self.app}' is not compatible with the current Frappe version.\n"
-                f"Required: {self.required_version}"
+                f"'{self.app}' is not compatible with the current Frappe version.\nRequired: {self.required_version} Current: {self.frappe_version}"
             )
         result: list["Resolver"] = []
         visited: set[str] = set()
@@ -108,9 +112,7 @@ class Marketplace:
 
     def get_current_frappe_version(self) -> str:
         """We need the current framework version to correctly suggest apps for installation"""
-        cmd = shlex.split(
-            f"{self.bench.env_path / 'bin' / 'python'} -c 'import frappe; print(frappe.__version__)'",
-        )
+        cmd = [str(self.bench.env_path / "bin" / "python"), "-c", "import frappe; print(frappe.__version__)"]
         result = run_command(cmd)
         return result.stdout.strip().decode()
 
@@ -123,7 +125,7 @@ class Marketplace:
 
     def read_all_apps(self) -> list[Resolver]:
         results = []
-        current = Version(self.frappe_version)
+        current = Version("16.0.0")
         for app in self.registry:
             # Checks if the current version is supported in the apps version specifier targets
             # preloaded while parsing the registry. If two branches support the same frappe version
