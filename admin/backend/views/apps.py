@@ -7,7 +7,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from ..readers.app_reader import AppReader
-from ..validators import first_error, validate_app_name, validate_repo_url
+from ..validators import validate_app_name
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
 apps_bp = Blueprint("apps", __name__)
@@ -44,10 +44,7 @@ def add():
     data = request.get_json(silent=True) or {}
 
     name = (data.get("name") or "").strip()
-    repo = (data.get("repo") or "").strip()
-    target = (data.get("target") or "").strip()
-
-    err = first_error(validate_app_name(name), validate_repo_url(repo))
+    err = validate_app_name(name)
     if err:
         return jsonify({"ok": False, "error": err})
 
@@ -56,7 +53,7 @@ def add():
 
     try:
         task_id = TaskRunner(bench_root).run(
-            "get-app", {"name": name, "repo": repo, "branch": target}
+            "get-app", {"name": name, "marketplace_app": name}
         )
     except Exception as e:
         return jsonify({"ok": False, "error": f"Could not start get-app: {e}"})
@@ -70,11 +67,9 @@ def add_and_install():
     data = request.get_json(silent=True) or {}
 
     name = (data.get("name") or "").strip()
-    repo = (data.get("repo") or "").strip()
-    target = (data.get("target") or "").strip()
     sites = data.get("sites") or []
 
-    err = first_error(validate_app_name(name), validate_repo_url(repo))
+    err = validate_app_name(name)
     if err:
         return jsonify({"ok": False, "error": err})
 
@@ -85,7 +80,7 @@ def add_and_install():
         return jsonify({"ok": False, "error": f"'{name}' is already installed."})
 
     try:
-        task_args = {"name": name, "repo": repo, "branch": target, "sites": sites}
+        task_args = {"name": name, "marketplace_app": name, "sites": sites}
         task_id = TaskRunner(bench_root).run("add-and-install-app", task_args)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Could not start add-and-install: {e}"})
