@@ -65,7 +65,7 @@ class AddAndInstallAppTask(BaseTask):
         for site in self.sites:
             safe_key = site.replace(".", "_").replace("-", "_")
             for cmd in cmds:
-                _step(f"install_{safe_key}", f"Install {cmd.app.config.name} on {site}")
+                _step(f"install_{safe_key}_{cmd.app.config.name}", f"Install {cmd.app.config.name} on {site}")
                 result = subprocess.run(
                     [*self.bench.frappe_call, "frappe", "--site", site, "install-app", cmd.app.config.name],
                     cwd=str(sites_dir),
