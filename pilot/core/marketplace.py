@@ -174,20 +174,3 @@ class Marketplace:
         for resolver in resolvers:
             resolver._registry = dependency_lookup
         return resolvers
-
-
-if __name__ == "__main__":
-    from pilot.core.bench import Bench, BenchConfig
-
-    bench = Bench(
-        BenchConfig.from_file(Path("/home/frappe/bench-cli/benches/test/bench.toml")),
-        Path("/home/frappe/bench-cli/benches/test"),
-    )
-    marketplace = Marketplace(bench)
-    # print(len(marketplace.registry))
-    # print(len(marketplace.read_installable_apps()))
-    for app in marketplace.read_all_apps():
-        if app.app == "kenya_compliance_via_slade":
-            import pprint
-
-            pprint.pprint(app.resolve())
