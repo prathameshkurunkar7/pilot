@@ -8,12 +8,12 @@
       <p class="mt-1 text-ink-gray-5 text-sm">Output from {{ benchName }}'s services.</p>
     </div>
 
-    <div class="flex flex-1 sm:gap-4 -mx-6 sm:mx-0 min-h-0">
+    <div class="flex flex-1 sm:gap-4 min-h-0">
       <!-- Sidebar: log list -->
       <div
         class="md:flex flex-col sm:border sm:rounded-xl sm:border-outline-gray-2 w-full md:w-64 overflow-hidden shrink-0"
         :class="selectedFile ? 'hidden' : 'flex'">
-        <div class="p-2 border-b border-outline-gray-2 shrink-0">
+        <div class="sm:px-2 py-2 sm:border-b border-outline-gray-2 shrink-0">
           <FormControl type="text" v-model="fileSearch" placeholder="Search log files" />
         </div>
         <div class="flex-1 p-1.5 sm:p-2 overflow-y-auto">
@@ -21,7 +21,7 @@
           <ErrorMessage v-else-if="logsError" :message="logsError" class="p-2" />
           <p v-else-if="!filteredLogs.length" class="p-2 text-ink-gray-4 text-sm">No log files found.</p>
           <button v-else v-for="log in filteredLogs" :key="log.filename"
-            class="px-3 py-2.5 rounded-lg w-full text-left transition-colors"
+            class="sm:px-3 py-2.5 rounded-lg w-full text-left transition-colors"
             :class="selectedFile === log.filename ? 'bg-surface-gray-2' : 'hover:bg-surface-gray-1'"
             @click="selectedFile = log.filename">
             <div class="flex justify-between items-center gap-2">
@@ -46,14 +46,14 @@
         <template v-else>
           <!-- Toolbar -->
           <div
-            class="flex sm:flex-row flex-col sm:flex-wrap sm:items-center gap-2 p-2 border-b border-outline-gray-2 shrink-0">
+            class="flex sm:flex-row flex-col sm:flex-wrap sm:items-center gap-2 sm:px-2 py-2 sm:border-b border-outline-gray-2 shrink-0">
             <!-- Mobile-only: back + filename, replacing the standalone filename bar -->
             <div class="md:hidden flex items-center gap-2">
               <Button variant="subtle" tooltip="Back to logs" @click="selectedFile = ''">
                 <span class="lucide-arrow-left size-4" />
               </Button>
               <span class="flex-1 min-w-0 font-mono text-ink-gray-8 text-sm truncate">{{ truncateFilename(selectedFile)
-              }}</span>
+                }}</span>
             </div>
             <div class="flex items-center gap-2">
               <div class="w-28 sm:w-32 min-w-0 shrink-0">
@@ -99,19 +99,14 @@
             </div>
           </div>
 
-          <!-- Filename bar: mobile shows the filename next to the back button instead -->
-          <div
-            class="hidden md:block bg-surface-gray-1 px-4 py-2 border-b border-outline-gray-2 font-mono text-ink-gray-6 text-xs shrink-0">
-            {{ selectedFile }}
-          </div>
-
           <!-- Terminal area -->
-          <div ref="viewer" class="flex flex-col flex-1 overflow-hidden">
+          <div ref="viewer" class="flex flex-col flex-1 mt-2 sm:mt-0 overflow-hidden">
             <div v-if="contentError" class="p-4 font-mono text-ink-red-4 text-sm">Error: {{ contentError }}</div>
             <LogView v-else ref="terminal" :lines="visibleLines" :streaming="liveMode" fill wrap divided
-              :rounded="false" :empty-text="contentLoading ? 'Loading…' : 'Log file is empty.'" />
+              :rounded="isMobile ? 'sm' : 'lg'" :empty-text="contentLoading ? 'Loading…' : 'Log file is empty.'" />
+
             <div v-if="rawLines.length"
-              class="px-3 sm:px-4 py-1.5 sm:py-2 border-t border-outline-gray-2 text-ink-gray-4 text-xs shrink-0">
+              class="sm:px-4 py-1.5 sm:py-2 sm:border-t border-outline-gray-2 text-ink-gray-4 text-xs shrink-0">
               Showing the last {{ linesCount }} of {{ totalLineCount }}
               <template v-if="search.trim()"> · {{ matchTotal }} match{{ matchTotal !== 1 ? 'es' : '' }}</template>
             </div>

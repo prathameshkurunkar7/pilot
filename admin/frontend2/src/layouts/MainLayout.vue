@@ -27,7 +27,7 @@ const breadcrumbs = computed(() => {
         <Breadcrumbs :items="breadcrumbs" />
         <div id="header-actions" class="ml-auto flex items-center gap-2" />
       </header>
-      <div class="min-h-0 flex-1 overflow-auto p-6">
+      <div class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
         <slot />
       </div>
     </main>
