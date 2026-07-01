@@ -33,6 +33,16 @@ def validators_for(target: dict, clone_dir: Path, marketplace: dict[str, dict]) 
     ]
 
 
+def apps_missing_targets(old_apps: dict[str, dict], new_apps: dict[str, dict]) -> list[str]:
+    """New or edited apps that declare no targets — the target-driven scan can't
+    see them (they produce zero targets), so they'd slip through unchecked."""
+    return [
+        name
+        for name, app in new_apps.items()
+        if old_apps.get(name) != app and not app.get("targets")
+    ]
+
+
 def check_target(target: dict, marketplace: dict[str, dict]) -> bool:
     print(f"\n=== Checking {target['name']} ({target.get('repo')}@{target.get('target')}) ===", flush=True)
 
@@ -60,6 +70,12 @@ def main() -> None:
 
     marketplace = load_apps(Path(sys.argv[1]))
     new_apps = load_apps(Path(sys.argv[2]))
+
+    missing_targets = apps_missing_targets(marketplace, new_apps)
+    if missing_targets:
+        print(f"\nFAILED: {', '.join(missing_targets)} has no targets — add at least one target.")
+        sys.exit(1)
+
     changed_targets = find_changed_targets(marketplace, new_apps)
 
     if not changed_targets:
