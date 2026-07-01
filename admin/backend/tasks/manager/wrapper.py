@@ -18,12 +18,14 @@ from pathlib import Path
 def callback_handler(callback_bin_path: Path, output_log: Path, meta: dict) -> None:
     callback = pickle.loads(callback_bin_path.read_bytes())
     callback_bin_path.unlink()
-    with open(output_log, "a") as log_file:
+    # Append in binary to match the command's own byte writes; text mode would
+    # translate newlines and break TaskReader.read_output's newline split.
+    with open(output_log, "ab") as log_file:
         try:
             callback(meta)
-            log_file.write("\nCallback successfully triggered")
+            log_file.write(b"\nCallback successfully triggered")
         except Exception as error:
-            log_file.write(f"\nCallback failed: {error!s}\n")
+            log_file.write(f"\nCallback failed: {error!s}\n".encode())
 
 
 def _resolve_outcome(returncode: int, cancelled: bool) -> tuple[bool, str]:

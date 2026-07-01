@@ -441,6 +441,9 @@ def test_wrapper_runs_on_failure_callback_when_command_fails(tmp_path: Path) -> 
     assert (task_dir / "status").read_text() == "failed"
     assert json.loads((task_dir / "meta.json").read_text())["exit_code"] == 3
     assert not (tmp_path / "sites" / "broken.localhost").exists()  # cleanup ran
+    # Callback line is appended in binary, so it stays a clean newline-split line.
+    with patch("os.kill", return_value=None):
+        assert "Callback successfully triggered" in TaskReader(tmp_path).read_output(task_dir.name)
 
 
 def test_wrapper_cancel_runs_cleanup_and_marks_killed(tmp_path: Path) -> None:
