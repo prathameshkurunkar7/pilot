@@ -145,12 +145,14 @@ import {
   ListView,
   LoadingText,
   TabButtons,
+  toast,
 } from 'frappe-ui'
 import NewSiteDialog from '@/components/NewSiteDialog.vue'
 import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useSites } from '@/composables/useSites'
 import { sitesApi } from '@/api/sites'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const router = useRouter()
 const { setBreadcrumbs } = useBreadcrumbs()
@@ -213,21 +215,34 @@ const listRows = computed(() =>
   })),
 )
 
+async function loginAsAdmin(site) {
+  const data = await sitesApi.login(site.name)
+  if (data.url) window.open(data.url, '_blank')
+  return data
+}
+
+function openSite(site) {
+  toast.promise(loginAsAdmin(site), {
+    loading: 'Logging in as admin…',
+    success: 'Logged in as admin',
+    error: 'Could not log in as admin',
+  })
+}
+
+async function backupNow(site) {
+  try {
+    const result = await sitesApi.backups.create(site.name)
+    if (result.ok) openTaskDetailPage(router, result.task_id)
+    else toast.error(result.error || 'Could not start backup')
+  } catch (caught) {
+    toast.error(caught.message || 'Could not start backup')
+  }
+}
+
 function siteMenuOptions(site) {
   return [
-    {
-      label: 'Open site',
-      icon: 'lucide-external-link',
-      onClick: async () => {
-        const { url } = await sitesApi.login(site.name)
-        if (url) window.open(url, '_blank')
-      },
-    },
-    {
-      label: 'Back up now',
-      icon: 'lucide-database-backup',
-      onClick: () => sitesApi.backup(site.name),
-    },
+    { label: 'Open site', icon: 'lucide-external-link', onClick: () => openSite(site) },
+    { label: 'Back up now', icon: 'lucide-archive', onClick: () => backupNow(site) },
   ]
 }
 

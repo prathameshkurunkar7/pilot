@@ -12,7 +12,7 @@
         </TextInput>
         <ErrorMessage v-if="error" :message="error" class="mt-2" />
         <div class="flex justify-end gap-2 mt-4">
-          <Button variant="outline" @click="show = false">Cancel</Button>
+          <Button variant="subtle" @click="show = false">Cancel</Button>
           <Button variant="solid" :loading="continuing" :disabled="!domain.trim()" @click="continueAdd">
             Continue
           </Button>
@@ -43,7 +43,7 @@
         </div>
         <ErrorMessage v-if="error" :message="error" class="mt-2" />
         <div class="flex justify-end gap-2 mt-4">
-          <Button variant="outline" @click="show = false">Cancel</Button>
+          <Button variant="subtle" @click="show = false">Cancel</Button>
           <Button variant="solid" :loading="adding" @click="confirmAdd">
             {{ dnsRecordGroups.length ? 'Verify DNS' : 'Register' }}
           </Button>

@@ -76,13 +76,14 @@ import SiteSettings from '@/components/sites/Settings.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useSite } from '@/composables/useSite'
 import { useBench } from '@/composables/useBench'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const route = useRoute()
 const router = useRouter()
 const siteName = route.params.name
 
 const { setBreadcrumbs } = useBreadcrumbs()
-const { site, loading, error, status, load, login } = useSite(siteName)
+const { site, loading, error, status, load, login, backup } = useSite(siteName)
 const { version, load: loadBench } = useBench()
 
 setBreadcrumbs([
@@ -138,10 +139,20 @@ function loginAsAdmin() {
   })
 }
 
+async function backupNow() {
+  try {
+    const result = await backup()
+    if (result.ok) openTaskDetailPage(router, result.task_id)
+    else toast.error(result.error || 'Could not start backup')
+  } catch (caught) {
+    toast.error(caught.message || 'Could not start backup')
+  }
+}
+
 const menuOptions = computed(() => [
   ...(isMobile.value ? [{ label: 'Install app', icon: 'lucide-plus', onClick: goToMarketplace }] : []),
   { label: 'Login as admin', icon: 'lucide-log-in', onClick: loginAsAdmin },
-  { label: 'Back up now', icon: 'lucide-database-backup', onClick: () => { } },
+  { label: 'Back up now', icon: 'lucide-archive', onClick: backupNow },
   { label: 'Deactivate site', icon: 'lucide-power', onClick: () => { } },
 ])
 
