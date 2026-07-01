@@ -40,7 +40,7 @@ class UninstallAppCommand(Command):
             if app_name in site.list_apps():
                 return
 
-        # This does run a redundant check of app installed on any site but will exist quick.
+        # This does run a redundant check of app installed on any site but will exit quick.
         print(f"\nApp {app_name} is not installed on any site removing from bench.")
         RemoveAppCommand(self.bench, app_name=app_name, skip_confirm=True).run()
 
