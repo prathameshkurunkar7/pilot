@@ -26,6 +26,15 @@ def callback_handler(callback_bin_path: Path, output_log: Path, meta: dict) -> N
             log_file.write(f"\nCallback failed: {error!s}\n")
 
 
+def _resolve_outcome(returncode: int, cancelled: bool) -> tuple[bool, str]:
+    """Success is decided by the child's exit alone, so a cancel racing in after a
+    clean exit-0 never tears down a completed install. cancelled only labels a
+    non-zero exit as killed vs failed."""
+    succeeded = returncode == 0
+    status = "success" if succeeded else "killed" if cancelled else "failed"
+    return succeeded, status
+
+
 def main() -> None:
     task_dir = Path(sys.argv[1])
     meta = json.loads((task_dir / "meta.json").read_text())
@@ -61,7 +70,7 @@ def main() -> None:
         holder["proc"] = process
         returncode = process.wait()
 
-    succeeded = returncode == 0 and not cancelled["flag"]
+    succeeded, status = _resolve_outcome(returncode, cancelled["flag"])
 
     if succeeded and on_success_bin.exists():
         callback_handler(on_success_bin, task_dir / "output.log", meta=meta)
@@ -75,7 +84,6 @@ def main() -> None:
     meta["finished_at"] = datetime.now(timezone.utc).isoformat()
     meta["exit_code"] = returncode
     (task_dir / "meta.json").write_text(json.dumps(meta, indent=2))
-    status = "success" if succeeded else "killed" if cancelled["flag"] else "failed"
     (task_dir / "status").write_text(status)
 
 

@@ -421,6 +421,16 @@ def _spawn_wrapper(task_dir: Path) -> subprocess.Popen:
     )
 
 
+def test_resolve_outcome() -> None:
+    from admin.backend.tasks.manager.wrapper import _resolve_outcome
+
+    assert _resolve_outcome(0, False) == (True, "success")
+    # cancel racing in after a clean exit-0 must stay success (no teardown).
+    assert _resolve_outcome(0, True) == (True, "success")
+    assert _resolve_outcome(1, False) == (False, "failed")
+    assert _resolve_outcome(-15, True) == (False, "killed")
+
+
 def test_wrapper_runs_on_failure_callback_when_command_fails(tmp_path: Path) -> None:
     task_dir = _build_run_task_dir(
         tmp_path, [sys.executable, "-c", "import sys; sys.exit(3)"], "broken.localhost"
