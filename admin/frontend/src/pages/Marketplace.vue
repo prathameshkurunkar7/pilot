@@ -118,7 +118,7 @@ async function doInstall() {
   installing.value = true
   installError.value = ''
   try {
-    const endpoint = selectedSites.value.length ? '/api/apps/add-and-install' : '/api/apps/add'
+    const endpoint = selectedSites.value.length ? '/api/apps/get-and-install' : '/api/apps/add'
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

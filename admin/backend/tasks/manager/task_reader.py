@@ -4,11 +4,11 @@ import os
 import re
 import time
 from collections.abc import Generator
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
-from pilot.exceptions import TaskNotFoundError
 from admin.backend.tasks.manager.models import TaskInfo
+from pilot.exceptions import TaskNotFoundError
 
 _TASK_ID_PATTERN = re.compile(r"^\d{8}-\d{6}-[a-f0-9]{6}$")
 _POLL_INTERVAL = 0.5
