@@ -15,9 +15,7 @@ from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 
 TASK_RETENTION_LIMIT = 100
 
-# Commands that clone an app into apps/. Their failure callback may delete the
-# clone, so we record which app dirs existed beforehand and only ever remove
-# dirs this task created — never a pre-existing app.
+# Snapshot apps/ before these run so cleanup removes only what the task cloned.
 _APP_FETCH_COMMANDS = frozenset({"get-app", "get-and-install-app", "add-and-install-app"})
 
 _WHITELIST: dict[str, list[str]] = {

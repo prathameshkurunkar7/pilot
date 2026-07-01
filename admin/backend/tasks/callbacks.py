@@ -41,9 +41,7 @@ def ssl_setup_failure_callback(meta: dict) -> None:
 
 
 def _created_apps(bench_root: Path, pre_existing: set[str]) -> list[str]:
-    """App dirs present now that did not exist when the task started — i.e. exactly
-    what this fetch created. Pre-existing apps are never returned, so cleanup can
-    never delete an app the task did not clone."""
+    """App dirs present now but absent when the task started — never a pre-existing app."""
     apps_dir = bench_root / "apps"
     if not apps_dir.exists():
         return []
@@ -51,17 +49,18 @@ def _created_apps(bench_root: Path, pre_existing: set[str]) -> list[str]:
 
 
 def app_fetch_failure_callback(meta: dict) -> None:
-    """Roll a failed/cancelled app fetch back to zero: uninstall from sites, drop
-    the apps.txt line, pip-uninstall, delete the clone. Only touches apps this
-    task created (see _created_apps)."""
+    """Roll a failed/cancelled app fetch back to zero. Removes only apps this task created."""
     if "pre_existing_apps" not in meta:
-        return  # no snapshot → cannot prove safety → do nothing
+        return  # no snapshot → can't prove safety
     bench_root = Path(meta["bench_root"])
     created = _created_apps(bench_root, set(meta["pre_existing_apps"]))
     if not created:
         return
 
-    bench = _load_bench(bench_root)
+    try:
+        bench = _load_bench(bench_root)
+    except Exception:
+        bench = None  # broken config: skip site-uninstall/pip, still force-delete below
     for app_name in created:
         _teardown_app(bench, bench_root, app_name)
 
@@ -74,8 +73,10 @@ def _load_bench(bench_root: Path):
 
 
 def _teardown_app(bench, bench_root: Path, app_name: str) -> None:
-    """Best-effort full removal. RemoveAppCommand also uninstalls from sites; if it
-    can't run on a half-built/unregistered app, force-delete so nothing lingers."""
+    """Full removal via RemoveAppCommand; force-delete if it can't run on a half-built app."""
+    if bench is None:
+        _force_teardown(bench, bench_root, app_name)
+        return
     try:
         from pilot.commands.remove_app import RemoveAppCommand
 

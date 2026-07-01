@@ -83,6 +83,19 @@ def test_app_fetch_failure_callback_noop_when_all_pre_existing(tmp_path: Path, m
     )
 
 
+def test_app_fetch_failure_callback_tears_down_even_if_bench_unloadable(tmp_path: Path, monkeypatch) -> None:
+    # Broken bench config must not abandon cleanup — created apps still get removed.
+    _make_apps(tmp_path, "frappe", "newapp")
+    torn: list[tuple] = []
+    monkeypatch.setattr(callbacks, "_load_bench", lambda root: (_ for _ in ()).throw(RuntimeError("bad toml")))
+    monkeypatch.setattr(callbacks, "_teardown_app", lambda bench, root, name: torn.append((bench, name)))
+
+    callbacks.app_fetch_failure_callback(
+        {"bench_root": str(tmp_path), "pre_existing_apps": ["frappe"], "args": {"name": "newapp"}}
+    )
+    assert torn == [(None, "newapp")]
+
+
 def test_force_teardown_removes_dir_and_apps_txt_line(tmp_path: Path) -> None:
     _make_apps(tmp_path, "newapp")
     sites = tmp_path / "sites"

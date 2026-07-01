@@ -39,6 +39,17 @@ def main() -> None:
     cwd = str(sites_dir) if sites_dir.is_dir() else str(bench_root)
 
     cancelled = {"flag": False}
+    holder: dict[str, subprocess.Popen] = {}
+
+    # Register before Popen so a cancel (TaskRunner.kill SIGTERMs us) can't slip
+    # through to the default handler and skip cleanup. ponytail: SIGTERM only; a
+    # SIGKILL escalation upstream can't be cleaned after.
+    def _on_term(_signum, _frame) -> None:
+        cancelled["flag"] = True
+        if proc := holder.get("proc"):
+            proc.terminate()
+
+    signal.signal(signal.SIGTERM, _on_term)
 
     with open(task_dir / "output.log", "wb") as log_file:
         process = subprocess.Popen(
@@ -47,16 +58,7 @@ def main() -> None:
             stdout=log_file,
             stderr=subprocess.STDOUT,
         )
-
-        def _on_term(_signum, _frame) -> None:
-            # Cancel (TaskRunner.kill) SIGTERMs this wrapper. Forward it to the
-            # command so it stops too, then fall through to run on_failure cleanup.
-            # ponytail: SIGTERM only; if a command ignores it the kill escalates
-            # to SIGKILL upstream, which we can't clean after — acceptable for now.
-            cancelled["flag"] = True
-            process.terminate()
-
-        signal.signal(signal.SIGTERM, _on_term)
+        holder["proc"] = process
         returncode = process.wait()
 
     succeeded = returncode == 0 and not cancelled["flag"]
