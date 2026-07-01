@@ -8,7 +8,7 @@ import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
 
-watch(() => route.path, resetBreadcrumbs)
+watch(() => route.name, resetBreadcrumbs)
 
 const breadcrumbs = computed(() => {
   if (items.value) return items.value
