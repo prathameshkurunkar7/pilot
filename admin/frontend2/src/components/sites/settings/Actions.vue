@@ -43,13 +43,16 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
 import { useSite } from '@/composables/useSite'
 import { sitesApi } from '@/api/sites'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const props = defineProps({ siteName: { type: String, required: true } })
+const router = useRouter()
 
-const { site, nginxEnabled, reload } = useSite(props.siteName)
+const { site, nginxEnabled } = useSite(props.siteName)
 
 const error = ref('')
 
@@ -66,7 +69,7 @@ async function enableSsl(email) {
     const data = await sitesApi.enableSsl(props.siteName, email)
     if (data.ok) {
       showSslEmail.value = false
-      await reload()
+      openTaskDetailPage(router, data.task_id)
     } else if (data.needs_email) {
       showSslEmail.value = true
       if (email) sslEmailError.value = data.error
@@ -88,7 +91,8 @@ async function clearCache() {
   clearingCache.value = true
   try {
     const data = await sitesApi.clearCache(props.siteName)
-    if (!data.ok) error.value = data.error
+    if (data.ok) openTaskDetailPage(router, data.task_id)
+    else error.value = data.error
   } catch (e) {
     error.value = e.message || 'Failed to clear cache.'
   } finally {

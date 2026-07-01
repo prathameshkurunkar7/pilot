@@ -56,7 +56,6 @@ const SITE_ARG_KEY = {
   'reinstall-site': 'site',
   'new-site': 'name',
   'new-site-from-backup': 'name',
-  'add-and-install-app': 'name',
 }
 
 export function siteLabel(task) {

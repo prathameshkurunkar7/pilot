@@ -83,6 +83,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
 import { sitesApi } from '@/api/sites'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const props = defineProps({ siteName: { type: String, required: true } })
 
@@ -97,8 +98,10 @@ async function confirmMigrate() {
   migrateError.value = ''
   try {
     const data = await sitesApi.migrate(props.siteName)
-    if (data.ok) showMigrate.value = false
-    else migrateError.value = data.error
+    if (data.ok) {
+      showMigrate.value = false
+      openTaskDetailPage(router, data.task_id)
+    } else migrateError.value = data.error
   } catch (e) {
     migrateError.value = e.message || 'Failed to migrate site.'
   } finally {
@@ -138,8 +141,11 @@ async function confirmReset() {
   resetting.value = true
   resetError.value = ''
   try {
-    await sitesApi.reinstall(props.siteName)
-    showReset.value = false
+    const data = await sitesApi.reinstall(props.siteName)
+    if (data.ok) {
+      showReset.value = false
+      openTaskDetailPage(router, data.task_id)
+    } else resetError.value = data.error
   } catch (e) {
     resetError.value = e.message || 'Failed to reset site.'
   } finally {

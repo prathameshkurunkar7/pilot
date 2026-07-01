@@ -45,15 +45,17 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Button, Dialog, ErrorMessage } from 'frappe-ui'
 import { sitesApi } from '@/api/sites'
-import { tasksApi } from '@/api/tasks'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const props = defineProps({
   app: { type: Object, default: null },
   sites: { type: Array, default: () => [] },
 })
 const open = defineModel('open')
+const router = useRouter()
 
 const installingNames = ref(new Set())
 const error = ref('')
@@ -69,26 +71,24 @@ function siteVersion(site) {
   return match ? `Version ${match[1]}` : ''
 }
 
-async function waitForTask(taskId) {
-  while (true) {
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    const { task } = await tasksApi.detail(taskId)
-    if (task.status === 'running') continue
-    if (task.status !== 'success') throw new Error('Install failed. Check the app logs for details.')
-    return
-  }
+async function startInstall(site) {
+  const result = await sitesApi.apps.getAndInstall(site.name, {
+    app: props.app.name,
+    repo: props.app.repo,
+    branch: props.app.branch || '',
+  })
+  if (!result.ok) throw new Error(result.error || `Could not install on ${site.name}.`)
+  return result.task_id
 }
 
-async function runInstall(site) {
+async function installOnSite(site) {
+  if (isInstalled(site) || installingNames.value.has(site.name)) return
+  error.value = ''
+  installingNames.value.add(site.name)
   try {
-    const result = await sitesApi.apps.getAndInstall(site.name, {
-      app: props.app.name,
-      repo: props.app.repo,
-      branch: props.app.branch || '',
-    })
-    if (!result.ok) throw new Error(result.error || `Could not install on ${site.name}.`)
-    await waitForTask(result.task_id)
-    if (!site.installed_apps.includes(props.app.name)) site.installed_apps.push(props.app.name)
+    const taskId = await startInstall(site)
+    open.value = false
+    openTaskDetailPage(router, taskId)
   } catch (caught) {
     error.value = caught.message || `Could not install on ${site.name}.`
   } finally {
@@ -96,20 +96,19 @@ async function runInstall(site) {
   }
 }
 
-function installOnSite(site) {
-  if (isInstalled(site) || installingNames.value.has(site.name)) return
-  error.value = ''
-  installingNames.value.add(site.name)
-  runInstall(site)
-}
-
 async function installOnAllSites() {
   const targets = installableSites.value.filter((s) => !installingNames.value.has(s.name))
   if (!targets.length) return
   error.value = ''
   targets.forEach((s) => installingNames.value.add(s.name))
-  for (const site of targets) {
-    await runInstall(site)
+  try {
+    await Promise.all(targets.map((site) => startInstall(site)))
+    open.value = false
+    router.push({ name: 'Tasks' })
+  } catch (caught) {
+    error.value = caught.message || 'Could not install on all sites.'
+  } finally {
+    targets.forEach((s) => installingNames.value.delete(s.name))
   }
 }
 </script>

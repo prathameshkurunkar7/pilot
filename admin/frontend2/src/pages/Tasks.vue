@@ -27,7 +27,7 @@
 
     <div v-else-if="tasks.length" class="bg-surface-elevation-1 mt-4 divide-outline-gray-1 divide-y overflow-hidden">
       <RouterLink v-for="task in tasks" :key="task.task_id"
-        :to="{ name: 'TaskDetail', params: { taskId: task.task_id } }"
+        :to="taskDetailRoute(task.task_id)"
         class="flex items-center gap-3 hover:bg-surface-gray-1 px-4 py-3 no-underline transition-colors">
         <!-- Status icon -->
         <span class="place-items-center grid rounded-full size-8 shrink-0" :class="statusConfig(task).iconBg">
@@ -57,6 +57,7 @@ import { Button, ErrorMessage, LoadingText, TabButtons } from 'frappe-ui'
 import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
 import { useTasks } from '@/composables/useTasks'
 import { commandLabel, fmtDuration, relativeTime, siteLabel, statusConfig } from '@/utils/taskFormat'
+import { taskDetailRoute } from '@/utils/taskRoute'
 
 const { tasks, loading, error, load } = useTasks()
 

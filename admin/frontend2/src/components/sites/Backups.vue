@@ -1,6 +1,6 @@
 <template>
   <div class="space-y-4 mt-5">
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3">
       <div>
         <p class="font-medium text-ink-gray-8 text-sm">Automatic backups</p>
         <p class="mt-0.5 text-ink-gray-5 text-sm">
@@ -124,11 +124,14 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, ErrorMessage, ListView, ListRowItem, LoadingText, Select } from 'frappe-ui'
 import { sitesApi } from '@/api/sites'
 import { useSite } from '@/composables/useSite'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const props = defineProps({ siteName: { type: String, required: true } })
+const router = useRouter()
 
 const { backups, backupsLoading, loadBackups } = useSite(props.siteName)
 
@@ -191,7 +194,7 @@ const scheduleOptions = computed(() => {
     onClick: () => { showCustomDialog.value = true },
   }
   const presets = [
-    { label: 'Daily, 2:00 AM',         onClick: () => setPreset('0 2 * * *') },
+    { label: 'Daily, 2:00 AM', onClick: () => setPreset('0 2 * * *') },
     { label: 'Weekly, Sunday 2:00 AM', onClick: () => setPreset('0 2 * * 0') },
   ]
   const disableEntry = { label: 'Disable backups', theme: 'red', onClick: () => { showDisableConfirm.value = true } }
@@ -220,15 +223,15 @@ function parseCronToState(cron) {
 const PRESET_CRONS = ['0 2 * * *', '0 2 * * 0']
 
 async function loadSchedule() {
-  scheduleLoading.value = true
   try {
     const data = await sitesApi.backups.schedule.get(props.siteName)
     if (!data.schedule) { backupsDisabled.value = true; return }
     backupsDisabled.value = false
     parseCronToState(data.schedule)
     schedulePreset.value = PRESET_CRONS.includes(data.schedule) ? data.schedule : 'custom'
-  } finally {
-    scheduleLoading.value = false
+  }
+  catch (e) {
+    error.value = e.message || 'Failed to load schedule.'
   }
 }
 
@@ -289,7 +292,7 @@ async function backupNow() {
   error.value = ''
   try {
     const result = await sitesApi.backups.create(props.siteName)
-    if (result.ok) await loadBackups()
+    if (result.ok) openTaskDetailPage(router, result.task_id)
     else error.value = result.error || 'Backup failed.'
   } catch (e) {
     error.value = e.message || 'Backup failed.'
@@ -351,8 +354,10 @@ async function confirmDelete() {
       body: JSON.stringify({ command: 'delete-backup', site: props.siteName, filenames }),
     })
     const data = await res.json()
-    if (data.ok) { showDelete.value = false; await loadBackups() }
-    else deleteError.value = data.error || 'Delete failed.'
+    if (data.ok) {
+      showDelete.value = false
+      openTaskDetailPage(router, data.task_id)
+    } else deleteError.value = data.error || 'Delete failed.'
   } catch (e) {
     deleteError.value = e.message || 'Delete failed.'
   } finally {

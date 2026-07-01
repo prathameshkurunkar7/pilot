@@ -55,7 +55,7 @@ function toggle() {
 
 const STATUS_ICON_BG = {
   done: 'bg-surface-green-2 text-ink-green-8',
-  running: 'bg-ink-gray-9 text-surface-white',
+  running: 'bg-surface-amber-2 text-ink-amber-8',
   failed: 'bg-surface-red-2 text-ink-red-8',
   pending: 'bg-ink-gray-1',
 }

@@ -39,16 +39,19 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, ErrorMessage, LoadingText } from 'frappe-ui'
 import MarketplaceAppCard from '@/components/MarketplaceAppCard.vue'
 import { useSite } from '@/composables/useSite'
 import { useAppRegistry } from '@/composables/useAppRegistry'
+import { openTaskDetailPage } from '@/utils/taskRoute'
 
 const props = defineProps({
   siteName: { type: String, required: true },
 })
+const router = useRouter()
 
-const { apps, installedApps, appsLoading, load, loadApps, uninstallApp } = useSite(props.siteName)
+const { apps, installedApps, appsLoading, loadApps, uninstallApp } = useSite(props.siteName)
 const { titleMap, descriptionMap, logoMap, load: loadRegistry } = useAppRegistry()
 
 const appDetailMap = computed(() => Object.fromEntries(apps.value.map((a) => [a.name, a])))
@@ -87,8 +90,7 @@ async function confirmUninstall() {
     const result = await uninstallApp(uninstallTarget.value)
     if (result?.ok) {
       showUninstall.value = false
-      await load()
-      await loadApps()
+      openTaskDetailPage(router, result.task_id)
     } else {
       uninstallError.value = result?.error || 'Uninstall failed.'
     }

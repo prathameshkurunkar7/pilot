@@ -23,7 +23,8 @@
     </div>
 
     <!-- Metadata -->
-    <div class="gap-4 grid grid-cols-2 sm:grid-cols-4 bg-surface-elevation-1 mt-4 px-0 py-4 rounded-xl">
+    <div class="gap-4 grid grid-cols-2 bg-surface-elevation-1 mt-4 px-0 py-4 rounded-xl"
+      :class="metadata.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'">
       <div v-for="item in metadata" :key="item.label">
         <p class="text-ink-gray-4 text-xs">{{ item.label }}</p>
         <p class="mt-1 text-ink-gray-8 text-sm truncate">{{ item.value }}</p>
@@ -51,7 +52,7 @@ import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
 import { tasksApi } from '@/api/tasks'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useTaskDetail } from '@/composables/useTaskDetail'
-import { commandLabel, fmtDateTime, fmtDuration, statusConfig } from '@/utils/taskFormat'
+import { commandLabel, fmtDateTime, fmtDuration, siteLabel, statusConfig } from '@/utils/taskFormat'
 
 const route = useRoute()
 const router = useRouter()
@@ -64,12 +65,16 @@ setBreadcrumbs([{ label: 'Tasks', route: { name: 'Tasks' } }, { label: taskId }]
 
 const actionError = ref('')
 
-const metadata = computed(() => [
-  { label: 'Started', value: fmtDateTime(task.value.started_at) },
-  { label: 'Finished', value: task.value.finished_at ? fmtDateTime(task.value.finished_at) : '—' },
-  { label: 'Duration', value: fmtDuration(task.value.duration_seconds) || 'Running…' },
-  { label: 'Task ID', value: task.value.task_id },
-])
+const metadata = computed(() => {
+  const items = [
+    { label: 'Started', value: fmtDateTime(task.value.started_at) },
+    { label: 'Finished', value: task.value.finished_at ? fmtDateTime(task.value.finished_at) : '—' },
+    { label: 'Duration', value: fmtDuration(task.value.duration_seconds) || 'Running…' },
+  ]
+  const site = siteLabel(task.value)
+  if (site !== 'Server-level') items.unshift({ label: 'Site', value: site })
+  return items
+})
 
 async function killTask() {
   actionError.value = ''
