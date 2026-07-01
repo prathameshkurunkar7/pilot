@@ -17,8 +17,10 @@
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <Button variant="subtle" size="sm" :loading="loading" icon="lucide-refresh-cw" @click="load" />
-        <Button v-if="task.status === 'running'" variant="subtle" size="sm" theme="red" icon="lucide-square"
-          @click="killTask" />
+        <Button v-if="task.status === 'running'" variant="subtle" size="sm" theme="red" icon-left="lucide-x"
+          @click="killTask">
+          Cancel
+        </Button>
       </div>
     </div>
 

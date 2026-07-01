@@ -5,8 +5,8 @@
     <!-- Header -->
     <div class="flex justify-between items-center">
       <div class="flex flex-col items-start">
-        <h1 class="font-semibold text-ink-gray-9 text-xl">Marketplace</h1>
-        <p class="mt-1 text-ink-gray-5 text-p-base">
+        <h1 class="font-semibold text-ink-gray-9 text-base sm:text-xl">Marketplace</h1>
+        <p class="mt-1 text-ink-gray-5 text-p-sm sm:text-p-base">
           Apps built by developers worldwide, ready to install on {{ benchName }}'s sites.
         </p>
       </div>
@@ -81,7 +81,7 @@
   </div>
 
   <ChooseSiteDialog v-model:open="showChooseSite" v-model:site="currentSiteName" :sites="sites" />
-  <InstallAppDialog v-model:open="showInstallApp" :app="installTarget" :sites="sites" />
+  <InstallAppDialog v-model:open="showInstallApp" :app="installTarget" :sites="sites" :site-name="currentSiteName" />
 </template>
 
 <script setup>

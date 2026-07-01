@@ -1,7 +1,7 @@
 <template>
   <Dialog v-model="open" :options="{ title: 'Choose site', size: 'md' }">
     <template #body-content>
-      <div class="gap-2 grid max-h-96 overflow-y-auto">
+      <div class="gap-2 grid px-2 max-h-96 overflow-y-auto">
         <button v-for="s in sites" :key="s.name" type="button"
           class="flex items-center gap-3 p-3 border rounded-lg text-left transition-colors" :class="s.name === site
             ? 'border-outline-gray-4 bg-surface-gray-1 ring-1 ring-outline-gray-4'
