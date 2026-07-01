@@ -147,7 +147,11 @@ class AppValidator:
         if hooks_file is None:
             self.fail("Could not find hooks.py in repository")
             return
-        required_apps = parse_required_apps(hooks_file)
+        try:
+            required_apps = parse_required_apps(hooks_file)
+        except SyntaxError:
+            self.fail("Error occured during the parsing of the hooks.py file, please check the syntax.")
+
         if non_frappe_deps != required_apps:
             self.fail(
                 f"frappe-dependencies (excluding frappe) {sorted(non_frappe_deps)} "
