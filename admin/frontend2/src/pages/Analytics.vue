@@ -28,12 +28,12 @@
 
     <template v-else>
       <!-- Live stats bar: CPU / Memory / Storage -->
-      <div v-if="liveStats" class="bg-white mb-6 border rounded-lg border-outline-gray-1 overflow-hidden">
+      <div v-if="liveStats" class="bg-surface-white mb-6 border rounded-lg border-outline-gray-1 overflow-hidden">
         <div class="flex sm:flex-row flex-col divide-outline-gray-2 sm:divide-x">
           <div class="flex-1 px-4 sm:px-5 py-3 sm:py-4">
             <div class="mb-2 text-ink-gray-6 text-sm">CPU</div>
-            <div class="mb-2 rounded-full h-1 overflow-hidden" style="background: #f3f4f6;">
-              <div class="rounded-full h-full" style="background: #171717;"
+            <div class="mb-2 bg-surface-gray-2 rounded-full h-1 overflow-hidden">
+              <div class="bg-surface-gray-7 rounded-full h-full"
                 :style="{ width: Math.min(liveStats.cpu_percent, 100) + '%' }" />
             </div>
             <div class="text-ink-gray-6 text-sm">{{ liveStats.cpu_percent.toFixed(1) }}% of {{ liveStats.cpu_count }}
@@ -41,8 +41,8 @@
           </div>
           <div class="flex-1 px-4 sm:px-5 py-3 sm:py-4 border-t sm:border-t-0 border-outline-gray-2">
             <div class="mb-2 text-ink-gray-6 text-sm">Memory</div>
-            <div class="mb-2 rounded-full h-1 overflow-hidden" style="background: #f3f4f6;">
-              <div class="rounded-full h-full" style="background: #171717;"
+            <div class="mb-2 bg-surface-gray-2 rounded-full h-1 overflow-hidden">
+              <div class="bg-surface-gray-7 rounded-full h-full"
                 :style="{ width: Math.min(liveStats.memory_percent, 100) + '%' }" />
             </div>
             <div class="text-ink-gray-6 text-sm">{{ formatBytes(liveStats.memory_used) }} of {{
@@ -50,8 +50,8 @@
           </div>
           <div class="flex-1 px-4 sm:px-5 py-3 sm:py-4 border-t sm:border-t-0 border-outline-gray-2">
             <div class="mb-2 text-ink-gray-6 text-sm">Storage</div>
-            <div class="mb-2 rounded-full h-1 overflow-hidden" style="background: #f3f4f6;">
-              <div class="rounded-full h-full" style="background: #171717;"
+            <div class="mb-2 bg-surface-gray-2 rounded-full h-1 overflow-hidden">
+              <div class="bg-surface-gray-7 rounded-full h-full"
                 :style="{ width: Math.min(liveStats.disk_percent, 100) + '%' }" />
             </div>
             <div class="text-ink-gray-6 text-sm">{{ formatBytes(liveStats.disk_used) }} of {{
