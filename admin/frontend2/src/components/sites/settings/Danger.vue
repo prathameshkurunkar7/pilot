@@ -10,15 +10,31 @@
             <p class="text-ink-gray-6 text-sm line-clamp-2 sm:line-clamp-none">{{ d.description }}</p>
           </div>
         </div>
-        <Button size="sm" theme="red" class="ml-4 shrink-0" @click="d.action">{{ d.label }}</Button>
+        <Button size="sm" theme="red" class="ml-4 shrink-0" @click="d.action">{{ d.buttonLabel || d.label }}</Button>
       </div>
     </div>
   </div>
 
+  <!-- Migrate dialog -->
+  <Dialog v-model="showMigrate" :options="{ title: 'Migrate this site', size: 'md' }">
+    <template #body-content>
+      <p class="text-ink-gray-7 text-p-sm">
+        This runs <span class="font-mono text-ink-gray-8">bench migrate</span> on
+        <span class="font-semibold text-ink-gray-8 break-all">{{ siteName }}</span> without taking a backup first.
+        If the migration fails partway, you'll need an existing backup to recover.
+      </p>
+      <ErrorMessage v-if="migrateError" :message="migrateError" class="mt-2" />
+      <div class="flex justify-end gap-2 mt-4">
+        <Button variant="outline" @click="showMigrate = false">Cancel</Button>
+        <Button variant="solid" theme="red" :loading="migrating" @click="confirmMigrate">Migrate</Button>
+      </div>
+    </template>
+  </Dialog>
+
   <!-- Reset dialog -->
   <Dialog v-model="showReset" :options="{ title: 'Reset this site', size: 'md' }">
     <template #body-content>
-      <p class="text-ink-gray-7 text-sm">
+      <p class="text-ink-gray-7 text-p-sm">
         This reinstalls <span class="font-semibold text-ink-gray-8 break-all">{{ siteName }}</span> and wipes
         all its data. Apps stay installed.
       </p>
@@ -41,7 +57,7 @@
   <!-- Drop dialog -->
   <Dialog v-model="showDrop" :options="{ title: 'Delete this site', size: 'md' }">
     <template #body-content>
-      <p class="text-ink-gray-7 text-sm">
+      <p class="text-ink-gray-7 text-p-sm">
         This permanently deletes <span class="font-semibold text-ink-gray-8 break-all">{{ siteName }}</span>
         and everything on it. Backups are kept for 30 days.
       </p>
@@ -72,7 +88,32 @@ const props = defineProps({ siteName: { type: String, required: true } })
 
 const router = useRouter()
 
+const showMigrate = ref(false)
+const migrating = ref(false)
+const migrateError = ref('')
+
+async function confirmMigrate() {
+  migrating.value = true
+  migrateError.value = ''
+  try {
+    const data = await sitesApi.migrate(props.siteName)
+    if (data.ok) showMigrate.value = false
+    else migrateError.value = data.error
+  } catch (e) {
+    migrateError.value = e.message || 'Failed to migrate site.'
+  } finally {
+    migrating.value = false
+  }
+}
+
 const DangerActions = [
+  {
+    key: 'migrate',
+    label: 'Migrate site',
+    buttonLabel: 'Migrate',
+    description: 'Runs bench migrate for this site without taking a backup first.',
+    action: () => { migrateError.value = ''; showMigrate.value = true },
+  },
   {
     key: 'reset',
     label: 'Reset site',

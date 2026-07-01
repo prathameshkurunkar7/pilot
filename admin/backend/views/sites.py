@@ -257,6 +257,17 @@ def clear_cache(name: str):
     return jsonify({"ok": True, "task_id": task_id})
 
 
+@sites_bp.route("/<name>/migrate", methods=["POST"])
+@require_scope(site_name)
+def migrate_site(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    try:
+        task_id = TaskRunner(bench_root).run("migrate", {"site": name})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True, "task_id": task_id})
+
+
 @sites_bp.route("/<name>/install-app", methods=["POST"])
 @require_scope(site_name)
 def install_app(name: str):
