@@ -28,6 +28,23 @@ def test_new_site_failure_callback_removes_created_site(tmp_path: Path) -> None:
     assert not site.exists()
 
 
+def test_new_site_failure_callback_drops_database_and_dir(tmp_path: Path, monkeypatch) -> None:
+    # DB cleanup must be attempted for the failed site, and the dir removed.
+    site = _make_site(tmp_path, "broken.localhost")
+    dropped: list[str] = []
+    monkeypatch.setattr(callbacks, "_drop_site_best_effort", lambda root, name: dropped.append(name))
+
+    callbacks.new_site_failure_callback({"args": {"name": "broken.localhost"}, "bench_root": str(tmp_path)})
+
+    assert dropped == ["broken.localhost"]
+    assert not site.exists()
+
+
+def test_drop_site_best_effort_swallows_errors(tmp_path: Path) -> None:
+    # No bench.toml here → _load_bench raises → must be swallowed, never propagate.
+    callbacks._drop_site_best_effort(tmp_path, "broken.localhost")
+
+
 def test_new_site_failure_callback_noop_when_nothing_created(tmp_path: Path) -> None:
     # A validate-stage failure leaves no site dir; the view guard means the name
     # never belonged to a pre-existing site. Callback must not raise.

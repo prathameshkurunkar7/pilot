@@ -6,10 +6,24 @@ from pathlib import Path
 
 
 def new_site_failure_callback(meta: dict) -> None:
+    """Roll a failed/cancelled site create back to zero: drop the database (and
+    bench.toml entry) then delete the site dir and strip its /etc/hosts line."""
     site_name = meta["args"]["name"]
-    site_path = os.path.join(meta["bench_root"], "sites", site_name)
-    shutil.rmtree(site_path, ignore_errors=True)
+    bench_root = Path(meta["bench_root"])
+    _drop_site_best_effort(bench_root, site_name)
+    shutil.rmtree(bench_root / "sites" / site_name, ignore_errors=True)
     _remove_from_hosts(site_name)
+
+
+def _drop_site_best_effort(bench_root: Path, site_name: str) -> None:
+    """Drop the DB + bench.toml entry via DropSiteCommand (frappe drop-site --force).
+    Best effort: a half-created site or unreadable config must not raise."""
+    try:
+        from pilot.commands.drop_site import DropSiteCommand
+
+        DropSiteCommand(_load_bench(bench_root), site_name).run()
+    except Exception:
+        pass
 
 
 def _remove_from_hosts(site_name: str) -> None:
