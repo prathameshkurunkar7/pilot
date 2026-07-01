@@ -14,17 +14,17 @@ export const navigation = {
   Insights: {
     children: {
       Analytics: {
-        path: '/dev-tools/analytics',
+        path: '/insights/analytics',
         icon: 'lucide-chart-line',
         component: () => import('./pages/Analytics.vue'),
       },
       Logs: {
-        path: '/dev-tools/logs',
+        path: '/insights/logs',
         icon: 'lucide-scroll-text',
         component: () => import('./pages/Logs.vue'),
       },
       Tasks: {
-        path: '/tasks',
+        path: '/insights/tasks',
         icon: 'lucide-list-checks',
         component: () => import('./pages/Tasks.vue'),
       },

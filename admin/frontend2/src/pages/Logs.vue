@@ -53,7 +53,7 @@
                 <span class="lucide-arrow-left size-4" />
               </Button>
               <span class="flex-1 min-w-0 font-mono text-ink-gray-8 text-sm truncate">{{ truncateFilename(selectedFile)
-                }}</span>
+              }}</span>
             </div>
             <div class="flex items-center gap-2">
               <div class="w-28 sm:w-32 min-w-0 shrink-0">
@@ -103,7 +103,7 @@
           <div ref="viewer" class="flex flex-col flex-1 mt-2 sm:mt-0 overflow-hidden">
             <div v-if="contentError" class="p-4 font-mono text-ink-red-4 text-sm">Error: {{ contentError }}</div>
             <LogView v-else ref="terminal" :lines="visibleLines" :streaming="liveMode" fill wrap divided
-              :rounded="isMobile ? 'sm' : 'lg'" :empty-text="contentLoading ? 'Loading…' : 'Log file is empty.'" />
+              :rounded="isMobile" :empty-text="contentLoading ? 'Loading…' : 'Log file is empty.'" />
 
             <div v-if="rawLines.length"
               class="sm:px-4 py-1.5 sm:py-2 sm:border-t border-outline-gray-2 text-ink-gray-4 text-xs shrink-0">
@@ -275,7 +275,7 @@ function paintMatches(scroll) {
 }
 
 watch(selectedFile, (filename) => {
-  router.replace({ path: '/dev-tools/logs', query: filename ? { file: filename } : {} })
+  router.replace({ path: '/insights/logs', query: filename ? { file: filename } : {} })
   stopLive()
   rawLines.value = []
   search.value = ''

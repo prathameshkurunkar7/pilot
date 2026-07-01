@@ -24,7 +24,7 @@ const routes = [
     meta: { group: 'Sites' },
   },
   {
-    path: '/tasks/:taskId',
+    path: '/insights/tasks/:taskId',
     name: 'TaskDetail',
     component: () => import('./pages/TaskDetail.vue'),
     meta: { group: 'Insights' },

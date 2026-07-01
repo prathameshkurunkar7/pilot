@@ -20,94 +20,99 @@
       </Dropdown>
     </div>
 
-    <div v-if="!isHistorical && stats" class="bg-white border rounded-lg border-outline-gray-1 mb-6 overflow-hidden">
-      <div class="flex flex-col sm:flex-row sm:divide-x divide-outline-gray-2">
-        <div class="flex-1 px-4 py-3 sm:px-5 sm:py-4">
-          <div class="text-ink-gray-6 text-sm mb-2">CPU</div>
-          <div class="h-1 rounded-full mb-2 overflow-hidden" style="background: #f3f4f6;">
-            <div class="h-full rounded-full" style="background: #171717;" :style="{ width: Math.min(stats.cpu_percent, 100) + '%' }" />
-          </div>
-          <div class="text-ink-gray-6 text-sm">{{ stats.cpu_percent.toFixed(1) }}% of {{ stats.cpu_count }} vCPUs</div>
-        </div>
-        <div class="flex-1 px-4 py-3 sm:px-5 sm:py-4 border-t sm:border-t-0 border-outline-gray-2">
-          <div class="text-ink-gray-6 text-sm mb-2">Memory</div>
-          <div class="h-1 rounded-full mb-2 overflow-hidden" style="background: #f3f4f6;">
-            <div class="h-full rounded-full" style="background: #171717;" :style="{ width: Math.min(stats.memory_percent, 100) + '%' }" />
-          </div>
-          <div class="text-ink-gray-6 text-sm">{{ formatBytes(stats.memory_used) }} of {{ formatBytes(stats.memory_total) }}</div>
-        </div>
-        <div class="flex-1 px-4 py-3 sm:px-5 sm:py-4 border-t sm:border-t-0 border-outline-gray-2">
-          <div class="text-ink-gray-6 text-sm mb-2">Storage</div>
-          <div class="h-1 rounded-full mb-2 overflow-hidden" style="background: #f3f4f6;">
-            <div class="h-full rounded-full" style="background: #171717;" :style="{ width: Math.min(stats.disk_percent, 100) + '%' }" />
-          </div>
-          <div class="text-ink-gray-6 text-sm">{{ formatBytes(stats.disk_used) }} of {{ formatBytes(stats.disk_total) }}</div>
-        </div>
-      </div>
+    <div v-if="pageLoading" class="flex justify-center h-[50vh]">
+      <LoadingText />
     </div>
 
-    <!-- Historical status states -->
-    <template v-if="isHistorical">
-      <LoadingText v-if="historyLoading" />
-      <ErrorMessage v-else-if="historyError" :message="historyError" />
-      <div v-else-if="systemEmpty"
-        class="flex flex-col justify-center items-center gap-1 py-10 border border-dashed rounded-lg border-outline-gray-2 text-center">
-        <p class="font-medium text-ink-gray-7 text-sm">No system data for the last {{ windowLabel }}</p>
-        <p class="text-ink-gray-5 text-xs">Monitoring hasn't collected anything in this range yet.</p>
+    <template v-else>
+      <div v-if="!isHistorical && stats" class="bg-white mb-6 border rounded-lg border-outline-gray-1 overflow-hidden">
+        <div class="flex sm:flex-row flex-col divide-outline-gray-2 sm:divide-x">
+          <div class="flex-1 px-4 sm:px-5 py-3 sm:py-4">
+            <div class="mb-2 text-ink-gray-6 text-sm">CPU</div>
+            <div class="mb-2 rounded-full h-1 overflow-hidden" style="background: #f3f4f6;">
+              <div class="rounded-full h-full" style="background: #171717;"
+                :style="{ width: Math.min(stats.cpu_percent, 100) + '%' }" />
+            </div>
+            <div class="text-ink-gray-6 text-sm">{{ stats.cpu_percent.toFixed(1) }}% of {{ stats.cpu_count }} vCPUs
+            </div>
+          </div>
+          <div class="flex-1 px-4 sm:px-5 py-3 sm:py-4 border-t sm:border-t-0 border-outline-gray-2">
+            <div class="mb-2 text-ink-gray-6 text-sm">Memory</div>
+            <div class="mb-2 rounded-full h-1 overflow-hidden" style="background: #f3f4f6;">
+              <div class="rounded-full h-full" style="background: #171717;"
+                :style="{ width: Math.min(stats.memory_percent, 100) + '%' }" />
+            </div>
+            <div class="text-ink-gray-6 text-sm">{{ formatBytes(stats.memory_used) }} of {{
+              formatBytes(stats.memory_total) }}</div>
+          </div>
+          <div class="flex-1 px-4 sm:px-5 py-3 sm:py-4 border-t sm:border-t-0 border-outline-gray-2">
+            <div class="mb-2 text-ink-gray-6 text-sm">Storage</div>
+            <div class="mb-2 rounded-full h-1 overflow-hidden" style="background: #f3f4f6;">
+              <div class="rounded-full h-full" style="background: #171717;"
+                :style="{ width: Math.min(stats.disk_percent, 100) + '%' }" />
+            </div>
+            <div class="text-ink-gray-6 text-sm">{{ formatBytes(stats.disk_used) }} of {{ formatBytes(stats.disk_total)
+            }}</div>
+          </div>
+        </div>
       </div>
-      <div v-else-if="isPartial(system.earliest)"
-        class="flex items-start gap-2 bg-surface-amber-1 mb-4 px-3 py-2 rounded-md text-ink-amber-3 text-xs">
-        <span class="font-medium">Partial data:</span>
-        <span>only the last {{ humanizeSince(system.earliest) }} is available</span>
+
+      <template v-if="isHistorical">
+        <LoadingText v-if="historyLoading" />
+        <ErrorMessage v-else-if="historyError" :message="historyError" />
+        <div v-else-if="allEmpty" class="flex flex-col justify-center items-center gap-2 h-[50vh] text-center">
+          <span class="size-10 text-ink-gray-3 lucide-chart-line" />
+          <p class="font-medium text-ink-gray-7 text-sm">No data for the last {{ windowLabel }}</p>
+          <p class="text-ink-gray-5 text-xs">Monitoring hasn't collected metrics in this range yet.</p>
+        </div>
+        <div v-else-if="isPartial(system.earliest)"
+          class="flex items-start gap-2 bg-surface-amber-1 mb-4 px-3 py-2 rounded-md text-ink-amber-3 text-xs">
+          <span class="font-medium">Partial data:</span>
+          <span>only the last {{ humanizeSince(system.earliest) }} is available</span>
+        </div>
+      </template>
+
+      <!-- Charts -->
+      <div v-if="showCharts" class="gap-4 grid grid-cols-1 sm:grid-cols-2 mb-6">
+        <ChartCard :title="cpuChartConfig.title">
+          <AxisChart :config="cpuChartConfig.config" />
+        </ChartCard>
+        <ChartCard :title="loadChartConfig.title">
+          <AxisChart :config="loadChartConfig.config" />
+        </ChartCard>
+        <ChartCard :title="memChartConfig.title">
+          <AxisChart :config="memChartConfig.config" />
+        </ChartCard>
+        <ChartCard v-if="hasDisk" :title="diskChartConfig.title">
+          <AxisChart :config="diskChartConfig.config" />
+        </ChartCard>
+        <ChartCard :title="networkChartConfig.title">
+          <AxisChart :config="networkChartConfig.config" />
+        </ChartCard>
+        <ChartCard :title="diskIoChartConfig.title">
+          <AxisChart :config="diskIoChartConfig.config" />
+        </ChartCard>
+      </div>
+
+      <!-- Application (historical) -->
+      <div v-if="isHistorical && !historyLoading && !historyError && !appEmpty"
+        class="sm:bg-surface-white sm:shadow-sm sm:px-6 py-1 sm:py-5 sm:border sm:rounded-lg sm:border-outline-gray-1">
+        <h2 class="mb-4 font-semibold text-ink-gray-9">Application Processes</h2>
+        <div class="flex flex-col gap-4">
+          <div v-if="isPartial(application.earliest)"
+            class="flex items-start gap-2 bg-surface-amber-1 px-3 py-2 rounded-md text-ink-amber-3 text-xs">
+            <span class="font-medium">Partial data:</span>
+            <span>only the last {{ humanizeSince(application.earliest) }} is available</span>
+          </div>
+          <ChartCard :title="appCpuConfig.title">
+            <AxisChart :config="appCpuConfig.config" class="p-0" />
+          </ChartCard>
+          <ChartCard :title="appMemConfig.title">
+            <AxisChart :config="appMemConfig.config" />
+          </ChartCard>
+        </div>
       </div>
     </template>
-
-    <!-- Charts -->
-    <div v-if="showCharts" class="gap-4 grid grid-cols-1 sm:grid-cols-2 mb-6">
-      <ChartCard :title="cpuChartConfig.title">
-        <AxisChart :config="cpuChartConfig.config" />
-      </ChartCard>
-      <ChartCard :title="loadChartConfig.title">
-        <AxisChart :config="loadChartConfig.config" />
-      </ChartCard>
-      <ChartCard :title="memChartConfig.title">
-        <AxisChart :config="memChartConfig.config" />
-      </ChartCard>
-      <ChartCard v-if="hasDisk" :title="diskChartConfig.title">
-        <AxisChart :config="diskChartConfig.config" />
-      </ChartCard>
-      <ChartCard :title="networkChartConfig.title">
-        <AxisChart :config="networkChartConfig.config" />
-      </ChartCard>
-      <ChartCard :title="diskIoChartConfig.title">
-        <AxisChart :config="diskIoChartConfig.config" />
-      </ChartCard>
-    </div>
-
-    <!-- Application (historical) -->
-    <div v-if="isHistorical"
-      class="sm:bg-surface-white sm:shadow-sm sm:px-6 py-1 sm:py-5 sm:border sm:rounded-lg sm:border-outline-gray-1">
-      <h2 class="mb-4 font-semibold text-ink-gray-9">Application Processes</h2>
-      <LoadingText v-if="historyLoading" />
-      <div v-else-if="appEmpty"
-        class="flex flex-col justify-center items-center gap-1 py-10 border border-dashed rounded-lg border-outline-gray-2 text-center">
-        <p class="font-medium text-ink-gray-7 text-sm">No process data for the last {{ windowLabel }}</p>
-        <p class="text-ink-gray-5 text-xs">Application metrics are recorded only in production.</p>
-      </div>
-      <div v-else class="flex flex-col gap-4">
-        <div v-if="isPartial(application.earliest)"
-          class="flex items-start gap-2 bg-surface-amber-1 px-3 py-2 rounded-md text-ink-amber-3 text-xs">
-          <span class="font-medium">Partial data:</span>
-          <span>only the last {{ humanizeSince(application.earliest) }} is available</span>
-        </div>
-        <ChartCard :title="appCpuConfig.title">
-          <AxisChart :config="appCpuConfig.config" class="p-0" />
-        </ChartCard>
-        <ChartCard :title="appMemConfig.title">
-          <AxisChart :config="appMemConfig.config" />
-        </ChartCard>
-      </div>
-    </div>
 
   </div>
 </template>
@@ -139,7 +144,12 @@ const windowOptions = computed(() => WINDOWS.map(w => ({ label: w.label, onClick
 
 function setWindow(key) {
   activeWindow.value = key
-  key === 'live' ? loadStats() : loadHistory(key)
+  if (key === 'live') {
+    seedLiveHistory()
+    loadStats()
+  } else {
+    loadHistory(key)
+  }
 }
 
 const CPU_SERIES = ['Busy System', 'Busy User', 'Busy IOWait', 'Busy IRQ', 'Busy Other']
@@ -186,6 +196,17 @@ async function loadStats() {
   } catch { }
 }
 
+async function seedLiveHistory() {
+  if (isHistorical.value || liveHistory.value.length) return
+  try {
+    const d = await monitorApi.history('1h')
+    if (d.error) throw new Error(d.error)
+    if (d.system?.points?.length) {
+      liveHistory.value = d.system.points
+    }
+  } catch { }
+}
+
 const system = ref({ earliest: null, points: [], memory_total_mb: null, storage: null })
 const application = ref({ earliest: null, services: [], cpu: [], memory: [] })
 const historyLoading = ref(false)
@@ -224,6 +245,7 @@ function humanizeSince(earliest) {
 
 const systemEmpty = computed(() => isHistorical.value && !historyLoading.value && !system.value.points.length)
 const appEmpty = computed(() => isHistorical.value && !historyLoading.value && !application.value.cpu.length)
+const allEmpty = computed(() => isHistorical.value && !historyLoading.value && !historyError.value && systemEmpty.value && appEmpty.value)
 
 function transparent(hex, opacity) {
   const v = parseInt(hex.slice(1), 16)
@@ -366,6 +388,8 @@ const appMemConfig = computed(() => ({
   },
 }))
 
+const pageLoading = computed(() => isHistorical.value ? historyLoading.value : (!stats.value || liveHistory.value.length < 2))
+
 const showCharts = computed(() => isHistorical.value
   ? (!historyLoading.value && !historyError.value && !systemEmpty.value)
   : liveHistory.value.length > 1)
@@ -377,8 +401,9 @@ function formatBytes(bytes) {
 }
 
 let statsTimer
-onMounted(() => {
-  loadStats()
+onMounted(async () => {
+  await seedLiveHistory()
+  await loadStats()
   statsTimer = setInterval(loadStats, 3000)
 })
 onUnmounted(() => clearInterval(statsTimer))
