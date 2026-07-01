@@ -151,6 +151,7 @@ class AppValidator:
             required_apps = parse_required_apps(hooks_file)
         except SyntaxError:
             self.fail("Error occured during the parsing of the hooks.py file, please check the syntax.")
+            return
 
         if non_frappe_deps != required_apps:
             self.fail(
