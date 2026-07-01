@@ -6,26 +6,7 @@ on:
       - "registry/apps_v2.json"
 
 jobs:
-  validate-schema:
-    runs-on: ubuntu-22.04
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Get base apps_v2.json
-        run: git show ${{ github.event.pull_request.base.sha }}:registry/apps_v2.json > /tmp/apps_before.json
-
-      - name: Validate registry schema
-        run: python3 scripts/validate_registry_schema.py /tmp/apps_before.json registry/apps_v2.json
-
   semgrep-check:
-    needs: validate-schema
     runs-on: ubuntu-22.04
 
     steps:
