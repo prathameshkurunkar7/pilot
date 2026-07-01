@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 Orchestrates the marketplace app PR check: find which targets changed
-(diff_marketplace_apps.py), then run each through run_semgrep.py
-(Semgrep scan) and validate_marketplace_app.py (quality checks).
-Exits non-zero if any target fails either check.
+(diff_marketplace_apps.py), clone each once, then run every validator
+(semgrep, app quality, dependencies) against the clone.
+Exits non-zero if any target fails any validator.
 
 Run:
     python3 scripts/check_marketplace_apps.py <old-apps.json> <new-apps.json>
@@ -11,35 +11,35 @@ Run:
 
 from __future__ import annotations
 
-import json
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from clone_utils import clone_app
-from run_semgrep import run_semgrep
+from diff_marketplace_apps import find_changed_targets, load_apps
 from run_app_validations import AppValidator
-
-DIFF_SCRIPT = Path(__file__).parent / "diff_marketplace_apps.py"
-
-
-def find_changed_targets(old_path: str, new_path: str) -> list[dict]:
-    result = subprocess.run(
-        ["python3", str(DIFF_SCRIPT), old_path, new_path],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return json.loads(result.stdout)
+from run_dependency_validations import DependencyValidator
+from run_semgrep_validations import SemgrepValidator
+from validate_registry_schema import SchemaValidator
 
 
-def check_target(target: dict) -> bool:
+def validators_for(target: dict, clone_dir: Path, marketplace: dict[str, dict]) -> list:
+    repo, ref = target["repo"], target["target"]
+    return [
+        SemgrepValidator(clone_dir, f"{repo}@{ref}"),
+        AppValidator(repo, clone_dir),
+        DependencyValidator(target.get("dependencies", {}), marketplace),
+    ]
+
+
+def check_target(target: dict, marketplace: dict[str, dict]) -> bool:
+    print(f"\n=== Checking {target['name']} ({target.get('repo')}@{target.get('target')}) ===", flush=True)
+
+    if not SchemaValidator(target).run():
+        return False
+
     repo, ref, target_type = target["repo"], target["target"], target["target_type"]
-    label = f"{target['name']} ({repo}@{ref})"
-    print(f"\n=== Checking {label} ===", flush=True)
-
     with tempfile.TemporaryDirectory() as tmp:
         clone_dir = Path(tmp) / "app"
         try:
@@ -48,10 +48,9 @@ def check_target(target: dict) -> bool:
             print(f"  FAIL: {exc}")
             return False
 
-        semgrep_passed = run_semgrep(clone_dir, f"{repo}@{ref}")
-        validate_passed = AppValidator(repo, ref, target_type).run_on_dir(clone_dir)
+        results = [validator.run() for validator in validators_for(target, clone_dir, marketplace)]
 
-    return semgrep_passed and validate_passed
+    return all(results)
 
 
 def main() -> None:
@@ -59,12 +58,15 @@ def main() -> None:
         print("Usage: check_marketplace_apps.py <old-apps.json> <new-apps.json>", file=sys.stderr)
         sys.exit(1)
 
-    changed_targets = find_changed_targets(sys.argv[1], sys.argv[2])
+    marketplace = load_apps(Path(sys.argv[1]))
+    new_apps = load_apps(Path(sys.argv[2]))
+    changed_targets = find_changed_targets(marketplace, new_apps)
+
     if not changed_targets:
         print("No app code changes detected — nothing to scan.")
         return
 
-    results = {f"{t['name']}@{t['target']}": check_target(t) for t in changed_targets}
+    results = {f"{t['name']}@{t['target']}": check_target(t, marketplace) for t in changed_targets}
     failed = [key for key, passed in results.items() if not passed]
 
     if failed:
