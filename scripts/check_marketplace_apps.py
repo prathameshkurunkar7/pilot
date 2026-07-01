@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from clone_utils import clone_app
 from run_semgrep import run_semgrep
-from scripts.run_app_validations import AppValidator
+from run_app_validations import AppValidator
 
 DIFF_SCRIPT = Path(__file__).parent / "diff_marketplace_apps.py"
 
