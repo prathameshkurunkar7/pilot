@@ -16,7 +16,7 @@ export const navigation = {
       Analytics: {
         path: '/dev-tools/analytics',
         icon: 'lucide-chart-line',
-        component: Placeholder,
+        component: () => import('./pages/Analytics.vue'),
       },
       Logs: {
         path: '/dev-tools/logs',
