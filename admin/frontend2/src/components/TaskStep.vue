@@ -1,6 +1,6 @@
 <template>
-  <div class="border rounded-lg min-w-0 border-outline-gray-2 overflow-hidden">
-    <div class="flex items-center gap-3 bg-surface-white px-4 py-2.5 transition-colors"
+  <div class="border rounded-lg border-outline-gray-2 min-w-0 overflow-hidden">
+    <div class="flex items-center gap-3 bg-surface-white p-2.5 transition-colors"
       :class="hasOutput ? 'cursor-pointer hover:bg-surface-gray-1' : ''" @click="toggle">
       <span class="place-items-center grid rounded-full size-6 shrink-0" :class="iconBg">
         <span v-if="status === 'done'" class="size-3.5 lucide-check" />
