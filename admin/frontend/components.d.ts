@@ -33,6 +33,7 @@ declare module 'vue' {
     MarketplaceAppCard: typeof import('./src/components/MarketplaceAppCard.vue')['default']
     NewBenchDialog: typeof import('./src/components/NewBenchDialog.vue')['default']
     NewSiteDialog: typeof import('./src/components/NewSiteDialog.vue')['default']
+    PilotLogo: typeof import('./src/components/PilotLogo.vue')['default']
     ReconnectOverlay: typeof import('./src/components/ReconnectOverlay.vue')['default']
     RemoveDomainDialog: typeof import('./src/components/sites/settings/domains/RemoveDomainDialog.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
