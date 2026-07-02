@@ -86,8 +86,16 @@
           <ErrorMessage v-show="errorMessage" :message="errorMessage" />
         </div>
 
-        <!-- Done -->
-        <div v-show="currentStep === 'done'" class="flex flex-col gap-4 py-2">
+        <!-- Done: production hand-off already ran the production setup, so just wait for it to come up -->
+        <div v-show="isDone && isProductionHandoff" class="flex flex-col justify-center items-center gap-3 py-10">
+          <LoadingText />
+          <p class="text-ink-gray-6 text-sm text-center">
+            Finishing production setup. This page will reload automatically once your bench is live.
+          </p>
+        </div>
+
+        <!-- Done: plain dev bench, production is a deliberate step the user runs later -->
+        <div v-show="isDone && !isProductionHandoff" class="flex flex-col gap-4 py-2">
           <p class="text-ink-gray-7 text-sm">
             Your bench is ready. Run one of these in your terminal:
           </p>
@@ -161,6 +169,8 @@ const {
   isSubmitting,
   isLinux,
   isAlpine,
+  isProductionHandoff,
+  isDone,
   terminal,
   streamUrl,
   streamStatus,

@@ -42,6 +42,7 @@ export function useSetup() {
   const benchName = ref('')
   const isLinux = ref(true)
   const isAlpine = ref(false)
+  const isProductionHandoff = ref(false)
   const dedicatedMariadbWillInstall = ref(false)
   const sharedMariadbWillInstall = ref(false)
   const postgresWillInstall = ref(false)
@@ -131,7 +132,11 @@ export function useSetup() {
   const modalWidthClass = computed(() =>
     isInstalling.value && showStreamDetails.value ? 'max-w-2xl' : 'max-w-lg',
   )
-  const stepTitle = computed(() => STEP_TITLES[currentStep.value] || benchName.value)
+  const isDone = computed(() => currentStep.value === 'done')
+  const stepTitle = computed(() => {
+    if (isDone.value && isProductionHandoff.value) return 'Finishing setup'
+    return STEP_TITLES[currentStep.value] || benchName.value
+  })
   const stepSubtitle = computed(() => STEP_SUBTITLES[currentStep.value] || null)
 
   // A dedicated instance is ours to provision, so give it a generated password.
@@ -152,6 +157,10 @@ export function useSetup() {
       benchName.value = config.bench_name || ''
       isLinux.value = config.is_linux !== false
       isAlpine.value = config.is_alpine === true
+      // Bench arrived with production already chosen (the admin UI's "New Bench"
+      // flow) — the wizard's task will bring up production itself, so the 'done'
+      // step shouldn't tell the user to run `bench setup production` by hand.
+      isProductionHandoff.value = Boolean(config.production_process_manager)
       volume.availableDevices.value = config.available_devices || []
       volume.rootfsFreeBytes.value = config.rootfs_free_bytes || 0
 
@@ -417,6 +426,8 @@ export function useSetup() {
     isSubmitting,
     isLinux,
     isAlpine,
+    isProductionHandoff,
+    isDone,
     terminal,
     streamUrl,
     streamStatus,
