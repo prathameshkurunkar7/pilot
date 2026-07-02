@@ -160,7 +160,10 @@ export function useSetup() {
       // Bench arrived with production already chosen (the admin UI's "New Bench"
       // flow) — the wizard's task will bring up production itself, so the 'done'
       // step shouldn't tell the user to run `bench setup production` by hand.
-      isProductionHandoff.value = Boolean(config.production_process_manager)
+      // The flattened config renders an unset manager as the literal string
+      // "none" (see BenchTomlBuilder._flatten), not an empty value.
+      const processManager = config.production_process_manager
+      isProductionHandoff.value = Boolean(processManager) && processManager !== 'none'
       volume.availableDevices.value = config.available_devices || []
       volume.rootfsFreeBytes.value = config.rootfs_free_bytes || 0
 
