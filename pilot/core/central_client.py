@@ -54,3 +54,7 @@ class CentralClient:
             raise CentralClientError(f"Central returned HTTP {exc.code} for {path}") from exc
         except urllib.error.URLError as exc:
             raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc.reason}") from exc
+        except ValueError as exc:
+            # A 2xx with a non-JSON body (e.g. an HTML error page from a proxy) — decode /
+            # json.loads raise ValueError, which the urllib guards above don't cover.
+            raise CentralClientError(f"Central returned a non-JSON response for {path}: {exc}") from exc

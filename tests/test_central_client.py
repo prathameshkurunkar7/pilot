@@ -105,3 +105,24 @@ def test_heartbeat_sends_x_pilot_token_and_returns_echo(tmp_path: Path) -> None:
     assert result["pilot_credential_id"] == "pcred-x"
     assert captured["url"] == "https://central.test/api/method/central.api.pilot.heartbeat"
     assert "tok-9" in captured["headers"].values()
+
+
+def test_heartbeat_wraps_non_json_response(tmp_path: Path) -> None:
+    """A 2xx with a non-JSON body (e.g. a proxy's HTML error page) surfaces as a
+    CentralClientError, not a bare JSONDecodeError."""
+    bench = _bench(tmp_path)
+    _write_common(bench, {"central_endpoint": "https://central.test", "central_auth_token": "tok"})
+
+    class _HtmlResponse:
+        def read(self) -> bytes:
+            return b"<html><body>502 Bad Gateway</body></html>"
+
+        def __enter__(self) -> "_HtmlResponse":
+            return self
+
+        def __exit__(self, *exc) -> bool:
+            return False
+
+    with patch("pilot.core.central_client.urllib.request.urlopen", return_value=_HtmlResponse()):
+        with pytest.raises(CentralClientError):
+            CentralClient(bench).heartbeat()
