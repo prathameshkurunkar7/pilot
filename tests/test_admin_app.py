@@ -167,8 +167,9 @@ def test_api_benches_new_creates_bench(tmp_path: Path) -> None:
 def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path) -> None:
     # A bench created from a production admin is routed to the setup wizard at its
     # own domain — not auto-provisioned to a password-protected login. Its process
-    # manager and TLS choice are still brought up automatically, mirroring the
-    # parent bench.
+    # manager and TLS choice are recorded (mirroring the parent bench) but not
+    # brought up yet — that needs the venv/framework app the wizard's init step
+    # installs, so WizardSetupTask finishes the job via SetupProductionCommand.
     benches_dir = tmp_path / "benches"
     current = benches_dir / "current"
     _write_bench_toml(current, "current", admin_enabled=True, admin_password="secret",
@@ -207,18 +208,21 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
     mock_admin.assert_called_once()
     mock_gen.assert_called_once()
     mock_popen.assert_not_called()
-    # start_admin only socket-activates the admin; the workload (web/worker/redis)
-    # is started explicitly too, so the bench is actually running, not just enabled.
-    from pilot.managers.process_managers.base import UnitGroup
-
-    mock_apply.assert_called_once_with("start", UnitGroup.WORKLOAD)
+    # The workload (web/worker/socketio) needs the venv and framework app that
+    # only exist once the wizard's init step runs — starting it now would
+    # crash-loop and permanently rate-limit the units. WizardSetupTask starts
+    # it once init actually finishes, not this view.
+    mock_apply.assert_not_called()
+    assert data["scheme"] == "http"
     fresh_toml = (benches_dir / "fresh" / "bench.toml").read_text()
     # The sibling production bench serves TLS, so the new one inherits that choice
-    # instead of being forced onto plain HTTP.
+    # (applied once WizardSetupTask brings it up for real) instead of being
+    # forced onto plain HTTP.
     assert "tls = true" in fresh_toml
-    # Its admin now runs under the chosen manager, so it's recorded as production
-    # (else `bench status`/`stop` would treat it as a foreground dev bench).
-    assert "enabled = true" in fresh_toml.split("[production]")[1].split("[")[0]
+    # production.enabled stays false until the wizard's init + SetupProductionCommand
+    # actually finish — a half-built deployment must never look "done" to the switcher.
+    assert "enabled = false" in fresh_toml.split("[production]")[1].split("[")[0]
+    assert 'process_manager = "systemd"' in fresh_toml.split("[production]")[1].split("[")[0]
 
 
 def test_api_benches_new_rejects_invalid_name(tmp_path: Path) -> None:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import re
 import socket
@@ -13,7 +12,6 @@ from admin.backend.bench_helpers import (
     admin_cert_exists,
     admin_running,
     current_is_production,
-    persist_toml,
     port_open,
     site_count,
     wizard_responds,
@@ -24,33 +22,12 @@ from pilot.commands.new import NewCommand
 from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import BenchError
 
-logger = logging.getLogger(__name__)
-
 benches_bp = Blueprint("benches", __name__)
 
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _ADMIN_DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
 )
-
-
-def _obtain_admin_tls(bench, nginx) -> None:
-    """Issue a Let's Encrypt cert for a freshly created bench's admin domain
-    when it inherited TLS from a sibling production bench, then switch nginx
-    over to serving it. Best-effort: issuance failures leave the bench on the
-    HTTP config already installed, retryable later from Settings."""
-    from pilot.managers.letsencrypt_manager import LetsEncryptManager, _is_public_domain
-
-    if not bench.config.admin.tls or not bench.config.letsencrypt.email:
-        return
-    if not _is_public_domain(bench.config.admin.domain):
-        return
-    try:
-        LetsEncryptManager(bench).obtain_admin()
-        nginx.generate_config(ssl_ready=True)
-        nginx.reload()
-    except Exception:
-        logger.exception("Failed to obtain admin TLS cert for %s", bench.config.admin.domain)
 
 
 @benches_bp.route("/")
@@ -241,7 +218,6 @@ def new():
         try:
             from pilot.core.bench import Bench
             from pilot.managers.nginx_manager import NginxManager
-            from pilot.managers.process_managers.base import UnitGroup
 
             bench = Bench(BenchTomlStore.for_bench(new_dir).read(), new_dir)
             DomainRouteProvider(bench).register(admin_domain, admin_domain)
@@ -254,21 +230,21 @@ def new():
                 from pilot.managers.process_managers.supervisor import SupervisorProcessManager as PM
             pm = PM(bench)
             pm.start_admin()
-            # start_admin only brings up the (socket-activated) admin; the
-            # workload (web/worker/redis) must be started explicitly too.
-            pm.apply_unit_action("start", UnitGroup.WORKLOAD)
+            # Just enough to make the wizard reachable at its domain (over plain
+            # HTTP). The workload, TLS, and marking production.enabled all need
+            # the venv/framework app the wizard's init step installs, so
+            # WizardSetupTask finishes the rest via SetupProductionCommand once
+            # that's done - duplicating those steps here risks running them
+            # before the bench can actually support them (see git history).
             nginx = NginxManager(bench)
             nginx.generate_config()
             nginx.install_config()
-            persist_toml(new_dir, {"production": {"enabled": True}})
-            _obtain_admin_tls(bench, nginx)
-            serves_https = bool(bench.config.admin.tls and nginx.admin_cert_exists())
             server_ip = DomainRouteProvider._server_ip()
         except Exception as exc:
             return jsonify({"error": f"Failed to bring up the new bench: {exc}"}), 500
         return jsonify({"name": name, "port": new_port, "wizard_at_domain": True,
                         "domain": admin_cfg.get("domain", ""),
-                        "scheme": "https" if serves_https else "http",
+                        "scheme": "http",
                         "server_ip": server_ip})
 
     spawn_env = {
