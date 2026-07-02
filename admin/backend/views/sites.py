@@ -92,6 +92,8 @@ def site_apps(name: str):
             result.append(
                 {
                     "name": app_name,
+                    "title": info.title,
+                    "description": info.description,
                     "branch": info.branch,
                     "commit": info.current_commit,
                     "version": info.installed_version,
@@ -103,6 +105,8 @@ def site_apps(name: str):
             result.append(
                 {
                     "name": app_name,
+                    "title": app_name,
+                    "description": "",
                     "branch": "",
                     "commit": "",
                     "version": "",
