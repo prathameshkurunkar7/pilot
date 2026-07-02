@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import socket
@@ -22,6 +23,8 @@ from pilot.commands.admin import _cli_root
 from pilot.commands.new import NewCommand
 from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import BenchError
+
+logger = logging.getLogger(__name__)
 
 benches_bp = Blueprint("benches", __name__)
 
@@ -47,7 +50,7 @@ def _obtain_admin_tls(bench, nginx) -> None:
         nginx.generate_config(ssl_ready=True)
         nginx.reload()
     except Exception:
-        pass
+        logger.exception("Failed to obtain admin TLS cert for %s", bench.config.admin.domain)
 
 
 @benches_bp.route("/")
