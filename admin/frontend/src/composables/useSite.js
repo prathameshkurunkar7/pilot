@@ -140,6 +140,9 @@ export function useSite(name) {
 
   const status = computed(() => {
     if (!store.site.value) return 'unknown'
+    // Provisioning wins over "offline": the site dir/site_config.json may not
+    // exist yet in the earliest moments of a new-site/reinstall task.
+    if (store.site.value.provisioning) return 'provisioning'
     if (!store.site.value.exists) return 'offline'
     if (store.site.value.broken) return 'broken'
     return 'online'
