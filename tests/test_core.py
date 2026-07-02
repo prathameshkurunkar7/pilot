@@ -8,7 +8,7 @@ from pilot.config.mariadb_config import MariaDBConfig
 from pilot.config.redis_config import RedisConfig
 from pilot.config.site_config import SiteConfig
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
-from pilot.core.app import App
+from pilot.core.app import App, RevisionPin
 from pilot.core.bench import Bench
 from pilot.core.site import Site
 from pilot.managers.process_manager import ProcessManager
@@ -84,6 +84,21 @@ def _tag(path: Path, tag: str) -> None:
     subprocess.run(["git", "-C", str(path), "tag", tag], check=True)
 
 
+def test_revision_pin_from_marketplace_target_tag() -> None:
+    pin = RevisionPin.from_marketplace_target({"target_type": "tag", "target": "v1.0.0"})
+    assert pin == RevisionPin(kind="tag", ref="v1.0.0")
+
+
+def test_revision_pin_from_marketplace_target_commit() -> None:
+    pin = RevisionPin.from_marketplace_target({"target_type": "commit", "target": "abc123"})
+    assert pin == RevisionPin(kind="commit", ref="abc123")
+
+
+def test_revision_pin_from_marketplace_target_branch_is_none() -> None:
+    # A branch is not a fixed revision to pin to — no RevisionPin for it.
+    assert RevisionPin.from_marketplace_target({"target_type": "branch", "target": "main"}) is None
+
+
 def test_app_is_on_revision_tag_matches(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     app = App(AppConfig(name="myapp", repo="r", branch=""), bench)
@@ -92,7 +107,7 @@ def test_app_is_on_revision_tag_matches(tmp_path: Path) -> None:
     _commit(app.path, "c1")
     _tag(app.path, "v1.0.0")
 
-    assert app.is_on_revision({"target_type": "tag", "target": "v1.0.0"}) is True
+    assert app.is_on_revision(RevisionPin(kind="tag", ref="v1.0.0")) is True
 
 
 def test_app_is_on_revision_tag_mismatch(tmp_path: Path) -> None:
@@ -104,7 +119,7 @@ def test_app_is_on_revision_tag_mismatch(tmp_path: Path) -> None:
     _tag(app.path, "v1.0.0")
 
     # Marketplace has since moved to a newer tag the app hasn't been updated to.
-    assert app.is_on_revision({"target_type": "tag", "target": "v2.0.0"}) is False
+    assert app.is_on_revision(RevisionPin(kind="tag", ref="v2.0.0")) is False
 
 
 def test_app_is_on_revision_no_tag_at_head(tmp_path: Path) -> None:
@@ -114,7 +129,7 @@ def test_app_is_on_revision_no_tag_at_head(tmp_path: Path) -> None:
     _init_git_repo(app.path)
     _commit(app.path, "c1")  # HEAD has no tag
 
-    assert app.is_on_revision({"target_type": "tag", "target": "v1.0.0"}) is False
+    assert app.is_on_revision(RevisionPin(kind="tag", ref="v1.0.0")) is False
 
 
 def test_app_is_on_revision_commit_prefix_matches(tmp_path: Path) -> None:
@@ -126,7 +141,7 @@ def test_app_is_on_revision_commit_prefix_matches(tmp_path: Path) -> None:
     full_sha = app.installed_hash
 
     # Registry may store an abbreviated hash; a full HEAD sha starting with it counts.
-    assert app.is_on_revision({"target_type": "commit", "target": full_sha[:8]}) is True
+    assert app.is_on_revision(RevisionPin(kind="commit", ref=full_sha[:8])) is True
 
 
 def test_app_is_on_revision_commit_mismatch(tmp_path: Path) -> None:
@@ -136,18 +151,7 @@ def test_app_is_on_revision_commit_mismatch(tmp_path: Path) -> None:
     _init_git_repo(app.path)
     _commit(app.path, "c1")
 
-    assert app.is_on_revision({"target_type": "commit", "target": "0" * 40}) is False
-
-
-def test_app_is_on_revision_branch_target_always_false(tmp_path: Path) -> None:
-    bench = make_bench(tmp_path)
-    app = App(AppConfig(name="myapp", repo="r", branch="main"), bench)
-    app.path.mkdir(parents=True)
-    _init_git_repo(app.path)
-    _commit(app.path, "c1")
-
-    # A branch has no single fixed revision to be "on" — always updatable.
-    assert app.is_on_revision({"target_type": "branch", "target": "main"}) is False
+    assert app.is_on_revision(RevisionPin(kind="commit", ref="0" * 40)) is False
 
 
 def test_app_has_remote_update_false_without_tracked_branch(tmp_path: Path) -> None:
@@ -187,10 +191,10 @@ def test_app_update_with_tag_target_checks_out_advertised_tag_not_latest(tmp_pat
     _clone_at_tag(remote, app.path, "v1.0.0")
 
     # Marketplace's next advertised pin is v2.0.0 — not the repo's true latest (v3.0.0).
-    app.update(target={"target_type": "tag", "target": "v2.0.0"})
+    app.update(pin=RevisionPin(kind="tag", ref="v2.0.0"))
 
-    assert app.is_on_revision({"target_type": "tag", "target": "v2.0.0"}) is True
-    assert app.is_on_revision({"target_type": "tag", "target": "v3.0.0"}) is False
+    assert app.is_on_revision(RevisionPin(kind="tag", ref="v2.0.0")) is True
+    assert app.is_on_revision(RevisionPin(kind="tag", ref="v3.0.0")) is False
 
 
 def test_app_update_with_commit_target_checks_out_advertised_commit(tmp_path: Path) -> None:
@@ -211,7 +215,7 @@ def test_app_update_with_commit_target_checks_out_advertised_commit(tmp_path: Pa
         ["git", "-C", str(remote), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
     ).stdout.strip()
 
-    app.update(target={"target_type": "commit", "target": target_sha})
+    app.update(pin=RevisionPin(kind="commit", ref=target_sha))
 
     assert app.installed_hash == target_sha
 

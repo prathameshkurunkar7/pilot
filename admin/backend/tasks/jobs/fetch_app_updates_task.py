@@ -30,12 +30,15 @@ class FetchAppUpdatesTask(BaseTask):
         return next((t for t in app["targets"] if t["version"] == version), None)
 
     def _check_update(self, name: str, bench_app: "App") -> bool:
+        from pilot.core.app import RevisionPin
+
         target = self._matching_target(name, bench_app)
-        if target and target["target_type"] in ("tag", "commit"):
+        pin = RevisionPin.from_marketplace_target(target) if target else None
+        if pin is not None:
             # Marketplace entries only ever advance, so a different pin is
             # always a forward one — comparing against it locally is exact,
             # no network round trip needed.
-            return not bench_app.is_on_revision(target)
+            return not bench_app.is_on_revision(pin)
         return bench_app.has_remote_update()
 
     def run(self) -> None:

@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from admin.backend.tasks.jobs.fetch_app_updates_task import FetchAppUpdatesTask
+from pilot.core.app import RevisionPin
 from pilot.core.marketplace import Marketplace
 
 
@@ -30,12 +31,10 @@ def app_mock(
     app.installed_tag = installed_tag
     app.has_remote_update.return_value = has_remote_update
 
-    def is_on_revision(target: dict) -> bool:
-        if target["target_type"] == "tag":
-            return installed_tag == target["target"]
-        if target["target_type"] == "commit":
-            return bool(installed_hash) and installed_hash.startswith(target["target"])
-        return False
+    def is_on_revision(pin: RevisionPin) -> bool:
+        if pin.kind == "tag":
+            return installed_tag == pin.ref
+        return bool(installed_hash) and installed_hash.startswith(pin.ref)
 
     app.is_on_revision.side_effect = is_on_revision
     return app

@@ -682,8 +682,9 @@ def test_update_command_update_apps_raises_on_command_error(tmp_path: Path) -> N
             cmd._update_apps()
 
 
-def test_update_command_marketplace_target_matched_by_version(tmp_path: Path) -> None:
+def test_update_command_marketplace_pin_matched_by_version(tmp_path: Path) -> None:
     from pilot.commands.update import UpdateCommand
+    from pilot.core.app import RevisionPin
 
     bench = make_bench(tmp_path)
     cmd = UpdateCommand(bench, skip_confirm=True)
@@ -698,12 +699,12 @@ def test_update_command_marketplace_target_matched_by_version(tmp_path: Path) ->
         },
     }
 
-    target = cmd._marketplace_target(app, registry)
+    pin = cmd._marketplace_pin(app, registry)
 
-    assert target == {"version": "1.0.0", "target_type": "tag", "target": "v1.0.0"}
+    assert pin == RevisionPin(kind="tag", ref="v1.0.0")
 
 
-def test_update_command_marketplace_target_none_on_repo_mismatch(tmp_path: Path) -> None:
+def test_update_command_marketplace_pin_none_on_repo_mismatch(tmp_path: Path) -> None:
     from pilot.commands.update import UpdateCommand
 
     bench = make_bench(tmp_path)
@@ -719,10 +720,10 @@ def test_update_command_marketplace_target_none_on_repo_mismatch(tmp_path: Path)
         },
     }
 
-    assert cmd._marketplace_target(app, registry) is None
+    assert cmd._marketplace_pin(app, registry) is None
 
 
-def test_update_command_marketplace_target_none_when_not_in_registry(tmp_path: Path) -> None:
+def test_update_command_marketplace_pin_none_when_not_in_registry(tmp_path: Path) -> None:
     from pilot.commands.update import UpdateCommand
 
     bench = make_bench(tmp_path)
@@ -732,12 +733,32 @@ def test_update_command_marketplace_target_none_when_not_in_registry(tmp_path: P
     app.config.repo = "https://github.com/frappe/frappe"
     app.installed_version = "16.0.0"
 
-    assert cmd._marketplace_target(app, {}) is None
+    assert cmd._marketplace_pin(app, {}) is None
 
 
-def test_update_command_passes_marketplace_target_to_app_update(tmp_path: Path) -> None:
+def test_update_command_marketplace_pin_none_for_branch_target(tmp_path: Path) -> None:
+    from pilot.commands.update import UpdateCommand
+
+    bench = make_bench(tmp_path)
+    cmd = UpdateCommand(bench, skip_confirm=True)
+    app = MagicMock()
+    app.config.name = "hrms"
+    app.config.repo = "https://github.com/frappe/hrms"
+    app.installed_version = "3.0.0"
+    registry = {
+        "hrms": {
+            "repo": "https://github.com/frappe/hrms",
+            "targets": [{"version": "3.0.0", "target_type": "branch", "target": "main"}],
+        },
+    }
+
+    assert cmd._marketplace_pin(app, registry) is None
+
+
+def test_update_command_passes_marketplace_pin_to_app_update(tmp_path: Path) -> None:
     import subprocess
     from pilot.commands.update import UpdateCommand
+    from pilot.core.app import RevisionPin
     from pilot.core.marketplace import Marketplace
 
     bench = make_bench(tmp_path)
@@ -760,7 +781,7 @@ def test_update_command_passes_marketplace_target_to_app_update(tmp_path: Path) 
             patch("pilot.core.app.App.update") as mock_update:
         cmd._update_apps()
 
-    mock_update.assert_called_once_with(target={"version": "1.0.0", "target_type": "tag", "target": "v2.0.0"})
+    mock_update.assert_called_once_with(pin=RevisionPin(kind="tag", ref="v2.0.0"))
 
 
 def test_update_command_migrate_sites_raises_on_failure(tmp_path: Path) -> None:

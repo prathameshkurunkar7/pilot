@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pilot.config.app_config import AppConfig
 from pilot.exceptions import BenchError, CommandError
@@ -9,6 +10,29 @@ from pilot.utils import installed_app_version, run_command
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
+
+
+@dataclass(frozen=True)
+class RevisionPin:
+    """A fixed revision (tag or commit) an app should be checked out at.
+
+    Keeps App's public methods decoupled from the shape of any particular
+    source's data (e.g. the marketplace registry's raw target dicts) —
+    callers translate their own data into this before calling into App.
+    A branch is not a fixed revision, so it has no RevisionPin; pass None
+    to mean "no pin, follow the tracked branch" instead.
+    """
+
+    kind: Literal["tag", "commit"]
+    ref: str
+
+    @classmethod
+    def from_marketplace_target(cls, target: dict) -> "RevisionPin | None":
+        """Build a pin from a registry target dict, or None for a branch target."""
+        kind = target.get("target_type")
+        if kind not in ("tag", "commit"):
+            return None
+        return cls(kind=kind, ref=target["target"])
 
 
 class App:
@@ -49,18 +73,13 @@ class App:
         )
         return result.stdout.strip() if result.returncode == 0 else ""
 
-    def is_on_revision(self, target: dict) -> bool:
-        """Whether this app is currently checked out at a marketplace target's pinned revision.
-
-        Only tag/commit targets pin a fixed revision; a branch target has no
-        single revision to be "on", so it's always False.
-        """
-        target_type, ref = target["target_type"], target["target"]
-        if target_type == "tag":
-            return self.installed_tag == ref
-        if target_type == "commit":
-            return bool(self.installed_hash) and self.installed_hash.startswith(ref)
-        return False
+    def is_on_revision(self, pin: RevisionPin) -> bool:
+        """Whether this app is currently checked out at a pinned revision."""
+        if pin.kind == "tag":
+            return self.installed_tag == pin.ref
+        
+        hash = self.installed_hash
+        return bool(hash) and hash.startswith(pin.ref)
 
     def has_remote_update(self) -> bool:
         """Whether the tracked branch has commits on origin not yet pulled locally.
@@ -181,17 +200,17 @@ class App:
             return 1
         return max(1, cpus // 2)
 
-    def update(self, target: dict | None = None) -> None:
+    def update(self, pin: RevisionPin | None = None) -> None:
         """Pull the latest code.
 
-        If `target` is a marketplace tag/commit pin, the app is moved to
-        exactly that advertised revision — not the branch tip or the repo's
-        overall latest tag/commit. Marketplace entries only ever advance, so
-        no ancestry check is needed here; the registry is the source of truth.
-        Otherwise this pulls the tracked branch's tip, as before.
+        If `pin` is given, the app is moved to exactly that revision — not
+        the branch tip or the repo's overall latest tag/commit. A pin's
+        source (e.g. the marketplace registry) only ever advances, so no
+        ancestry check is needed here; it's the source of truth. Otherwise
+        this pulls the tracked branch's tip, as before.
         """
-        if target and target.get("target_type") in ("tag", "commit"):
-            self._checkout_pinned_target(target)
+        if pin is not None:
+            self._checkout_pinned_target(pin)
             return
 
         cmd = ["git", "-c", f"pack.threads={self._pack_threads()}", "-C", str(self.path), "fetch", "origin", self.config.branch]
@@ -209,8 +228,8 @@ class App:
             ]
         )
 
-    def _checkout_pinned_target(self, target: dict) -> None:
-        run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", target["target"]])
+    def _checkout_pinned_target(self, pin: RevisionPin) -> None:
+        run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", pin.ref])
         run_command(["git", "-C", str(self.path), "checkout", "FETCH_HEAD"])
 
     @property
