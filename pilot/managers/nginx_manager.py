@@ -559,6 +559,17 @@ class NginxManager:
         run_command(_privileged(["ln", "-s", str(source_path), str(symlink_path)]))
         self._set_worker_user()
         self.install_default_server()
+        self._reload_or_rollback(symlink_path)
+
+    def _reload_or_rollback(self, symlink_path: Path) -> None:
+        """A bad config for this one bench must not take nginx down for every
+        other bench on the box — undo the symlink we just installed and let the
+        caller see the original failure."""
+        try:
+            self.reload()
+        except Exception:
+            run_command(_privileged(["unlink", str(symlink_path)]))
+            raise
 
     def _set_worker_user(self) -> None:
         """Run nginx workers as the bench owner. Idempotent."""

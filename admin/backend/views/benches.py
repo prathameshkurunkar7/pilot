@@ -232,7 +232,6 @@ def new():
             nginx = NginxManager(bench)
             nginx.generate_config()
             nginx.install_config()
-            nginx.reload()
             persist_toml(new_dir, {"production": {"enabled": True}})
             serves_https = bool(bench.config.admin.tls and nginx.admin_cert_exists())
             server_ip = DomainRouteProvider._server_ip()

@@ -1,12 +1,14 @@
 """Tests for NginxManager config generation — no real nginx required."""
 import copy
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from pilot.config.bench_config import BenchConfig
 from pilot.config.site_config import SiteConfig
 from pilot.core.bench import Bench
+from pilot.exceptions import CommandError
 from pilot.managers.nginx_manager import NginxManager
 
 
@@ -472,3 +474,19 @@ def test_error_pages_include_403_and_errors_allow_all(tmp_path: Path) -> None:
     block = manager._render_error_pages()
     assert "error_page 403 /_errors/403.html;" in block
     assert "allow all;" in block  # blocked client can still fetch its 403 page
+
+
+def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> None:
+    """A broken config for one bench must not leave a dangling symlink behind —
+    that breaks the shared nginx.conf test for every other bench on the box."""
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    symlink_path = tmp_path / "test-bench.conf"
+
+    with patch.object(manager, "reload", side_effect=CommandError("nginx -t failed", returncode=1)), \
+         patch("pilot.managers.nginx_manager.run_command") as mock_run:
+        with pytest.raises(CommandError):
+            manager._reload_or_rollback(symlink_path)
+
+    mock_run.assert_called_once()
+    assert mock_run.call_args[0][0][-2:] == ["unlink", str(symlink_path)]
