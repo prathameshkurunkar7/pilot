@@ -9,9 +9,10 @@ from pilot.config.bench_config import BenchConfig
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
+    from pilot.config.s3_config import S3Config
     from pilot.core.app import App
     from pilot.core.site import Site
-    from pilot.config.s3_config import S3Config
+    from pilot.integrations.s3.backups import OffsiteBackup
 
 
 class Bench:
@@ -51,6 +52,25 @@ class Bench:
     def frappe_call(self) -> list[str]:
         """Command prefix to invoke frappe's bench helper via the venv Python."""
         return [str(self.python), "-m", "frappe.utils.bench_helper"]
+
+    @property
+    def is_s3_configured(self) -> bool:
+        s3 = self.config.s3
+        return all([s3.access_key, s3.secret_key, s3.provider, s3.region, s3.bucket])
+
+    def offsite_backup(self) -> OffsiteBackup:
+        """OffsiteBackup helper wired to this bench's configured S3 bucket,
+        creating the bucket if it doesn't exist yet."""
+        from pilot.integrations.s3.backups import OffsiteBackup
+        from pilot.integrations.s3.base import S3
+
+        s3 = self.config.s3
+        if not self.is_s3_configured:
+            raise BenchError("S3 integration is not configured via settings")
+
+        client = S3(s3.access_key, s3.secret_key, region_name=s3.region, provider=s3.provider, bucket_name=s3.bucket)
+        client.create_bucket_if_not_present(s3.bucket)
+        return OffsiteBackup(client, s3.bucket)
 
     def db_root_args(self) -> list[str]:
         """Root username/password for site teardown/restore/reinstall, keyed to the
@@ -165,6 +185,8 @@ class Bench:
         config["s3_access_key"] = s3_config.access_key
         config["s3_bucket"] = s3_config.bucket
         config["s3_secret_key"] = s3_config.secret_key
+        config["s3_provider"] = s3_config.provider
+        config["s3_region"] = s3_config.region
         config_path.write_text(json.dumps(config, indent=2) + "\n")
 
     def write_common_site_config(self) -> None:
