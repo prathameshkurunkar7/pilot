@@ -7,9 +7,11 @@ from pathlib import Path
 
 from pilot.config.toml_store import BenchTomlStore
 from pilot.core.bench import Bench
+from pilot.integrations.s3.backups import OffsiteBackup
 
 _TS_RE = re.compile(r"^(\d{8}_\d{6})")
 
+# Metadata file_type -> the UI's file kind.
 _REMOTE_FILE_KINDS = {
     "database": "database",
     "files": "public-file",
@@ -43,51 +45,32 @@ class BackupReader:
         self.bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
 
     def read_all(self, limit: int | None = None) -> list[BackupSet]:
-        """Backup sets newest first. When `limit` is given, only that many
-        offsite monthly metadata files are fetched from S3 (see
-        `_read_remote_backups`), and the merged, sorted result is truncated to
+        """Backup sets newest first: local runs, overlaid with offsite runs from
+        S3. When `limit` is given, only that many offsite runs are fetched (the
+        monthly metadata files are read lazily) and the result is truncated to
         `limit` — so a paginated caller never pays for a site's full history."""
-        merged = self._merge(self._read_local_backups(), self._read_remote_backups(limit))
-        return merged[:limit] if limit is not None else merged
+        sets = {backup_set.timestamp: backup_set for backup_set in self._read_local_backups()}
+        self._overlay_remote_backups(sets, limit)
+        ordered = sorted(sets.values(), key=lambda backup_set: backup_set.timestamp, reverse=True)
+        return ordered[:limit] if limit is not None else ordered
 
-    def _merge(self, local: list[BackupSet], remote: list[BackupSet]) -> list[BackupSet]:
-        # Single pass: remote first so local (appended after, and read fresh
-        # off disk) wins when both sides have files for the same kind/timestamp.
-        files_by_ts: dict[str, dict[str, BackupFile]] = {}
-        offsite_timestamps: set[str] = set()
-        for backup_set in remote:
-            offsite_timestamps.add(backup_set.timestamp)
-            files_by_ts.setdefault(backup_set.timestamp, {}).update({f.kind: f for f in backup_set.files})
-        for backup_set in local:
-            files_by_ts.setdefault(backup_set.timestamp, {}).update({f.kind: f for f in backup_set.files})
+    def _overlay_remote_backups(self, sets: dict[str, BackupSet], limit: int | None) -> None:
+        """Marks sets that exist offsite and adds remote-only runs/files.
+        A file the site still has locally is left untouched — the local copy is
+        authoritative (it has a real path and size); remote fills the gaps."""
+        if not self.bench.config.s3.is_configured:
+            return
 
-        result = [
-            BackupSet(
-                timestamp=ts,
-                created_at=next(iter(files.values())).created_at,
-                files=list(files.values()),
-                is_offsite=ts in offsite_timestamps,
-            )
-            for ts, files in files_by_ts.items()
-        ]
-        return sorted(result, key=lambda backup_set: backup_set.timestamp, reverse=True)
-
-    def _read_remote_backups(self, limit: int | None = None) -> list[BackupSet]:
-        if not self.bench.is_s3_configured:
-            return []
-
-        offsite_backup = self.bench.offsite_backup()
-        result = []
+        offsite_backup = OffsiteBackup.from_config(self.bench.config.s3)
         for timestamp, files_by_type in offsite_backup.list_backups(self.site_name, limit=limit).items():
-            files = [self._remote_file(timestamp, file_type, filename) for file_type, filename in files_by_type.items()]
-            result.append(
-                BackupSet(
-                    timestamp=timestamp,
-                    created_at=self._parse_timestamp(timestamp),
-                    files=files,
-                )
-            )
-        return result
+            backup_set = sets.setdefault(timestamp, BackupSet(timestamp, self._parse_timestamp(timestamp), []))
+            backup_set.is_offsite = True
+            local_kinds = {file.kind for file in backup_set.files}
+            for file_type, filename in files_by_type.items():
+                file = self._remote_file(timestamp, file_type, filename)
+                if file.kind not in local_kinds:
+                    backup_set.files.append(file)
+                    local_kinds.add(file.kind)
 
     def _remote_file(self, timestamp: str, file_type: str, filename: str) -> BackupFile:
         return BackupFile(

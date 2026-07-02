@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 from .base_task import BaseTask
-from pilot.exceptions import BenchError
+from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError
 
 
@@ -45,9 +45,9 @@ class BackupSiteTask(BaseTask):
         if result.returncode != 0:
             sys.exit(result.returncode)
 
-        if self.bench.is_s3_configured:
+        if self.bench.config.s3.is_configured:
             try:
-                offsite_backup = self.bench.offsite_backup()
+                offsite_backup = OffsiteBackup.from_config(self.bench.config.s3)
                 self._step("backup_upload", "Uploading backup to S3")
                 timestamp, backup_files = self._latest_backup()
 
