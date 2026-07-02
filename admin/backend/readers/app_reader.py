@@ -11,6 +11,8 @@ from pilot.utils import git_has_local_changes
 @dataclass
 class AppInfo:
     name: str
+    title: str
+    description: str
     repo: str
     branch: str
     branches: list
@@ -105,10 +107,13 @@ class AppReader:
     def _read_app(self, name: str) -> AppInfo:
         app_path = self._bench_root / "apps" / name
         is_cloned = (app_path / ".git").exists()
+        title, description = self._pyproject_meta(app_path, name)
 
         if not is_cloned:
             return AppInfo(
                 name=name,
+                title=title,
+                description=description,
                 repo="",
                 branch="",
                 branches=[],
@@ -126,6 +131,8 @@ class AppReader:
         remote_sha = self._git_remote_tracking_sha(git_dir, branch)
         return AppInfo(
             name=name,
+            title=title,
+            description=description,
             repo=self._git_remote(git_dir),
             branch=branch,
             branches=[],
@@ -136,6 +143,21 @@ class AppReader:
             installed_version=self._pip_version(name),
             has_update=bool(remote_sha and sha and remote_sha != sha),
         )
+
+    def _pyproject_meta(self, app_path: Path, name: str) -> tuple[str, str]:
+        """Best-effort title/description scraped from the app's local pyproject.toml."""
+        pyproject = app_path / "pyproject.toml"
+        if not pyproject.exists():
+            return name, ""
+        try:
+            import tomllib
+
+            project = tomllib.loads(pyproject.read_text(errors="replace")).get("project") or {}
+        except Exception:
+            return name, ""
+        title = (project.get("name") or "").strip() or name
+        description = (project.get("description") or "").strip()
+        return title, description
 
     def _git_remote(self, git_dir: Path) -> str:
         config = git_dir / "config"
