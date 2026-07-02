@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { appsApi } from '@/api/apps'
 import { settingsApi } from '@/api/settings'
 import { sitesApi } from '@/api/sites'
-import { parseBranchVersion } from '@/utils/format'
+import { parseBranchVersion, toSentenceCase } from '@/utils/format'
 
 const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
 
@@ -62,7 +62,7 @@ export function useMarketplace(initialSiteName = '') {
         sitesApi.list(),
       ])
       registry.value = registryData.filter((app) => app.name !== 'frappe')
-      benchApps.value = installed.map((app) => app.name)
+      benchApps.value = installed
       benchName.value = settings.bench?.name || 'this bench'
       const benchBranch =
         parseBenchBranch(settings.bench?.default_branch) ||
@@ -121,8 +121,14 @@ export function useMarketplace(initialSiteName = '') {
   const registryNames = computed(() => new Set(registry.value.map((app) => app.name)))
   const otherBenchApps = computed(() =>
     benchApps.value
-      .filter((name) => name !== 'frappe' && !registryNames.value.has(name))
-      .map((name) => ({ name, title: name, compatible: true, inBench: true })),
+      .filter((app) => app.name !== 'frappe' && !registryNames.value.has(app.name))
+      .map((app) => ({
+        name: app.name,
+        title: toSentenceCase(app.title || app.name),
+        description: app.description,
+        compatible: true,
+        inBench: true,
+      })),
   )
 
   return {

@@ -55,24 +55,27 @@
     <!-- Marketplace Apps -->
 
     <template v-else>
-      <section v-if="frappeApps.length" class="mt-6">
-        <p class="font-medium text-ink-gray-5 text-xs uppercase tracking-wide">From Frappe</p>
+      <section v-if="otherBenchApps.length" class="mt-6">
+        <div class="flex justify-between items-center">
+          <p class="font-semibold text-ink-gray-9 text-base">Your Apps</p>
+          <Button variant="subtle" size="sm" @click="showAddFromGithub = true">Add app</Button>
+        </div>
+        <div class="gap-x-10 grid grid-cols-1 md:grid-cols-2 mt-2">
+          <MarketplaceAppCard v-for="app in otherBenchApps" :key="app.name" :app="app" @install="onInstall" />
+        </div>
+      </section>
+
+      <section v-if="frappeApps.length" :class="otherBenchApps.length ? 'mt-8' : 'mt-6'">
+        <p class="font-semibold text-ink-gray-9 text-base">From Frappe</p>
         <div class="gap-x-10 grid grid-cols-1 md:grid-cols-2 mt-2">
           <MarketplaceAppCard v-for="app in frappeApps" :key="app.name" :app="app" @install="onInstall" />
         </div>
       </section>
 
       <section v-if="communityApps.length" class="mt-8">
-        <p class="font-medium text-ink-gray-5 text-xs uppercase tracking-wide">Community</p>
+        <p class="font-semibold text-ink-gray-9 text-base">Community</p>
         <div class="gap-x-10 grid grid-cols-1 md:grid-cols-2 mt-2">
           <MarketplaceAppCard v-for="app in communityApps" :key="app.name" :app="app" @install="onInstall" />
-        </div>
-      </section>
-
-      <section v-if="otherBenchApps.length" class="mt-8">
-        <p class="font-medium text-ink-gray-5 text-xs uppercase tracking-wide">Other apps in this bench</p>
-        <div class="gap-x-10 grid grid-cols-1 md:grid-cols-2 mt-2">
-          <MarketplaceAppCard v-for="app in otherBenchApps" :key="app.name" :app="app" @install="onInstall" />
         </div>
       </section>
 

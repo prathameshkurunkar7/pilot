@@ -11,3 +11,9 @@ export function parseBranchVersion(branch) {
   const match = /^version-(\d+)/.exec(branch)
   return match ? `Version ${match[1]}` : branch
 }
+
+export function toSentenceCase(text) {
+  if (!text) return ''
+  const spaced = text.replace(/[_-]+/g, ' ').trim()
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase()
+}

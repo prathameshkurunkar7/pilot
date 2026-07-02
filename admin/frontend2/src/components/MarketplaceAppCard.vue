@@ -24,19 +24,19 @@
         <span v-if="app.installed" class="flex items-center gap-1 text-ink-gray-5 text-p-sm shrink-0">
           <span class="size-4 text-ink-green-6 lucide-check"></span> Installed
         </span>
-        <button v-else-if="!app.compatible" type="button"
-          class="flex items-center gap-1 text-ink-gray-4 text-xs shrink-0" @click="showIncompatible = true">
-          <span class="size-3.5 lucide-triangle-alert"></span> Incompatible
-        </button>
+        <Tooltip v-else-if="!app.compatible"
+          :text="`Requires ${app.needs ? `Frappe ${props.app.needs}` : 'a newer Frappe'} version`">
+          <Button variant="subtle" class="!bg-surface-gray-2 !text-ink-gray-4" @click="showIncompatible = true">
+            Install
+          </Button>
+        </Tooltip>
         <Button v-else variant="subtle" @click="$emit('install', app)">Install</Button>
       </slot>
     </div>
 
     <Dialog v-model="showIncompatible" :options="{ title: 'Incompatible App', size: 'sm' }">
       <template #body-content>
-        <p class="text-ink-gray-7 text-sm">
-          <strong>{{ app.title }}</strong> is not compatible with this bench's frappe version.
-        </p>
+        <p class="text-ink-gray-7 text-sm">{{ incompatibleReason }}</p>
         <div class="flex flex-col gap-1.5 mt-3 text-sm">
           <div class="flex justify-between">
             <span class="text-ink-gray-5">Current version</span>
@@ -44,7 +44,7 @@
           </div>
           <div class="flex justify-between">
             <span class="text-ink-gray-5">Required version</span>
-            <span class="font-medium text-ink-gray-8">{{ app.needs || 'Not Specified' }}</span>
+            <span class="font-medium text-ink-gray-8">{{ app.needs || 'Not specified' }}</span>
           </div>
         </div>
       </template>
@@ -54,7 +54,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { Button, Dialog } from 'frappe-ui'
+import { Button, Dialog, Tooltip } from 'frappe-ui'
 import { logoColor } from '@/composables/useMarketplace'
 
 const props = defineProps({
@@ -65,6 +65,10 @@ defineEmits(['install'])
 
 const imageFailed = ref(false)
 const showIncompatible = ref(false)
+
+const incompatibleReason = computed(
+  () => `${props.app.title} requires ${props.app.needs ? `Frappe ${props.app.needs}` : 'a newer Frappe version'} to install.`,
+)
 
 const logoStyle = computed(() => {
   if (props.app.logo_url && !imageFailed.value) return {}
