@@ -86,6 +86,7 @@ def list_snapshots():
                     "is_offsite": s.is_offsite,
                     "is_local": s.is_local,
                     "is_uploading": s.is_uploading,
+                    "is_downloaded": s.is_downloaded,
                 }
                 for s in status.snapshots
             ],
@@ -120,7 +121,16 @@ def rollback_snapshot(tag: str):
     bench_root = current_app.config["BENCH_ROOT"]
     try:
         orchestrator = get_orchestrator(bench_root)
-        orchestrator.rollback_snapshot(tag)
+        config = _get_config(bench_root)
+        manager = _get_volume_manager(bench_root)
+        is_local = any(snap.snapshot_tag == tag for snap in manager.list_snapshots(config.dataset_path))
+        if is_local:
+            orchestrator.rollback_snapshot(tag)
+        else:
+            # Not a real snapshot of the live dataset — `zfs rollback` can't
+            # reach it. If it was downloaded (see download_snapshot below),
+            # promote that restored dataset to live instead.
+            orchestrator.restore_downloaded_snapshot(tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -148,6 +158,16 @@ def destroy_snapshot(tag: str):
         return jsonify({"error": str(e)}), 500
 
     return jsonify({"ok": True})
+
+
+@volume_bp.route("/snapshots/<tag>/download", methods=["POST"])
+def download_snapshot(tag: str):
+    from admin.backend.tasks.manager.task_runner import TaskRunner
+
+    bench_root = current_app.config["BENCH_ROOT"]
+    config = _get_config(bench_root)
+    task_id = TaskRunner(bench_root).run("download-snapshot", {"dataset": config.dataset_path, "tag": tag})
+    return jsonify({"ok": True, "task_id": task_id})
 
 
 def _snapshot_cron_command(bench_root) -> str:

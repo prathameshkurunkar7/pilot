@@ -150,14 +150,33 @@ function menuOptions(set) {
     ['private-file', 'Download Private'],
     ['site_config', 'Download Config'],
   ]
+  const missingLocally = set.is_offsite && set.files?.some((f) => !f.path)
   return [
     // Remote-only files have no local path; there's nothing to serve for download for now.
     ...kinds.filter(([k]) => fileOf(set, k)?.path).map(([k, label]) => ({
       label, icon: 'lucide-download',
       onClick: () => { window.location.href = sitesApi.backups.download(props.siteName, fileOf(set, k).filename) },
     })),
+    ...(missingLocally ? [{
+      label: 'Fetch from offsite', icon: 'lucide-cloud-download',
+      onClick: () => downloadOffsite(set),
+    }] : []),
     { label: 'Delete backup', icon: 'lucide-trash-2', theme: 'red', onClick: () => { deleteTarget.value = set; showDelete.value = true } },
   ]
+}
+
+async function downloadOffsite(set) {
+  error.value = ''
+  try {
+    const result = await sitesApi.backups.downloadOffsite(props.siteName, set.timestamp)
+    if (result.error) {
+      error.value = result.error
+      return
+    }
+    openTaskDetailPage(router, result.task_id)
+  } catch (e) {
+    error.value = e.message || 'Failed to fetch backup from offsite.'
+  }
 }
 
 const showDelete = ref(false)

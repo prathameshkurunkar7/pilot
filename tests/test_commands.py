@@ -1039,6 +1039,68 @@ def test_orchestrator_rollback_stops_mariadb_and_sets_maintenance() -> None:
     assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
 
 
+def _restore_mocks(production: bool):
+    from unittest.mock import MagicMock
+
+    volume = MagicMock()
+    volume.config.dataset_path = "bench-pool/shop"
+    mariadb = MagicMock()
+    mariadb.data_dir.return_value = "/var/lib/mysql"
+    bench = MagicMock()
+    bench.path = Path("/home/frappe/bench-cli/benches/shop")
+    bench.config.production.enabled = production
+    return volume, mariadb, bench
+
+
+def test_restore_downloaded_snapshot_swaps_and_destroys_old_dataset() -> None:
+    from unittest.mock import call
+
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks(production=False)
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running"):
+        SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    renames = volume.rename_dataset.call_args_list
+    assert renames[0].args[0] == "bench-pool/shop"
+    assert renames[1] == call("bench-pool/shop-restored-tag1", "bench-pool/shop")
+    volume.destroy_dataset.assert_called_once_with(renames[0].args[1])
+    volume.destroy_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
+    mariadb.stop.assert_called_once()
+    mariadb.start.assert_called_once()
+    assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
+    bench.restart.assert_not_called()
+
+
+def test_restore_downloaded_snapshot_stops_workers_in_production() -> None:
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks(production=True)
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
+        SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    detect.return_value.stop.assert_called_once()
+    bench.restart.assert_called_once()
+
+
+def test_restore_downloaded_snapshot_aborts_when_paths_are_busy() -> None:
+    import pytest
+
+    from pilot.exceptions import VolumeError
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks(production=False)
+    volume.unmount.side_effect = VolumeError("target is busy")
+    volume.processes_using_path.return_value = ["PID 42: -bash"]
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running"), \
+         pytest.raises(VolumeError, match="PID 42"):
+        SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    volume.rename_dataset.assert_not_called()
+    volume.destroy_dataset.assert_not_called()
+    mariadb.start.assert_called_once()
+
+
 # ── DropBenchCommand ────────────────────────────────────────────────────────
 
 

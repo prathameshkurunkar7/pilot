@@ -162,8 +162,6 @@ class OffsiteSnapshot:
         try:
             self.s3.download_stream(self.bucket, remote_key, proc.stdin)
         finally:
-            # communicate() would try to flush/close stdin itself and raise on
-            # an already-closed pipe, so close it ourselves and just wait.
             proc.stdin.close()
         stderr = proc.stderr.read()
         proc.wait()

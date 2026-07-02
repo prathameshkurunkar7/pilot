@@ -705,14 +705,36 @@ class VolumeManager:
         except VolumeError:
             return False
 
+    def processes_using_path(self, path: Path) -> list[str]:
+        """Processes whose cwd/root/open files live under `path` — the ones
+        that make a plain umount fail with "target is busy". Best-effort:
+        /proc entries of other users may be unreadable without root."""
+        import os
+
+        prefix = str(path)
+        holders = []
+        for proc in sorted(Path("/proc").glob("[0-9]*"), key=lambda p: int(p.name)):
+            refs = [proc / "cwd", proc / "root"]
+            try:
+                refs += list((proc / "fd").iterdir())
+            except OSError:
+                pass
+            for ref in refs:
+                try:
+                    target = os.readlink(ref)
+                except OSError:
+                    continue
+                if target == prefix or target.startswith(prefix + "/"):
+                    holders.append(self._process_label(proc))
+                    break
+        return holders
+
     def processes_pinning_detached_mounts(self) -> list[str]:
         """Processes whose cwd/root/open files sit on an anonymous filesystem
         that is no longer mounted anywhere — after a lazy unmount these pin
         the old dataset's superblock and make `zfs destroy` fail with
         "dataset is busy". Best-effort: /proc entries of other users may be
         unreadable without root."""
-        import os
-
         mounted = self._mounted_device_ids()
         pinned = []
         for proc in sorted(Path("/proc").glob("[0-9]*"), key=lambda p: int(p.name)):

@@ -657,6 +657,14 @@ def download_backup(name: str):
     return send_file(target, as_attachment=True, download_name=filename)
 
 
+@sites_bp.route("/<name>/backups/<timestamp>/download", methods=["POST"])
+@require_scope(site_name)
+def download_offsite_backup(name: str, timestamp: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    task_id = TaskRunner(bench_root).run("download-backup", {"site": name, "timestamp": timestamp})
+    return jsonify({"ok": True, "task_id": task_id})
+
+
 def _backup_cron_command(bench_root: Path, site: str) -> str:
     python = bench_root / "env" / "bin" / "python"
     sites_dir = bench_root / "sites"

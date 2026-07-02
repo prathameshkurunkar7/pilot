@@ -72,8 +72,10 @@
             <span v-if="snap.is_offsite" class="size-4 text-ink-green-6 lucide-circle-check" title="Backed up offsite" />
             <span v-else class="text-ink-gray-4 text-sm">—</span>
           </div>
-          <Button v-if="snap.is_local && !snap.is_uploading" variant="subtle" icon="lucide-history" title="Rollback"
-            @click="openRollback(snap)" />
+          <Button v-if="(snap.is_local || snap.is_downloaded) && !snap.is_uploading" variant="subtle" icon="lucide-history"
+            title="Rollback" @click="openRollback(snap)" />
+          <Button v-if="!snap.is_local && !snap.is_downloaded && snap.is_offsite" variant="subtle" icon="lucide-download"
+            title="Download" :loading="downloading === snap.tag" @click="downloadSnapshot(snap)" />
           <Button v-if="!snap.is_uploading" variant="subtle" icon="lucide-x" @click="openDelete(snap)" />
         </div>
       </div>
@@ -145,6 +147,8 @@ const rollingBack = ref(false)
 const showDelete = ref(false)
 const deleteTarget = ref(null)
 const deleting = ref(false)
+
+const downloading = ref(null)
 
 const fmt = (iso) => new Date(iso).toLocaleString()
 const fmtSize = (b) => !b ? '—' : b < 1024 ** 3 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${(b / 1024 ** 3).toFixed(1)} GB`
@@ -242,6 +246,25 @@ async function confirmRollback() {
     toast.error(e.message || 'Failed to rollback.')
   } finally {
     rollingBack.value = false
+  }
+}
+
+async function downloadSnapshot(snap) {
+  downloading.value = snap.tag
+  try {
+    const result = await volumeApi.snapshots.download(snap.tag)
+    if (result.error) {
+      toast.error(result.error)
+      return
+    }
+    // Downloading fetches the raw snapshot stream to a file on the server —
+    // it runs as a background task, same as create.
+    emit('close')
+    openTaskDetailPage(router, result.task_id)
+  } catch (e) {
+    toast.error(e.message || 'Failed to download snapshot.')
+  } finally {
+    downloading.value = null
   }
 }
 

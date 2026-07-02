@@ -22,6 +22,10 @@ class SnapshotEntry:
     # successful upload destroys the local copy, so a rollback started now
     # could have its snapshot vanish out from under it.
     is_uploading: bool = False
+    # True when a remote-only snapshot has been fetched into
+    # `<dataset>-restored-<tag>` (see OffsiteSnapshot.download) — a real
+    # local ZFS snapshot, distinct from the live dataset's own snapshots.
+    is_downloaded: bool = False
 
 
 @dataclass
@@ -54,6 +58,7 @@ class SnapshotReader:
         dataset = volume_config.dataset_path
         entries = {entry.tag: entry for entry in self._read_local_snapshots(manager, dataset)}
         self._overlay_remote_snapshots(entries, dataset, limit)
+        self._overlay_downloaded_snapshots(entries, manager, dataset)
 
         for tag in self._uploading_tags():
             if entry := entries.get(tag):
@@ -85,6 +90,17 @@ class SnapshotReader:
                 tag, SnapshotEntry(dataset=dataset, tag=tag, created_at=self._parse_tag(tag), used_bytes=0, is_local=False)
             )
             entry.is_offsite = True
+
+    def _overlay_downloaded_snapshots(self, entries: dict[str, SnapshotEntry], manager, dataset: str) -> None:
+        """Marks tags fetched into `<dataset>-restored-<tag>` — a real local
+        ZFS snapshot, separate from the live dataset's own history."""
+        prefix = f"{dataset}-restored-"
+        for name in manager.list_dataset_names(prefix):
+            tag = name[len(prefix):]
+            entry = entries.setdefault(
+                tag, SnapshotEntry(dataset=dataset, tag=tag, created_at=self._parse_tag(tag), used_bytes=0, is_local=False)
+            )
+            entry.is_downloaded = True
 
     def _uploading_tags(self) -> set[str]:
         """Tags with an offsite-snapshot task still running. Reading the task

@@ -80,16 +80,13 @@ class SnapshotOrchestrator:
                 self._mariadb.start()
         finally:
             if workers_stopped:
-                self._bench.restart()
+                self._restart_workers()
             self._bench.set_maintenance_mode(False)
 
     def _stop_workers(self) -> bool:
-        """Stop the bench's production workload so nothing holds files open on
-        the dataset during the swap — open file descriptors keep the old
-        dataset busy and block its cleanup. Dev benches (foreground `bench
-        start`) are left alone; there the swap falls back to lazy unmounts."""
-        if not self._bench.config.production.enabled:
-            return False
+        """Stop the bench workload — production services or a dev `bench
+        start` — so nothing holds files open on the dataset during the swap:
+        open file descriptors keep the old dataset busy and block its cleanup."""
         from pilot.exceptions import BenchError
         from pilot.managers.process_manager import ProcessManager
 
@@ -98,6 +95,12 @@ class SnapshotOrchestrator:
         except BenchError:
             return False
         return True
+
+    def _restart_workers(self) -> None:
+        if self._bench.config.production.enabled:
+            self._bench.restart()
+        else:
+            print("Bench was stopped for the restore — start it again with `bench start`.")
 
     def _swap_dataset(self, restored: str, tag: str) -> None:
         from datetime import datetime
@@ -109,22 +112,17 @@ class SnapshotOrchestrator:
         # Bind mounts reference the mount they were created against, not the
         # dataset name — they go stale the moment the underlying dataset is
         # renamed out from under them, so drop them before touching ZFS.
-        # Workers and MariaDB are stopped by now, so a plain umount should
-        # succeed; lazy is only a fallback (dev mode, or a straggler process)
-        # and means the old dataset stays busy until those processes exit.
+        # Strictly, no lazy fallback: a busy unmount means processes still
+        # hold files on the old dataset, which would make its destroy fail
+        # later and strand a full orphan copy. Abort before changing anything.
         self._unmount(bench_path)
         self._unmount(mariadb_datadir)
 
         aside = f"{live}-before-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        # The mountpoint property travels with the dataset object through a
-        # rename, not with the name — capture it before renaming `live` away,
-        # then reassign it after the swap so `live` actually serves the
-        # newly-restored data at the bench's real mount location.
+        
         live_mount = self._volume.get_mountpoint(live)
         self._volume.rename_dataset(live, aside)
-        # Two datasets can't both claim the same mountpoint — the old one
-        # keeps the path as a property from the rename, so clear it before
-        # handing that path to the newly-promoted dataset below.
+        
         self._volume.clear_mountpoint(aside)
         self._volume.rename_dataset(restored, live)
         self._volume.set_mountpoint(live, live_mount)
@@ -133,39 +131,11 @@ class SnapshotOrchestrator:
         self._volume.bind_mount(mount / "benches", bench_path)
         self._volume.bind_mount(mount / "mariadb", mariadb_datadir)
 
-        # The restore is done — the old live state is fully superseded, so
-        # don't keep a second full copy of the dataset lying around.
-        self._destroy_when_free(aside)
-        # The received stream's snapshot travels with the rename (`live@tag`
-        # now exists for real), but a promotion isn't meant to leave a
-        # standing local snapshot behind — without this, the tag would look
-        # locally available again right after a restore that was supposed to
-        # consume it.
+        self._volume.destroy_dataset(aside)
         self._volume.destroy_snapshot(live, tag)
 
     def _unmount(self, path: Path) -> None:
-        from pilot.exceptions import VolumeError
-
-        try:
-            self._volume.unmount(path)
-        except VolumeError:
-            self._volume.unmount(path, lazy=True)
-
-    def _destroy_when_free(self, dataset: str) -> None:
-        """`zfs destroy` fails with "dataset is busy" while any process still
-        references the lazily-detached old mount (open files, or a shell
-        cd'd into the bench directory before the restore). That never clears
-        on its own, so don't retry: keep the restore successful, park the
-        dataset, and name the pinning processes so the user can close them."""
-        from pilot.exceptions import VolumeError
-
-        try:
-            self._volume.destroy_dataset(dataset)
-        except VolumeError:
-            print(f"Dataset {dataset} is still referenced by running processes and was kept aside.")
-            for line in self._volume.processes_pinning_detached_mounts():
-                print(f"  {line}")
-            print(f"Close them (e.g. `cd ~` in shells inside the bench), then run: sudo zfs destroy -r {dataset}")
+        self._volume.unmount(path)
 
 
 def get_orchestrator(bench_root):

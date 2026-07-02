@@ -7,6 +7,7 @@ export const volumeApi = {
     create: () => request.post('volume/snapshots').json(),
     rollback: (tag) => request.post(`volume/snapshots/${encodeURIComponent(tag)}/rollback`).json(),
     destroy: (tag) => request.delete(`volume/snapshots/${encodeURIComponent(tag)}`).json(),
+    download: (tag) => request.post(`volume/snapshots/${encodeURIComponent(tag)}/download`).json(),
     schedule: {
       get: () => request.get('volume/snapshot-schedule').json(),
       set: (schedule) => request.post('volume/snapshot-schedule', { json: { schedule } }).json(),
