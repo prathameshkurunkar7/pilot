@@ -347,7 +347,8 @@ function menuOptions(set) {
     ['site_config', 'Download Config'],
   ]
   return [
-    ...kinds.filter(([k]) => fileOf(set, k)).map(([k, label]) => ({
+    // Remote-only files have no local path; there's nothing to serve for download for now.
+    ...kinds.filter(([k]) => fileOf(set, k)?.path).map(([k, label]) => ({
       label, icon: 'lucide-download',
       onClick: () => { window.location.href = sitesApi.backups.download(props.siteName, fileOf(set, k).filename) },
     })),
