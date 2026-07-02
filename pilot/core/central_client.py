@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+import json
+import urllib.error
+import urllib.request
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pilot.core.bench import Bench
+
+
+class CentralClientError(Exception):
+    """A Central API call could not be made or was rejected (missing config,
+    transport failure, or a non-2xx response)."""
+
+
+class CentralClient:
+    """Calls Central's HTTP API on behalf of this bench's pilot.
+
+    Reads ``central_endpoint`` + ``central_auth_token`` from the bench's
+    common_site_config (written by ``bench set-central-config`` at deploy) and
+    authenticates with the ``X-Pilot-Token`` header — the reverse of the
+    site→bench ``pilot_auth_token`` (PR #133).
+    """
+
+    TOKEN_HEADER = "X-Pilot-Token"
+
+    def __init__(self, bench: "Bench") -> None:
+        self.bench = bench
+
+    def heartbeat(self) -> dict[str, Any]:
+        """Prove this pilot can authenticate to Central; returns Central's identity echo
+        (team + pilot_credential_id)."""
+        return self._get("/api/method/central.api.pilot.heartbeat")
+
+    def _credentials(self) -> tuple[str, str]:
+        path = self.bench.sites_path / "common_site_config.json"
+        try:
+            config = json.loads(path.read_text())
+        except (FileNotFoundError, ValueError) as exc:
+            raise CentralClientError(f"Cannot read {path}: {exc}") from exc
+        endpoint, token = config.get("central_endpoint"), config.get("central_auth_token")
+        if not endpoint or not token:
+            raise CentralClientError("central_endpoint / central_auth_token not set in common_site_config")
+        return endpoint.rstrip("/"), token
+
+    def _get(self, path: str) -> dict[str, Any]:
+        endpoint, token = self._credentials()
+        request = urllib.request.Request(f"{endpoint}{path}", method="GET", headers={self.TOKEN_HEADER: token})
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return json.loads(response.read().decode())
+        except urllib.error.HTTPError as exc:
+            raise CentralClientError(f"Central returned HTTP {exc.code} for {path}") from exc
+        except urllib.error.URLError as exc:
+            raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc.reason}") from exc
