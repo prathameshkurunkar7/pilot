@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import { sitesApi } from '@/api/sites'
 
 const cache = new Map()
+const BACKUPS_PAGE_SIZE = 20
 
 function getStore(name) {
   if (!cache.has(name)) {
@@ -16,6 +17,8 @@ function getStore(name) {
       error: ref(''),
       appsLoading: ref(false),
       backupsLoading: ref(false),
+      backupsLimit: ref(BACKUPS_PAGE_SIZE),
+      backupsHasMore: ref(false),
     })
   }
   return cache.get(name)
@@ -63,15 +66,36 @@ export function useSite(name) {
     }
   }
 
-  async function loadBackups() {
+  async function _fetchBackups() {
     store.backupsLoading.value = true
     try {
-      store.backups.value = await sitesApi.backups.list(name)
+      const data = await sitesApi.backups.list(name, store.backupsLimit.value)
+      store.backups.value = data
+      // A full page suggests there may be more months of offsite history to fetch.
+      store.backupsHasMore.value = data.length >= store.backupsLimit.value
     } catch {
       store.backups.value = []
+      store.backupsHasMore.value = false
     } finally {
       store.backupsLoading.value = false
     }
+  }
+
+  async function loadBackups() {
+    store.backupsLimit.value = BACKUPS_PAGE_SIZE
+    await _fetchBackups()
+  }
+
+  /** Re-fetches with a larger `limit` — ListFooter's page-length control. */
+  async function setBackupsPageLength(pageLength) {
+    store.backupsLimit.value = pageLength
+    await _fetchBackups()
+  }
+
+  /** ListFooter's "Load More" — grows the page by one more page-length step. */
+  async function loadMoreBackups() {
+    store.backupsLimit.value += BACKUPS_PAGE_SIZE
+    await _fetchBackups()
   }
 
   async function login() {
@@ -139,6 +163,8 @@ export function useSite(name) {
     error: store.error,
     appsLoading: store.appsLoading,
     backupsLoading: store.backupsLoading,
+    backupsHasMore: store.backupsHasMore,
+    backupsLimit: store.backupsLimit,
     installedApps,
     status,
     version,
@@ -146,6 +172,8 @@ export function useSite(name) {
     reload,
     loadApps,
     loadBackups,
+    loadMoreBackups,
+    setBackupsPageLength,
     login,
     backup,
     drop,
