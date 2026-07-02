@@ -26,6 +26,30 @@ class App:
         return installed_app_version(self.bench.env_path, self.config.name)
 
     @property
+    def installed_hash(self) -> str:
+        """Full SHA of the app's current HEAD, or '' if it can't be resolved."""
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "-C", str(self.path), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+
+    @property
+    def installed_tag(self) -> str:
+        """Tag checked out exactly at HEAD, or '' if HEAD isn't on a tag."""
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "-C", str(self.path), "describe", "--tags", "--exact-match"],
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+
+    @property
     def is_cloned(self) -> bool:
         # The clone may live under the configured name or, after get-app
         # normalised it, under the importable module name (e.g. india-compliance
