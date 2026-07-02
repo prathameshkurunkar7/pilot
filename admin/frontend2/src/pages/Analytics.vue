@@ -6,7 +6,8 @@
     <div class="flex justify-between items-start gap-3 mb-6">
       <div>
         <h1 class="font-semibold text-ink-gray-9 text-xl">Analytics</h1>
-        <p class="mt-1 text-ink-gray-5 text-sm">System and application metrics for this bench.</p>
+        <p class="mt-1 text-ink-gray-5 text-sm sm:hidden">System and app metrics.</p>
+        <p class="mt-1 text-ink-gray-5 text-sm hidden sm:block">System and application metrics for this bench.</p>
       </div>
       <Dropdown :options="windowOptions" placement="bottom-end">
         <template #default="{ open }">

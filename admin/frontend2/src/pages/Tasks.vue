@@ -6,7 +6,8 @@
     <div class="flex justify-between items-center gap-3">
       <div>
         <h1 class="font-semibold text-ink-gray-9 text-xl">Tasks</h1>
-        <p class="mt-1 text-ink-gray-5 text-p-base">Background jobs - backups, deploys, migrations and more.</p>
+        <p class="mt-1 text-ink-gray-5 text-p-sm sm:hidden">Backups, deploys & more.</p>
+        <p class="mt-1 text-ink-gray-5 text-p-base hidden sm:block">Background jobs - backups, deploys, migrations and more.</p>
       </div>
       <Button variant="subtle" size="sm" :loading="loading" icon-left="lucide-refresh-cw" @click="load(statusFilter)">
         Refresh

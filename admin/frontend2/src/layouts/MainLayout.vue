@@ -18,16 +18,15 @@ const breadcrumbs = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-screen overflow-hidden bg-surface-elevation-1">
+  <div class="flex bg-surface-elevation-1 h-screen overflow-hidden">
     <AppSidebar />
-    <main class="flex flex-1 flex-col overflow-hidden">
+    <main class="flex flex-col flex-1 overflow-hidden">
       <header
-        class="sticky top-0 z-10 flex shrink-0 items-center gap-2 border-b border-outline-alpha-gray-1 px-5 py-2.5"
-      >
+        class="top-0 z-10 sticky flex items-center gap-2 px-4 sm:px-6 py-2.5 border-b border-outline-alpha-gray-1 shrink-0">
         <Breadcrumbs :items="breadcrumbs" />
-        <div id="header-actions" class="ml-auto flex items-center gap-2" />
+        <div id="header-actions" class="flex items-center gap-2 ml-auto" />
       </header>
-      <div class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <div class="flex-1 p-4 sm:p-6 min-h-0 overflow-auto">
         <slot />
       </div>
     </main>
