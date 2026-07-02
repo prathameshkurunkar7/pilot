@@ -16,7 +16,7 @@
 
         <!-- Loading -->
         <div v-show="currentStep === 'loading'" class="flex justify-center items-center py-10">
-          <FeatherIcon name="loader" class="w-5 h-5 text-ink-gray-4 animate-spin" />
+          <LoadingText />
         </div>
 
         <!-- Admin password -->
@@ -149,6 +149,7 @@ import {
   Slider,
   ErrorMessage,
   FeatherIcon,
+  LoadingText,
 } from 'frappe-ui'
 import TaskStream from '../components/TaskStream.vue'
 import PasswordStrengthMeter from '../components/PasswordStrengthMeter.vue'
