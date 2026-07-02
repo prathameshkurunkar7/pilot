@@ -66,8 +66,9 @@ def status():
 @volume_bp.route("/snapshots")
 def list_snapshots():
     bench_root = current_app.config["BENCH_ROOT"]
+    limit = request.args.get("limit", type=int)
     try:
-        status = SnapshotReader(bench_root).read()
+        status = SnapshotReader(bench_root).read(limit=limit)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -83,6 +84,7 @@ def list_snapshots():
                     "tag": s.tag,
                     "created_at": s.created_at.isoformat(),
                     "used_bytes": s.used_bytes,
+                    "is_offsite": s.is_offsite,
                 }
                 for s in status.snapshots
             ],
@@ -92,6 +94,9 @@ def list_snapshots():
 
 @volume_bp.route("/snapshots", methods=["POST"])
 def create_snapshot():
+    from pilot.config.toml_store import BenchTomlStore
+    from admin.backend.tasks.manager.task_runner import TaskRunner
+
     bench_root = current_app.config["BENCH_ROOT"]
     config = _get_config(bench_root)
     tag = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -100,6 +105,10 @@ def create_snapshot():
         orchestrator.create_snapshot(tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+    s3_config = BenchTomlStore.for_bench(bench_root).read().s3
+    if s3_config.is_configured:
+        TaskRunner(bench_root).run("offsite-snapshot", {"dataset": config.dataset_path, "tag": tag})
 
     return jsonify({"ok": True, "tag": tag, "snapshots": [f"{config.dataset_path}@{tag}"]})
 
