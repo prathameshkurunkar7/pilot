@@ -15,6 +15,7 @@ from pilot.config.nginx_config import NginxConfig
 from pilot.config.postgres_config import PostgresConfig
 from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
+from pilot.config.s3_config import S3Config
 from pilot.config.volume_config import DatasetConfig, ImageConfig, VolumeConfig
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 from pilot.exceptions import ConfigError
@@ -55,6 +56,7 @@ class BenchConfig:
     admin: AdminConfig = field(default_factory=AdminConfig)
     volume: VolumeConfig = field(default_factory=VolumeConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
+    s3: S3Config = field(default_factory=S3Config)
 
     @classmethod
     def from_file(cls, path: Path) -> "BenchConfig":
@@ -87,6 +89,7 @@ class BenchConfig:
         admin = cls._parse_admin(data.get("admin", {}))
         volume = cls._parse_volume(data.get("volume"))
         firewall = cls._parse_firewall(data.get("firewall"))
+        s3 = S3Config(**data.get("s3", {}))
         # One dataset per bench, named after the bench unless explicitly set.
         if not volume.name:
             volume.name = bench_data.get("name", "")
@@ -110,6 +113,7 @@ class BenchConfig:
             admin=admin,
             volume=volume,
             firewall=firewall,
+            s3=s3,
         )
 
     @staticmethod
