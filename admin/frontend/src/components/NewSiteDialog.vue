@@ -132,7 +132,7 @@ const creating = ref(false)
 const error = ref('')
 
 const benchDbType = ref('')
-const dbType = ref('')
+const dbType = ref('mariadb')
 
 const selectedApps = ref([])
 const appSearch = ref('')
