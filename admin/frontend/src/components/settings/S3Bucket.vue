@@ -24,12 +24,16 @@
     </div>
 
     <div class="space-y-4">
-      <Select label="Provider" v-model="provider" :options="providerOptions" class="w-full" />
-      <Select label="Region" v-model="region" :options="regionOptions" class="w-full" />
       <FormControl label="Bucket" type="text" v-model="bucket" placeholder="storage-bucket" />
-      <FormControl label="Access Key" type="text" v-model="accessKey" placeholder="AKIA…" />
-      <FormControl label="Secret Key" type="password" v-model="secretKey"
-        :placeholder="secretKeySet ? '••••••••' : 'Secret key'" />
+      <div class="flex sm:flex-row flex-col gap-4">
+        <Select label="Provider" v-model="provider" :options="providerOptions" class="w-full" />
+        <Select label="Region" v-model="region" :options="regionOptions" class="w-full" />
+      </div>
+      <div class="flex sm:flex-row flex-col gap-4">
+        <FormControl label="Access Key" type="text" v-model="accessKey" placeholder="AKIA…" class="w-full" />
+        <FormControl label="Secret Key" type="password" v-model="secretKey"
+          :placeholder="secretKeySet ? '••••••••' : 'Secret key'" class="w-full" />
+      </div>
       <ErrorMessage v-if="error" :message="error" />
       <div class="flex justify-end">
         <Button variant="solid" :loading="saving" @click="save">
