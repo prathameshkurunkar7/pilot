@@ -464,7 +464,12 @@ class NginxManager:
 
         acme_block = self._render_acme_location()
         firewall_block = self._render_firewall()
-        proxy_block = self._render_error_pages() + self._render_admin_proxy_location()
+        proxy_block = (
+            self._render_error_pages()
+            + self._render_open_cors_location("/api/ping")
+            + self._render_open_cors_location("/api/status")
+            + self._render_admin_proxy_location()
+        )
 
         # admin.tls = False: a central proxy terminates TLS, so nginx serves the
         # admin over plain HTTP on :80 and never redirects to HTTPS, even if a
@@ -528,6 +533,24 @@ class NginxManager:
             + ssl_directives
             + proxy_block
             + f"}}\n"
+        )
+
+    def _render_open_cors_location(self, path: str) -> str:
+        """/api/ping and /api/status are probed cross-origin (e.g. ReconnectOverlay
+        detecting which scheme now serves a bench after a restart), so nginx answers
+        them with a wide-open CORS header regardless of what the admin process sends."""
+        return (
+            f"    location = {path} {{\n"
+            f"        proxy_pass         http://127.0.0.1:{self._admin_proxy_port()};\n"
+            f"        proxy_read_timeout 120;\n"
+            f"        proxy_redirect     off;\n"
+            f"        proxy_set_header   Host               $host;\n"
+            f"        proxy_set_header   X-Real-IP          $remote_addr;\n"
+            f"        proxy_set_header   X-Forwarded-For    {self._xff_header()};\n"
+            f"        proxy_set_header   X-Forwarded-Proto  $scheme;\n"
+            f"        proxy_hide_header  Access-Control-Allow-Origin;\n"
+            f"        add_header         Access-Control-Allow-Origin * always;\n"
+            f"    }}\n"
         )
 
     def _render_admin_proxy_location(self) -> str:
