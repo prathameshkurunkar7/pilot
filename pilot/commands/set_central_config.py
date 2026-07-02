@@ -39,6 +39,8 @@ class SetCentralConfigCommand(Command):
             config = json.loads(config_path.read_text())
         except FileNotFoundError as exc:
             raise BenchError(f"{config_path} not found — is this a bench?") from exc
+        except ValueError as exc:
+            raise BenchError(f"{config_path} contains invalid JSON: {exc}") from exc
         config["central_endpoint"] = self.endpoint
         config["central_auth_token"] = self.token
         config_path.write_text(json.dumps(config, indent=2) + "\n")
