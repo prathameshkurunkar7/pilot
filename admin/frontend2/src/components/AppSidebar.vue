@@ -39,15 +39,11 @@ const header = computed(() => ({
       label: 'Central',
       icon: 'lucide-cloud',
     },
-    ...(isMobile.value
-      ? []
-      : [
-        {
-          label: 'Settings',
-          icon: 'lucide-settings',
-          onClick: () => (showSettings.value = true),
-        },
-      ]),
+    {
+      label: 'Settings',
+      icon: 'lucide-settings',
+      onClick: () => (showSettings.value = true),
+    },
     {
       label: 'Switch Bench',
       icon: 'lucide-repeat',

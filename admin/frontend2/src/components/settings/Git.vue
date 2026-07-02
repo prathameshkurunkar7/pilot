@@ -14,14 +14,14 @@
       </template>
     </Alert>
 
-    <div v-if="connected" class="flex justify-between items-center">
+    <div v-if="connected" class="flex sm:flex-row sm:justify-between sm:items-center flex-col gap-3">
       <div>
         <p class="font-medium text-ink-gray-8 text-sm">Connected as {{ username }}</p>
         <p class="text-ink-gray-5 text-p-sm">GitHub · Personal access token</p>
       </div>
       <div class="flex items-center gap-2">
-        <Button variant="subtle" :loading="verifying" @click="verifyConnection">Verify</Button>
-        <Button variant="subtle" theme="red" @click="disconnect">Disconnect</Button>
+        <Button class="flex-1 sm:flex-none" variant="subtle" :loading="verifying" @click="verifyConnection">Verify</Button>
+        <Button class="flex-1 sm:flex-none" variant="subtle" theme="red" @click="disconnect">Disconnect</Button>
       </div>
     </div>
 
