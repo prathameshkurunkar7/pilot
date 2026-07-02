@@ -6,6 +6,7 @@ from typing import List
 
 from pilot.config.admin_config import AdminConfig
 from pilot.config.app_config import AppConfig
+from pilot.config.central_config import CentralConfig
 from pilot.config.firewall_config import FirewallConfig, FirewallRule
 from pilot.config.gunicorn_config import GunicornConfig
 from pilot.config.letsencrypt_config import LetsEncryptConfig
@@ -15,6 +16,7 @@ from pilot.config.nginx_config import NginxConfig
 from pilot.config.postgres_config import PostgresConfig
 from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
+from pilot.config.s3_config import S3Config
 from pilot.config.volume_config import DatasetConfig, ImageConfig, VolumeConfig
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 from pilot.exceptions import ConfigError
@@ -54,7 +56,9 @@ class BenchConfig:
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     admin: AdminConfig = field(default_factory=AdminConfig)
     volume: VolumeConfig = field(default_factory=VolumeConfig)
+    central: CentralConfig = field(default_factory=CentralConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
+    s3: S3Config = field(default_factory=S3Config)
 
     @classmethod
     def from_file(cls, path: Path) -> "BenchConfig":
@@ -86,7 +90,9 @@ class BenchConfig:
         letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
         admin = cls._parse_admin(data.get("admin", {}))
         volume = cls._parse_volume(data.get("volume"))
+        central = cls._parse_central(data.get("central", {}))
         firewall = cls._parse_firewall(data.get("firewall"))
+        s3 = S3Config(**data.get("s3", {}))
         # One dataset per bench, named after the bench unless explicitly set.
         if not volume.name:
             volume.name = bench_data.get("name", "")
@@ -109,7 +115,9 @@ class BenchConfig:
             letsencrypt=letsencrypt,
             admin=admin,
             volume=volume,
+            central=central,
             firewall=firewall,
+            s3=s3,
         )
 
     @staticmethod
@@ -203,6 +211,13 @@ class BenchConfig:
             jwt_secret=data.get("jwt_secret", ""),
             domain=data.get("domain", ""),
             tls=data.get("tls", False),
+        )
+
+    @staticmethod
+    def _parse_central(data: dict) -> CentralConfig:
+        return CentralConfig(
+            endpoint=data.get("endpoint", ""),
+            auth_token=data.get("auth_token", ""),
         )
 
     @staticmethod

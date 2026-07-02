@@ -2,14 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
 from pilot.managers.snapshot_orchestrator import get_orchestrator
 
 from ..readers.snapshot_reader import SnapshotReader
 from ..readers.volume_reader import VolumeReader
+from ..validators import validate_cron_expression
 
 volume_bp = Blueprint("volume", __name__)
+
+# Not a legal site name (site names allow only letters/numbers/hyphens/dots),
+# so this can never collide with a per-site backup job key in the same crontab.
+_SNAPSHOT_CRON_JOB_KEY = "__bench_snapshot__"
 
 
 def _get_config(bench_root):
@@ -61,8 +66,9 @@ def status():
 @volume_bp.route("/snapshots")
 def list_snapshots():
     bench_root = current_app.config["BENCH_ROOT"]
+    limit = request.args.get("limit", type=int)
     try:
-        status = SnapshotReader(bench_root).read()
+        status = SnapshotReader(bench_root).read(limit=limit)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -78,6 +84,7 @@ def list_snapshots():
                     "tag": s.tag,
                     "created_at": s.created_at.isoformat(),
                     "used_bytes": s.used_bytes,
+                    "is_offsite": s.is_offsite,
                 }
                 for s in status.snapshots
             ],
@@ -87,6 +94,9 @@ def list_snapshots():
 
 @volume_bp.route("/snapshots", methods=["POST"])
 def create_snapshot():
+    from pilot.config.toml_store import BenchTomlStore
+    from admin.backend.tasks.manager.task_runner import TaskRunner
+
     bench_root = current_app.config["BENCH_ROOT"]
     config = _get_config(bench_root)
     tag = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -95,6 +105,10 @@ def create_snapshot():
         orchestrator.create_snapshot(tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+    s3_config = BenchTomlStore.for_bench(bench_root).read().s3
+    if s3_config.is_configured:
+        TaskRunner(bench_root).run("offsite-snapshot", {"dataset": config.dataset_path, "tag": tag})
 
     return jsonify({"ok": True, "tag": tag, "snapshots": [f"{config.dataset_path}@{tag}"]})
 
@@ -121,4 +135,53 @@ def destroy_snapshot(tag: str):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    return jsonify({"ok": True})
+
+
+def _snapshot_cron_command(bench_root) -> str:
+    from pilot.loader import cli_root
+
+    bench_script = cli_root() / "bench"
+    log_file = bench_root / "logs" / "snapshot.log"
+    return f"{bench_script} -b {bench_root.name} volume snapshot >> {log_file} 2>&1"
+
+
+@volume_bp.route("/snapshot-schedule")
+def get_snapshot_schedule():
+    from ..cron_manager import CronManager
+
+    bench_root = current_app.config["BENCH_ROOT"]
+    try:
+        schedule = CronManager(bench_root).get_schedule(_SNAPSHOT_CRON_JOB_KEY)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"schedule": schedule})
+
+
+@volume_bp.route("/snapshot-schedule", methods=["POST"])
+def set_snapshot_schedule():
+    from ..cron_manager import CronManager
+
+    bench_root = current_app.config["BENCH_ROOT"]
+    data = request.get_json(silent=True) or {}
+    schedule = (data.get("schedule") or "").strip()
+    err = validate_cron_expression(schedule)
+    if err:
+        return jsonify({"ok": False, "error": err})
+    try:
+        CronManager(bench_root).set_schedule(_SNAPSHOT_CRON_JOB_KEY, schedule, _snapshot_cron_command(bench_root))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": True})
+
+
+@volume_bp.route("/snapshot-schedule", methods=["DELETE"])
+def delete_snapshot_schedule():
+    from ..cron_manager import CronManager
+
+    bench_root = current_app.config["BENCH_ROOT"]
+    try:
+        CronManager(bench_root).remove_schedule(_SNAPSHOT_CRON_JOB_KEY)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True})

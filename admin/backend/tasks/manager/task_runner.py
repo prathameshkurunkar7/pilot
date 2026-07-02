@@ -26,6 +26,7 @@ _WHITELIST: dict[str, list[str]] = {
     "drop-site": ["site"],
     "backup-site": ["site"],
     "delete-backup": ["site", "filenames"],
+    "offsite-snapshot": ["dataset", "tag"],
     "build": [],  # optional: app
     "update": [],
     # Either "site" (single-site flow) or "sites" (bench-wide flow) is required;
@@ -128,6 +129,8 @@ class TaskRunner:
             if args.get("with_files"):
                 argv += ["--with-files"]
             return argv
+        if command == "offsite-snapshot":
+            return [sys.executable, "-m", "admin.backend.tasks.jobs.offsite_snapshot_task", str(self._bench_root), args["dataset"], args["tag"]]
         if command == "build":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.build_task", str(self._bench_root)]
             if args.get("app"):
