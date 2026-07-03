@@ -138,6 +138,12 @@ class OffsiteBackup:
     def download(self, site_name: str, timestamp: str, filename: str, destination: Path) -> None:
         self.s3.download_file(self.bucket, BackupKeys(site_name).file(timestamp, filename), destination)
 
+    def presigned_url(self, site_name: str, timestamp: str, filename: str, expires_in: int = 25_000) -> str:
+        """A direct, time-limited S3 download link — the file goes straight
+        from S3 to whoever has the link, without passing through this server."""
+        key = BackupKeys(site_name).file(timestamp, filename)
+        return self.s3.presigned_url(self.bucket, key, expires_in=expires_in)
+
     def delete(self, site_name: str, timestamp: str, filename: str) -> None:
         keys = BackupKeys(site_name)
         self.s3.delete_object(self.bucket, keys.file(timestamp, filename))

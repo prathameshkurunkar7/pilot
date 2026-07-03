@@ -140,6 +140,20 @@ class S3:
                 f"Failed to download '{bucket_name}/{remote_key}': {error.response['Error'].get('Message', error)}",
             ) from error
 
+    def presigned_url(self, bucket_name: str, remote_key: str, expires_in: int = 25_200) -> str:
+        """A time-limited URL the caller can hand straight to a browser/curl —
+        the download streams directly from S3, never through this server."""
+        try:
+            return self.client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket_name, "Key": remote_key},
+                ExpiresIn=expires_in,
+            )
+        except ClientError as error:
+            raise S3IntegrationError(
+                f"Failed to create a download link for '{bucket_name}/{remote_key}': {error.response['Error'].get('Message', error)}",
+            ) from error
+
     def delete_object(self, bucket_name: str, remote_key: str) -> None:
         try:
             self.client.delete_object(Bucket=bucket_name, Key=remote_key)
