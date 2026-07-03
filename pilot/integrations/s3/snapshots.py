@@ -150,7 +150,8 @@ class OffsiteSnapshot:
                 self.s3.upload_stream(self.bucket, remote_key, proc.stdout)
             finally:
                 proc.stdout.close()
-                _, stderr = proc.communicate()
+            stderr = proc.stderr.read()
+            proc.wait()
             if proc.returncode != 0:
                 raise S3IntegrationError(f"zfs send failed: {stderr.decode().strip()}")
 
@@ -163,7 +164,8 @@ class OffsiteSnapshot:
                 self.s3.download_stream(self.bucket, remote_key, proc.stdin)
             finally:
                 proc.stdin.close()
-                _, stderr = proc.communicate()
+            stderr = proc.stderr.read()
+            proc.wait()
             if proc.returncode != 0:
                 raise S3IntegrationError(f"zfs receive failed: {stderr.decode().strip()}")
 
