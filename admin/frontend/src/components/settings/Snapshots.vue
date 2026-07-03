@@ -56,11 +56,12 @@
       <ListView v-else :columns="columns" :rows="rows" row-key="tag"
         :options="{ selectable: false, showTooltip: false }">
         <template #cell="{ column, row, item }">
-          <div v-if="column.key === 'actions'" class="flex justify-end gap-2">
-            <Button v-if="(row.snap.is_local || row.snap.is_offsite) && !row.snap.is_uploading" variant="subtle"
-              icon="lucide-history" title="Rollback" @click="openRollback(row.snap)" />
-            <Button v-if="!row.snap.is_uploading" variant="subtle" icon="lucide-x" title="Delete"
-              @click="openDelete(row.snap)" />
+          <div v-if="column.key === 'actions'" class="flex justify-end">
+            <Dropdown :options="menuOptions(row.snap)" placement="left">
+              <template #default="{ open }">
+                <Button variant="ghost" size="sm" :active="open"><span class="size-4 lucide-ellipsis" /></Button>
+              </template>
+            </Dropdown>
           </div>
           <div v-else-if="column.key === 'offsite'" class="flex justify-center">
             <span v-if="row.snap.is_offsite" class="size-4 text-ink-green-6 lucide-circle-check" title="Backed up offsite" />
@@ -127,7 +128,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Alert, Button, Dialog, ErrorMessage, ListRowItem, ListView, TextInput, toast } from 'frappe-ui'
+import { Alert, Button, Dialog, Dropdown, ErrorMessage, ListRowItem, ListView, TextInput, toast } from 'frappe-ui'
 import CronScheduleControl from '@/components/CronScheduleControl.vue'
 import { settingsApi } from '@/api/settings'
 import { volumeApi } from '@/api/volume'
@@ -189,6 +190,19 @@ const rows = computed(() => snapshots.value.map((snap) => ({
   size: fmtSize(snap.used_bytes),
   snap,
 })))
+
+function menuOptions(snap) {
+  return [
+    ...((snap.is_local || snap.is_offsite || snap.is_downloaded) && !snap.is_uploading ? [{
+      label: 'Rollback', icon: 'lucide-history',
+      onClick: () => openRollback(snap),
+    }] : []),
+    ...(!snap.is_uploading ? [{
+      label: 'Delete snapshot', icon: 'lucide-trash-2', theme: 'red',
+      onClick: () => openDelete(snap),
+    }] : []),
+  ]
+}
 
 function openRollback(snap) {
   rollbackTarget.value = snap

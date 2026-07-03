@@ -1217,6 +1217,27 @@ def test_restore_downloaded_snapshot_succeeds_despite_cleanup_failure() -> None:
     assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
 
 
+def test_restore_downloaded_snapshot_rebinds_mounts_if_initial_rename_fails() -> None:
+    import pytest
+
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks()
+    # Fails before anything is renamed — `live` never stops being `live`.
+    volume.rename_dataset.side_effect = RuntimeError("zfs rename failed")
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
+        detect.return_value.is_running.return_value = False
+        with pytest.raises(RuntimeError, match="zfs rename failed"):
+            SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    # The bind mounts dropped before the failed rename must be re-established
+    # against the still-current `live` dataset, so mariadb.start() (called by
+    # the caller's finally) has a mount to start against.
+    assert volume.bind_mount.call_count == 2
+    mariadb.start.assert_called_once()
+    volume.destroy_dataset.assert_not_called()
+
+
 # ── DropBenchCommand ────────────────────────────────────────────────────────
 
 

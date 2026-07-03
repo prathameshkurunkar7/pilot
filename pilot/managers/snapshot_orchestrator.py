@@ -99,20 +99,22 @@ class SnapshotOrchestrator:
         live = self._dataset
         mariadb_datadir = Path(self._mariadb.data_dir())
         bench_path = self._bench.path
+        aside = f"{live}-before-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        live_mount = self._volume.get_mountpoint(live)
 
         # Bind mounts go stale once the dataset under them is renamed, so
         # drop them first. The bench is stopped, so these can't be busy.
-        self._volume.unmount(bench_path)
-        self._volume.unmount(mariadb_datadir)
-
-        aside = f"{live}-before-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-
-        live_mount = self._volume.get_mountpoint(live)
-        self._volume.rename_dataset(live, aside)
+        try:
+            self._volume.unmount(bench_path)
+            self._volume.unmount(mariadb_datadir)
+            self._volume.rename_dataset(live, aside)
+        except Exception:
+            # Nothing has been renamed yet (or the rename itself is what just failed)
+            self._volume.bind_mount(live_mount / "benches", bench_path)
+            self._volume.bind_mount(live_mount / "mariadb", mariadb_datadir)
+            raise
 
         # Tracks whether `restored` has already taken over the `live` name —
-        # the rollback below needs to know this to know which dataset (if
-        # any) currently sits under `live` before it touches it.
         swapped = False
         try:
             self._volume.clear_mountpoint(aside)
