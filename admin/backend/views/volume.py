@@ -128,8 +128,9 @@ def rollback_snapshot(tag: str):
             orchestrator.rollback_snapshot(tag)
         else:
             # Not a real snapshot of the live dataset — `zfs rollback` can't
-            # reach it. If it was downloaded (see download_snapshot below),
-            # promote that restored dataset to live instead.
+            # reach it, and restoring it needs the bench stopped anyway (see
+            # `restore_downloaded_snapshot`), so this always fails here; the
+            # UI instead points the user at `bench volume restore-snapshot`.
             orchestrator.restore_downloaded_snapshot(tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -158,16 +159,6 @@ def destroy_snapshot(tag: str):
         return jsonify({"error": str(e)}), 500
 
     return jsonify({"ok": True})
-
-
-@volume_bp.route("/snapshots/<tag>/download", methods=["POST"])
-def download_snapshot(tag: str):
-    from admin.backend.tasks.manager.task_runner import TaskRunner
-
-    bench_root = current_app.config["BENCH_ROOT"]
-    config = _get_config(bench_root)
-    task_id = TaskRunner(bench_root).run("download-snapshot", {"dataset": config.dataset_path, "tag": tag})
-    return jsonify({"ok": True, "task_id": task_id})
 
 
 def _snapshot_cron_command(bench_root) -> str:

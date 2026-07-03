@@ -267,6 +267,20 @@ class VolumeRestoreSnapshotCommand(Command):
             orchestrator.rollback_snapshot(self.tag)
         else:
             # A downloaded offsite snapshot lives in a separate dataset —
-            # promote it to live instead of `zfs rollback`.
+            # promote it to live instead of `zfs rollback`. Fetch it from S3
+            # first if it isn't downloaded yet, so this one command covers
+            # every case: local rollback, already-downloaded, or offsite-only.
+            self._ensure_downloaded(manager)
             orchestrator.restore_downloaded_snapshot(self.tag)
         print(f"Restored {self.config.dataset_path}@{self.tag}.")
+
+    def _ensure_downloaded(self, manager: "VolumeManager") -> None:
+        restored = f"{self.config.dataset_path}-restored-{self.tag}"
+        if manager.dataset_exists(restored):
+            return
+
+        from pilot.integrations.s3.snapshots import OffsiteSnapshot
+
+        print(f"Snapshot {self.tag} isn't downloaded yet — fetching it from S3...")
+        offsite_snapshot = OffsiteSnapshot.from_config(self.bench.config.s3)
+        offsite_snapshot.download(self.bench.config.name, self.tag, self.config.dataset_path)
