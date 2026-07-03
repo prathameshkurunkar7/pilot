@@ -158,12 +158,12 @@ class VolumeStatusCommand(Command):
 
     def _print_dataset(self, dataset: str) -> None:
         try:
-            result = run_command(["zfs", "list", "-H", "-o", "name,quota,reservation,used,avail", dataset])
+            result = run_command(["zfs", "list", "-H", "-o", "name,used,avail", dataset])
         except CommandError:
             print(f"Dataset    {dataset:<30} not found")
             return
-        name, quota, reservation, used, avail = result.stdout.decode().strip().split("\t")
-        print(f"Dataset    {name:<30} quota={quota}  reservation={reservation}  used={used}  avail={avail}")
+        name, used, avail = result.stdout.decode().strip().split("\t")
+        print(f"Dataset    {name:<30} used={used}  avail={avail}")
 
 
 class VolumeSnapshotCommand(Command):

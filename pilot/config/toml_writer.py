@@ -130,10 +130,6 @@ def bench_config_to_toml(config: BenchConfig) -> str:
         elif v.backing == "device":
             parts.append(f'device = "{v.device}"')
         # backing = "auto" carries no device/image fields — resolved during bench init
-        parts.append("")
-        parts.append("[volume.dataset]")
-        parts.append(f'reservation = "{v.dataset.reservation}"')
-        parts.append(f'quota = "{v.dataset.quota}"')
     parts.append("")
 
     fw = config.firewall

@@ -100,10 +100,6 @@ domain = ""             # optional — serve admin over HTTPS via nginx (product
 enabled = false         # set to true to activate ZFS volume management
 pool = "bench-pool"     # shared ZFS pool (created if absent, reused if present)
 device = "/dev/sdb"     # block device for the pool (ignored if pool already exists)
-
-[volume.dataset]        # one dataset per bench: <pool>/<bench>, holding files + database
-reservation = "15G"     # guaranteed space for this bench
-quota = "60G"           # hard cap — lower it to fit more benches in the pool
 ```
 
 ---
@@ -265,14 +261,7 @@ Volume management is opt-in and Linux-only. All `[volume.*]` sections are ignore
 | `name` | string | no | bench name | Dataset leaf; the bench's dataset is `<pool>/<name>`. Defaults to the bench name. |
 | `device` | string | yes (if enabled) | — | Block device path (e.g. `/dev/sdb`). Used only if the pool does not yet exist. |
 
-### `[volume.dataset]`
-
 The bench's single dataset (`<pool>/<bench>`) holds both the bench files and its MariaDB data, exposed at their conventional paths via bind mounts. A snapshot/rollback covers both.
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `reservation` | string | no | `"5G"` | Guaranteed space for the bench. ZFS will not allow the dataset to fall below this allocation. Must be a valid ZFS size (e.g. `"15G"`, `"500M"`). |
-| `quota` | string | no | `"50G"` | Hard space cap for the bench (files + database). Must be greater than `reservation`. Lower it to fit more benches in a shared pool. Can be updated live via the Settings modal without restarting; bench validates that the new quota is not less than the dataset's current used size before applying. |
 
 ---
 
@@ -290,7 +279,7 @@ bench validates `bench.toml` before executing any command. Violations produce a 
 8. `gunicorn.workers`, `gunicorn.threads`, and `gunicorn.timeout` must be positive integers; `gunicorn.worker_class` must be a non-empty string; `gunicorn.malloc_arena_max`, `gunicorn.max_requests`, and `gunicorn.max_requests_jitter` must be non-negative integers.
 9. `mariadb.version` and `redis.version`, when present, must match `^\d+(\.\d+)*$` (e.g. `"10.6"`, `"7"`, `"7.0"`).
 10. `mariadb.instance`, when present, must match `^[a-zA-Z][a-zA-Z0-9_-]*$`; `mariadb.data_dir`, when present, must be an absolute path.
-11. When `volume.enabled = true`: `pool` and `device` must be non-empty; `reservation` and `quota` values must match a valid ZFS size pattern (e.g. `"10G"`, `"500M"`, `"1T"`); quota must be greater than reservation for both datasets.
+11. When `volume.enabled = true`: `pool` must be non-empty; `device` is required for device backing; `image.size` is required for image backing and must match a valid ZFS size pattern (e.g. `"10G"`, `"500M"`, `"1T"`).
 
 ---
 

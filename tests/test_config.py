@@ -573,11 +573,6 @@ def test_volume_invalid_backing_rejected() -> None:
         load_from_dict(_data_with_volume({"backing": "loopback"}))
 
 
-def test_volume_reservation_cannot_exceed_quota() -> None:
-    with pytest.raises(ConfigError, match="cannot exceed quota"):
-        load_from_dict(_data_with_volume({"device": "/dev/sdb", "dataset": {"reservation": "20G", "quota": "10G"}}))
-
-
 def test_volume_skipped_when_not_configured() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)  # no [volume] section
     config = BenchConfig._from_dict(data)

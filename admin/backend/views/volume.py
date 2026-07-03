@@ -54,8 +54,6 @@ def status():
                     "name": d.name,
                     "used_bytes": d.used_bytes,
                     "available_bytes": d.available_bytes,
-                    "quota_bytes": d.quota_bytes,
-                    "reservation_bytes": d.reservation_bytes,
                 }
                 for d in info.datasets
             ],

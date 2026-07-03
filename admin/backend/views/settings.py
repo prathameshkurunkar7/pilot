@@ -12,7 +12,6 @@ from pilot.config.toml_store import BenchTomlStore
 from pilot.config.worker_config import WorkerGroup
 from pilot.core.bench import Bench
 from pilot.managers.redis_manager import RedisManager
-from pilot.managers.volume_manager import VolumeManager
 from pilot.platform import is_linux, native_process_manager
 
 settings_bp = Blueprint("settings", __name__)
@@ -95,7 +94,6 @@ class ConfigPatcher:
         self._apply_redis()
         self._apply_workers()
         self._apply_firewall()
-        self._apply_volume()
         self._apply_admin()
         self._apply_monitor()
         if error := self._apply_s3():
@@ -188,14 +186,6 @@ class ConfigPatcher:
                     )
                 )
             fw.rules = rules
-
-    def _apply_volume(self) -> None:
-        volume = self.data.get("volume") or {}
-        if not volume:
-            return
-        volume_config = self.config.volume
-        volume_config.dataset.reservation = str(volume.get("reservation", volume_config.dataset.reservation))
-        volume_config.dataset.quota = str(volume.get("quota", volume_config.dataset.quota))
 
     def _apply_admin(self) -> None:
         """TLS termination is opt-in: persisting tls=true only records the intent;
@@ -421,8 +411,6 @@ def _build_settings_response(config: BenchConfig) -> dict:
             "device": volume.device,
             "image_size": volume.image.size,
             "image_path": volume.image_path if volume.backing == "image" else "",
-            "reservation": volume.dataset.reservation,
-            "quota": volume.dataset.quota,
         },
         "monitor": {
             "system_log_path": str(config.monitor.system_log_path),
@@ -465,7 +453,6 @@ def update_settings():
     except Exception as error:
         return jsonify({"ok": False, "error": str(error)}), 500
 
-    volume_manager = VolumeManager(config.volume)
     old_restart = _restart_trigger_values(config)
     old_firewall = _firewall_payload(config)
     old_s3_config = _s3_payload(config)
@@ -473,18 +460,10 @@ def update_settings():
     if error := ConfigPatcher(config, data).apply():
         return jsonify({"ok": False, "error": error}), 400
 
-    if config.volume.enabled:
-        if error := volume_manager.validate_sizes_fit_backing():
-            return jsonify({"ok": False, "error": error}), 400
-        if error := volume_manager.validate_quotas_above_usage():
-            return jsonify({"ok": False, "error": error}), 400
-
     try:
         store.write(config)
     except Exception as error:
         return jsonify({"ok": False, "error": f"Failed to write config: {error}"}), 500
-
-    zfs_error = volume_manager.apply_sizes() if config.volume.enabled else None
 
     restarted, restart_error = False, None
     if _needs_restart(old_restart, _restart_trigger_values(config)):
@@ -513,7 +492,6 @@ def update_settings():
             "ok": True,
             "restarted": restarted,
             "restart_error": restart_error,
-            "zfs_error": zfs_error,
             "nginx_error": nginx_error,
         }
     )

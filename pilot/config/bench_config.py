@@ -17,7 +17,7 @@ from pilot.config.postgres_config import PostgresConfig
 from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
 from pilot.config.s3_config import S3Config
-from pilot.config.volume_config import DatasetConfig, ImageConfig, VolumeConfig
+from pilot.config.volume_config import ImageConfig, VolumeConfig
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 from pilot.exceptions import ConfigError
 
@@ -230,7 +230,6 @@ class BenchConfig:
     def _parse_volume(data: dict | None) -> VolumeConfig:
         if data is None:
             return VolumeConfig()
-        dataset_data = data.get("dataset", {})
         image_data = data.get("image", {})
         # Older tomls predate `backing`: an explicit device implies device backing.
         backing = data.get("backing") or ("device" if data.get("device") else "auto")
@@ -248,10 +247,6 @@ class BenchConfig:
             image=ImageConfig(
                 size=image_data.get("size", ""),
                 path=image_data.get("path", ""),
-            ),
-            dataset=DatasetConfig(
-                reservation=dataset_data.get("reservation", "5G"),
-                quota=dataset_data.get("quota", "50G"),
             ),
         )
 
@@ -454,9 +449,6 @@ class BenchConfig:
         if not self.volume.pool:
             raise ConfigError("volume.pool is required.")
         self._validate_volume_backing()
-        self._validate_zfs_size("volume.dataset.reservation", self.volume.dataset.reservation)
-        self._validate_zfs_size("volume.dataset.quota", self.volume.dataset.quota)
-        self._validate_reservation_quota()
 
     def _validate_volume_backing(self) -> None:
         backing = self.volume.backing
@@ -474,13 +466,6 @@ class BenchConfig:
         self._validate_zfs_size("volume.image.size", self.volume.image.size)
         if self.volume.image.path and not Path(self.volume.image.path).is_absolute():
             raise ConfigError(f"volume.image.path '{self.volume.image.path}' must be an absolute path.")
-
-    def _validate_reservation_quota(self) -> None:
-        from pilot.managers.volume_manager import VolumeManager
-
-        dataset = self.volume.dataset
-        if error := VolumeManager.validate_reservation_within_quota(dataset.reservation, dataset.quota):
-            raise ConfigError(error)
 
     @staticmethod
     def _validate_zfs_size(field_name: str, value: str) -> None:

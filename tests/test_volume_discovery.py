@@ -15,7 +15,6 @@ from pilot.managers.volume_manager import (
     compute_smart_defaults,
     discover_unused_disks,
     resolve_auto_backing,
-    smart_dataset_sizes,
 )
 
 G = 1024**3
@@ -111,26 +110,12 @@ def test_discover_returns_empty_when_lsblk_missing(monkeypatch) -> None:
 # ── smart sizing ──────────────────────────────────────────────────────────────
 
 
-def test_smart_dataset_sizes_single_dataset() -> None:
-    sizes = smart_dataset_sizes(100 * G)
-    assert sizes == {
-        "volume_quota": "100G",  # quota = whole backing (100%)
-        "volume_reservation": "15G",  # 15% guaranteed reservation
-    }
-
-
-def test_smart_dataset_sizes_floor_one_gigabyte() -> None:
-    sizes = smart_dataset_sizes(5 * G)
-    assert sizes["volume_reservation"] == "1G"  # 15% of 5G = 0.75G -> floored to min 1G
-
-
 def test_compute_smart_defaults_prefers_device(monkeypatch) -> None:
     monkeypatch.setattr(volume_manager, "existing_pools", lambda: [])
     monkeypatch.setattr(volume_manager, "discover_unused_disks", lambda: [DiskInfo("/dev/sdb", 100 * G)])
     defaults = compute_smart_defaults()
     assert defaults["volume_backing"] == "device"
     assert defaults["volume_device"] == "/dev/sdb"
-    assert defaults["volume_quota"] == "100G"
     assert defaults["available_devices"] == [{"path": "/dev/sdb", "size_bytes": 100 * G, "has_signature": False}]
 
 
@@ -141,8 +126,6 @@ def test_compute_smart_defaults_falls_back_to_image(monkeypatch) -> None:
     defaults = compute_smart_defaults()
     assert defaults["volume_backing"] == "image"
     assert defaults["volume_image_size"] == "40G"
-    assert defaults["volume_quota"] == "40G"
-    assert defaults["volume_reservation"] == "6G"
     assert defaults["available_devices"] == []
 
 
@@ -167,8 +150,6 @@ def test_resolve_auto_picks_largest_disk(monkeypatch) -> None:
     assert "/dev/sdc" in choice
     assert config.backing == "device"
     assert config.device == "/dev/sdc"
-    assert config.dataset.quota == "200G"
-    assert config.dataset.reservation == "30G"
 
 
 def test_resolve_auto_falls_back_to_image(monkeypatch) -> None:
@@ -180,15 +161,12 @@ def test_resolve_auto_falls_back_to_image(monkeypatch) -> None:
     assert "image" in choice
     assert config.backing == "image"
     assert config.image.size == "40G"
-    assert config.dataset.quota == "40G"
-    assert config.dataset.reservation == "6G"
 
 
 def test_resolve_auto_noop_for_explicit_backing() -> None:
     config = VolumeConfig(pool="bench-pool", backing="device", device="/dev/sdb")
     assert resolve_auto_backing(config) == ""
     assert config.device == "/dev/sdb"
-    assert config.dataset.quota == "50G"  # untouched defaults
 
 
 # ── existing pool reuse ───────────────────────────────────────────────────────
@@ -201,7 +179,6 @@ def test_compute_smart_defaults_prefers_existing_pool(monkeypatch) -> None:
     assert defaults["volume_backing"] == "device"
     assert defaults["volume_device"] == "/dev/nvme1n1"
     assert defaults["volume_pool"] == "bench-pool"
-    assert defaults["volume_quota"] == "50G"  # the pool size, not the unused disk
     assert defaults["available_devices"] == [
         {"path": "/dev/nvme1n1", "size_bytes": 50 * G, "pool": "bench-pool"},
         {"path": "/dev/sdb", "size_bytes": 100 * G, "has_signature": False},
@@ -216,7 +193,6 @@ def test_resolve_auto_reuses_matching_pool(monkeypatch) -> None:
     assert "reusing" in choice
     assert config.backing == "device"
     assert config.device == "/dev/nvme1n1"
-    assert config.dataset.quota == "50G"
 
 
 def test_resolve_auto_ignores_pool_with_other_name(monkeypatch) -> None:

@@ -249,7 +249,7 @@ def start_setup():
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     if config.volume.enabled:
-        if error := VolumeManager(config.volume).validate_sizes_fit_backing():
+        if error := VolumeManager(config.volume).validate_image_fits_filesystem():
             return jsonify({"ok": False, "error": error}), 400
 
     try:
@@ -390,9 +390,8 @@ def _volume_suggestions(toml_path: Path) -> dict:
 
     Fresh setups (no [volume] table yet) get discovery-driven defaults:
     device backing on the largest unused disk, or image backing sized from
-    rootfs free space, with quotas/reservations derived from the backing size.
-    Existing volume config is never overridden — only the discovered device
-    list is returned so the UI can still offer a dropdown.
+    rootfs free space. Existing volume config is never overridden — only the
+    discovered device list is returned so the UI can still offer a dropdown.
     """
     from pilot.platform import is_linux
 
