@@ -88,16 +88,18 @@ export function useMarketplace(initialSiteName = '') {
   const currentSite = computed(() => sites.value.find((site) => site.name === currentSiteName.value) || null)
   const installedOnCurrentSite = computed(() => new Set(currentSite.value?.installed_apps || []))
 
+  // Only Frappe-made apps that some marketplace app depends on.
   const worksWithOptions = computed(() => {
     const names = new Set(registry.value.flatMap((app) => Object.keys(app.dependencies || {})))
-    return [...names].sort().map((name) => {
-      const entry = registry.value.find((app) => app.name === name)
-      return { name, title: entry?.title || toSentenceCase(name), logo_url: entry?.logo_url || '' }
-    })
+    return [...names]
+      .map((name) => registry.value.find((app) => app.name === name))
+      .filter((entry) => entry && isFrappeApp(entry))
+      .map((entry) => ({ name: entry.name, title: entry.title, logo_url: entry.logo_url || '' }))
+      .sort((a, b) => a.title.localeCompare(b.title))
   })
 
   function matchesWorksWith(app) {
-    return !worksWith.value || worksWith.value in (app.dependencies || {})
+    return !worksWith.value || Object.hasOwn(app.dependencies || {}, worksWith.value)
   }
 
   function matchesSearch(app, query) {

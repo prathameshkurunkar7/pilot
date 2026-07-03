@@ -9,6 +9,7 @@ const PILL_BY_CATEGORY = {
   Utility: 'Utility',
   Utilities: 'Utility',
   Extension: 'Utility',
+  Extensions: 'Utility',
   Productivity: 'Utility',
   Storage: 'Utility',
   Files: 'Utility',
@@ -29,6 +30,7 @@ const PILL_BY_CATEGORY = {
   Marketing: 'Business',
   Support: 'Business',
   Developer: 'Dev Tools',
+  'Developer Tools': 'Dev Tools',
   Website: 'Dev Tools',
 }
 

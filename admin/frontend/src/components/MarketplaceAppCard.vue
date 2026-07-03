@@ -8,8 +8,7 @@
       </span>
     </div>
 
-    <div class="flex flex-1 justify-between items-center gap-2 min-w-0"
-      :class="showDivider ? 'py-4 border-b border-outline-gray-2' : 'py-2'">
+    <div class="flex flex-1 justify-between items-center gap-2 py-2 min-w-0">
       <div class="min-w-0">
         <div class="flex items-center gap-1.5">
           <span class="font-medium text-ink-gray-8 text-base truncate">{{ app.title }}</span>
@@ -22,7 +21,7 @@
 
       <slot name="actions">
         <Tooltip v-if="app.installed" text="Installed">
-          <span class="place-items-center grid size-7 shrink-0">
+          <span class="place-items-center grid size-7 shrink-0" aria-label="Installed">
             <span class="size-4 text-ink-green-6 lucide-check"></span>
           </span>
         </Tooltip>
@@ -67,10 +66,8 @@ import { Button, Dialog, Tooltip } from 'frappe-ui'
 import LucideDownload from '~icons/lucide/download'
 import { logoColor } from '@/composables/useMarketplace'
 
-// Site page (Apps.vue) opts in; marketplace lists render divider-free.
 const props = defineProps({
   app: { type: Object, required: true },
-  showDivider: { type: Boolean, default: false },
 })
 defineEmits(['install'])
 

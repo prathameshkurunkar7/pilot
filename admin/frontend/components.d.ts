@@ -31,6 +31,7 @@ declare module 'vue' {
     GithubMark: typeof import('./src/components/icons/GithubMark.vue')['default']
     InstallAppDialog: typeof import('./src/components/InstallAppDialog.vue')['default']
     LogView: typeof import('./src/components/LogView.vue')['default']
+    LucideDownload: typeof import('~icons/lucide/download')['default']
     MarketplaceAppCard: typeof import('./src/components/MarketplaceAppCard.vue')['default']
     MarketplaceFilters: typeof import('./src/components/MarketplaceFilters.vue')['default']
     NewBenchDialog: typeof import('./src/components/NewBenchDialog.vue')['default']

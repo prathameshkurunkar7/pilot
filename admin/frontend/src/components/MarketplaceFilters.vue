@@ -43,9 +43,6 @@ import LucideSearch from '~icons/lucide/search'
 import GithubMark from '@/components/icons/GithubMark.vue'
 import { PILLS } from '@/utils/marketplaceCategories'
 
-// Curated subset shown in the Works-with menu.
-const WORKS_WITH_APPS = ['erpnext', 'hrms']
-
 const props = defineProps({
   worksWithOptions: { type: Array, default: () => [] },
 })
@@ -60,17 +57,13 @@ function appLogo(option) {
   return () => h('img', { src: option.logo_url, class: 'size-4 rounded object-contain' })
 }
 
-const curatedWorksWith = computed(() =>
-  props.worksWithOptions.filter((option) => WORKS_WITH_APPS.includes(option.name)),
-)
-
 const worksWithMenu = computed(() => [
   {
     label: 'Any app',
     icon: () => h('span', { class: 'size-4 text-ink-gray-6 lucide-layout-grid' }),
     onClick: () => (worksWithModel.value = ''),
   },
-  ...curatedWorksWith.value.map((option) => ({
+  ...props.worksWithOptions.map((option) => ({
     label: option.title,
     icon: appLogo(option),
     onClick: () => (worksWithModel.value = option.name),

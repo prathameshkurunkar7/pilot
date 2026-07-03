@@ -108,7 +108,6 @@ const {
   worksWithOptions,
   isFiltered,
   filteredApps,
-  benchName,
   benchVersionLabel,
   frappeApps,
   communityApps,
