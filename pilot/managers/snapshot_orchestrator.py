@@ -124,13 +124,20 @@ class SnapshotOrchestrator:
             self._volume.bind_mount(mount / "benches", bench_path)
             self._volume.bind_mount(mount / "mariadb", mariadb_datadir)
         except Exception:
-            self._restore_original_dataset(
-                aside, live, restored, swapped, live_mount, bench_path, mariadb_datadir
-            )
+            self._restore_original_dataset(aside, live, restored, swapped, live_mount, bench_path, mariadb_datadir)
             raise
 
-        self._volume.destroy_dataset(aside)
-        self._volume.destroy_snapshot(live, tag)
+        self._cleanup_after_swap(aside, live, tag)
+
+    def _cleanup_after_swap(self, aside: str, live: str, tag: str) -> None:
+        try:
+            self._volume.destroy_dataset(aside)
+        except Exception as error:
+            print(f"Warning: restore succeeded but failed to remove old dataset {aside}: {error}")
+        try:
+            self._volume.destroy_snapshot(live, tag)
+        except Exception as error:
+            print(f"Warning: restore succeeded but failed to remove snapshot {live}@{tag}: {error}")
 
     def _restore_original_dataset(
         self,

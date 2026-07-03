@@ -53,30 +53,22 @@
         </p>
       </div>
 
-      <div v-else class="space-y-3">
-        <div v-for="(snap, index) in snapshots" :key="snap.tag" class="flex items-end gap-2">
-          <div class="flex-1 space-y-1.5 min-w-0">
-            <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">Tag</p>
-            <p class="text-ink-gray-8 text-sm truncate">{{ snap.tag }}</p>
+      <ListView v-else :columns="columns" :rows="rows" row-key="tag"
+        :options="{ selectable: false, showTooltip: false }">
+        <template #cell="{ column, row, item }">
+          <div v-if="column.key === 'actions'" class="flex justify-end gap-2">
+            <Button v-if="(row.snap.is_local || row.snap.is_offsite) && !row.snap.is_uploading" variant="subtle"
+              icon="lucide-history" title="Rollback" @click="openRollback(row.snap)" />
+            <Button v-if="!row.snap.is_uploading" variant="subtle" icon="lucide-x" title="Delete"
+              @click="openDelete(row.snap)" />
           </div>
-          <div class="flex-1 space-y-1.5">
-            <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">Created</p>
-            <p class="text-ink-gray-8 text-sm">{{ fmt(snap.created_at) }}</p>
+          <div v-else-if="column.key === 'offsite'" class="flex justify-center">
+            <span v-if="row.snap.is_offsite" class="size-4 text-ink-green-6 lucide-circle-check" title="Backed up offsite" />
+            <span v-else class="text-ink-gray-4">—</span>
           </div>
-          <div class="w-24 space-y-1.5 shrink-0">
-            <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">Size</p>
-            <p class="text-ink-gray-8 text-sm">{{ fmtSize(snap.used_bytes) }}</p>
-          </div>
-          <div class="w-16 space-y-1.5 shrink-0">
-            <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">Offsite</p>
-            <span v-if="snap.is_offsite" class="size-4 text-ink-green-6 lucide-circle-check" title="Backed up offsite" />
-            <span v-else class="text-ink-gray-4 text-sm">—</span>
-          </div>
-          <Button v-if="(snap.is_local || snap.is_offsite) && !snap.is_uploading" variant="subtle" icon="lucide-history"
-            title="Rollback" @click="openRollback(snap)" />
-          <Button v-if="!snap.is_uploading" variant="subtle" icon="lucide-x" @click="openDelete(snap)" />
-        </div>
-      </div>
+          <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
+        </template>
+      </ListView>
 
       <ErrorMessage v-if="snapshotError" :message="snapshotError" />
     </div>
@@ -135,7 +127,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Alert, Button, Dialog, ErrorMessage, TextInput, toast } from 'frappe-ui'
+import { Alert, Button, Dialog, ErrorMessage, ListRowItem, ListView, TextInput, toast } from 'frappe-ui'
 import CronScheduleControl from '@/components/CronScheduleControl.vue'
 import { settingsApi } from '@/api/settings'
 import { volumeApi } from '@/api/volume'
@@ -182,6 +174,21 @@ const deleting = ref(false)
 
 const fmt = (iso) => new Date(iso).toLocaleString()
 const fmtSize = (b) => !b ? '—' : b < 1024 ** 3 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${(b / 1024 ** 3).toFixed(1)} GB`
+
+const columns = [
+  { label: 'Tag', key: 'tag', align: 'left', width: 2 },
+  { label: 'Created', key: 'created', align: 'left', width: 2 },
+  { label: 'Size', key: 'size', align: 'left', width: 1 },
+  { label: 'Offsite', key: 'offsite', align: 'center', width: 1 },
+  { label: '', key: 'actions', align: 'right', width: 2 },
+]
+
+const rows = computed(() => snapshots.value.map((snap) => ({
+  tag: snap.tag,
+  created: fmt(snap.created_at),
+  size: fmtSize(snap.used_bytes),
+  snap,
+})))
 
 function openRollback(snap) {
   rollbackTarget.value = snap

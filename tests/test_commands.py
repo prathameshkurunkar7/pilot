@@ -1198,6 +1198,25 @@ def test_restore_downloaded_snapshot_rolls_back_after_swap_succeeds() -> None:
     mariadb.start.assert_called_once()
 
 
+def test_restore_downloaded_snapshot_succeeds_despite_cleanup_failure() -> None:
+    from unittest.mock import call
+
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks()
+    # The swap itself (both renames, mount, bind-mounts) fully succeeds —
+    # only destroying the now-unneeded old dataset fails.
+    volume.destroy_dataset.side_effect = RuntimeError("dataset is busy")
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
+        detect.return_value.is_running.return_value = False
+        # Must not raise: the restore already succeeded, this is just cleanup.
+        SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    volume.destroy_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
+    mariadb.start.assert_called_once()
+    assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
+
+
 # ── DropBenchCommand ────────────────────────────────────────────────────────
 
 
