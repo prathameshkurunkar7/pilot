@@ -19,6 +19,8 @@ import {
   highlightActiveLine, highlightActiveLineGutter, placeholder,
 } from '@codemirror/view'
 import { Compartment, Prec } from '@codemirror/state'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { tags } from '@lezer/highlight'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -129,6 +131,22 @@ const theme = EditorView.theme({
   '.cm-completionMatchedText': { color: 'var(--ink-blue-6, #2563eb)', textDecoration: 'none', fontWeight: '600' },
 })
 
+// CodeMirror's basicSetup falls back to a fixed, non-theme-aware highlight
+// style (light-mode hex colors baked in, unchanged in dark mode). Registering
+// our own — keyed to the same --ink-* tokens as the rest of the editor theme
+// above — replaces that fallback and lets syntax colors flip with the app's
+// theme instead of staying stuck in light-mode hues on a dark background.
+const sqlHighlightStyle = HighlightStyle.define([
+  { tag: [tags.keyword, tags.standard(tags.name)], color: 'var(--ink-blue-6, #2563eb)' },
+  { tag: [tags.string, tags.special(tags.string)], color: 'var(--ink-green-6, #16a34a)' },
+  { tag: [tags.lineComment, tags.blockComment], color: 'var(--ink-gray-5, #64748b)', fontStyle: 'italic' },
+  { tag: [tags.number, tags.bool, tags.null], color: 'var(--ink-amber-6, #d97706)' },
+  { tag: tags.typeName, color: 'var(--ink-amber-6, #d97706)' },
+  { tag: tags.special(tags.name), color: 'var(--ink-violet-6, #7c3aed)' },
+  { tag: tags.name, color: 'var(--ink-gray-8, #1e293b)' },
+  { tag: [tags.operator, tags.punctuation, tags.paren, tags.brace, tags.squareBracket], color: 'var(--ink-gray-6, #5f6368)' },
+])
+
 const runKeymap = Prec.highest(keymap.of([{
   key: 'Ctrl-Enter',
   mac: 'Cmd-Enter',
@@ -137,6 +155,7 @@ const runKeymap = Prec.highest(keymap.of([{
 
 const extensions = [
   theme,
+  Prec.highest(syntaxHighlighting(sqlHighlightStyle)),
   lineNumbers(),
   drawSelection(),
   highlightActiveLine(),
