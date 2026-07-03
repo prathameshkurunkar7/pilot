@@ -1,4 +1,4 @@
-const Placeholder = () => import('./pages/Placeholder.vue')
+// const Placeholder = () => import('./pages/Placeholder.vue')
 
 export const navigation = {
   Sites: {
@@ -32,11 +32,11 @@ export const navigation = {
   },
   'Dev tools': {
     children: {
-      'DB analyzer': {
-        path: '/database/analyzer',
-        icon: 'lucide-database',
-        component: Placeholder,
-      },
+      // 'DB analyzer': {
+      //   path: '/database/analyzer',
+      //   icon: 'lucide-database',
+      //   component: Placeholder,
+      // },
       'SQL playground': {
         path: '/database/sql-playground',
         icon: 'lucide-terminal',
