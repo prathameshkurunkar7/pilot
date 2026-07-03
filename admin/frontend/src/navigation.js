@@ -40,7 +40,7 @@ export const navigation = {
       'SQL playground': {
         path: '/database/sql-playground',
         icon: 'lucide-terminal',
-        component: Placeholder,
+        component: () => import('./pages/SQLPlayground.vue'),
       },
     },
   },

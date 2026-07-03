@@ -1,0 +1,145 @@
+<template>
+  <Codemirror
+    v-model="model"
+    :extensions="extensions"
+    :autofocus="true"
+    :style="{ height: '100%' }"
+    @ready="onReady"
+  />
+</template>
+
+<script setup>
+import { computed, shallowRef, watch } from 'vue'
+import { Codemirror } from 'vue-codemirror'
+import { MySQL, sql } from '@codemirror/lang-sql'
+import { autocompletion } from '@codemirror/autocomplete'
+import { history, historyKeymap, defaultKeymap, indentWithTab } from '@codemirror/commands'
+import {
+  keymap, EditorView, lineNumbers, drawSelection,
+  highlightActiveLine, highlightActiveLineGutter, placeholder,
+} from '@codemirror/view'
+import { Compartment, Prec } from '@codemirror/state'
+
+const props = defineProps({
+  modelValue: { type: String, default: '' },
+  schema: { type: Array, default: () => [] },
+})
+
+const emit = defineEmits(['update:modelValue', 'run'])
+
+const model = computed({
+  get: () => props.modelValue,
+  set: (v) => emit('update:modelValue', v),
+})
+
+const view = shallowRef(null)
+
+function onReady({ view: v }) {
+  view.value = v
+}
+
+const cmSchema = computed(() => {
+  const s = {}
+  for (const table of props.schema) {
+    s[table.name] = table.columns.map((c) => ({ label: c.name, type: 'property', detail: c.type }))
+  }
+  return s
+})
+
+const sqlCompartment = new Compartment()
+
+watch(cmSchema, (schema) => {
+  if (!view.value) return
+  view.value.dispatch({
+    effects: sqlCompartment.reconfigure(sql({ dialect: MySQL, upperCaseKeywords: true, schema })),
+  })
+})
+
+function getSelectedOrAll(v) {
+  const { from, to } = v.state.selection.main
+  return from !== to ? v.state.sliceDoc(from, to) : v.state.doc.toString()
+}
+
+function getQueryToRun() {
+  return view.value ? getSelectedOrAll(view.value) : props.modelValue
+}
+
+const theme = EditorView.theme({
+  '&': {
+    height: '100%',
+    fontSize: '13px',
+    color: 'var(--ink-gray-8, #1e293b)',
+    backgroundColor: 'var(--surface-base, white)',
+  },
+  '&.cm-focused': { outline: 'none' },
+  '.cm-scroller': {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    lineHeight: '22px',
+    overflow: 'auto',
+  },
+  '.cm-content': {
+    caretColor: 'var(--ink-gray-8, #1e293b)',
+    padding: '8px 0',
+  },
+  '.cm-line': { padding: '0 14px' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--ink-gray-8, #1e293b)' },
+  // No padding on .cm-gutters — CodeMirror positions gutter elements from the
+  // content line coordinates; adding padding here misaligns them.
+  '.cm-gutters': {
+    backgroundColor: 'var(--surface-gray-1, #f8fafc)',
+    borderRight: '1px solid var(--outline-gray-2, #e8eaed)',
+    color: 'var(--ink-gray-4, #9aa0a6)',
+  },
+  '.cm-activeLine': {
+    backgroundColor: 'color-mix(in srgb, var(--ink-gray-9, #0f0f0f) 4%, transparent)',
+  },
+  '.cm-activeLineGutter': {
+    backgroundColor: 'color-mix(in srgb, var(--ink-gray-9, #0f0f0f) 4%, transparent)',
+    color: 'var(--ink-gray-6, #5f6368)',
+  },
+  '.cm-selectionBackground': { backgroundColor: 'rgba(66, 133, 244, 0.18)' },
+  '&.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(66, 133, 244, 0.25)' },
+  '.cm-placeholder': { color: 'var(--ink-gray-4, #9aa0a6)', fontStyle: 'normal' },
+  '.cm-tooltip': {
+    backgroundColor: 'var(--surface-elevation-2, white)',
+    border: '1px solid var(--outline-gray-2, #e8eaed)',
+    borderRadius: '6px',
+    color: 'var(--ink-gray-8, #1e293b)',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+    overflow: 'hidden',
+  },
+  '.cm-tooltip-autocomplete > ul': {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: '12px',
+  },
+  '.cm-tooltip-autocomplete > ul > li': { color: 'var(--ink-gray-7, #475569)', padding: '3px 8px' },
+  '.cm-tooltip-autocomplete > ul > li[aria-selected]': {
+    backgroundColor: 'var(--surface-gray-2, #f1f5f9)',
+    color: 'var(--ink-gray-9, #0f172a)',
+  },
+  '.cm-completionDetail': { color: 'var(--ink-gray-5, #64748b)', fontStyle: 'italic' },
+  '.cm-completionMatchedText': { color: 'var(--ink-blue-6, #2563eb)', textDecoration: 'none', fontWeight: '600' },
+})
+
+const runKeymap = Prec.highest(keymap.of([{
+  key: 'Ctrl-Enter',
+  mac: 'Cmd-Enter',
+  run: (v) => { emit('run', getSelectedOrAll(v)); return true },
+}]))
+
+const extensions = [
+  theme,
+  lineNumbers(),
+  drawSelection(),
+  highlightActiveLine(),
+  highlightActiveLineGutter(),
+  history(),
+  keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+  placeholder('SELECT name, creation FROM `tabUser` ORDER BY creation DESC LIMIT 5;'),
+  autocompletion({ activateOnTyping: true, closeOnBlur: false, maxRenderedOptions: 10, icons: false }),
+  sqlCompartment.of(sql({ dialect: MySQL, upperCaseKeywords: true })),
+  runKeymap,
+]
+
+defineExpose({ getQueryToRun })
+</script>
