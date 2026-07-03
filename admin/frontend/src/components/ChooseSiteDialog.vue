@@ -10,7 +10,7 @@
           Installed apps are marked, and installs target this site.
         </p>
 
-        <div class="gap-2 grid px-2 max-h-96 overflow-y-auto">
+        <div class="gap-2 grid max-h-96 overflow-y-auto">
           <button type="button"
             class="flex items-center gap-3 p-3 border rounded-lg text-left transition duration-150 ease-[var(--ease-out)] active:scale-[0.98]"
             :class="rowClass('')"
