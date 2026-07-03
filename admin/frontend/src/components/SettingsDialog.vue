@@ -27,6 +27,7 @@
               <Button class="sm:hidden -ml-2" variant="subtle" icon="lucide-arrow-left" @click="activeSection = null" />
               <h3 class="font-semibold text-ink-gray-9 text-lg">{{ activeSectionLabel }}</h3>
             </div>
+            <div id="settings-header-actions" class="contents"></div>
             <Button v-if="currentSection === 'workers'" variant="subtle" icon-left="lucide-plus"
               @click="workersRef?.addGroup()">Add</Button>
           </div>

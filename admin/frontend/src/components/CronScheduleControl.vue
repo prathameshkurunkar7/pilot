@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="flex sm:flex-row flex-col sm:justify-between sm:items-center gap-3">
-      <div>
+      <div v-if="!titleless">
         <p class="font-medium text-ink-gray-8 text-sm">{{ title }}</p>
         <p class="mt-0.5 text-ink-gray-5 text-sm">
           <template v-if="disabled">{{ disabledHint }}</template>
@@ -72,13 +72,15 @@ import { computed, onMounted, ref } from 'vue'
 import { Button, Dialog, Dropdown, ErrorMessage, Select } from 'frappe-ui'
 
 const props = defineProps({
-  title: { type: String, required: true },
+  title: { type: String, default: '' },
   // Lowercase plural noun used in button/dialog copy, e.g. "backups", "snapshots".
   noun: { type: String, required: true },
-  enabledHint: { type: String, required: true },
-  disabledHint: { type: String, required: true },
+  enabledHint: { type: String, default: '' },
+  disabledHint: { type: String, default: '' },
   disableBody: { type: String, required: true },
   retentionHint: { type: String, default: '' },
+  // Hide the title/hint text, rendering only the enable button or schedule dropdown.
+  titleless: { type: Boolean, default: false },
   fetchSchedule: { type: Function, required: true }, // () => Promise<{ schedule: string|null }>
   setSchedule: { type: Function, required: true }, // (cron: string) => Promise<void>, throws on failure
   removeSchedule: { type: Function, required: true }, // () => Promise<void>, throws on failure
@@ -235,5 +237,5 @@ async function enable() {
 
 onMounted(load)
 
-defineExpose({ disabled, currentScheduleLabel })
+defineExpose({ disabled, currentScheduleLabel, loading, enable })
 </script>

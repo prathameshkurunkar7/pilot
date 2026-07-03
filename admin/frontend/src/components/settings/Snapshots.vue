@@ -3,6 +3,16 @@
     <span class="size-5 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
   </div>
   <div v-else class="space-y-6">
+    <Teleport v-if="snapshotsEnabled" to="#settings-header-actions">
+      <div class="flex items-center gap-2">
+        <CronScheduleControl ref="cronControlRef" noun="snapshots"
+          disable-body="Automatic snapshots will stop. Existing snapshots are kept." :fetch-schedule="fetchSnapshotSchedule"
+          :set-schedule="setSnapshotSchedule" :remove-schedule="removeSnapshotSchedule" titleless />
+        <Button class="hidden sm:inline-flex" variant="subtle" icon-left="camera" :loading="creating"
+          @click="createSnapshot">Snapshot</Button>
+      </div>
+    </Teleport>
+
     <Alert v-if="!snapshotsEnabled" title="ZFS not ready" theme="yellow" :dismissible="false">
       <template #description>
         <span class="text-ink-gray-6 text-p-sm">
@@ -12,18 +22,7 @@
       </template>
     </Alert>
 
-    <CronScheduleControl v-if="snapshotsEnabled" title="Automatic snapshots" noun="snapshots"
-      enabled-hint="Taken on a schedule." disabled-hint="Automatic snapshots are disabled."
-      disable-body="Automatic snapshots will stop. Existing snapshots are kept." :fetch-schedule="fetchSnapshotSchedule"
-      :set-schedule="setSnapshotSchedule" :remove-schedule="removeSnapshotSchedule" />
-
     <div class="space-y-2">
-      <div class="flex justify-between items-center">
-        <p class="font-medium text-ink-gray-8 text-base leading-normal">Snapshots</p>
-        <Button variant="subtle" icon-left="plus" :disabled="!snapshotsEnabled" :loading="creating"
-          @click="createSnapshot">Create snapshot</Button>
-      </div>
-
       <div v-if="!snapshots.length"
         class="flex flex-col items-center gap-2.5 py-10 border border-dashed rounded-lg border-outline-gray-2 text-center">
         <div class="flex justify-center items-center bg-surface-gray-2 rounded-full size-11">
@@ -35,44 +34,38 @@
         </p>
       </div>
 
-      <div v-else class="space-y-3">
-        <div v-for="(snap, index) in snapshots" :key="snap.tag" class="flex items-end gap-2">
-          <div class="flex-1 space-y-1.5 min-w-0">
-            <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">Tag</p>
-            <p class="text-ink-gray-8 text-sm truncate">{{ snap.tag }}</p>
+      <ListView v-else :columns="columns" :rows="rows" row-key="name"
+        :options="{ selectable: false, showTooltip: false }">
+        <template #cell="{ column, row, item }">
+          <div v-if="column.key === 'actions'" class="flex justify-end">
+            <Dropdown :options="menuOptions(row.snap)" placement="left">
+              <template #default="{ open }">
+                <Button variant="ghost" size="sm" :active="open"><span class="size-4 lucide-ellipsis" /></Button>
+              </template>
+            </Dropdown>
           </div>
-          <div class="flex-1 space-y-1.5">
-            <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">Created</p>
-            <p class="text-ink-gray-8 text-sm">{{ fmt(snap.created_at) }}</p>
-          </div>
-          <div class="w-24 space-y-1.5 shrink-0">
-            <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">Size</p>
-            <p class="text-ink-gray-8 text-sm">{{ fmtSize(snap.used_bytes) }}</p>
-          </div>
-          <div class="w-16 space-y-1.5 shrink-0">
-            <p v-if="index === 0" class="font-medium text-ink-gray-7 text-sm">Offsite</p>
-            <span v-if="snap.is_offsite" class="size-4 text-ink-green-6 lucide-circle-check" title="Backed up offsite" />
+          <div v-else-if="column.key === 'offsite'" class="flex justify-center">
+            <span v-if="row.snap.is_offsite" class="size-4 text-ink-gray-6 lucide-check" title="Backed up offsite" />
             <span v-else class="text-ink-gray-4 text-sm">—</span>
           </div>
-          <Button variant="subtle" icon="lucide-history" @click="openRollback(snap)" />
-          <Button variant="subtle" icon="lucide-x" @click="openDelete(snap)" />
-        </div>
-      </div>
+          <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
+        </template>
+      </ListView>
 
       <ErrorMessage v-if="snapshotError" :message="snapshotError" />
     </div>
   </div>
 
-  <!-- Rollback confirmation -->
-  <Dialog v-model="showRollback" :options="{ title: 'Rollback snapshot', size: 'sm' }">
+  <!-- Restore confirmation -->
+  <Dialog v-model="showRollback" :options="{ title: 'Restore snapshot', size: 'sm' }">
     <template #body-content>
       <p class="text-ink-gray-7 text-p-sm">
-        Roll back to <span class="font-semibold text-ink-gray-8 break-all">{{ rollbackTarget?.tag }}</span>?
+        Restore <span class="font-semibold text-ink-gray-8 break-all">{{ rollbackTarget?.tag }}</span>?
         Every change made since this snapshot was taken will be lost. This cannot be undone.
       </p>
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showRollback = false">Cancel</Button>
-        <Button variant="solid" theme="red" :loading="rollingBack" @click="confirmRollback">Rollback</Button>
+        <Button variant="solid" theme="red" :loading="rollingBack" @click="confirmRollback">Restore Snapshot</Button>
       </div>
     </template>
   </Dialog>
@@ -93,14 +86,23 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
-import { Alert, Button, Dialog, ErrorMessage, toast } from 'frappe-ui'
+import { computed, onMounted, ref } from 'vue'
+import { Alert, Button, Dialog, Dropdown, ErrorMessage, ListView, ListRowItem, toast } from 'frappe-ui'
 import CronScheduleControl from '@/components/CronScheduleControl.vue'
 import { volumeApi } from '@/api/volume'
 
 const fetchSnapshotSchedule = () => volumeApi.snapshots.schedule.get()
 const setSnapshotSchedule = (cron) => volumeApi.snapshots.schedule.set(cron)
 const removeSnapshotSchedule = () => volumeApi.snapshots.schedule.remove()
+
+const cronControlRef = ref(null)
+
+const columns = [
+  { label: 'Created', key: 'created', align: 'left', width: 3 },
+  { label: 'Size', key: 'size', align: 'center', width: 1 },
+  { label: 'Offsite', key: 'offsite', align: 'center', width: 1 },
+  { label: '', key: 'actions', align: 'right', width: '3rem' },
+]
 
 const loading = ref(true)
 const snapshotsEnabled = ref(false)
@@ -118,6 +120,20 @@ const deleting = ref(false)
 
 const fmt = (iso) => new Date(iso).toLocaleString()
 const fmtSize = (b) => !b ? '—' : b < 1024 ** 3 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${(b / 1024 ** 3).toFixed(1)} GB`
+
+const rows = computed(() => snapshots.value.map((snap) => ({
+  name: snap.tag,
+  created: fmt(snap.created_at),
+  size: fmtSize(snap.used_bytes),
+  snap,
+})))
+
+function menuOptions(snap) {
+  return [
+    { label: 'Restore Snapshot', icon: 'lucide-history', onClick: () => openRollback(snap) },
+    { label: 'Delete snapshot', icon: 'lucide-trash-2', theme: 'red', onClick: () => openDelete(snap) },
+  ]
+}
 
 function openRollback(snap) {
   rollbackTarget.value = snap
