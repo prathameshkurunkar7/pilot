@@ -167,7 +167,7 @@ const SITE_STATUS = {
   online: { label: 'Active', theme: 'green' },
   broken: { label: 'Broken', theme: 'red' },
   offline: { label: 'Paused', theme: 'orange' },
-  provisioning: { label: 'Creating...', theme: 'blue' },
+  provisioning: { label: 'Creating', theme: 'blue' },
 }
 
 const statusOptions = [
@@ -175,7 +175,7 @@ const statusOptions = [
   { label: 'Active', value: 'online' },
   { label: 'Broken', value: 'broken' },
   { label: 'Paused', value: 'offline' },
-  { label: 'Creating...', value: 'provisioning' },
+  { label: 'Creating', value: 'provisioning' },
 ]
 
 function siteStatus(site) {
@@ -227,7 +227,7 @@ async function loginAsAdmin(site) {
 
 function openSite(site) {
   toast.promise(loginAsAdmin(site), {
-    loading: 'Logging in as admin…',
+    loading: 'Logging in as admin',
     success: 'Logged in as admin',
     error: 'Could not log in as admin',
   })

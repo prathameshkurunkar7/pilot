@@ -93,7 +93,7 @@ setBreadcrumbs([
 ])
 
 const STATUS_THEMES = { online: 'green', broken: 'red', offline: 'orange', provisioning: 'blue' }
-const STATUS_LABELS = { online: 'Live', broken: 'Broken', offline: 'Paused', provisioning: 'Creating...' }
+const STATUS_LABELS = { online: 'Live', broken: 'Broken', offline: 'Paused', provisioning: 'Creating' }
 
 const statusLabel = computed(() => STATUS_LABELS[status.value] ?? status.value)
 const statusBadgeTheme = computed(() => STATUS_THEMES[status.value] ?? 'gray')
@@ -133,7 +133,7 @@ function goToMarketplace() {
 
 function loginAsAdmin() {
   toast.promise(login(), {
-    loading: 'Logging in as admin…',
+    loading: 'Logging in as admin',
     success: 'Logged in as admin',
     error: 'Could not log in as admin',
   })
@@ -156,7 +156,7 @@ const menuOptions = computed(() => [
 ])
 
 // Provisioning is a transient state (a new-site/reinstall task still running);
-// poll until it clears instead of leaving the badge stuck on "Creating...".
+// poll until it clears instead of leaving the badge stuck on "Creating".
 let provisioningPoll = null
 watch(status, (value) => {
   if (value === 'provisioning' && !provisioningPoll) {
