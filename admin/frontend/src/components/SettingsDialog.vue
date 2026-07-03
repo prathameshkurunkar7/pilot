@@ -1,14 +1,17 @@
 <template>
   <Dialog v-model="open" bare size="3xl">
     <template #default="{ close }">
-      <div class="relative flex sm:h-[39rem] min-h-[24rem] max-h-[85vh]">
+      <div class="relative flex sm:h-[39rem] max-h-[85vh]">
         <div class="flex-col p-4 sm:border-r border-outline-gray-2 w-full sm:w-52 shrink-0"
           :class="activeSection ? 'hidden sm:flex' : 'flex'">
-          <h3 class="mb-1 p-2 pb-3 border-b border-outline-gray-2 font-semibold text-ink-gray-9 text-base">Settings</h3>
-          <Button v-if="!activeSection" class="top-3 right-3 absolute sm:hidden" variant="ghost" icon="lucide-x"
+          <h3
+            class="mb-1 p-2 pb-3 border-b sm:border-b-0 border-outline-gray-2 font-semibold text-ink-gray-9 text-base">
+            Settings</h3>
+          <Button v-if="!activeSection" class="sm:hidden top-3 right-3 absolute" variant="ghost" icon="lucide-x"
             @click="close" />
-          <div class="flex flex-col gap-0.5">
-            <Button v-for="section in sections" :key="section.id" variant="ghost" class="!justify-start w-full"
+          <div class="flex flex-col gap-2 sm:gap-0.5 pt-2 sm:pt-0">
+            <Button v-for="section in sections" :key="section.id" :variant="isMobile ? 'subtle' : 'ghost'"
+              :size="isMobile ? 'md' : 'sm'" class="!justify-start border w-full"
               :class="currentSection === section.id ? 'sm:!bg-surface-gray-3 sm:!text-ink-gray-9 !text-ink-gray-6' : '!text-ink-gray-6'"
               @click="activeSection = section.id">
               <template #prefix>
@@ -44,21 +47,23 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { Dialog, Button } from 'frappe-ui'
 import Firewall from '@/components/settings/Firewall.vue'
 import Git from '@/components/settings/Git.vue'
-import S3 from '@/components/settings/S3.vue'
+import S3Bucket from '@/components/settings/S3Bucket.vue'
 import Snapshots from '@/components/settings/Snapshots.vue'
 import SystemInfo from '@/components/settings/SystemInfo.vue'
 import Workers from '@/components/settings/Workers.vue'
 import { settingsApi } from '@/api/settings'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const open = defineModel()
 
 const zfsEnabled = ref(false)
+const isMobile = useIsMobile()
 
 const sections = computed(() => [
   { id: 'github', label: 'Git Settings', icon: 'lucide-git-branch' },
+  { id: 's3-bucket', label: 'S3 Bucket', icon: 'lucide-archive' },
   { id: 'workers', label: 'Workers', icon: 'lucide-server-cog' },
   { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
-  { id: 's3', label: 'S3', icon: 'lucide-cloud' },
   ...(zfsEnabled.value ? [{ id: 'snapshots', label: 'Snapshots', icon: 'lucide-camera' }] : []),
   { id: 'system-info', label: 'System Info', icon: 'lucide-info' },
 ])
