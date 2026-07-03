@@ -3,6 +3,7 @@ import { appsApi } from '@/api/apps'
 import { settingsApi } from '@/api/settings'
 import { sitesApi } from '@/api/sites'
 import { parseBranchVersion, toSentenceCase } from '@/utils/format'
+import { matchesPill } from '@/utils/marketplaceCategories'
 
 const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed']
 
@@ -45,7 +46,8 @@ export function useMarketplace(initialSiteName = '') {
   const error = ref('')
 
   const search = ref('')
-  const selectedCategory = ref('All categories')
+  const selectedPill = ref('All')
+  const worksWith = ref('')
 
   const sites = ref([])
   const currentSiteName = ref('')
@@ -86,24 +88,32 @@ export function useMarketplace(initialSiteName = '') {
   const currentSite = computed(() => sites.value.find((site) => site.name === currentSiteName.value) || null)
   const installedOnCurrentSite = computed(() => new Set(currentSite.value?.installed_apps || []))
 
-  const categories = computed(() => {
-    const unique = [...new Set(registry.value.map((app) => app.category).filter(Boolean))].sort()
-    return ['All categories', ...unique]
+  const worksWithOptions = computed(() => {
+    const names = new Set(registry.value.flatMap((app) => Object.keys(app.dependencies || {})))
+    return [...names].sort().map((name) => {
+      const entry = registry.value.find((app) => app.name === name)
+      return { name, title: entry?.title || toSentenceCase(name), logo_url: entry?.logo_url || '' }
+    })
   })
+
+  function matchesWorksWith(app) {
+    return !worksWith.value || worksWith.value in (app.dependencies || {})
+  }
+
+  function matchesSearch(app, query) {
+    return (
+      !query ||
+      app.title?.toLowerCase().includes(query) ||
+      app.description?.toLowerCase().includes(query)
+    )
+  }
 
   const matchingApps = computed(() => {
     const query = search.value.toLowerCase().trim()
     return registry.value
-      .filter(
-        (app) =>
-          selectedCategory.value === 'All categories' || app.category === selectedCategory.value,
-      )
-      .filter(
-        (app) =>
-          !query ||
-          app.title?.toLowerCase().includes(query) ||
-          app.description?.toLowerCase().includes(query),
-      )
+      .filter((app) => matchesPill(app, selectedPill.value))
+      .filter(matchesWorksWith)
+      .filter((app) => matchesSearch(app, query))
       .map((app) => ({
         ...app,
         installed: installedOnCurrentSite.value.has(app.name),
@@ -112,6 +122,9 @@ export function useMarketplace(initialSiteName = '') {
         label: app.version ? `v${app.version}` : '',
       }))
   })
+
+  const isFiltered = computed(() => selectedPill.value !== 'All' || Boolean(worksWith.value))
+  const filteredApps = computed(() => [...matchingApps.value].sort(sortApps))
 
   const frappeApps = computed(() => matchingApps.value.filter(isFrappeApp).sort(sortApps))
   const communityApps = computed(() =>
@@ -135,8 +148,11 @@ export function useMarketplace(initialSiteName = '') {
     loading,
     error,
     search,
-    selectedCategory,
-    categories,
+    selectedPill,
+    worksWith,
+    worksWithOptions,
+    isFiltered,
+    filteredApps,
     benchName,
     benchVersion,
     benchVersionLabel,

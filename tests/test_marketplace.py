@@ -65,7 +65,8 @@ def test_to_dict_contains_all_expected_keys():
     r = make_resolver()
     keys = {"name", "repo", "target_type", "target", "version", "frappe_version",
              "required_version", "dependencies", "is_installable",
-             "title", "description", "logo_url", "category", "stars", "documentation", "website"}
+             "title", "description", "logo_url", "category", "categories", "stars",
+             "documentation", "website"}
     assert keys == set(r.to_dict().keys())
 
 
@@ -77,6 +78,17 @@ def test_to_dict_preserves_values():
     assert d["version"] == "2.0.0"
     assert d["title"] == "HR Management"
     assert d["stars"] == 42
+
+
+def test_to_dict_categories_defaults_to_empty_list():
+    r = make_resolver()
+    assert r.to_dict()["categories"] == []
+
+
+def test_to_dict_includes_categories():
+    r = make_resolver()
+    r.categories = ["Payments", "Accounting"]
+    assert r.to_dict()["categories"] == ["Payments", "Accounting"]
 
 
 # ── Resolver.resolve — non-installable guard ──────────────────────────────────
@@ -266,6 +278,7 @@ SAMPLE_REGISTRY = [
         "description": "ERP for the real world",
         "logo_url": "",
         "category": "Applications",
+        "categories": ["Accounting", "Featured"],
         "stars": 22000,
         "targets": [
             {
@@ -373,6 +386,15 @@ def test_read_all_apps_uses_first_target_as_display_for_incompatible():
     apps = mp.read_all_apps()
     old_app = next(a for a in apps if a.app == "old_app")
     assert old_app.target == "version-14"
+
+
+def test_read_all_apps_passes_categories_through():
+    mp = make_marketplace("15.0.0")
+    apps = mp.read_all_apps()
+    erpnext = next(a for a in apps if a.app == "erpnext")
+    hrms = next(a for a in apps if a.app == "hrms")
+    assert erpnext.categories == ["Accounting", "Featured"]
+    assert hrms.categories == []  # absent key defaults to empty
 
 
 def test_read_all_apps_stars_none_becomes_zero():

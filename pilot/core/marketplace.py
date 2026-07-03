@@ -38,6 +38,7 @@ class Resolver:
     description: str = ""
     logo_url: str = ""
     category: str = ""
+    categories: list[str] = field(default_factory=list)
     stars: int | None = 0
     documentation: str = ""
     website: str = ""
@@ -58,6 +59,7 @@ class Resolver:
             "description": self.description,
             "logo_url": self.logo_url,
             "category": self.category,
+            "categories": self.categories,
             "stars": self.stars,
             "documentation": self.documentation,
             "website": self.website,
@@ -161,6 +163,7 @@ class Marketplace:
             description=app.get("description", ""),
             logo_url=app.get("logo_url", ""),
             category=app.get("category", ""),
+            categories=app.get("categories", []),
             stars=app.get("stars") or 0,
             documentation=app.get("documentation", ""),
             website=app.get("website", ""),
