@@ -35,7 +35,6 @@ def _get_volume_manager(bench_root):
 def status():
     bench_root = current_app.config["BENCH_ROOT"]
     try:
-        config = _get_config(bench_root)
         info = VolumeReader(bench_root).read()
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -83,6 +82,9 @@ def list_snapshots():
                     "created_at": s.created_at.isoformat(),
                     "used_bytes": s.used_bytes,
                     "is_offsite": s.is_offsite,
+                    "is_local": s.is_local,
+                    "is_uploading": s.is_uploading,
+                    "is_downloaded": s.is_downloaded,
                 }
                 for s in status.snapshots
             ],
@@ -105,18 +107,27 @@ def create_snapshot():
         return jsonify({"error": str(e)}), 500
 
     s3_config = BenchTomlStore.for_bench(bench_root).read().s3
+    task_id = None
     if s3_config.is_configured:
-        TaskRunner(bench_root).run("offsite-snapshot", {"dataset": config.dataset_path, "tag": tag})
+        task_id = TaskRunner(bench_root).run("offsite-snapshot", {"dataset": config.dataset_path, "tag": tag})
 
-    return jsonify({"ok": True, "tag": tag, "snapshots": [f"{config.dataset_path}@{tag}"]})
+    return jsonify({"ok": True, "tag": tag, "snapshots": [f"{config.dataset_path}@{tag}"], "task_id": task_id})
 
 
 @volume_bp.route("/snapshots/<tag>/rollback", methods=["POST"])
 def rollback_snapshot(tag: str):
     bench_root = current_app.config["BENCH_ROOT"]
+    config = _get_config(bench_root)
+    manager = _get_volume_manager(bench_root)
+    is_local = any(snap.snapshot_tag == tag for snap in manager.list_snapshots(config.dataset_path))
+    if not is_local:
+        # CLI-only: `bench volume restore-snapshot <tag>`.
+        return jsonify(
+            {"error": "Offsite snapshots can only be restored from the CLI: bench volume restore-snapshot <tag>."},
+        ), 400
+
     try:
-        orchestrator = get_orchestrator(bench_root)
-        orchestrator.rollback_snapshot(tag)
+        get_orchestrator(bench_root).rollback_snapshot(tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -125,11 +136,26 @@ def rollback_snapshot(tag: str):
 
 @volume_bp.route("/snapshots/<tag>", methods=["DELETE"])
 def destroy_snapshot(tag: str):
+    from pilot.config.toml_store import BenchTomlStore
+    from pilot.integrations.s3.snapshots import OffsiteSnapshot
+
     bench_root = current_app.config["BENCH_ROOT"]
-    config = _get_config(bench_root)
+    bench_config = BenchTomlStore.for_bench(bench_root).read()
+    dataset = bench_config.volume.dataset_path
     try:
         manager = _get_volume_manager(bench_root)
-        manager.destroy_snapshot(config.dataset_path, tag)
+        # A remote-only snapshot (already offloaded, local copy destroyed by
+        # OffsiteSnapshotTask) has nothing to destroy locally.
+        if any(snap.snapshot_tag == tag for snap in manager.list_snapshots(dataset)):
+            manager.destroy_snapshot(dataset, tag)
+
+        # A downloaded snapshot (see OffsiteSnapshot.download) lives in its
+        # Remove the dataset from here as well.
+        # If it does not exist will just skip
+        manager.destroy_dataset(f"{dataset}-restored-{tag}")
+
+        if bench_config.s3.is_configured:
+            OffsiteSnapshot.from_config(bench_config.s3).delete(bench_config.name, tag)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

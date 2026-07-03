@@ -400,6 +400,12 @@ class VolumeManager:
         self._run(["sudo", "mkdir", "-p", str(target.absolute())])
         self._run(["sudo", "zfs", "set", f"mountpoint={target}", dataset])
 
+    def clear_mountpoint(self, dataset: str) -> None:
+        """Sets mountpoint=none so the dataset won't try to auto-mount — for a
+        dataset kept aside whose old mountpoint path now belongs to another
+        dataset (e.g. after a rename swap)."""
+        self._run(["sudo", "zfs", "set", "mountpoint=none", dataset])
+
     def migrate_data(self, dataset: str, source: Path) -> None:
         print(f"Migrating {source} to ZFS dataset {dataset}...")
         current_mount = self.get_mountpoint(dataset)
@@ -413,6 +419,16 @@ class VolumeManager:
         if not self._snapshot_exists(f"{dataset}@{tag}"):
             raise VolumeError(f"Snapshot '{dataset}@{tag}' does not exist.")
         self._run(["sudo", "zfs", "rollback", "-r", f"{dataset}@{tag}"])
+
+    def rename_dataset(self, old: str, new: str) -> None:
+        self._run(["sudo", "zfs", "rename", old, new])
+
+    def list_dataset_names(self, prefix: str) -> list[str]:
+        try:
+            result = self._run(["zfs", "list", "-H", "-o", "name", "-r", self.config.pool])
+        except VolumeError:
+            return []
+        return [name for name in result.stdout.decode().splitlines() if name.startswith(prefix)]
 
     def list_snapshots(self, dataset: str) -> list[SnapshotInfo]:
         try:
@@ -477,10 +493,16 @@ class VolumeManager:
         except subprocess.CalledProcessError as exc:
             raise VolumeError(f"Failed to write /etc/fstab entry for {target}: {exc}")
 
-    def unmount(self, target: Path) -> None:
-        """Unmount a bind mount if it's currently mounted (idempotent)."""
-        if self._is_mountpoint(target):
-            self._run(["sudo", "umount", str(target)])
+    def unmount(self, target: Path, lazy: bool = False) -> None:
+        """Unmount a bind mount if it's currently mounted (idempotent).
+
+        `lazy` detaches the mountpoint immediately and defers the actual
+        unmount until nothing references it anymore, instead of failing with
+        "target is busy" when a process still has an open file/cwd there."""
+        if not self._is_mountpoint(target):
+            return
+        argv = ["sudo", "umount", "-l", str(target)] if lazy else ["sudo", "umount", str(target)]
+        self._run(argv)
 
     def remove_fstab_entry(self, target: Path) -> None:
         """Drop the /etc/fstab bind-mount line for target (idempotent) — the

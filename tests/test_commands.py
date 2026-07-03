@@ -1097,6 +1097,162 @@ def test_orchestrator_rollback_stops_mariadb_and_sets_maintenance() -> None:
     assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
 
 
+def test_destroy_snapshot_command_also_removes_downloaded_dataset() -> None:
+    from unittest.mock import patch
+
+    from pilot.commands.volume import VolumeDestroySnapshotCommand
+    from pilot.config.volume_config import VolumeConfig
+
+    config = VolumeConfig(enabled=True, pool="bench-pool", name="shop")
+    with patch("pilot.managers.volume_manager.VolumeManager") as manager_cls:
+        manager = manager_cls.return_value
+        VolumeDestroySnapshotCommand(config, "tag1").run()
+
+    manager.destroy_snapshot.assert_called_once_with(config.dataset_path, "tag1")
+    manager.destroy_dataset.assert_called_once_with(f"{config.dataset_path}-restored-tag1")
+
+
+def _restore_mocks():
+    from unittest.mock import MagicMock
+
+    volume = MagicMock()
+    volume.config.dataset_path = "bench-pool/shop"
+    mariadb = MagicMock()
+    mariadb.data_dir.return_value = "/var/lib/mysql"
+    bench = MagicMock()
+    bench.path = Path("/home/frappe/bench-cli/benches/shop")
+    return volume, mariadb, bench
+
+
+def test_restore_downloaded_snapshot_swaps_and_destroys_old_dataset() -> None:
+    from unittest.mock import call
+
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks()
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
+        detect.return_value.is_running.return_value = False
+        SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    renames = volume.rename_dataset.call_args_list
+    assert renames[0].args[0] == "bench-pool/shop"
+    assert renames[1] == call("bench-pool/shop-restored-tag1", "bench-pool/shop")
+    volume.destroy_dataset.assert_called_once_with(renames[0].args[1])
+    volume.destroy_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
+    mariadb.stop.assert_called_once()
+    mariadb.start.assert_called_once()
+    assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
+
+
+def test_restore_downloaded_snapshot_refuses_while_bench_is_running() -> None:
+    import pytest
+
+    from pilot.exceptions import VolumeError
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks()
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
+        detect.return_value.is_running.return_value = True
+        with pytest.raises(VolumeError, match="bench stop"):
+            SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    volume.rename_dataset.assert_not_called()
+
+
+def test_restore_downloaded_snapshot_rolls_back_if_swap_fails() -> None:
+    from unittest.mock import call
+
+    import pytest
+
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks()
+    volume.rename_dataset.side_effect = [None, RuntimeError("zfs rename failed"), None]
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
+        detect.return_value.is_running.return_value = False
+        with pytest.raises(RuntimeError, match="zfs rename failed"):
+            SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    renames = volume.rename_dataset.call_args_list
+    aside = renames[0].args[1]
+    # Third rename call puts the original dataset back under its live name.
+    assert renames[2] == call(aside, "bench-pool/shop")
+    volume.destroy_dataset.assert_not_called()
+    volume.destroy_snapshot.assert_not_called()
+    # mariadb.start() still runs (via the outer finally) against a dataset
+    # that was put back, not one that no longer exists.
+    mariadb.start.assert_called_once()
+
+
+def test_restore_downloaded_snapshot_rolls_back_after_swap_succeeds() -> None:
+    from unittest.mock import call
+
+    import pytest
+
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks()
+    # The rename to `live` succeeds this time — failure happens afterwards
+    # (e.g. bind-mounting), so `live` is occupied by the restored dataset
+    # when the rollback runs.
+    volume.bind_mount.side_effect = RuntimeError("bind mount failed")
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
+        detect.return_value.is_running.return_value = False
+        with pytest.raises(RuntimeError, match="bind mount failed"):
+            SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    renames = volume.rename_dataset.call_args_list
+    aside = renames[0].args[1]
+    # Rollback must free the `live` name (move the restored dataset back to
+    # its own name) before renaming `aside` back onto it, otherwise the
+    # rename is refused because `live` already exists.
+    assert renames[2] == call("bench-pool/shop", "bench-pool/shop-restored-tag1")
+    assert renames[3] == call(aside, "bench-pool/shop")
+    volume.destroy_dataset.assert_not_called()
+    volume.destroy_snapshot.assert_not_called()
+    mariadb.start.assert_called_once()
+
+
+def test_restore_downloaded_snapshot_succeeds_despite_cleanup_failure() -> None:
+    from unittest.mock import call
+
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks()
+    # The swap itself (both renames, mount, bind-mounts) fully succeeds —
+    # only destroying the now-unneeded old dataset fails.
+    volume.destroy_dataset.side_effect = RuntimeError("dataset is busy")
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
+        detect.return_value.is_running.return_value = False
+        # Must not raise: the restore already succeeded, this is just cleanup.
+        SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    volume.destroy_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
+    mariadb.start.assert_called_once()
+    assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
+
+
+def test_restore_downloaded_snapshot_rebinds_mounts_if_initial_rename_fails() -> None:
+    import pytest
+
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks()
+    # Fails before anything is renamed — `live` never stops being `live`.
+    volume.rename_dataset.side_effect = RuntimeError("zfs rename failed")
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
+        detect.return_value.is_running.return_value = False
+        with pytest.raises(RuntimeError, match="zfs rename failed"):
+            SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    # The bind mounts dropped before the failed rename must be re-established
+    # against the still-current `live` dataset, so mariadb.start() (called by
+    # the caller's finally) has a mount to start against.
+    assert volume.bind_mount.call_count == 2
+    mariadb.start.assert_called_once()
+    volume.destroy_dataset.assert_not_called()
+
+
 # ── DropBenchCommand ────────────────────────────────────────────────────────
 
 

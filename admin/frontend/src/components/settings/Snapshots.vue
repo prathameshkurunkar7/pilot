@@ -35,7 +35,7 @@
         </p>
       </div>
 
-      <ListView v-else :columns="columns" :rows="rows" row-key="name"
+      <ListView v-else :columns="columns" :rows="rows" row-key="tag"
         :options="{ selectable: false, showTooltip: false }">
         <template #cell="{ column, row, item }">
           <div v-if="column.key === 'actions'" class="flex justify-end">
@@ -46,8 +46,8 @@
             </Dropdown>
           </div>
           <div v-else-if="column.key === 'offsite'" class="flex justify-center">
-            <span v-if="row.snap.is_offsite" class="size-4 text-ink-gray-6 lucide-check" title="Backed up offsite" />
-            <span v-else class="size-4 text-ink-gray-4 lucide-x" title="Not backed up offsite" />
+            <span v-if="row.snap.is_offsite" class="size-4 text-ink-green-6 lucide-circle-check" title="Backed up offsite" />
+            <span v-else class="text-ink-gray-4">—</span>
           </div>
           <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
         </template>
@@ -71,6 +71,27 @@
     </template>
   </Dialog>
 
+  <!-- Restoring an offsite snapshot requires the bench to be stopped, so it
+       can only run from the CLI (this admin server stops with the bench).
+       One command covers every case — downloading it first if needed, then
+       promoting it to live — so there's nothing to do here but show it. -->
+  <Dialog v-model="showCliRestore" :options="{ title: 'Restore from the command line', size: 'sm' }">
+    <template #body-content>
+      <p class="text-ink-gray-7 text-p-sm">
+        Restoring the offsite snapshot
+        <span class="font-semibold text-ink-gray-8 break-all">{{ rollbackTarget?.tag }}</span>
+        requires the bench to be stopped, so it can't run from here. Run this on the server:
+      </p>
+      <code class="mt-2 block rounded bg-surface-gray-2 px-2 py-1.5 font-mono text-sm text-ink-gray-8 select-all whitespace-pre overflow-x-auto"
+        >{{ cliRestoreCommands }}</code
+      >
+      <div class="flex justify-end gap-2 mt-4">
+        <Button variant="subtle" icon-left="copy" @click="copyCliRestoreCommands">Copy</Button>
+        <Button variant="solid" @click="showCliRestore = false">Done</Button>
+      </div>
+    </template>
+  </Dialog>
+
   <!-- Delete confirmation -->
   <Dialog v-model="showDelete" :options="{ title: 'Delete snapshot', size: 'sm' }">
     <template #body-content>
@@ -88,9 +109,14 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { Alert, Button, Dialog, Dropdown, ErrorMessage, ListView, ListRowItem, toast } from 'frappe-ui'
+import { useRouter } from 'vue-router'
+import { Alert, Button, Dialog, Dropdown, ErrorMessage, ListRowItem, ListView, TextInput, toast } from 'frappe-ui'
 import CronScheduleControl from '@/components/CronScheduleControl.vue'
 import { volumeApi } from '@/api/volume'
+import { openTaskDetailPage } from '@/utils/taskRoute'
+
+const router = useRouter()
+const emit = defineEmits(['close'])
 
 const fetchSnapshotSchedule = () => volumeApi.snapshots.schedule.get()
 const setSnapshotSchedule = (cron) => volumeApi.snapshots.schedule.set(cron)
@@ -112,6 +138,19 @@ const creating = ref(false)
 const snapshotError = ref('')
 
 const showRollback = ref(false)
+const showCliRestore = ref(false)
+const benchName = ref('')
+
+const cliRestoreCommands = computed(() => {
+  const flag = benchName.value ? ` -b ${benchName.value}` : ''
+  const tag = rollbackTarget.value?.tag || '<tag>'
+  return `bench${flag} stop\nbench${flag} volume restore-snapshot ${tag}\nbench${flag} start`
+})
+
+async function copyCliRestoreCommands() {
+  await navigator.clipboard.writeText(cliRestoreCommands.value)
+  toast.success('Copied to clipboard')
+}
 const rollbackTarget = ref(null)
 const rollingBack = ref(false)
 
@@ -122,8 +161,16 @@ const deleting = ref(false)
 const fmt = (iso) => new Date(iso).toLocaleString()
 const fmtSize = (b) => !b ? '—' : b < 1024 ** 3 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${(b / 1024 ** 3).toFixed(1)} GB`
 
+const columns = [
+  { label: 'Tag', key: 'tag', align: 'left', width: 2 },
+  { label: 'Created', key: 'created', align: 'left', width: 2 },
+  { label: 'Size', key: 'size', align: 'left', width: 1 },
+  { label: 'Offsite', key: 'offsite', align: 'center', width: 1 },
+  { label: '', key: 'actions', align: 'right', width: 2 },
+]
+
 const rows = computed(() => snapshots.value.map((snap) => ({
-  name: snap.tag,
+  tag: snap.tag,
   created: fmt(snap.created_at),
   size: fmtSize(snap.used_bytes),
   snap,
@@ -131,19 +178,37 @@ const rows = computed(() => snapshots.value.map((snap) => ({
 
 function menuOptions(snap) {
   return [
-    { label: 'Restore snapshot', icon: 'lucide-history', onClick: () => openRollback(snap) },
-    { label: 'Delete snapshot', icon: 'lucide-trash-2', theme: 'red', onClick: () => openDelete(snap) },
+    ...((snap.is_local || snap.is_offsite || snap.is_downloaded) && !snap.is_uploading ? [{
+      label: 'Rollback', icon: 'lucide-history',
+      onClick: () => openRollback(snap),
+    }] : []),
+    ...(!snap.is_uploading ? [{
+      label: 'Delete snapshot', icon: 'lucide-trash-2', theme: 'red',
+      onClick: () => openDelete(snap),
+    }] : []),
   ]
 }
 
 function openRollback(snap) {
   rollbackTarget.value = snap
+  if (!snap.is_local) {
+    showCliRestore.value = true
+    return
+  }
   showRollback.value = true
 }
 
 function openDelete(snap) {
   deleteTarget.value = snap
   showDelete.value = true
+}
+
+async function loadVolumeSettings() {
+  const data = await settingsApi.get()
+  benchName.value = data.bench?.name || ''
+  const volume = data.volume || {}
+  reservation.value = volume.reservation || ''
+  quota.value = volume.quota || ''
 }
 
 async function loadSnapshots() {
@@ -170,6 +235,14 @@ async function createSnapshot() {
     const result = await volumeApi.snapshots.create()
     if (result.error) {
       snapshotError.value = result.error
+      return
+    }
+    if (result.task_id) {
+      // S3 is configured: the offsite upload runs as a background task —
+      // close Settings and send the user there instead of leaving them
+      // watching this list.
+      emit('close')
+      openTaskDetailPage(router, result.task_id)
       return
     }
     toast.success(`Snapshot ${result.tag} created`)

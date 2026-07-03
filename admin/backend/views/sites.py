@@ -664,6 +664,31 @@ def download_backup(name: str):
     return send_file(target, as_attachment=True, download_name=filename)
 
 
+@sites_bp.route("/<name>/backups/<timestamp>/offsite-urls")
+@require_scope(site_name)
+def offsite_backup_urls(name: str, timestamp: str):
+    """Pre-signed S3 URLs for a backup run's files — the user downloads
+    straight from the bucket, so this server never proxies the transfer."""
+    from pilot.config.toml_store import BenchTomlStore
+    from pilot.integrations.s3.backups import OffsiteBackup
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    config = BenchTomlStore.for_bench(bench_root).read()
+    try:
+        offsite_backup = OffsiteBackup.from_config(config.s3)
+        files = offsite_backup.get_backup(name, timestamp)
+        if not files:
+            return jsonify({"error": f"No offsite backup found for {timestamp}"}), 404
+        urls = {
+            kind: offsite_backup.presigned_url(name, timestamp, filename)
+            for kind, filename in files.items()
+        }
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"ok": True, "urls": urls})
+
+
 def _backup_cron_command(bench_root: Path, site: str) -> str:
     python = bench_root / "env" / "bin" / "python"
     sites_dir = bench_root / "sites"

@@ -138,6 +138,12 @@ class OffsiteBackup:
     def download(self, site_name: str, timestamp: str, filename: str, destination: Path) -> None:
         self.s3.download_file(self.bucket, BackupKeys(site_name).file(timestamp, filename), destination)
 
+    def presigned_url(self, site_name: str, timestamp: str, filename: str, expires_in: int = 25_000) -> str:
+        """A direct, time-limited S3 download link — the file goes straight
+        from S3 to whoever has the link, without passing through this server."""
+        key = BackupKeys(site_name).file(timestamp, filename)
+        return self.s3.presigned_url(self.bucket, key, expires_in=expires_in)
+
     def delete(self, site_name: str, timestamp: str, filename: str) -> None:
         keys = BackupKeys(site_name)
         self.s3.delete_object(self.bucket, keys.file(timestamp, filename))
@@ -153,6 +159,12 @@ class OffsiteBackup:
             if limit is not None and len(runs) >= limit:
                 break
         return runs
+
+    def get_backup(self, site_name: str, timestamp: str) -> dict[str, str] | None:
+        """Files for a single backup run, or None if it doesn't exist offsite.
+        Reads only that run's monthly metadata file, not the whole history."""
+        keys = BackupKeys(site_name)
+        return self._metadata(keys)._read_month(keys.month(timestamp)).get(timestamp)
 
     def _metadata(self, keys: BackupKeys) -> Metadata:
         return Metadata(self.s3, self.bucket, keys)

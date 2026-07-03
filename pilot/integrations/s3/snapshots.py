@@ -113,6 +113,20 @@ class OffsiteSnapshot:
         self._send(f"{dataset}@{timestamp}", remote_key)
         self._metadata(keys).add(timestamp, remote_key)
 
+    def download(self, bench_name: str, timestamp: str, dataset: str) -> str:
+        """Streams the S3 snapshot object straight into `zfs receive`, into a
+        fresh `<dataset>-restored-<timestamp>` dataset rather than the live
+        one: a full-stream `zfs receive` onto an existing dataset needs -F,
+        which rolls the destination back to match the stream — on the live
+        dataset that would destroy anything written since. Promoting the
+        restored dataset to live is a separate, explicit operation (see
+        `SnapshotOrchestrator.restore_downloaded_snapshot`). Returns the
+        restored dataset path."""
+        keys = SnapshotKeys(bench_name)
+        restore_dataset = f"{dataset}-restored-{timestamp}"
+        self._receive(keys.file(timestamp), restore_dataset)
+        return restore_dataset
+
     def delete(self, bench_name: str, timestamp: str) -> None:
         keys = SnapshotKeys(bench_name)
         self.s3.delete_object(self.bucket, keys.file(timestamp))
@@ -136,9 +150,24 @@ class OffsiteSnapshot:
                 self.s3.upload_stream(self.bucket, remote_key, proc.stdout)
             finally:
                 proc.stdout.close()
-                _, stderr = proc.communicate()
+            stderr = proc.stderr.read()
+            proc.wait()
             if proc.returncode != 0:
                 raise S3IntegrationError(f"zfs send failed: {stderr.decode().strip()}")
+
+    def _receive(self, remote_key: str, restore_dataset: str) -> None:
+        # No -F: restore_dataset is a fresh, uniquely-named dataset that never
+        # already exists, so a plain full-stream receive is always safe.
+        argv = _privileged(["zfs", "receive", "-u", restore_dataset])
+        with subprocess.Popen(argv, stdin=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
+            try:
+                self.s3.download_stream(self.bucket, remote_key, proc.stdin)
+            finally:
+                proc.stdin.close()
+            stderr = proc.stderr.read()
+            proc.wait()
+            if proc.returncode != 0:
+                raise S3IntegrationError(f"zfs receive failed: {stderr.decode().strip()}")
 
     def _metadata(self, keys: SnapshotKeys) -> Metadata:
         return Metadata(self.s3, self.bucket, keys)

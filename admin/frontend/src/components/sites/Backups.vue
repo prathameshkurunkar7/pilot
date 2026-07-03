@@ -143,6 +143,15 @@ const rows = computed(() => backups.value.map((set) => ({
   set,
 })))
 
+// The offsite metadata's file_type keys don't match the UI's kind names;
+// this is the same mapping BackupReader uses to merge remote-only files in.
+const OFFSITE_KIND_KEYS = {
+  database: 'database',
+  'public-file': 'files',
+  'private-file': 'private_files',
+  site_config: 'site_config',
+}
+
 function menuOptions(set) {
   const kinds = [
     ['database', 'Download Database'],
@@ -151,13 +160,38 @@ function menuOptions(set) {
     ['site_config', 'Download Config'],
   ]
   return [
-    // Remote-only files have no local path; there's nothing to serve for download for now.
-    ...kinds.filter(([k]) => fileOf(set, k)?.path).map(([k, label]) => ({
+    ...kinds.filter(([k]) => fileOf(set, k)).map(([k, label]) => ({
       label, icon: 'lucide-download',
-      onClick: () => { window.location.href = sitesApi.backups.download(props.siteName, fileOf(set, k).filename) },
+      onClick: () => downloadFile(set, k),
     })),
     { label: 'Delete backup', icon: 'lucide-trash-2', theme: 'red', onClick: () => { deleteTarget.value = set; showDelete.value = true } },
   ]
+}
+
+async function downloadFile(set, kind) {
+  const file = fileOf(set, kind)
+  if (file?.path) {
+    window.location.href = sitesApi.backups.download(props.siteName, file.filename)
+    return
+  }
+  // Offsite-only file: fetch a direct, time-limited S3 link and open it —
+  // this server never proxies or re-downloads the transfer.
+  error.value = ''
+  try {
+    const result = await sitesApi.backups.offsiteUrls(props.siteName, set.timestamp)
+    if (result.error) {
+      error.value = result.error
+      return
+    }
+    const url = result.urls[OFFSITE_KIND_KEYS[kind]]
+    if (!url) {
+      error.value = 'Backup file not found offsite.'
+      return
+    }
+    window.open(url, '_blank')
+  } catch (e) {
+    error.value = e.message || 'Failed to get offsite download link.'
+  }
 }
 
 const showDelete = ref(false)

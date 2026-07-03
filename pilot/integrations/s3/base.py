@@ -4,8 +4,13 @@ from pathlib import Path
 from typing import Any
 
 import boto3
+from boto3.s3.transfer import TransferConfig
 from botocore.client import BaseClient, Config
 from botocore.exceptions import ClientError, EndpointConnectionError
+
+# Non-seekable streams (e.g. a subprocess's stdin pipe) still get parallel
+# range GETs: s3transfer buffers out-of-order parts and writes them in order.
+_STREAM_TRANSFER = TransferConfig(multipart_chunksize=64 * 1024 * 1024, max_concurrency=8)
 
 ENDPOINT_TEMPLATES = {
     "aws": "https://s3.{region}.amazonaws.com",
@@ -110,10 +115,21 @@ class S3:
         """Multipart-uploads any readable file-like object — e.g. a subprocess's
         stdout pipe — without ever buffering the whole thing in memory or on disk."""
         try:
-            self.client.upload_fileobj(fileobj, bucket_name, remote_key)
+            self.client.upload_fileobj(fileobj, bucket_name, remote_key, Config=_STREAM_TRANSFER)
         except ClientError as error:
             raise S3IntegrationError(
                 f"Failed to upload stream to '{bucket_name}/{remote_key}': {error.response['Error'].get('Message', error)}",
+            ) from error
+
+    def download_stream(self, bucket_name: str, remote_key: str, fileobj) -> None:
+        """Streams an S3 object into any writable file-like object — e.g. a
+        subprocess's stdin pipe — without ever buffering the whole thing in
+        memory or on disk."""
+        try:
+            self.client.download_fileobj(bucket_name, remote_key, fileobj, Config=_STREAM_TRANSFER)
+        except ClientError as error:
+            raise S3IntegrationError(
+                f"Failed to download stream from '{bucket_name}/{remote_key}': {error.response['Error'].get('Message', error)}",
             ) from error
 
     def download_file(self, bucket_name: str, remote_key: str, local_path: Path) -> None:
@@ -122,6 +138,20 @@ class S3:
         except ClientError as error:
             raise S3IntegrationError(
                 f"Failed to download '{bucket_name}/{remote_key}': {error.response['Error'].get('Message', error)}",
+            ) from error
+
+    def presigned_url(self, bucket_name: str, remote_key: str, expires_in: int = 25_200) -> str:
+        """A time-limited URL the caller can hand straight to a browser/curl —
+        the download streams directly from S3, never through this server."""
+        try:
+            return self.client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket_name, "Key": remote_key},
+                ExpiresIn=expires_in,
+            )
+        except ClientError as error:
+            raise S3IntegrationError(
+                f"Failed to create a download link for '{bucket_name}/{remote_key}': {error.response['Error'].get('Message', error)}",
             ) from error
 
     def delete_object(self, bucket_name: str, remote_key: str) -> None:

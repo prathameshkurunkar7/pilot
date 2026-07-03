@@ -233,7 +233,11 @@ class VolumeDestroySnapshotCommand(Command):
     def run(self) -> None:
         from pilot.managers.volume_manager import VolumeManager
 
-        VolumeManager(self.config).destroy_snapshot(self.config.dataset_path, self.tag)
+        manager = VolumeManager(self.config)
+        manager.destroy_snapshot(self.config.dataset_path, self.tag)
+        # Downloaded snapshots (see OffsiteSnapshot.download) live in their own
+        # dataset, separate from the one above — a no-op if never downloaded.
+        manager.destroy_dataset(f"{self.config.dataset_path}-restored-{self.tag}")
         print(f"Snapshot destroyed: {self.config.dataset_path}@{self.tag}")
 
 
@@ -256,7 +260,31 @@ class VolumeRestoreSnapshotCommand(Command):
         self.tag = tag
 
     def run(self) -> None:
+        from pilot.managers.volume_manager import VolumeManager
+
         print(f"Restoring {self.config.dataset_path} to snapshot {self.tag}...")
         print("Sites will be put into maintenance mode and MariaDB stopped during restore.")
-        _build_orchestrator(self.bench).rollback_snapshot(self.tag)
+        orchestrator = _build_orchestrator(self.bench)
+        manager = VolumeManager(self.config)
+        is_local = any(snap.snapshot_tag == self.tag for snap in manager.list_snapshots(self.config.dataset_path))
+        if is_local:
+            orchestrator.rollback_snapshot(self.tag)
+        else:
+            # A downloaded offsite snapshot lives in a separate dataset —
+            # promote it to live instead of `zfs rollback`. Fetch it from S3
+            # first if it isn't downloaded yet, so this one command covers
+            # every case: local rollback, already-downloaded, or offsite-only.
+            self._ensure_downloaded(manager)
+            orchestrator.restore_downloaded_snapshot(self.tag)
         print(f"Restored {self.config.dataset_path}@{self.tag}.")
+
+    def _ensure_downloaded(self, manager: "VolumeManager") -> None:
+        restored = f"{self.config.dataset_path}-restored-{self.tag}"
+        if manager.dataset_exists(restored):
+            return
+
+        from pilot.integrations.s3.snapshots import OffsiteSnapshot
+
+        print(f"Snapshot {self.tag} isn't downloaded yet — fetching it from S3...")
+        offsite_snapshot = OffsiteSnapshot.from_config(self.bench.config.s3)
+        offsite_snapshot.download(self.bench.config.name, self.tag, self.config.dataset_path)

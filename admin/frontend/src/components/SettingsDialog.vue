@@ -34,8 +34,8 @@
           <Workers v-if="currentSection === 'workers'" ref="workersRef" />
           <Firewall v-else-if="currentSection === 'firewall'" />
           <Git v-else-if="currentSection === 'github'" />
-          <S3Bucket v-else-if="currentSection === 's3-bucket'" />
-          <Snapshots v-else-if="currentSection === 'snapshots'" />
+          <S3 v-else-if="currentSection === 's3'" />
+          <Snapshots v-else-if="currentSection === 'snapshots'" @close="open = false" />
           <SystemInfo v-else-if="currentSection === 'system-info'" />
         </div>
       </div>
