@@ -1169,6 +1169,35 @@ def test_restore_downloaded_snapshot_rolls_back_if_swap_fails() -> None:
     mariadb.start.assert_called_once()
 
 
+def test_restore_downloaded_snapshot_rolls_back_after_swap_succeeds() -> None:
+    from unittest.mock import call
+
+    import pytest
+
+    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
+
+    volume, mariadb, bench = _restore_mocks()
+    # The rename to `live` succeeds this time — failure happens afterwards
+    # (e.g. bind-mounting), so `live` is occupied by the restored dataset
+    # when the rollback runs.
+    volume.bind_mount.side_effect = RuntimeError("bind mount failed")
+    with patch("pilot.managers.process_manager.ProcessManager.detect_running") as detect:
+        detect.return_value.is_running.return_value = False
+        with pytest.raises(RuntimeError, match="bind mount failed"):
+            SnapshotOrchestrator(volume, mariadb, bench).restore_downloaded_snapshot("tag1")
+
+    renames = volume.rename_dataset.call_args_list
+    aside = renames[0].args[1]
+    # Rollback must free the `live` name (move the restored dataset back to
+    # its own name) before renaming `aside` back onto it, otherwise the
+    # rename is refused because `live` already exists.
+    assert renames[2] == call("bench-pool/shop", "bench-pool/shop-restored-tag1")
+    assert renames[3] == call(aside, "bench-pool/shop")
+    volume.destroy_dataset.assert_not_called()
+    volume.destroy_snapshot.assert_not_called()
+    mariadb.start.assert_called_once()
+
+
 # ── DropBenchCommand ────────────────────────────────────────────────────────
 
 

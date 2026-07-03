@@ -110,30 +110,48 @@ class SnapshotOrchestrator:
         live_mount = self._volume.get_mountpoint(live)
         self._volume.rename_dataset(live, aside)
 
+        # Tracks whether `restored` has already taken over the `live` name —
+        # the rollback below needs to know this to know which dataset (if
+        # any) currently sits under `live` before it touches it.
+        swapped = False
         try:
             self._volume.clear_mountpoint(aside)
             self._volume.rename_dataset(restored, live)
+            swapped = True
             self._volume.set_mountpoint(live, live_mount)
 
             mount = self._volume.get_mountpoint(live)
             self._volume.bind_mount(mount / "benches", bench_path)
             self._volume.bind_mount(mount / "mariadb", mariadb_datadir)
         except Exception:
-            # `live` no longer exists past this point until we put `aside`
-            # back — without this, the caller's mariadb.start() would run
-            # against a dataset that isn't there.
-            self._restore_original_dataset(aside, live, live_mount, bench_path, mariadb_datadir)
+            self._restore_original_dataset(
+                aside, live, restored, swapped, live_mount, bench_path, mariadb_datadir
+            )
             raise
 
         self._volume.destroy_dataset(aside)
         self._volume.destroy_snapshot(live, tag)
 
     def _restore_original_dataset(
-        self, aside: str, live: str, live_mount: Path, bench_path: Path, mariadb_datadir: Path
+        self,
+        aside: str,
+        live: str,
+        restored: str,
+        swapped: bool,
+        live_mount: Path,
+        bench_path: Path,
+        mariadb_datadir: Path,
     ) -> None:
         """Best-effort rollback of a failed swap: put the original dataset
         back under its live name and mount, so the bench isn't left with no
-        live dataset at all."""
+        live dataset at all.
+
+        If `restored` had already been renamed to `live` before the failure,
+        `live` is occupied — free the name by moving it back to `restored`
+        first, or `rename_dataset(aside, live)` refuses (destination exists)
+        and leaves both `aside` and `live` in a half-restored state."""
+        if swapped:
+            self._volume.rename_dataset(live, restored)
         self._volume.rename_dataset(aside, live)
         self._volume.set_mountpoint(live, live_mount)
         mount = self._volume.get_mountpoint(live)
