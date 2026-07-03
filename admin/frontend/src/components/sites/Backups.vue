@@ -57,34 +57,6 @@
     </div>
   </div>
 
-  <!-- Offsite download links dialog -->
-  <Dialog v-model="showOffsiteUrls" :options="{ title: 'Download from S3', size: 'lg' }">
-    <template #body-content>
-      <p class="text-ink-gray-7 text-p-sm">
-        These links point directly to S3 and expire in 7 hours.
-      </p>
-      <div v-if="!offsiteUrlItems.length && !offsiteUrlsError" class="flex justify-center py-6">
-        <LoadingText />
-      </div>
-      <div v-else class="space-y-3 mt-3">
-        <div v-for="item in offsiteUrlItems" :key="item.kind" class="space-y-1.5">
-          <p class="font-medium text-ink-gray-7 text-sm leading-5">{{ item.label }}</p>
-          <TextInput type="text" size="sm" readonly :model-value="item.url" @click="$event.target.select()">
-            <template #suffix>
-              <button type="button" class="text-ink-gray-5 hover:text-ink-gray-8" @click="copyUrl(item.url)">
-                <span class="size-4 lucide-copy" />
-              </button>
-            </template>
-          </TextInput>
-        </div>
-      </div>
-      <ErrorMessage v-if="offsiteUrlsError" :message="offsiteUrlsError" class="mt-3" />
-      <div class="flex justify-end mt-4">
-        <Button variant="solid" @click="showOffsiteUrls = false">Done</Button>
-      </div>
-    </template>
-  </Dialog>
-
   <!-- Delete backup dialog -->
   <Dialog v-model="showDelete" :options="{ title: 'Delete Backup', size: 'sm' }">
     <template #body-content>
@@ -104,7 +76,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, Dropdown, ErrorMessage, ListFooter, ListView, ListRowItem, LoadingText, TextInput, toast } from 'frappe-ui'
+import { Button, Dialog, Dropdown, ErrorMessage, ListFooter, ListView, ListRowItem, LoadingText } from 'frappe-ui'
 import CronScheduleControl from '@/components/CronScheduleControl.vue'
 import { sitesApi } from '@/api/sites'
 import { useSite } from '@/composables/useSite'
@@ -171,6 +143,15 @@ const rows = computed(() => backups.value.map((set) => ({
   set,
 })))
 
+// The offsite metadata's file_type keys don't match the UI's kind names;
+// this is the same mapping BackupReader uses to merge remote-only files in.
+const OFFSITE_KIND_KEYS = {
+  database: 'database',
+  'public-file': 'files',
+  'private-file': 'private_files',
+  site_config: 'site_config',
+}
+
 function menuOptions(set) {
   const kinds = [
     ['database', 'Download Database'],
@@ -179,54 +160,38 @@ function menuOptions(set) {
     ['site_config', 'Download Config'],
   ]
   return [
-    ...kinds.filter(([k]) => fileOf(set, k)?.path).map(([k, label]) => ({
+    ...kinds.filter(([k]) => fileOf(set, k)).map(([k, label]) => ({
       label, icon: 'lucide-download',
-      onClick: () => { window.location.href = sitesApi.backups.download(props.siteName, fileOf(set, k).filename) },
+      onClick: () => downloadFile(set, k),
     })),
-    // Files not present locally (offsite-only) get a direct, time-limited S3
-    // link instead — this server never proxies or re-downloads the transfer.
-    ...(set.is_offsite && set.files?.some((f) => !f.path) ? [{
-      label: 'Download from S3', icon: 'lucide-cloud-download',
-      onClick: () => downloadFromOffsite(set),
-    }] : []),
     { label: 'Delete backup', icon: 'lucide-trash-2', theme: 'red', onClick: () => { deleteTarget.value = set; showDelete.value = true } },
   ]
 }
 
-const KIND_LABELS = {
-  database: 'Database',
-  files: 'Public Files',
-  private_files: 'Private Files',
-  site_config: 'Site Config',
-}
-
-const showOffsiteUrls = ref(false)
-const offsiteUrlItems = ref([])
-const offsiteUrlsError = ref('')
-
-async function downloadFromOffsite(set) {
-  offsiteUrlsError.value = ''
-  offsiteUrlItems.value = []
-  showOffsiteUrls.value = true
+async function downloadFile(set, kind) {
+  const file = fileOf(set, kind)
+  if (file?.path) {
+    window.location.href = sitesApi.backups.download(props.siteName, file.filename)
+    return
+  }
+  // Offsite-only file: fetch a direct, time-limited S3 link and open it —
+  // this server never proxies or re-downloads the transfer.
+  error.value = ''
   try {
     const result = await sitesApi.backups.offsiteUrls(props.siteName, set.timestamp)
     if (result.error) {
-      offsiteUrlsError.value = result.error
+      error.value = result.error
       return
     }
-    offsiteUrlItems.value = Object.entries(result.urls).map(([kind, url]) => ({
-      kind,
-      label: KIND_LABELS[kind] || kind,
-      url,
-    }))
+    const url = result.urls[OFFSITE_KIND_KEYS[kind]]
+    if (!url) {
+      error.value = 'Backup file not found offsite.'
+      return
+    }
+    window.open(url, '_blank')
   } catch (e) {
-    offsiteUrlsError.value = e.message || 'Failed to get offsite download link.'
+    error.value = e.message || 'Failed to get offsite download link.'
   }
-}
-
-async function copyUrl(url) {
-  await navigator.clipboard.writeText(url)
-  toast.success('Copied to clipboard')
 }
 
 const showDelete = ref(false)
