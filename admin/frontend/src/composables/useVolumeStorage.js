@@ -2,16 +2,6 @@ import { ref, computed, watch } from 'vue'
 
 const GIB = 1024 ** 3
 const CUSTOM_DEVICE = '__custom__'
-const UNITS = { K: 1024, M: 1024 ** 2, G: GIB, T: 1024 ** 4, P: 1024 ** 5 }
-
-function parseSize(value) {
-  const match = String(value).trim().toUpperCase().match(/^([1-9]\d*)\s*([KMGTP])$/)
-  return match ? parseInt(match[1], 10) * UNITS[match[2]] : null
-}
-
-function toWholeGiB(bytes) {
-  return `${Math.max(1, Math.floor(bytes / GIB))}G`
-}
 
 function deviceLabel(device) {
   const sizeGiB = Math.floor(device.size_bytes / GIB)
@@ -52,19 +42,6 @@ export function useVolumeStorage(backing, device, imageSize) {
     imageSize.value = `${clamp(imageSizeGiB.value)}G`
   }
 
-  // Reservation and quota are derived from the backing size at request time.
-  function backingSizeBytes() {
-    if (backing.value !== 'device') return parseSize(imageSize.value)
-    const found = availableDevices.value.find((d) => d.path === device.value)
-    return found ? found.size_bytes : null
-  }
-
-  const volumeSizes = computed(() => {
-    const bytes = backingSizeBytes()
-    if (!bytes) return { volume_reservation: '15G', volume_quota: '60G' }
-    return { volume_reservation: toWholeGiB(bytes * 0.15), volume_quota: toWholeGiB(bytes) }
-  })
-
   // The "Other disk…" sentinel switches the picker to a free-text field.
   watch(device, (value) => {
     if (value !== CUSTOM_DEVICE) return
@@ -82,7 +59,6 @@ export function useVolumeStorage(backing, device, imageSize) {
     imageSizeMinGiB,
     imageSizeMaxGiB,
     imageSliderModel,
-    volumeSizes,
     clampImageSize,
   }
 }

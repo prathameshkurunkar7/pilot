@@ -340,7 +340,6 @@ export function useSetup() {
       volume_backing: volumeBacking.value,
       volume_device: volumeDevice.value,
       volume_image_size: volumeImageSize.value,
-      ...volume.volumeSizes.value,
     }
     if (dbType.value === 'postgres') {
       return {

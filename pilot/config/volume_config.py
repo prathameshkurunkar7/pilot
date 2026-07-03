@@ -2,12 +2,6 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class DatasetConfig:
-    reservation: str = "5G"
-    quota: str = "50G"
-
-
-@dataclass
 class ImageConfig:
     size: str = ""
     path: str = ""
@@ -31,7 +25,6 @@ class VolumeConfig:
     backing: str = "auto"  # "device" | "image" | "auto" (resolved during bench init)
     device: str = ""
     image: ImageConfig = field(default_factory=ImageConfig)
-    dataset: DatasetConfig = field(default_factory=DatasetConfig)
 
     @property
     def dataset_path(self) -> str:

@@ -44,13 +44,9 @@ class PoolInfo:
     datasets: list[DatasetInfo] = field(default_factory=list)
 
 
-# Smart sizing policy: a single dataset per bench may grow to fill its backing
-# (quota = 100%), with a 15% guaranteed reservation; image sized at 75% of the
-# root filesystem's free space. The user lowers the quota to fit more benches in
-# a shared pool.
+# Smart sizing policy: image backing is sized at 75% of the root filesystem's
+# free space.
 _MIN_USABLE_DISK_BYTES = 10 * 1024**3
-_DATASET_QUOTA_FRACTION = 1.0
-_DATASET_RESERVATION_FRACTION = 0.15
 _IMAGE_FREE_SPACE_FRACTION = 0.75
 
 
@@ -208,14 +204,6 @@ def default_image_size_bytes() -> int:
     return max(int(rootfs_free_bytes() * 0.75), 10 * 1024**3)
 
 
-def smart_dataset_sizes(backing_bytes: int) -> dict:
-    """Quota/reservation defaults derived from the backing size (flat wizard keys)."""
-    return {
-        "volume_quota": _whole_gigabytes(backing_bytes * _DATASET_QUOTA_FRACTION),
-        "volume_reservation": _whole_gigabytes(backing_bytes * _DATASET_RESERVATION_FRACTION),
-    }
-
-
 def compute_smart_defaults() -> dict:
     """Wizard defaults, in order of preference: reuse a disk that already
     hosts a ZFS pool, else device backing on the largest unused disk, else
@@ -224,15 +212,11 @@ def compute_smart_defaults() -> dict:
     pools = existing_pools()
     disks = discover_unused_disks()
     if pools:
-        backing_bytes = pools[0].size_bytes
         defaults = {"volume_backing": "device", "volume_device": pools[0].device, "volume_pool": pools[0].name}
     elif disks:
-        backing_bytes = disks[0].size_bytes
         defaults = {"volume_backing": "device", "volume_device": disks[0].path}
     else:
-        backing_bytes = default_image_size_bytes()
-        defaults = {"volume_backing": "image", "volume_image_size": _whole_gigabytes(backing_bytes)}
-    defaults.update(smart_dataset_sizes(backing_bytes))
+        defaults = {"volume_backing": "image", "volume_image_size": _whole_gigabytes(default_image_size_bytes())}
     defaults["available_devices"] = [{"path": pool.device, "size_bytes": pool.size_bytes, "pool": pool.name} for pool in pools if pool.device] + [
         {"path": disk.path, "size_bytes": disk.size_bytes, "has_signature": disk.has_signature} for disk in disks
     ]
@@ -240,12 +224,7 @@ def compute_smart_defaults() -> dict:
 
 
 def resolve_auto_backing(config: VolumeConfig) -> str:
-    """Resolve backing = "auto" in place; return a description of the choice.
-
-    Auto backing implies auto sizing: quotas and reservations are always
-    recomputed from the resolved backing size. Set backing explicitly to
-    control sizes manually.
-    """
+    """Resolve backing = "auto" in place; return a description of the choice."""
     if config.backing != "auto":
         return ""
     pool_match = next((p for p in existing_pools() if p.name == config.pool and p.device), None)
@@ -253,21 +232,14 @@ def resolve_auto_backing(config: VolumeConfig) -> str:
     if pool_match:
         config.backing = "device"
         config.device = pool_match.device
-        backing_bytes = pool_match.size_bytes
-        choice = f"Found existing pool {pool_match.name} on {pool_match.device} — reusing it"
-    elif disks:
+        return f"Found existing pool {pool_match.name} on {pool_match.device} — reusing it"
+    if disks:
         config.backing = "device"
         config.device = disks[0].path
-        backing_bytes = disks[0].size_bytes
-        choice = f"Found unused disk {config.device} ({_whole_gigabytes(backing_bytes)}) — using device backing"
-    else:
-        backing_bytes = default_image_size_bytes()
-        config.backing = "image"
-        config.image.size = _whole_gigabytes(backing_bytes)
-        choice = f"No unused disk found — using a {config.image.size} image file at {config.image_path}"
-    config.dataset.quota = _whole_gigabytes(backing_bytes * _DATASET_QUOTA_FRACTION)
-    config.dataset.reservation = _whole_gigabytes(backing_bytes * _DATASET_RESERVATION_FRACTION)
-    return choice
+        return f"Found unused disk {config.device} ({_whole_gigabytes(disks[0].size_bytes)}) — using device backing"
+    config.backing = "image"
+    config.image.size = _whole_gigabytes(default_image_size_bytes())
+    return f"No unused disk found — using a {config.image.size} image file at {config.image_path}"
 
 
 def _whole_gigabytes(num_bytes: float) -> str:
@@ -388,10 +360,6 @@ class VolumeManager:
             return
         self._run(["sudo", "zfs", "create", dataset])
 
-    def get_used_bytes(self, dataset: str) -> int:
-        result = self._run(["zfs", "get", "-H", "-p", "-o", "value", "used", dataset])
-        return int(result.stdout.decode().strip())
-
     @staticmethod
     def _parse_size_bytes(size_str: str) -> int:
         s = size_str.strip().upper()
@@ -400,108 +368,9 @@ class VolumeManager:
                 return int(float(s[: -len(suffix)]) * mult)
         return int(s)
 
-    def validate_quota(self, dataset: str, quota: str) -> str | None:
-        """Return an error string if quota is less than the dataset's current used size, else None."""
-        if quota.lower() in ("none", "0"):
-            return None
-        if not self.dataset_exists(dataset):
-            return None
-        try:
-            used = self.get_used_bytes(dataset)
-            new_quota = self._parse_size_bytes(quota)
-            if new_quota < used:
-                used_g = round(used / 1024**3, 2)
-                name = dataset.split("/")[-1]
-                return f"Quota {quota} is less than current used size ({used_g}G) for {name} dataset"
-        except Exception:
-            pass
-        return None
-
-    @classmethod
-    def validate_reservation_within_quota(cls, reservation: str, quota: str, dataset_name: str = "") -> str | None:
-        """Return an error if the reservation exceeds the quota, else None.
-
-        Pure size arithmetic — no ZFS calls — so it is safe to run at config
-        validation time, in the setup wizard, and before the pool exists. ZFS
-        itself rejects a reservation larger than the quota.
-        """
-        if quota.lower() in ("none", "0") or reservation.lower() in ("none", "0"):
-            return None
-        try:
-            res_bytes = cls._parse_size_bytes(reservation)
-            quota_bytes = cls._parse_size_bytes(quota)
-        except Exception:
-            return None
-        if res_bytes > quota_bytes:
-            label = f" for {dataset_name} dataset" if dataset_name else ""
-            return f"Reservation {reservation} cannot exceed quota {quota}{label}"
-        return None
-
-    def backing_size_bytes(self) -> int | None:
-        """Size of the pool's backing storage in bytes.
-
-        Device backing: the block device size via ``lsblk``. Image backing: the
-        image file's size if it exists, else the configured ``image.size``.
-        Read-only and unprivileged — no sudo — so it is safe to call from the
-        admin web process. Returns ``None`` if it cannot be determined, so
-        callers skip the check rather than raise a false positive.
-        """
-        if self.config.backing == "image":
-            return self._image_size_bytes()
-        return self._device_size_bytes()
-
-    def _device_size_bytes(self) -> int | None:
-        if not self.config.device:
-            return None
-        try:
-            result = subprocess.run(
-                ["lsblk", "-bdno", "SIZE", self.config.device],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode != 0:
-                return None
-            return int(result.stdout.strip().splitlines()[0])
-        except (OSError, ValueError, IndexError):
-            return None
-
-    def _image_size_bytes(self) -> int | None:
-        try:
-            return Path(self.config.image_path).stat().st_size
-        except OSError:
-            pass
-        try:
-            return self._parse_size_bytes(self.config.image.size)
-        except Exception:
-            return None
-
-    def validate_sizes_fit_backing(self) -> str | None:
-        """Return an error if any quota/reservation exceeds the backing size, else None.
-
-        For image backing also pre-flights that the root filesystem has enough
-        free space to preallocate the image file (when it doesn't exist yet).
-        """
-        if error := self._validate_image_fits_filesystem():
-            return error
-        backing_bytes = self.backing_size_bytes()
-        if backing_bytes is None:
-            return None
-        backing_label = "image size" if self.config.backing == "image" else "device size"
-        backing_g = round(backing_bytes / 1024**3, 2)
-        dataset = self.config.dataset
-        for kind, value in (("reservation", dataset.reservation), ("quota", dataset.quota)):
-            if value.lower() in ("none", "0"):
-                continue
-            try:
-                size = self._parse_size_bytes(value)
-            except Exception:
-                continue
-            if size > backing_bytes:
-                return f"dataset {kind} {value} exceeds {backing_label} ({backing_g}G)"
-        return None
-
-    def _validate_image_fits_filesystem(self) -> str | None:
+    def validate_image_fits_filesystem(self) -> str | None:
+        """For image backing, pre-flight that the root filesystem has enough
+        free space to preallocate the image file (when it doesn't exist yet)."""
         if self.config.backing != "image" or not self.config.image.size:
             return None
         image = Path(self.config.image_path)
@@ -519,30 +388,6 @@ class VolumeManager:
             free_g = round(free / 1024**3, 2)
             return f"Image size {self.config.image.size} exceeds free space on the root filesystem ({free_g}G available)"
         return None
-
-    # ── settings-modal helpers ──────────────────────────────────────────────
-
-    def validate_quotas_above_usage(self) -> str | None:
-        """Ensure the configured quota is not below the dataset's current used size."""
-        return self.validate_quota(self.config.dataset_path, self.config.dataset.quota)
-
-    def apply_sizes(self) -> str | None:
-        """Apply the configured quota/reservation to the dataset (idempotent)."""
-        dataset = self.config.dataset_path
-        if not self.dataset_exists(dataset):
-            return None
-        try:
-            self.set_quota(dataset, self.config.dataset.quota)
-            self.set_reservation(dataset, self.config.dataset.reservation)
-        except VolumeError as error:
-            return str(error)
-        return None
-
-    def set_quota(self, dataset: str, quota: str) -> None:
-        self._run(["sudo", "zfs", "set", f"quota={quota}", dataset])
-
-    def set_reservation(self, dataset: str, reservation: str) -> None:
-        self._run(["sudo", "zfs", "set", f"reservation={reservation}", dataset])
 
     def set_recordsize(self, dataset: str, recordsize: str) -> None:
         self._run(["sudo", "zfs", "set", f"recordsize={recordsize}", dataset])
@@ -616,17 +461,12 @@ class VolumeManager:
         # Multiple benches can therefore share one pool, each with its own dataset.
         self.create_pool()
         dataset = self.config.dataset_path
-        self._setup_dataset(dataset, self.config.dataset.quota, self.config.dataset.reservation)
+        print(f"Creating dataset {dataset}")
+        self.create_dataset(dataset)
         # https://www.usenix.org/system/files/login/articles/login_winter16_09_jude.pdf
         # The dataset holds the MariaDB data (16k page size); ZFS defaults to a
         # 128k recordsize, introducing massive IO amplification — force-tune it.
         self.set_recordsize(dataset, "16K")
-
-    def _setup_dataset(self, dataset: str, quota: str, reservation: str) -> None:
-        print(f"Creating dataset {dataset} with quota {quota} and reservation {reservation}")
-        self.create_dataset(dataset)
-        self.set_quota(dataset, quota)
-        self.set_reservation(dataset, reservation)
 
     # ── bind mounts ─────────────────────────────────────────────────────────
 

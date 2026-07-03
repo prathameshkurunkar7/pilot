@@ -48,8 +48,6 @@ FLAT_KEYS = {
     "volume_device": "volume.device",
     "volume_image_size": "volume.image.size",
     "volume_image_path": "volume.image.path",
-    "volume_reservation": "volume.dataset.reservation",
-    "volume_quota": "volume.dataset.quota",
     "production_process_manager": "production.process_manager",
 }
 

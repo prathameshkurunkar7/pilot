@@ -17,7 +17,7 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 | Process manager | Honcho / Supervisor | Built-in Procfile runner |
 | Python env | pip + virtualenv | [uv](https://github.com/astral-sh/uv) (auto-installed) |
 | Admin UI | None | Built-in — app status, sites, logs, task runner, process memory/CPU, live settings |
-| Storage | Root filesystem only dedicated disk **or** disk image — no spare disk needed with per-dataset quotas, reservations, and snapshots |
+| Storage | Root filesystem only dedicated disk **or** disk image — no spare disk needed with per-dataset snapshots |
 
 ## Requirements
 
@@ -181,10 +181,6 @@ backing = "auto"                 # discover an unused disk, or fall back to a di
 # backing = "image"              # explicit: preallocated file on the root filesystem
 # [volume.image]
 # size = "60G"                   # file created at /var/lib/bench-zfs/bench-pool.img
-
-[volume.dataset]
-reservation = "15G"              # guaranteed space for this bench (files + database)
-quota = "60G"                    # hard cap — lower it to fit more benches in the pool
 ```
 
 Each bench lives on a single dataset (`<pool>/<bench>`) holding both its files and its MariaDB data via bind mounts, so snapshots/rollbacks are atomic across both. Apps and sites are tracked by the filesystem — no need to list them in `bench.toml`. See [docs/volume.md](docs/volume.md) for the full ZFS volume guide.

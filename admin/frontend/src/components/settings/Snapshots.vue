@@ -3,6 +3,17 @@
     <span class="size-5 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
   </div>
   <div v-else class="space-y-6">
+    <Teleport v-if="snapshotsEnabled" to="#settings-header-actions">
+      <div class="flex items-center gap-2">
+        <CronScheduleControl ref="cronControlRef" noun="snapshots"
+          disable-body="Automatic snapshots will stop. Existing snapshots are kept."
+          :fetch-schedule="fetchSnapshotSchedule" :set-schedule="setSnapshotSchedule"
+          :remove-schedule="removeSnapshotSchedule" titleless />
+        <Button class="hidden sm:inline-flex" variant="subtle" icon-left="camera" :loading="creating"
+          @click="createSnapshot">Snapshot</Button>
+      </div>
+    </Teleport>
+
     <Alert v-if="!snapshotsEnabled" title="ZFS not ready" theme="yellow" :dismissible="false">
       <template #description>
         <span class="text-ink-gray-6 text-p-sm">
@@ -12,44 +23,15 @@
       </template>
     </Alert>
 
-    <div class="space-y-3">
-      <p class="font-medium text-ink-gray-8 text-base leading-normal">Storage</p>
-      <div class="gap-3 grid grid-cols-2">
-        <div class="space-y-1.5">
-          <p class="font-medium text-ink-gray-7 text-sm">Reservation</p>
-          <TextInput v-model="reservation" placeholder="5G" class="w-full" />
-        </div>
-        <div class="space-y-1.5">
-          <p class="font-medium text-ink-gray-7 text-sm">Quota</p>
-          <TextInput v-model="quota" placeholder="50G" class="w-full" />
-        </div>
-      </div>
-      <ErrorMessage v-if="volumeError" :message="volumeError" />
-      <div class="flex justify-end">
-        <Button variant="solid" :loading="savingVolume" @click="saveVolume">Save changes</Button>
-      </div>
-    </div>
-
-    <CronScheduleControl v-if="snapshotsEnabled" title="Automatic snapshots" noun="snapshots"
-      enabled-hint="Taken on a schedule." disabled-hint="Automatic snapshots are disabled."
-      disable-body="Automatic snapshots will stop. Existing snapshots are kept." :fetch-schedule="fetchSnapshotSchedule"
-      :set-schedule="setSnapshotSchedule" :remove-schedule="removeSnapshotSchedule" />
-
     <div class="space-y-2">
-      <div class="flex justify-between items-center">
-        <p class="font-medium text-ink-gray-8 text-base leading-normal">Snapshots</p>
-        <Button variant="subtle" icon-left="plus" :disabled="!snapshotsEnabled" :loading="creating"
-          @click="createSnapshot">Create snapshot</Button>
-      </div>
-
       <div v-if="!snapshots.length"
         class="flex flex-col items-center gap-2.5 py-10 border border-dashed rounded-lg border-outline-gray-2 text-center">
         <div class="flex justify-center items-center bg-surface-gray-2 rounded-full size-11">
           <span class="size-5 text-ink-gray-5 lucide-camera"></span>
         </div>
         <p class="font-medium text-ink-gray-7 text-sm">No snapshots yet</p>
-        <p class="max-w-xs text-ink-gray-5 text-xs">
-          Snapshots capture the bench's dataset (files and database together) so you can roll back instantly.
+        <p class="max-w-xs text-ink-gray-5 text-xs text-balance">
+          Snapshots capture your bench's files and database so you can roll back instantly.
         </p>
       </div>
 
@@ -75,16 +57,16 @@
     </div>
   </div>
 
-  <!-- Rollback confirmation -->
-  <Dialog v-model="showRollback" :options="{ title: 'Rollback snapshot', size: 'sm' }">
+  <!-- Restore confirmation -->
+  <Dialog v-model="showRollback" :options="{ title: 'Restore snapshot', size: 'sm' }">
     <template #body-content>
       <p class="text-ink-gray-7 text-p-sm">
-        Roll back to <span class="font-semibold text-ink-gray-8 break-all">{{ rollbackTarget?.tag }}</span>?
+        Restore <span class="font-semibold text-ink-gray-8 break-all">{{ rollbackTarget?.tag }}</span>?
         Every change made since this snapshot was taken will be lost. This cannot be undone.
       </p>
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showRollback = false">Cancel</Button>
-        <Button variant="solid" theme="red" :loading="rollingBack" @click="confirmRollback">Rollback</Button>
+        <Button variant="solid" theme="red" :loading="rollingBack" @click="confirmRollback">Restore snapshot</Button>
       </div>
     </template>
   </Dialog>
@@ -130,7 +112,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Alert, Button, Dialog, Dropdown, ErrorMessage, ListRowItem, ListView, TextInput, toast } from 'frappe-ui'
 import CronScheduleControl from '@/components/CronScheduleControl.vue'
-import { settingsApi } from '@/api/settings'
 import { volumeApi } from '@/api/volume'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
@@ -141,12 +122,16 @@ const fetchSnapshotSchedule = () => volumeApi.snapshots.schedule.get()
 const setSnapshotSchedule = (cron) => volumeApi.snapshots.schedule.set(cron)
 const removeSnapshotSchedule = () => volumeApi.snapshots.schedule.remove()
 
-const loading = ref(true)
-const reservation = ref('')
-const quota = ref('')
-const savingVolume = ref(false)
-const volumeError = ref('')
+const cronControlRef = ref(null)
 
+const columns = [
+  { label: 'Created', key: 'created', align: 'left', width: 3 },
+  { label: 'Size', key: 'size', align: 'center', width: 1 },
+  { label: 'Offsite', key: 'offsite', align: 'center', width: 1 },
+  { label: '', key: 'actions', align: 'right', width: '3rem' },
+]
+
+const loading = ref(true)
 const snapshotsEnabled = ref(false)
 const snapshots = ref([])
 const creating = ref(false)
@@ -243,24 +228,6 @@ async function loadSnapshots() {
   }
 }
 
-async function saveVolume() {
-  volumeError.value = ''
-  savingVolume.value = true
-  try {
-    const result = await settingsApi.update({ volume: { reservation: reservation.value.trim(), quota: quota.value.trim() } })
-    if (result.ok) {
-      toast.success('Storage settings saved')
-      if (result.zfs_error) toast.error(result.zfs_error)
-    } else {
-      volumeError.value = result.error || 'Failed to save.'
-    }
-  } catch (e) {
-    volumeError.value = e.message || 'Failed to save.'
-  } finally {
-    savingVolume.value = false
-  }
-}
-
 async function createSnapshot() {
   creating.value = true
   snapshotError.value = ''
@@ -325,7 +292,7 @@ async function confirmDelete() {
 
 onMounted(async () => {
   try {
-    await Promise.all([loadVolumeSettings(), loadSnapshots()])
+    await loadSnapshots()
   } finally {
     loading.value = false
   }

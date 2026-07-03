@@ -411,8 +411,6 @@ Returns the full settings payload as JSON. The frontend uses this to populate th
     "enabled": true,
     "pool": "bench-pool",
     "device": "/dev/sdb",
-    "quota": "60G",
-    "reservation": "15G",
     "snapshots_enabled": true
   }
 }
@@ -436,12 +434,10 @@ Accepts a JSON body with any subset of the settings sections. Only keys present 
 
 **Response:**
 ```json
-{ "ok": true, "restarted": true, "restart_error": null, "zfs_error": null }
+{ "ok": true, "restarted": true, "restart_error": null }
 ```
 
 **Process restart:** If any value in `bench.http_port`, `bench.socketio_port`, `redis.*_port`, `workers.*`, or `production.process_manager` changed, bench regenerates config files and restarts the running process manager (supervisor, systemd, or OpenRC on Alpine) automatically — excluding the admin process itself so the response is delivered before the restart.
-
-**ZFS quota/reservation:** If `volume.quota` or `volume.reservation` changed, the new values are applied to the bench's dataset via `zfs set` after writing `bench.toml`. Quota changes are validated before saving: if the new quota is less than the dataset's current used size, the request is rejected with HTTP 400 and the config is not modified.
 
 **Error responses:**
 
@@ -449,11 +445,7 @@ Accepts a JSON body with any subset of the settings sections. Only keys present 
 |-----------|------|------|
 | JSON parse error | 400 | `{"ok": false, "error": "..."}` |
 | Validation failure (port out of range, etc.) | 400 | `{"ok": false, "error": "..."}` |
-| ZFS quota below current used size | 400 | `{"ok": false, "error": "Quota 5G is less than current used size (12.4G) for shop dataset"}` |
 | bench.toml write failure | 500 | `{"ok": false, "error": "Failed to write config: ..."}` |
-| ZFS set failure (post-save) | 200 | `{"ok": true, ..., "zfs_error": "..."}` |
-
-Note: ZFS errors are reported in the response body (not HTTP 5xx) because `bench.toml` has already been written at that point.
 
 ---
 
@@ -473,7 +465,7 @@ The frontend presents settings as a tabbed modal dialog. Tabs are:
 | **Let's Encrypt** | Email, Webroot Path | — |
 | **Production** | Process Manager (none/supervisor + the host's native manager: systemd, or OpenRC on Alpine) | — |
 | **Updates** | — | Current version, update availability badge; Update button |
-| **ZFS Volume** *(Linux only, dedicated DB only)* | Quota, Reservation | Pool Name, Block Device |
+| **ZFS Volume** *(Linux only, dedicated DB only)* | — | Pool Name, Block Device |
 
 MariaDB fields are read-only because the host, port, credentials, and socket path are set once during `bench init` and cannot be meaningfully changed by editing `bench.toml` after the fact — the database server itself is not reconfigured.
 

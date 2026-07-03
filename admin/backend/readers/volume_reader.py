@@ -10,8 +10,6 @@ class DatasetInfo:
     name: str
     used_bytes: int
     available_bytes: int
-    quota_bytes: int
-    reservation_bytes: int
 
 
 @dataclass
@@ -58,16 +56,14 @@ class VolumeReader:
 
     def _read_dataset(self, dataset: str) -> DatasetInfo:
         result = subprocess.run(
-            ["zfs", "list", "-H", "-p", "-o", "name,used,avail,quota,reservation", dataset],
+            ["zfs", "list", "-H", "-p", "-o", "name,used,avail", dataset],
             capture_output=True,
         )
         if result.returncode != 0:
-            return DatasetInfo(name=dataset, used_bytes=0, available_bytes=0, quota_bytes=0, reservation_bytes=0)
-        name, used, avail, quota, reservation = result.stdout.decode().strip().split("\t")
+            return DatasetInfo(name=dataset, used_bytes=0, available_bytes=0)
+        name, used, avail = result.stdout.decode().strip().split("\t")
         return DatasetInfo(
             name=name,
             used_bytes=int(used),
             available_bytes=int(avail),
-            quota_bytes=int(quota),
-            reservation_bytes=int(reservation),
         )

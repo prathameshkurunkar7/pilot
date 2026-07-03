@@ -46,14 +46,14 @@
             </Dropdown>
           </div>
           <div v-else-if="column.key === 'offsite'" class="flex justify-center">
-            <span v-if="row.set.is_offsite" class="size-4 text-ink-green-6 lucide-circle-check" title="Backed up offsite" />
-            <span v-else class="text-ink-gray-4">—</span>
+            <span v-if="row.set.is_offsite" class="size-4 text-ink-gray-6 lucide-check" title="Backed up offsite" />
+            <span v-else class="size-4 text-ink-gray-4 lucide-x" title="Not backed up offsite" />
           </div>
           <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
         </template>
       </ListView>
-      <ListFooter v-if="backups.length" class="mt-2 px-1" :model-value="backupsLimit" :options="footerOptions"
-        @update:model-value="setBackupsPageLength" @load-more="loadMoreBackups" />
+      <ListFooter v-if="backupsHasMore || backups.length > 20" class="mt-2 px-1" :model-value="backupsLimit"
+        :options="footerOptions" @update:model-value="setBackupsPageLength" @load-more="loadMoreBackups" />
     </div>
   </div>
 
