@@ -40,7 +40,7 @@
     "@babel/helper-string-parser" "^7.29.7"
     "@babel/helper-validator-identifier" "^7.29.7"
 
-"@codemirror/autocomplete@^6.0.0", "@codemirror/autocomplete@^6.3.2", "@codemirror/autocomplete@^6.7.1":
+"@codemirror/autocomplete@^6.0.0", "@codemirror/autocomplete@^6.20.3", "@codemirror/autocomplete@^6.3.2", "@codemirror/autocomplete@^6.7.1":
   version "6.20.3"
   resolved "https://registry.npmjs.org/@codemirror/autocomplete/-/autocomplete-6.20.3.tgz"
   integrity sha512-tlosUqb+3BbxCxZdu4tKeRghPFC+QM7q4X5YhKV2eCmPG+1r2F3f4AaSz5sCrFqUtX4Jh20VFTKecl16MgiV9g==
@@ -50,7 +50,7 @@
     "@codemirror/view" "^6.17.0"
     "@lezer/common" "^1.0.0"
 
-"@codemirror/commands@^6.0.0":
+"@codemirror/commands@6.x", "@codemirror/commands@^6.0.0":
   version "6.10.4"
   resolved "https://registry.npmjs.org/@codemirror/commands/-/commands-6.10.4.tgz"
   integrity sha512-Ryk9y9T0FFVF0cUGhAknveAyUOl/A1qReTFi+qPKtOh2Z9F4AUBz3XOrYD4ZEgZirdugVzHvd/2/Wcwy5OliTg==
@@ -142,7 +142,7 @@
     "@lezer/common" "^1.0.2"
     "@lezer/sass" "^1.0.0"
 
-"@codemirror/lang-sql@^6.8.0":
+"@codemirror/lang-sql@^6.10.0", "@codemirror/lang-sql@^6.8.0":
   version "6.10.0"
   resolved "https://registry.npmjs.org/@codemirror/lang-sql/-/lang-sql-6.10.0.tgz"
   integrity sha512-6ayPkEd/yRw0XKBx5uAiToSgGECo/GY2NoJIHXIIQh1EVwLuKoU8BP/qK0qH5NLXAbtJRLuT73hx7P9X34iO4w==
@@ -179,7 +179,7 @@
     "@lezer/lr" "^1.0.0"
     "@lezer/yaml" "^1.0.0"
 
-"@codemirror/language@^6.0.0", "@codemirror/language@^6.3.0", "@codemirror/language@^6.4.0", "@codemirror/language@^6.6.0", "@codemirror/language@^6.8.0":
+"@codemirror/language@6.x", "@codemirror/language@^6.0.0", "@codemirror/language@^6.3.0", "@codemirror/language@^6.4.0", "@codemirror/language@^6.6.0", "@codemirror/language@^6.8.0":
   version "6.12.4"
   resolved "https://registry.npmjs.org/@codemirror/language/-/language-6.12.4.tgz"
   integrity sha512-1q4PaT+o6PbgpkJt4Q8Fv5XJxTy4FUZ4MWETtyiDw3J0Pyr9E2vqcKL+k9wcvjNTIsauxvE7OfmWj3FRPHQ76A==
@@ -209,14 +209,14 @@
     "@codemirror/view" "^6.37.0"
     crelt "^1.0.5"
 
-"@codemirror/state@^6.0.0", "@codemirror/state@^6.7.0":
+"@codemirror/state@6.x", "@codemirror/state@^6.0.0", "@codemirror/state@^6.7.0":
   version "6.7.0"
   resolved "https://registry.npmjs.org/@codemirror/state/-/state-6.7.0.tgz"
   integrity sha512-Zbl9NyscLMZkfXPQnNAIIAFftidrA1UbcJEIMp24C0Bukc2I5T8wJS0wsXYsnDOqCFJUeJ1BITGNs5CqPDSmSg==
   dependencies:
     "@marijn/find-cluster-break" "^1.0.0"
 
-"@codemirror/view@^6.0.0", "@codemirror/view@^6.17.0", "@codemirror/view@^6.23.0", "@codemirror/view@^6.27.0", "@codemirror/view@^6.37.0", "@codemirror/view@^6.42.0":
+"@codemirror/view@6.x", "@codemirror/view@^6.0.0", "@codemirror/view@^6.17.0", "@codemirror/view@^6.23.0", "@codemirror/view@^6.27.0", "@codemirror/view@^6.37.0", "@codemirror/view@^6.42.0", "@codemirror/view@^6.43.4":
   version "6.43.4"
   resolved "https://registry.npmjs.org/@codemirror/view/-/view-6.43.4.tgz"
   integrity sha512-YImu23iyKfncJzT7sRy+rEqEhSc8RhOHqDxwy4WzXRKJwYm6iwf/9OJk5ctCAdZ6yi2ZqaGEvmf55fSVqMDrgg==
@@ -949,6 +949,11 @@
   integrity sha512-LHpC8711VFZlDaYUXEBbFBCQ7GS3dVU9mjOhhMhXP6txTV4EhYQg/KGnQuvt/sPAtoUKq7VVUnL6mVtFoL42sA==
   dependencies:
     vue-demi ">=0.14.8"
+
+"@vueuse/shared@14.3.0", "@vueuse/shared@^14.1.0":
+  version "14.3.0"
+  resolved "https://registry.npmjs.org/@vueuse/shared/-/shared-14.3.0.tgz"
+  integrity sha512-bZpge9eSXwa4ToSiqJ7j6KRwhAsneMFoSz3LMWKQDkqimm3D/tbFlrklrs/IOqC8tEcYmXQZJ6N0UrjhBirVCg==
 
 acorn@^8.14.1, acorn@^8.15.0, acorn@^8.16.0:
   version "8.17.0"
@@ -1853,10 +1858,10 @@ postcss-nested@^6.2.0:
   dependencies:
     postcss-selector-parser "^6.1.1"
 
-postcss-selector-parser@^6.1.1:
-  version "6.1.4"
-  resolved "https://registry.npmjs.org/postcss-selector-parser/-/postcss-selector-parser-6.1.4.tgz"
-  integrity sha512-bIoJLOmjCO1S9XdY/DcnR5hJxvrDir1PbGChrzXG3vw0/FOliy/fA3dmdhQ441kah4gKv+TwckGzex6wNS5cnQ==
+postcss-selector-parser@6.0.10:
+  version "6.0.10"
+  resolved "https://registry.npmjs.org/postcss-selector-parser/-/postcss-selector-parser-6.0.10.tgz"
+  integrity sha512-IQ7TZdoaqbT+LCpShg46jnZVlhWD2w6iQYAcYXfHARZ7X1t/UGhhceQDs5X0cGqKvYlHNOuv7Oa1xmb0oQuA3w==
   dependencies:
     cssesc "^3.0.0"
     util-deprecate "^1.0.2"
@@ -2300,7 +2305,7 @@ ts-interface-checker@^0.1.9:
   resolved "https://registry.npmjs.org/ts-interface-checker/-/ts-interface-checker-0.1.13.tgz"
   integrity sha512-Y/arvbn+rrz3JCKl9C4kVNfTfSm2/mEp5FSz5EsZSANGPSlQrpRI5M4PKF+mJnE52jOO90PnPSc3Ur3bTQw0gA==
 
-tslib@^2.0.0, tslib@2.3.0:
+tslib@2.3.0, tslib@^2.0.0:
   version "2.3.0"
   resolved "https://registry.npmjs.org/tslib/-/tslib-2.3.0.tgz"
   integrity sha512-N82ooyxVNm6h1riLCoyS9e3fuJ3AMG2zIZs2Gd1ATcSFjSA23Q0fzjjZeh0jbJvWVDZ0cJT8yaNNaaXHzueNjg==
@@ -2437,12 +2442,17 @@ vite@*, "vite@^5.0.0 || ^6.0.0", vite@^5.4.0:
   optionalDependencies:
     fsevents "~2.3.3"
 
-vue-demi@>=0.13.0:
-  version "0.14.10"
-  resolved "https://registry.npmjs.org/vue-demi/-/vue-demi-0.14.10.tgz"
-  integrity sha512-nMZBOwuzabUO0nLgIcc6rycZEebF6eeUfaiQx9+WSk8e29IbLvPU9feI6tqW4kTo3hvoYAJkMh8n8D0fuISphg==
+vue-codemirror@^6.1.1:
+  version "6.1.1"
+  resolved "https://registry.npmjs.org/vue-codemirror/-/vue-codemirror-6.1.1.tgz"
+  integrity sha512-rTAYo44owd282yVxKtJtnOi7ERAcXTeviwoPXjIc6K/IQYUsoDkzPvw/JDFtSP6T7Cz/2g3EHaEyeyaQCKoDMg==
+  dependencies:
+    "@codemirror/commands" "6.x"
+    "@codemirror/language" "6.x"
+    "@codemirror/state" "6.x"
+    "@codemirror/view" "6.x"
 
-vue-demi@>=0.14.8:
+vue-demi@>=0.13.0, vue-demi@>=0.14.8:
   version "0.14.10"
   resolved "https://registry.npmjs.org/vue-demi/-/vue-demi-0.14.10.tgz"
   integrity sha512-nMZBOwuzabUO0nLgIcc6rycZEebF6eeUfaiQx9+WSk8e29IbLvPU9feI6tqW4kTo3hvoYAJkMh8n8D0fuISphg==
