@@ -6,10 +6,8 @@
     <Alert v-if="!connected" theme="blue" title="Why connect S3?" :dismissible="false">
       <template #description>
         <p class="text-ink-gray-6 text-p-sm">
-          Connecting an S3-compatible bucket lets you send offsite backups and disk snapshots. Enter an access key,
-          secret
-          key, bucket name, and pick a provider and region below — a new bucket with this name will be provisioned if
-          not present.
+          Connect an S3-compatible bucket to send offsite backups and snapshots. Enter your credentials below;
+          the bucket is created automatically if it doesn't exist.
         </p>
       </template>
     </Alert>
