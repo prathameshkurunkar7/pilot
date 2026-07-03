@@ -1,8 +1,8 @@
 from pilot.commands.get_app import GetAppCommand
 from pilot.core.site import Site, SiteConfig
-from pilot.exceptions import BenchError
 
 from .base_task import BaseTask
+from .marketplace_fetcher import MarketplaceFetcher
 
 
 class GetAndInstallAppTask(BaseTask):
@@ -27,7 +27,10 @@ class GetAndInstallAppTask(BaseTask):
         self.sites = args.sites or []
 
     def run(self) -> None:
-        cmds = self._fetch_from_marketplace() if self.marketplace_app else [self._fetch_custom()]
+        if self.marketplace_app:
+            cmds = MarketplaceFetcher(self.bench, self._step).fetch(self.marketplace_app)
+        else:
+            cmds = [self._fetch_custom()]
         self._install_on_sites(cmds)
         self._step("done")
 
@@ -36,21 +39,6 @@ class GetAndInstallAppTask(BaseTask):
         cmd = GetAppCommand(self.bench, self.repo, self.branch)
         cmd.run()
         return cmd
-
-    def _fetch_from_marketplace(self) -> list[GetAppCommand]:
-        from pilot.core.marketplace import Marketplace
-
-        apps = Marketplace(self.bench).read_all_apps()
-        resolver = next((a for a in apps if a.app == self.marketplace_app), None)
-        if not resolver:
-            raise BenchError(f"'{self.marketplace_app}' not found in marketplace.")
-        cmds = []
-        for dep in resolver.resolve():
-            self._step("fetch", f"Fetch {dep.app}")
-            cmd = GetAppCommand(self.bench, dep.repo, dep.target)
-            cmd.run()
-            cmds.append(cmd)
-        return cmds
 
     def _install_on_sites(self, cmds: list[GetAppCommand]) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager

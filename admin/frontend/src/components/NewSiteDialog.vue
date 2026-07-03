@@ -61,7 +61,7 @@
         </div>
 
         <!-- Choose apps -->
-        <div v-if="!loading && registry.length">
+        <div v-if="!loading && combinedApps.length">
           <div class="flex justify-between items-center mb-2">
             <span class="text-ink-gray-7 text-p-sm-medium">Choose apps</span>
             <span class="text-ink-gray-5 text-xs">
@@ -109,6 +109,7 @@
 import { ref, computed, watch } from 'vue'
 import { Button, Checkbox, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import AppIcon from '@/components/AppIcon.vue'
+import { appsApi } from '@/api/apps'
 import { authApi } from '@/api/auth'
 import { sitesApi } from '@/api/sites'
 import { useAppRegistry } from '@/composables/useAppRegistry'
@@ -122,6 +123,7 @@ const emit = defineEmits(['started'])
 const open = defineModel()
 
 const { registry, load: loadRegistry } = useAppRegistry()
+const benchApps = ref([])
 
 const newSiteName = ref('')
 const sitePrefix = ref('')
@@ -137,10 +139,23 @@ const dbType = ref('mariadb')
 const selectedApps = ref([])
 const appSearch = ref('')
 
+// Apps already cloned onto this bench but not published to the marketplace
+// (e.g. a private/custom app) — offer those too, alongside the catalog.
+const customApps = computed(() => {
+  const registryNames = new Set(registry.value.map((app) => app.name))
+  return benchApps.value
+    .filter((app) => app.name !== 'frappe' && !registryNames.has(app.name))
+    .map((app) => ({ name: app.name, title: app.title || app.name, stars: null }))
+})
+
+const combinedApps = computed(() => [
+  ...registry.value.filter((app) => app.name !== 'frappe'),
+  ...customApps.value,
+])
+
 const filteredRegistry = computed(() => {
   const query = appSearch.value.toLowerCase().trim()
-  return registry.value
-    .filter((app) => app.name !== 'frappe')
+  return combinedApps.value
     .filter(
       (app) =>
         !query ||
@@ -177,8 +192,16 @@ async function reset() {
   selectedApps.value = []
   appSearch.value = ''
   loading.value = true
-  await Promise.all([loadWildcardDomains(), loadBenchDbType(), loadRegistry()])
+  await Promise.all([loadWildcardDomains(), loadBenchDbType(), loadRegistry(), loadBenchApps()])
   loading.value = false
+}
+
+async function loadBenchApps() {
+  try {
+    benchApps.value = await appsApi.installed()
+  } catch {
+    benchApps.value = []
+  }
 }
 
 function toggleApp(name) {

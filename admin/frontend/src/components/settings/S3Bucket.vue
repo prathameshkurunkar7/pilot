@@ -6,8 +6,7 @@
     <Alert v-if="!connected" theme="blue" title="Why connect S3?" :dismissible="false">
       <template #description>
         <p class="text-ink-gray-6 text-p-sm">
-          Connect an S3-compatible bucket to send offsite backups and snapshots. Enter your credentials below;
-          the bucket is created automatically if it doesn't exist.
+          Connect an S3-compatible bucket to send offsite backups and snapshots.
         </p>
       </template>
     </Alert>
