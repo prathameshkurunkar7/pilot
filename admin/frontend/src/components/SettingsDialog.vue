@@ -64,8 +64,8 @@ const sections = computed(() => [
   { id: 'github', label: 'Git Settings', icon: 'lucide-git-branch' },
   { id: 's3-bucket', label: 'S3 Bucket', icon: 'lucide-archive' },
   { id: 'workers', label: 'Workers', icon: 'lucide-server-cog' },
-  { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
   ...(zfsEnabled.value ? [{ id: 'snapshots', label: 'Snapshots', icon: 'lucide-camera' }] : []),
+  { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
   { id: 'system-info', label: 'System Info', icon: 'lucide-info' },
 ])
 const activeSection = ref(null)
