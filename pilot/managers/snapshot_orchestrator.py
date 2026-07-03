@@ -106,20 +106,39 @@ class SnapshotOrchestrator:
         self._volume.unmount(mariadb_datadir)
 
         aside = f"{live}-before-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        
+
         live_mount = self._volume.get_mountpoint(live)
         self._volume.rename_dataset(live, aside)
-        
-        self._volume.clear_mountpoint(aside)
-        self._volume.rename_dataset(restored, live)
-        self._volume.set_mountpoint(live, live_mount)
 
-        mount = self._volume.get_mountpoint(live)
-        self._volume.bind_mount(mount / "benches", bench_path)
-        self._volume.bind_mount(mount / "mariadb", mariadb_datadir)
+        try:
+            self._volume.clear_mountpoint(aside)
+            self._volume.rename_dataset(restored, live)
+            self._volume.set_mountpoint(live, live_mount)
+
+            mount = self._volume.get_mountpoint(live)
+            self._volume.bind_mount(mount / "benches", bench_path)
+            self._volume.bind_mount(mount / "mariadb", mariadb_datadir)
+        except Exception:
+            # `live` no longer exists past this point until we put `aside`
+            # back — without this, the caller's mariadb.start() would run
+            # against a dataset that isn't there.
+            self._restore_original_dataset(aside, live, live_mount, bench_path, mariadb_datadir)
+            raise
 
         self._volume.destroy_dataset(aside)
         self._volume.destroy_snapshot(live, tag)
+
+    def _restore_original_dataset(
+        self, aside: str, live: str, live_mount: Path, bench_path: Path, mariadb_datadir: Path
+    ) -> None:
+        """Best-effort rollback of a failed swap: put the original dataset
+        back under its live name and mount, so the bench isn't left with no
+        live dataset at all."""
+        self._volume.rename_dataset(aside, live)
+        self._volume.set_mountpoint(live, live_mount)
+        mount = self._volume.get_mountpoint(live)
+        self._volume.bind_mount(mount / "benches", bench_path)
+        self._volume.bind_mount(mount / "mariadb", mariadb_datadir)
 
 
 def get_orchestrator(bench_root):

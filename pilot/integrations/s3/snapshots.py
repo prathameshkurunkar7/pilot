@@ -158,15 +158,14 @@ class OffsiteSnapshot:
         # No -F: restore_dataset is a fresh, uniquely-named dataset that never
         # already exists, so a plain full-stream receive is always safe.
         argv = _privileged(["zfs", "receive", "-u", restore_dataset])
-        proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-        try:
-            self.s3.download_stream(self.bucket, remote_key, proc.stdin)
-        finally:
-            proc.stdin.close()
-        stderr = proc.stderr.read()
-        proc.wait()
-        if proc.returncode != 0:
-            raise S3IntegrationError(f"zfs receive failed: {stderr.decode().strip()}")
+        with subprocess.Popen(argv, stdin=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
+            try:
+                self.s3.download_stream(self.bucket, remote_key, proc.stdin)
+            finally:
+                proc.stdin.close()
+                _, stderr = proc.communicate()
+            if proc.returncode != 0:
+                raise S3IntegrationError(f"zfs receive failed: {stderr.decode().strip()}")
 
     def _metadata(self, keys: SnapshotKeys) -> Metadata:
         return Metadata(self.s3, self.bucket, keys)
