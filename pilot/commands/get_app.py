@@ -5,7 +5,6 @@ import sys
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
-from pilot.core.app_validator import Validator
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -100,6 +99,7 @@ class GetAppCommand(Command):
     def _validate(self) -> None:
         import shutil
 
+        from pilot.core.app_validator import Validator
         from pilot.exceptions import AppValidationError
 
         try:

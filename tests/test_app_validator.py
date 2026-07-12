@@ -233,6 +233,22 @@ def test_validate_ignores_broken_internal_import_guarded_by_import_error(tmp_pat
     Validator(app).validate()
 
 
+def test_validate_fails_for_broken_import_in_except_handler(tmp_path: Path) -> None:
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n',
+        {
+            "myapp/hooks.py": "app_name = 'myapp'\n",
+            "myapp/utils.py": (
+                "try:\n    import ujson as json\nexcept ImportError:\n    from myapp.missing_module import json\n"
+            ),
+        },
+    )
+    with pytest.raises(AppValidationError, match="broken internal imports"):
+        Validator(app).validate()
+
+
 def test_validate_fails_for_undeclared_import_outside_try_block(tmp_path: Path) -> None:
     app = _make_app(
         tmp_path,

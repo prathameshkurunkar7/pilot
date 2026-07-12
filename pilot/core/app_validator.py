@@ -121,19 +121,19 @@ class Validator:
 
     @staticmethod
     def _optional_import_ids(tree: ast.AST) -> set[int]:
-        """Node ids of imports inside a `try: ... except ImportError: ...` block.
+        """Node ids of imports inside the `try:` body of a `try/except ImportError` block.
 
         Apps commonly guard an optional dependency this way; such an import
         isn't a hard requirement, so it shouldn't be flagged as broken or
-        undeclared.
+        undeclared. The except handler's body is left unguarded — a broken
+        import shipped there is still a real bug.
         """
         guarded: set[int] = set()
         for node in ast.walk(tree):
             if not isinstance(node, ast.Try) or not Validator._catches_import_error(node):
                 continue
-            for block in (node.body, *(handler.body for handler in node.handlers)):
-                for stmt in block:
-                    guarded.update(id(n) for n in ast.walk(stmt))
+            for stmt in node.body:
+                guarded.update(id(n) for n in ast.walk(stmt))
         return guarded
 
     @staticmethod
