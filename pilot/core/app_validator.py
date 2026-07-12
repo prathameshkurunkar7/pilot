@@ -122,7 +122,10 @@ class Validator:
         )
         if result.returncode != 0:
             return {}
-        return {module: names[0].replace("-", "_") for module, names in json.loads(result.stdout).items()}
+        try:
+            return {module: names[0].replace("-", "_") for module, names in json.loads(result.stdout).items()}
+        except (json.JSONDecodeError, IndexError):
+            return {}
 
     @staticmethod
     def _imported_modules(path: Path) -> list[str]:
