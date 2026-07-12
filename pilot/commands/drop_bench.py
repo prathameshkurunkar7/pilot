@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
@@ -38,6 +40,10 @@ class DropBenchCommand(Command):
             self._teardown_postgres()
         else:
             self._teardown_mariadb()
+        # Best-effort: benches created before ZFS/volume support was removed may
+        # still have their directory bind-mounted from an old dataset. No-op for
+        # any bench that was never volume-backed.
+        self._unmount_legacy_bind_mount(self.bench.path)
         self._delete_bench_dir()
         print(f"\nBench '{name}' dropped.")
 
@@ -47,7 +53,10 @@ class DropBenchCommand(Command):
         dedicated = bool(self.bench.config.mariadb.instance)
         full_db_teardown = dedicated and not self._mariadb_shared_with_other_bench()
         if full_db_teardown:
+            from pilot.managers.mariadb_manager import MariaDBManager
+
             self._stop_mariadb()
+            self._unmount_legacy_bind_mount(Path(MariaDBManager(self.bench.config.mariadb).data_dir()))
             self._remove_mariadb_instance()
         elif dedicated:
             print("Keeping MariaDB instance — another bench shares it.")
@@ -198,3 +207,47 @@ class DropBenchCommand(Command):
         print(f"Deleting {path}...")
         sys.stdout.flush()
         shutil.rmtree(path, ignore_errors=True)
+
+    @staticmethod
+    def _unmount_legacy_bind_mount(target: Path, fstab_path: Path = Path("/etc/fstab")) -> None:
+        """Unmount `target` and drop its fstab entry if present.
+
+        Benches created before ZFS/volume support was removed may still have
+        their directory (or a dedicated MariaDB datadir) bind-mounted from an
+        old dataset, with a matching fstab line so it survived reboots. This
+        doesn't depend on ZFS or any volume-management code being present —
+        it only looks at whether `target` is currently a mountpoint — so it's
+        a no-op, and safe to call unconditionally, for any bench that was
+        never volume-backed.
+        """
+        try:
+            is_mounted = target.is_mount()
+        except OSError:
+            is_mounted = False
+        if is_mounted:
+            print(f"Unmounting legacy bind mount at {target}...")
+            sys.stdout.flush()
+            try:
+                subprocess.run(["sudo", "umount", "-l", str(target)], check=False)
+            except Exception as exc:
+                print(f"  (unmount {target} skipped: {exc})")
+
+        try:
+            lines = fstab_path.read_text().splitlines()
+        except OSError:
+            return
+        kept = [
+            line for line in lines
+            if not (
+                len(line.split()) >= 2
+                and not line.lstrip().startswith("#")
+                and line.split()[1] == str(target)
+            )
+        ]
+        if len(kept) == len(lines):
+            return
+        content = "\n".join(kept) + "\n"
+        try:
+            subprocess.run(["sudo", "tee", str(fstab_path)], input=content.encode(), capture_output=True, check=True)
+        except Exception as exc:
+            print(f"  (fstab cleanup for {target} skipped: {exc})")

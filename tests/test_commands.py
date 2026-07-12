@@ -1033,6 +1033,47 @@ def _drop_config(name: str, instance: str = "") -> BenchConfig:
     )
 
 
+def test_unmount_legacy_bind_mount_noop_when_not_mounted(tmp_path: Path) -> None:
+    """A bench that was never volume-backed has nothing mounted at its dir, so
+    this must be a silent no-op — no sudo calls, no fstab rewrite."""
+    from pilot.commands.drop_bench import DropBenchCommand
+
+    target = tmp_path / "not-a-mountpoint"
+    target.mkdir()
+    with patch("pilot.commands.drop_bench.subprocess.run") as run:
+        DropBenchCommand._unmount_legacy_bind_mount(target)
+    run.assert_not_called()
+
+
+def test_unmount_legacy_bind_mount_unmounts_and_cleans_fstab(tmp_path: Path) -> None:
+    """A leftover ZFS-era bind mount must be unmounted and its fstab line
+    dropped, without depending on any ZFS/volume code being present."""
+    from pilot.commands.drop_bench import DropBenchCommand
+
+    target = tmp_path / "old-bench"
+    target.mkdir()
+    fstab = tmp_path / "fstab"
+    fstab.write_text(
+        "UUID=abc / ext4 defaults 0 1\n"
+        f"/bench-pool/old-bench {target} none bind,nofail 0 0\n"
+    )
+
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        if args[:2] == ["sudo", "tee"]:
+            fstab.write_bytes(kwargs["input"])
+        return MagicMock(returncode=0)
+
+    with patch("pilot.commands.drop_bench.subprocess.run", side_effect=fake_run), \
+         patch.object(Path, "is_mount", return_value=True):
+        DropBenchCommand._unmount_legacy_bind_mount(target, fstab_path=fstab)
+
+    assert ["sudo", "umount", "-l", str(target)] in calls
+    assert fstab.read_text() == "UUID=abc / ext4 defaults 0 1\n"
+
+
 def test_drop_bench_refuses_when_sites_exist(tmp_path: Path) -> None:
     from pilot.commands.drop_bench import DropBenchCommand
 
