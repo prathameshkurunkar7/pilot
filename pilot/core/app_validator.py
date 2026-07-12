@@ -26,6 +26,7 @@ class Validator:
 
     def validate(self) -> None:
         self.validate_repo_structure()
+        self.validate_syntax()
         self.validate_internal_imports()
         self.validate_external_imports()
 
@@ -36,6 +37,27 @@ class Validator:
             raise AppValidationError(f"'{self.app.config.name}' has no '{self.app.module_name}' package directory.")
         if not (self.module_path / "hooks.py").exists():
             raise AppValidationError(f"'{self.app.config.name}' is missing {self.app.module_name}/hooks.py.")
+
+    def validate_syntax(self) -> None:
+        broken = [
+            f"{path.relative_to(self.app.path)}: {error}"
+            for path in self._python_files()
+            for error in self._syntax_errors(path)
+        ]
+        if broken:
+            raise AppValidationError(
+                f"'{self.app.config.name}' has Python syntax errors:\n" + "\n".join(f"  {b}" for b in broken)
+            )
+
+    @staticmethod
+    def _syntax_errors(path: Path) -> list[str]:
+        try:
+            ast.parse(path.read_text(), filename=str(path))
+        except SyntaxError as exc:
+            return [f"line {exc.lineno}: {exc.msg}"]
+        except OSError:
+            return []
+        return []
 
     def validate_internal_imports(self) -> None:
         broken = [

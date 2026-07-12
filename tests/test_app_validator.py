@@ -75,6 +75,20 @@ def test_validate_repo_structure_fails_without_hooks(tmp_path: Path) -> None:
         Validator(app).validate()
 
 
+def test_validate_syntax_fails_on_broken_python_file(tmp_path: Path) -> None:
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n',
+        {
+            "myapp/hooks.py": "app_name = 'myapp'\n",
+            "myapp/utils.py": "def broken(:\n    pass\n",
+        },
+    )
+    with pytest.raises(AppValidationError, match="syntax errors"):
+        Validator(app).validate()
+
+
 def test_validate_internal_imports_fails_on_broken_reference(tmp_path: Path) -> None:
     app = _make_app(
         tmp_path,
