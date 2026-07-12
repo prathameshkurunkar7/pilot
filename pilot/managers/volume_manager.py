@@ -10,7 +10,8 @@ from pathlib import Path
 
 from pilot.config.volume_config import VolumeConfig
 from pilot.exceptions import CommandError, VolumeError
-from pilot.platform import _privileged, get_package_manager, is_alpine, service_enable_command, which as platform_which
+from pilot.package_managers import get_package_manager
+from pilot.platform import _privileged, is_alpine, service_enable_command, which as platform_which
 from pilot.utils import run_command
 
 
