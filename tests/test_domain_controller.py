@@ -72,18 +72,35 @@ def _calls(log: Path) -> list[str]:
 
 def test_generate_dns_records_returns_provider_output(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
-    routes = DomainRouteProvider(_make_bench(tmp_path))
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite")
 
-    records = routes.generate_dns_records("mysite", "app.example.com")
+    records = DomainRouteProvider(bench).generate_dns_records("mysite", "app.example.com")
 
     assert records == {"cname": [{"type": "CNAME", "host": "app.example.com", "value": "edge.example.com"}], "a": []}
 
 
 def test_generate_dns_records_passes_site_then_domain(tmp_path: Path, monkeypatch) -> None:
     log = _install_provider(tmp_path, monkeypatch)
-    DomainRouteProvider(_make_bench(tmp_path)).generate_dns_records("mysite", "app.example.com")
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite")
+
+    DomainRouteProvider(bench).generate_dns_records("mysite", "app.example.com")
 
     assert _calls(log) == ["generate-dns-records mysite app.example.com"]
+
+
+def test_generate_dns_records_validates_locally_before_provider(tmp_path: Path, monkeypatch) -> None:
+    """The local basic checks run even with a provider installed: a domain already
+    taken by a sibling site is rejected here, before the provider is ever called."""
+    log = _install_provider(tmp_path, monkeypatch)
+    bench = _make_bench(tmp_path)
+    _write_site(bench, "mysite")
+    _write_site(bench, "other", {"domains": ["app.example.com"]})
+
+    with pytest.raises(BenchError, match="already used by site 'other'"):
+        DomainRouteProvider(bench).generate_dns_records("mysite", "app.example.com")
+    assert not log.exists()
 
 
 def test_register_passes_domain_only_and_persists(tmp_path: Path, monkeypatch) -> None:
