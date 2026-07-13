@@ -157,17 +157,18 @@ def checkout_status(name: str):
     return _proxy(lambda: _central().checkout_status(reference))
 
 
-def _usage_meters(plan: dict, path) -> list[dict]:
+def _usage_meters(plan: dict, bench_root) -> list[dict]:
     """Live server usage (this bench's VM) labelled with the plan's specs — the
-    percentages come from the host, the labels from Central's plan. Disk is measured
-    on the bench's own mount (which may be a separate volume), not root."""
-    import psutil
+    percentages come from the monitoring daemon's latest system sample, the labels
+    from Central's plan. Zeroed until the daemon has written a sample."""
+    from admin.backend.readers.monitor_reader import latest_system_metrics
 
     specs = plan.get("specs") or {}
-    memory = psutil.virtual_memory()
-    disk = psutil.disk_usage(str(path))
+    metrics = latest_system_metrics(Path(bench_root))
+    memory = metrics.get("memory") or {}
+    disk = (metrics.get("storage") or {}).get("disk") or {}
     return [
-        {"name": "CPU", "percent": round(psutil.cpu_percent()), "detail": specs.get("cpu")},
-        {"name": "Memory", "percent": round(memory.percent), "detail": specs.get("memory")},
-        {"name": "Storage", "percent": round(disk.percent), "detail": specs.get("storage")},
+        {"name": "CPU", "percent": round(metrics.get("cpu_percent") or 0), "detail": specs.get("cpu")},
+        {"name": "Memory", "percent": round(memory.get("percent") or 0), "detail": specs.get("memory")},
+        {"name": "Storage", "percent": round(disk.get("percent") or 0), "detail": specs.get("storage")},
     ]
