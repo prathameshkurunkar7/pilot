@@ -31,8 +31,8 @@ def verify_jwks_token(token: str, jwks_url: str, audience: str = "") -> dict | N
         signing_key = PyJWKClient.match_kid(_client(jwks_url).get_signing_keys(), kid)
         if signing_key is None:
             return None
-        return jwt.decode(token, signing_key.key, algorithms=_ALGORITHMS,
-                          audience=audience or None, options={"verify_aud": bool(audience)})
+        return jwt.decode(token, signing_key.key, algorithms=_ALGORITHMS, audience=audience or None,
+                          options={"require": ["exp"], "verify_aud": bool(audience)})
     except jwt.PyJWTError:  # PyJWKClientError (fetch failures) subclasses this too
         return None
 

@@ -62,6 +62,13 @@ def test_expired_token_rejected() -> None:
     assert verify_jwks_token(_mint(exp=int(time.time()) - 10), JWKS_URL) is None
 
 
+def test_token_without_exp_rejected() -> None:
+    # A non-expiring token is refused outright (PyJWT does not require exp by
+    # default); this also keeps the login endpoint from reading a missing exp.
+    forever = jwt.encode({"sub": "admin", "scope": "bench", "jti": "x"}, _RSA, algorithm="RS256", headers={"kid": "rsa-key"})
+    assert verify_jwks_token(forever, JWKS_URL) is None
+
+
 def test_tampered_signature_rejected() -> None:
     assert verify_jwks_token(_mint()[:-4] + "AAAA", JWKS_URL) is None
 
@@ -185,6 +192,12 @@ def test_jwks_sid_login_is_single_use(tmp_path: Path) -> None:
     sid = _mint(jti="login-2")
     assert client.post("/api/login", json={"sid": sid}).status_code == 200
     assert client.post("/api/login", json={"sid": sid}).status_code == 401
+
+
+def test_jwks_sid_login_without_exp_does_not_crash(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    forever = jwt.encode({"sub": "admin", "scope": "bench", "jti": "noexp"}, _RSA, algorithm="RS256", headers={"kid": "rsa-key"})
+    assert client.post("/api/login", json={"sid": forever}).status_code == 401
 
 
 def test_jwks_site_scoped_token_cannot_bootstrap_session(tmp_path: Path) -> None:
