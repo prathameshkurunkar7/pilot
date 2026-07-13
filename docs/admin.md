@@ -566,7 +566,7 @@ Scope claims work exactly as for local tokens: a `scope: "site"` token is confin
 
 ### JWKS endpoint format
 
-`admin.jwks_url` must return a JSON document with a `keys` array of **RSA** public keys (JWK format, [RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517) / [RFC 7518 §6.3](https://datatracker.ietf.org/doc/html/rfc7518#section-6.3)):
+`admin.jwks_url` must return a standard JSON Web Key Set ([RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517)): a document with a `keys` array of public keys. RSA and EC keys are both accepted — most issuers publish one of these:
 
 ```json
 {
@@ -574,35 +574,43 @@ Scope claims work exactly as for local tokens: a `scope: "site"` token is confin
     {
       "kty": "RSA",
       "use": "sig",
-      "kid": "2026-07-key-1",
+      "kid": "2026-07-rsa-1",
       "alg": "RS256",
       "n": "0vx7ag…<base64url modulus>…Q7yRw",
       "e": "AQAB"
+    },
+    {
+      "kty": "EC",
+      "use": "sig",
+      "kid": "2026-07-ec-1",
+      "alg": "ES256",
+      "crv": "P-256",
+      "x": "f83OJ3D2…<base64url>",
+      "y": "x_FEzRu9…<base64url>"
     }
   ]
 }
 ```
 
-| Field | Required | Notes |
-|-------|----------|-------|
-| `kty` | yes | Must be `"RSA"`. Non-RSA keys (e.g. `"EC"`) are ignored. |
-| `n` | yes | Modulus, base64url (unpadded). |
-| `e` | yes | Public exponent, base64url — almost always `"AQAB"` (65537). |
-| `kid` | recommended | Key ID. Match it in the JWT header so the right key is picked on rotation. If omitted, keys are tried in order. |
-| `alg` / `use` | optional | Advisory; the token header's `alg` is what's enforced. |
+| Key type | Required fields | Notes |
+|----------|-----------------|-------|
+| RSA (`kty: "RSA"`) | `n`, `e` | Modulus and exponent, base64url. `e` is almost always `"AQAB"` (65537). |
+| EC (`kty: "EC"`) | `crv`, `x`, `y` | Curve (`P-256`/`P-384`/`P-521`) and the public point coordinates, base64url. |
 
-The signed JWT itself must be RSA-signed and carry an expiry:
+`kid` is recommended on every key: match it in the JWT header so the right key is selected across rotations. `alg`/`use` are advisory — the token header's `alg` is what's enforced.
 
-- **Header:** `{"alg": "RS256", "typ": "JWT", "kid": "2026-07-key-1"}` — `alg` must be `RS256`, `RS384`, or `RS512` (EC/`ES256` and `none` are rejected). `kid` should match a key above.
+The signed JWT must use an **asymmetric** algorithm and carry an expiry:
+
+- **Header:** e.g. `{"alg": "RS256", "typ": "JWT", "kid": "2026-07-rsa-1"}`. Accepted `alg` values: `RS256/384/512`, `PS256/384/512`, `ES256/384/512`, `EdDSA`. Symmetric `HS*` and `none` are rejected, so a published public key can never be replayed as an HMAC secret.
 - **Payload:** a numeric `exp` (Unix seconds) is **required** and enforced. Optional claims: `scope` (`"bench"` default, or `"site"` with a `site` claim to confine it) and `jti` (if present, the `?sid=` login treats the token as single-use).
 
 Only the signature and `exp` are checked — issuer/audience (`iss`/`aud`) are not validated in this phase.
 
 ### Operational notes
 
-- **Keys only, no EC.** Verification is pure-stdlib RSA PKCS#1 v1.5, so the endpoint must publish RSA keys. There is no external crypto dependency.
-- **Caching & rotation.** Fetched keys are cached for 5 minutes. On a `kid` miss the bench refetches once, so publishing a new key and signing with it works without waiting for the cache to expire — keep the old key in the document until its last token expires.
-- **Fails closed.** An unreachable endpoint, malformed JWKS, unknown `kid`, wrong algorithm, bad signature, or expired token all result in rejection (HTTP 401/403), never a fallback to unauthenticated access.
+- **Runs in the admin venv.** Verification uses [PyJWT](https://pyjwt.readthedocs.io/) with the `cryptography` backend (declared in the `admin` extra), which is why RSA, EC, and EdDSA are all supported. The `pilot` core stays dependency-free — this code lives in `admin/backend/`.
+- **Caching & rotation.** The key set is cached (5-minute lifespan) and refetched on a `kid` miss, so publishing a new key and signing with it works without waiting for the cache to expire — keep the old key in the document until its last token expires.
+- **Fails closed.** An unreachable endpoint, malformed JWKS, unknown `kid`, disallowed algorithm, bad signature, or expired token all result in rejection (HTTP 401/403), never a fallback to unauthenticated access.
 - **HTTPS.** Serve the JWKS endpoint over HTTPS — its integrity is the root of trust for every remote login.
 
 ---
