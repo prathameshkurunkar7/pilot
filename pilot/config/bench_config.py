@@ -214,8 +214,11 @@ class BenchConfig:
             enabled=data.get("enabled", False),
             password=data.get("password", ""),
             jwt_secret=data.get("jwt_secret", ""),
+            jwks_url=data.get("jwks_url", ""),
+            jwks_audience=data.get("jwks_audience", ""),
             domain=data.get("domain", ""),
             tls=data.get("tls", False),
+            allow_bench_management=data.get("allow_bench_management", True),
         )
 
     @staticmethod

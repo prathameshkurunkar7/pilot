@@ -114,6 +114,41 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
     assert data["admin"]["port"] == 7001
 
 
+def test_new_command_inherits_sibling_jwks_url_and_audience(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The remote JWKS issuer is server-wide, so a new bench carries both the
+    URL and the audience forward from a sibling that already trusts one."""
+    from pilot.commands.new import NewCommand
+    from pilot.config.toml_store import BenchTomlStore
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    benches_dir = tmp_path / "benches"
+    NewCommand(benches_dir / "first", "first").run()
+    store = BenchTomlStore.for_bench(benches_dir / "first")
+    data = store.read_raw()
+    admin = data.setdefault("admin", {})
+    admin["jwks_url"] = "https://issuer.example.com/jwks.json"
+    admin["jwks_audience"] = "bench-fleet"
+    store.write_raw(data)
+
+    NewCommand(benches_dir / "second", "second").run()
+    with open(benches_dir / "second" / "bench.toml", "rb") as f:
+        inherited = tomllib.load(f)["admin"]
+    assert inherited["jwks_url"] == "https://issuer.example.com/jwks.json"
+    assert inherited["jwks_audience"] == "bench-fleet"
+
+
+def test_new_command_first_bench_has_no_jwks_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    target = tmp_path / "benches" / "only"
+    NewCommand(target, "only").run()
+    with open(target / "bench.toml", "rb") as f:
+        assert "jwks_url" not in tomllib.load(f).get("admin", {})
+
+
 def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A `--database postgres` bench records db_type and generates a postgres
     password (there's no dedicated cluster/instance anymore — one shared

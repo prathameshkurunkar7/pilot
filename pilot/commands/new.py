@@ -101,6 +101,27 @@ class NewCommand(Command):
             settings["letsencrypt_email"] = sibling_email
         # Every bench for this OS user shares the same MariaDB/PostgreSQL server
         # (see MariaDBManager/PostgresManager) — no per-bench instance to set up.
+        # The remote JWKS issuer is server-wide too: carry its URL and audience
+        # forward so the control plane can authenticate to a freshly created
+        # bench right away.
+        sibling_admin = self._sibling_jwks_admin()
+        if sibling_admin:
+            settings["admin_jwks_url"] = sibling_admin.jwks_url
+            if sibling_admin.jwks_audience:
+                settings["admin_jwks_audience"] = sibling_admin.jwks_audience
+        # MariaDB benches get their own instance with an isolated socket/datadir;
+        # mariadb.port is offset automatically via _PORT_FIELDS. Linux uses a
+        # per-bench instance (systemd mariadb@<name>, or a generated OpenRC
+        # mariadb-<name> on Alpine). macOS (Homebrew) and PostgreSQL benches have
+        # no per-instance mechanism, so they stay on the shared server.
+        if self.db_type == "mariadb" and is_linux():
+            settings.update(
+                {
+                    "mariadb_instance": self.name,
+                    "mariadb_socket_path": f"/run/mysqld/mysqld-{self.name}.sock",
+                    "mariadb_data_dir": f"/var/lib/mysql-{self.name}",
+                }
+            )
         BenchTomlStore(bench_toml).write_flat(self.name, settings, port_offset=offset)
 
         admin_port = default_ports()["admin.port"] + offset
@@ -146,6 +167,13 @@ class NewCommand(Command):
             if config.db_type == "postgres" and config.postgres.root_password:
                 return config.postgres.root_password
         return ""
+    def _sibling_jwks_admin(self):
+        """The admin config of the first sibling that trusts a remote JWKS
+        issuer, so a new bench inherits the same jwks_url and audience."""
+        for _, config in iter_sibling_benches(self.target_directory):
+            if getattr(config.admin, "jwks_url", ""):
+                return config.admin
+        return None
 
     def _sibling_admin_tls(self) -> bool:
         """Carry forward the server-wide TLS choice from a sibling bench; default
