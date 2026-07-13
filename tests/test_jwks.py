@@ -16,6 +16,7 @@ from admin.backend.jwks import verify_jwks_token
 from pilot.commands.generate_session import issue_token
 
 JWKS_URL = "https://issuer.example.com/.well-known/jwks.json"
+AUDIENCE = "bench-a"  # every bench binds remote tokens to its own audience
 
 # One RSA and one EC keypair the "remote issuer" signs with; the public halves
 # are published in the stubbed JWKS document below.
@@ -32,7 +33,9 @@ def _jwks_document() -> dict:
 
 
 def _mint(key=_RSA, alg: str = "RS256", kid: str = "rsa-key", **claims) -> str:
-    payload = {"sub": "admin", "scope": "bench", "exp": int(time.time()) + 300, **claims}
+    payload = {"sub": "admin", "scope": "bench", "aud": AUDIENCE, "exp": int(time.time()) + 300, **claims}
+    if payload.get("aud") is None:  # _mint(aud=None) omits the claim entirely
+        payload.pop("aud")
     return jwt.encode(payload, key, algorithm=alg, headers={"kid": kid})
 
 
@@ -48,43 +51,43 @@ def _stub_fetch(monkeypatch):
 
 
 def test_rsa_token_verifies() -> None:
-    claims = verify_jwks_token(_mint(scope="site", site="a.com"), JWKS_URL)
+    claims = verify_jwks_token(_mint(scope="site", site="a.com"), JWKS_URL, AUDIENCE)
     assert claims and claims["site"] == "a.com"
 
 
 def test_ec_token_verifies() -> None:
     # The reason for switching to PyJWT: EC (ES256) keys work too.
-    claims = verify_jwks_token(_mint(_EC, alg="ES256", kid="ec-key"), JWKS_URL)
+    claims = verify_jwks_token(_mint(_EC, alg="ES256", kid="ec-key"), JWKS_URL, AUDIENCE)
     assert claims and claims["sub"] == "admin"
 
 
 def test_expired_token_rejected() -> None:
-    assert verify_jwks_token(_mint(exp=int(time.time()) - 10), JWKS_URL) is None
+    assert verify_jwks_token(_mint(exp=int(time.time()) - 10), JWKS_URL, AUDIENCE) is None
 
 
 def test_token_without_exp_rejected() -> None:
     # A non-expiring token is refused outright (PyJWT does not require exp by
     # default); this also keeps the login endpoint from reading a missing exp.
-    forever = jwt.encode({"sub": "admin", "scope": "bench", "jti": "x"}, _RSA, algorithm="RS256", headers={"kid": "rsa-key"})
-    assert verify_jwks_token(forever, JWKS_URL) is None
+    forever = jwt.encode({"sub": "admin", "scope": "bench", "jti": "x", "aud": AUDIENCE}, _RSA, algorithm="RS256", headers={"kid": "rsa-key"})
+    assert verify_jwks_token(forever, JWKS_URL, AUDIENCE) is None
 
 
 def test_tampered_signature_rejected() -> None:
-    assert verify_jwks_token(_mint()[:-4] + "AAAA", JWKS_URL) is None
+    assert verify_jwks_token(_mint()[:-4] + "AAAA", JWKS_URL, AUDIENCE) is None
 
 
 def test_unknown_kid_rejected() -> None:
-    assert verify_jwks_token(_mint(kid="rotated-away"), JWKS_URL) is None
+    assert verify_jwks_token(_mint(kid="rotated-away"), JWKS_URL, AUDIENCE) is None
 
 
 def test_symmetric_algorithm_not_accepted() -> None:
     # A published public key must never be replayable as an HMAC secret.
-    forged = jwt.encode({"sub": "admin", "exp": int(time.time()) + 300}, "x" * 32, algorithm="HS256", headers={"kid": "rsa-key"})
-    assert verify_jwks_token(forged, JWKS_URL) is None
+    forged = jwt.encode({"sub": "admin", "aud": AUDIENCE, "exp": int(time.time()) + 300}, "x" * 32, algorithm="HS256", headers={"kid": "rsa-key"})
+    assert verify_jwks_token(forged, JWKS_URL, AUDIENCE) is None
 
 
 def test_no_jwks_url_rejected() -> None:
-    assert verify_jwks_token(_mint(), "") is None
+    assert verify_jwks_token(_mint(), "", AUDIENCE) is None
 
 
 # ── audience binding ──────────────────────────────────────────────────────────
@@ -99,11 +102,13 @@ def test_audience_rejected_when_mismatched() -> None:
 
 
 def test_audience_required_but_absent_rejected() -> None:
-    assert verify_jwks_token(_mint(), JWKS_URL, "bench-a") is None
+    assert verify_jwks_token(_mint(aud=None), JWKS_URL, "bench-a") is None
 
 
-def test_no_audience_config_ignores_aud_claim() -> None:
-    assert verify_jwks_token(_mint(aud="anything"), JWKS_URL)
+def test_no_audience_config_rejects_remote_token() -> None:
+    # Audience is mandatory for JWKS: with no configured audience a remote token
+    # is not bound to this bench, so verification fails closed.
+    assert verify_jwks_token(_mint(aud="anything"), JWKS_URL, "") is None
 
 
 # ── unified session decoding ────────────────────────────────────────────────
@@ -113,7 +118,7 @@ class _Config:
     class admin:
         jwt_secret = "local-secret"
         jwks_url = JWKS_URL
-        jwks_audience = ""
+        jwks_audience = AUDIENCE
 
 
 def test_session_decode_accepts_local_secret() -> None:
@@ -153,6 +158,7 @@ def _client(tmp_path: Path):
     config = BenchConfig.from_file(toml_path)
     config.admin.jwt_secret = "local-secret"
     config.admin.jwks_url = JWKS_URL
+    config.admin.jwks_audience = AUDIENCE
     toml_path.write_text(bench_config_to_toml(config))
     (bench_root / "env" / "bin").mkdir(parents=True)
     (bench_root / "env" / "bin" / "python").touch()
@@ -196,7 +202,7 @@ def test_jwks_sid_login_is_single_use(tmp_path: Path) -> None:
 
 def test_jwks_sid_login_without_exp_does_not_crash(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    forever = jwt.encode({"sub": "admin", "scope": "bench", "jti": "noexp"}, _RSA, algorithm="RS256", headers={"kid": "rsa-key"})
+    forever = jwt.encode({"sub": "admin", "scope": "bench", "jti": "noexp", "aud": AUDIENCE}, _RSA, algorithm="RS256", headers={"kid": "rsa-key"})
     assert client.post("/api/login", json={"sid": forever}).status_code == 401
 
 

@@ -17,11 +17,12 @@ _ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "P
 _clients: dict[str, PyJWKClient] = {}
 
 
-def verify_jwks_token(token: str, jwks_url: str, audience: str = "") -> dict | None:
-    """Return the token's claims if a key from the JWKS endpoint verifies it and
-    it has not expired, else None. Fails closed on any error. When ``audience``
-    is set, the token's ``aud`` claim must match it."""
-    if not token or not jwks_url:
+def verify_jwks_token(token: str, jwks_url: str, audience: str) -> dict | None:
+    """Return the token's claims if a JWKS key verifies it, it has not expired,
+    and its ``aud`` matches ``audience``; else None. Fails closed. ``audience``
+    is mandatory — it binds a remote token to this bench, so an empty one
+    rejects every remote token."""
+    if not token or not jwks_url or not audience:
         return None
     try:
         kid = jwt.get_unverified_header(token).get("kid")
@@ -31,8 +32,8 @@ def verify_jwks_token(token: str, jwks_url: str, audience: str = "") -> dict | N
         signing_key = PyJWKClient.match_kid(_client(jwks_url).get_signing_keys(), kid)
         if signing_key is None:
             return None
-        return jwt.decode(token, signing_key.key, algorithms=_ALGORITHMS, audience=audience or None,
-                          options={"require": ["exp"], "verify_aud": bool(audience)})
+        return jwt.decode(token, signing_key.key, algorithms=_ALGORITHMS, audience=audience,
+                          options={"require": ["exp", "aud"], "verify_aud": True})
     except jwt.PyJWTError:  # PyJWKClientError (fetch failures) subclasses this too
         return None
 

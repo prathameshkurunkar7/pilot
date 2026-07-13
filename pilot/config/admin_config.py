@@ -9,7 +9,7 @@ class AdminConfig:
     password: str = ""
     jwt_secret: str = ""
     jwks_url: str = ""  # trust session tokens minted by a remote issuer publishing keys here
-    jwks_audience: str = ""  # when set, remote tokens must carry a matching `aud` claim (per-bench binding)
+    jwks_audience: str = ""  # REQUIRED with jwks_url: remote tokens must carry a matching `aud` (per-bench binding); if empty, all remote tokens are rejected
     domain: str = ""
     tls: bool = False
     allow_bench_management: bool = True
