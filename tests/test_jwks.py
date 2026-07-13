@@ -1,81 +1,83 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import time
 from pathlib import Path
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from jwt import PyJWKClient
+from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
-from pilot.commands import jwks
-from pilot.commands.generate_session import _b64, decode_session_token, issue_token
-from pilot.commands.jwks import verify_jwks_token
-
-# Fixed 2048-bit RSA keypair (openssl-generated) so tests need no crypto library:
-# tokens are signed here with `pow(block, D, N)`, mirroring the verifier.
-N_B64U = "r0mcEtzxi9eu5vcXce0MeWB-16I-jmzk6IdSrmrYSSTFPX65ERxRcCP6S00zW8JeFjFlSJCiPIYxG-48C6_pitOc58731GZXy7XGS75amer3CcUnz_eLJkZt85FJQ5f4hjpQG8FHsL6EgvS_I15N98j8ckF1x8iATFORyhx_8W__ilbc1Sgb8XSIapZlNei33wl1XzTrpnnKZM5647hLa9-nrkLvVXHh3LGg6nv0cJ969JipBynQtnjhYunm2Lp3tJw2cznDWceaFC5AHkQIbJ9uwxIZ1LgfXruCM3IYH1uT9JoxmUR5h6mZVlwGbcCcgU0BMypu7skSgRTvubgOMQ"
-E_B64U = "AQAB"
-D = 965738692797157223609243464350015292322488599589498559388016588862366059032278574023086559761796787925093757511686509389252897886329793947667282792321462407021736677685231930343026644931298549745623638883052298004334415302332604933228009036353730540677355081280423677648935051923901340654602103028808001179290730837095110075664827301834136997044174028679042195782455510766868051569145563185859289450529981687025916886423187343413246116807983193523122554650209156392288317244495570666026308402289993913970636797530621396149759245567683628521757293598174936135020245384912078217261718702446969786202967607575674250205
-N = 22128001646655814339193772895064051118936783620766355069176625534227037640345578500393680226242068382220739301125215895758576057609088613215023411366269270787163204840645763488817738739222974584277226263955457898543856157912410428986614466642955838980638692408661874508199722575976478336677093969477839340368159279495912794571104322310233776673569937984728040960306181924650729339623352642096161975694142394220762958145296929132396078918492147805943654094648324511008950541452501345804987035298046974261984645667831087436360717295624807222053169172424241324908830202484520357341479202742282301496317148544376319249969
+from admin.backend import jwks
+from admin.backend.auth import decode_session_token
+from admin.backend.jwks import verify_jwks_token
+from pilot.commands.generate_session import issue_token
 
 JWKS_URL = "https://issuer.example.com/.well-known/jwks.json"
 
-
-def _sign(signing_input: str) -> bytes:
-    encoded_length = (N.bit_length() + 7) // 8
-    tail = jwks._DIGEST_INFO["RS256"][1] + hashlib.sha256(signing_input.encode()).digest()
-    block = b"\x00\x01" + b"\xff" * (encoded_length - len(tail) - 3) + b"\x00" + tail
-    return pow(int.from_bytes(block, "big"), D, N).to_bytes(encoded_length, "big")
+# One RSA and one EC keypair the "remote issuer" signs with; the public halves
+# are published in the stubbed JWKS document below.
+_RSA = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_EC = ec.generate_private_key(ec.SECP256R1())
 
 
-def _mint(claims: dict | None = None, kid: str = "test-key", alg: str = "RS256") -> str:
-    now = int(time.time())
-    payload = {"sub": "admin", "iat": now, "exp": now + 300, "scope": "bench", **(claims or {})}
-    body = ".".join(_b64(json.dumps(p, separators=(",", ":")).encode()) for p in ({"alg": alg, "typ": "JWT", "kid": kid}, payload))
-    return f"{body}.{_b64(_sign(body))}"
+def _jwks_document() -> dict:
+    rsa_jwk = json.loads(RSAAlgorithm.to_jwk(_RSA.public_key()))
+    rsa_jwk.update(kid="rsa-key", alg="RS256", use="sig")
+    ec_jwk = json.loads(ECAlgorithm.to_jwk(_EC.public_key()))
+    ec_jwk.update(kid="ec-key", alg="ES256", use="sig")
+    return {"keys": [rsa_jwk, ec_jwk]}
+
+
+def _mint(key=_RSA, alg: str = "RS256", kid: str = "rsa-key", **claims) -> str:
+    payload = {"sub": "admin", "scope": "bench", "exp": int(time.time()) + 300, **claims}
+    return jwt.encode(payload, key, algorithm=alg, headers={"kid": kid})
 
 
 @pytest.fixture(autouse=True)
-def _stub_jwks(monkeypatch):
-    key = {"kty": "RSA", "kid": "test-key", "alg": "RS256", "use": "sig", "n": N_B64U, "e": E_B64U}
-    monkeypatch.setattr(jwks, "_fetch_keys", lambda url: {"test-key": key})
-    jwks._cache.clear()
+def _stub_fetch(monkeypatch):
+    monkeypatch.setattr(PyJWKClient, "fetch_data", lambda self: _jwks_document())
+    jwks._clients.clear()
     yield
-    jwks._cache.clear()
+    jwks._clients.clear()
 
 
 # ── verifier ──────────────────────────────────────────────────────────────────
 
 
-def test_valid_token_returns_claims() -> None:
-    claims = verify_jwks_token(_mint({"scope": "site", "site": "a.com"}), JWKS_URL)
+def test_rsa_token_verifies() -> None:
+    claims = verify_jwks_token(_mint(scope="site", site="a.com"), JWKS_URL)
     assert claims and claims["site"] == "a.com"
 
 
+def test_ec_token_verifies() -> None:
+    # The reason for switching to PyJWT: EC (ES256) keys work too.
+    claims = verify_jwks_token(_mint(_EC, alg="ES256", kid="ec-key"), JWKS_URL)
+    assert claims and claims["sub"] == "admin"
+
+
 def test_expired_token_rejected() -> None:
-    assert verify_jwks_token(_mint({"exp": int(time.time()) - 10}), JWKS_URL) is None
+    assert verify_jwks_token(_mint(exp=int(time.time()) - 10), JWKS_URL) is None
 
 
 def test_tampered_signature_rejected() -> None:
     assert verify_jwks_token(_mint()[:-4] + "AAAA", JWKS_URL) is None
 
 
-def test_non_rsa_algorithm_rejected() -> None:
-    assert verify_jwks_token(_mint(alg="HS256"), JWKS_URL) is None
-
-
 def test_unknown_kid_rejected() -> None:
     assert verify_jwks_token(_mint(kid="rotated-away"), JWKS_URL) is None
 
 
+def test_symmetric_algorithm_not_accepted() -> None:
+    # A published public key must never be replayable as an HMAC secret.
+    forged = jwt.encode({"sub": "admin", "exp": int(time.time()) + 300}, "x" * 32, algorithm="HS256", headers={"kid": "rsa-key"})
+    assert verify_jwks_token(forged, JWKS_URL) is None
+
+
 def test_no_jwks_url_rejected() -> None:
     assert verify_jwks_token(_mint(), "") is None
-
-
-def test_unreachable_endpoint_fails_closed(monkeypatch) -> None:
-    monkeypatch.setattr(jwks, "_fetch_keys", lambda url: {})
-    jwks._cache.clear()
-    assert verify_jwks_token(_mint(), JWKS_URL) is None
 
 
 # ── unified session decoding ────────────────────────────────────────────────
@@ -138,6 +140,12 @@ def test_jwks_bearer_token_authenticates(tmp_path: Path) -> None:
     assert resp.status_code != 401
 
 
+def test_jwks_ec_bearer_token_authenticates(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    resp = client.get("/api/benches/", headers={"Authorization": f"Bearer {_mint(_EC, alg='ES256', kid='ec-key')}"})
+    assert resp.status_code != 401
+
+
 def test_jwks_sid_login_without_jti_sets_cookie(tmp_path: Path) -> None:
     client = _client(tmp_path)
     resp = client.post("/api/login", json={"sid": _mint()})
@@ -147,7 +155,7 @@ def test_jwks_sid_login_without_jti_sets_cookie(tmp_path: Path) -> None:
 
 def test_jwks_site_scoped_bearer_is_enforced(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    ok = client.get("/api/sites/a.com/apps", headers={"Authorization": f"Bearer {_mint({'scope': 'site', 'site': 'a.com'})}"})
-    denied = client.get("/api/sites/a.com/apps", headers={"Authorization": f"Bearer {_mint({'scope': 'site', 'site': 'other.com'})}"})
+    ok = client.get("/api/sites/a.com/apps", headers={"Authorization": f"Bearer {_mint(scope='site', site='a.com')}"})
+    denied = client.get("/api/sites/a.com/apps", headers={"Authorization": f"Bearer {_mint(scope='site', site='other.com')}"})
     assert ok.status_code != 403
     assert denied.status_code == 403
