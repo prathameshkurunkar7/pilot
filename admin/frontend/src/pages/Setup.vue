@@ -145,7 +145,6 @@ const {
   errorMessage,
   isSubmitting,
   isLinux,
-  isAlpine,
   isProductionHandoff,
   isDone,
   terminal,

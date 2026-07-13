@@ -7,15 +7,7 @@ from pathlib import Path
 
 from pilot.config.mariadb_config import MariaDBConfig
 from pilot.package_managers import get_package_manager
-from pilot.platform import (
-    _privileged,
-    is_alpine,
-    is_macos,
-    service_command,
-    service_enable_command,
-    service_running,
-    which,
-)
+from pilot.platform import is_macos, which
 from pilot.utils import run_command
 
 DEFAULT_VERSION = "11.8"
@@ -25,19 +17,13 @@ DEFAULT_VERSION = "11.8"
 _STATE_DIR = Path.home() / ".local" / "share" / "pilot" / "mariadb"
 _UNIT_NAME = "pilot-mariadb.service"
 
-# Alpine has no systemd --user equivalent, and Alpine containers commonly
-# already run as root, so this one platform keeps using the conventional
-# system-wide service instead of a per-user unit.
-_ALPINE_DATA_DIR = Path("/var/lib/mysql")
-_ALPINE_SERVICE = "mariadb"
-
 
 class MariaDBManager:
     def __init__(self, config: MariaDBConfig) -> None:
         self.config = config
 
     def data_dir(self) -> Path:
-        return _ALPINE_DATA_DIR if is_alpine() else _STATE_DIR / "data"
+        return _STATE_DIR / "data"
 
     def pid_file(self) -> Path:
         return _STATE_DIR / "mysqld.pid"
@@ -45,8 +31,6 @@ class MariaDBManager:
     def socket_path(self) -> str:
         if self.config.socket_path:
             return self.config.socket_path
-        if is_alpine():
-            return "/run/mysqld/mysqld.sock"
         return str(_STATE_DIR / "mysqld.sock")
 
     def is_installed(self) -> bool:
@@ -58,12 +42,6 @@ class MariaDBManager:
             return
         if is_macos():
             get_package_manager().install(self._brew_package())
-            return
-        if is_alpine():
-            # Alpine images commonly run as root already; _privileged() is a
-            # no-op there, so installing here (rather than only via install.sh)
-            # keeps root-in-container images working out of the box.
-            get_package_manager().install("mariadb", "mariadb-client")
             return
         raise RuntimeError(
             "MariaDB is not installed. Re-run install.sh as root to install it "
@@ -83,8 +61,6 @@ class MariaDBManager:
     def is_running(self) -> bool:
         if is_macos():
             return self._brew_service_running()
-        if is_alpine():
-            return service_running(_ALPINE_SERVICE)
         result = subprocess.run(
             self._systemctl("is-active", _UNIT_NAME), env=self._systemctl_env(), capture_output=True
         )
@@ -93,24 +69,18 @@ class MariaDBManager:
     def start(self) -> None:
         if is_macos():
             run_command(["brew", "services", "start", self._brew_package()])
-        elif is_alpine():
-            run_command(service_command("start", _ALPINE_SERVICE))
         else:
             run_command(self._systemctl("start", _UNIT_NAME), env=self._systemctl_env())
 
     def restart(self) -> None:
         if is_macos():
             run_command(["brew", "services", "restart", self._brew_package()])
-        elif is_alpine():
-            run_command(service_command("restart", _ALPINE_SERVICE))
         else:
             run_command(self._systemctl("restart", _UNIT_NAME), env=self._systemctl_env())
 
     def stop(self) -> None:
         if is_macos():
             run_command(["brew", "services", "stop", self._brew_package()])
-        elif is_alpine():
-            run_command(service_command("stop", _ALPINE_SERVICE))
         else:
             run_command(self._systemctl("stop", _UNIT_NAME), env=self._systemctl_env())
 
@@ -129,9 +99,6 @@ class MariaDBManager:
         if is_macos():
             return self._provision_macos()
 
-        if is_alpine():
-            return self._provision_alpine()
-
         if not self.is_provisioned():
             self._initialize_data_dir()
             self._install_unit()
@@ -140,24 +107,6 @@ class MariaDBManager:
         elif not self.is_running():
             run_command(self._systemctl("start", _UNIT_NAME), env=self._systemctl_env())
 
-        self._wait_until_reachable()
-        self.secure_installation()
-
-    def _provision_alpine(self) -> None:
-        if not self.is_provisioned():
-            run_command(
-                _privileged(
-                    [
-                        "mariadb-install-db",
-                        "--user=mysql",
-                        f"--datadir={self.data_dir()}",
-                        "--skip-test-db",
-                    ]
-                )
-            )
-            run_command(service_enable_command(_ALPINE_SERVICE))
-        if not self.is_running():
-            self.start()
         self._wait_until_reachable()
         self.secure_installation()
 
@@ -240,11 +189,11 @@ class MariaDBManager:
 
     def is_unsecured(self) -> bool:
         """True if the admin account has no password and is reachable via
-        unix-socket auth (i.e. a fresh, not-yet-secured install). Off Alpine
-        the bench user owns this server outright, so no privilege escalation
-        is needed to connect as its admin account."""
-        cmd = _privileged(["mariadb"]) if is_alpine() else ["mariadb"]
-        cmd += [
+        unix-socket auth (i.e. a fresh, not-yet-secured install). The bench
+        user owns this server outright, so no privilege escalation is needed
+        to connect as its admin account."""
+        cmd = [
+            "mariadb",
             f"--socket={self.socket_path()}",
             "-u",
             self.config.admin_user,
@@ -296,14 +245,12 @@ class MariaDBManager:
         self._run_sql_as_superuser("\n".join(statements))
 
     def _run_sql_as_superuser(self, sql: str) -> None:
-        # No explicit -u: on Alpine this runs as OS root via _privileged(), so
-        # unix_socket auth resolves it to 'root'. Everywhere else it runs as
-        # the bench user directly — mariadb-install-db (run earlier, also as
-        # the bench user) already granted that exact OS username full
-        # unix_socket-authenticated access, so no privilege escalation or
-        # pre-existing account is required to bootstrap from here.
-        cmd = _privileged(["mariadb"]) if is_alpine() else ["mariadb"]
-        cmd += [f"--socket={self.socket_path()}"]
+        # No explicit -u: this runs as the bench user directly —
+        # mariadb-install-db (run earlier, also as the bench user) already
+        # granted that exact OS username full unix_socket-authenticated
+        # access, so no privilege escalation or pre-existing account is
+        # required to bootstrap from here.
+        cmd = ["mariadb", f"--socket={self.socket_path()}"]
         subprocess.run(cmd, input=sql, text=True, check=True)
 
     @staticmethod

@@ -556,7 +556,7 @@ bench setup production --process-manager supervisord --admin-domain admin.exampl
 ```
 
 **Flags:**
-- `--process-manager systemd|supervisord|openrc` — which process manager to deploy with (defaults to `production.process_manager` in `bench.toml`, or `systemd` — `openrc` on Alpine). Switching between them on a re-run migrates the existing deployment.
+- `--process-manager systemd|supervisord` — which process manager to deploy with (defaults to `production.process_manager` in `bench.toml`, or `systemd`). Switching between them on a re-run migrates the existing deployment.
 - `--admin-domain` — admin domain (defaults to `admin.domain` in `bench.toml`). Must match one of this bench's wildcard domains if any are configured (see [docs/production.md](production.md#custom-domain-management)).
 - `--tls` — terminate TLS via Let's Encrypt for the admin and SSL-enabled sites. Omit to serve plain HTTP (a central proxy may terminate TLS upstream).
 

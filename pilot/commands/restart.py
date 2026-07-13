@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 _DEV_MESSAGE = (
     "Restart is available only for production benches managed by\n"
-    "systemd, Supervisor, or OpenRC.\n\n"
+    "systemd or Supervisor.\n\n"
     "For development, stop the runner and execute `bench start` again."
 )
 

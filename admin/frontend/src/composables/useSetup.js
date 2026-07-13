@@ -29,7 +29,6 @@ export function useSetup() {
   const isSubmitting = ref(false)
   const benchName = ref('')
   const isLinux = ref(true)
-  const isAlpine = ref(false)
   const isProductionHandoff = ref(false)
   const mariadbWillInstall = ref(false)
   const postgresWillInstall = ref(false)
@@ -111,7 +110,6 @@ export function useSetup() {
       const config = await setupApi.config()
       benchName.value = config.bench_name || ''
       isLinux.value = config.is_linux !== false
-      isAlpine.value = config.is_alpine === true
       // Bench arrived with production already chosen (the admin UI's "New Bench"
       // flow) — the wizard's task will bring up production itself, so the 'done'
       // step shouldn't tell the user to run `bench setup production` by hand.
@@ -324,7 +322,6 @@ export function useSetup() {
     errorMessage,
     isSubmitting,
     isLinux,
-    isAlpine,
     isProductionHandoff,
     isDone,
     terminal,

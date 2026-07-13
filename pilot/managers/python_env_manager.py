@@ -9,8 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
-from pilot.package_managers import get_package_manager
-from pilot.platform import is_alpine, is_macos, which
+from pilot.platform import is_macos, which
 from pilot.utils import get_yarn_bin, git_has_local_changes, run_command
 
 if TYPE_CHECKING:
@@ -122,12 +121,6 @@ class PythonEnvManager:
     def _install_node(self) -> None:
         if is_macos():
             run_command(["brew", "install", "node"])
-            return
-        if is_alpine():
-            # Alpine images commonly run as root already; installing here
-            # (rather than only via install.sh) keeps root-in-container
-            # images working out of the box.
-            get_package_manager().install("nodejs", "npm")
             return
         raise BenchError(
             "Node.js is not installed. Re-run install.sh as root to install it, "

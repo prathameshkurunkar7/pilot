@@ -25,7 +25,6 @@ A zero-dependency CLI for managing [Frappe](https://frappeframework.com) environ
 tools are missing and you're not root; not required day-to-day)  
 **Fedora 40+** — dnf + systemd; redis is provided by valkey  
 **Arch Linux** — pacman + systemd; redis is provided by valkey  
-**Alpine 3.20+** — apk + OpenRC; production runs under OpenRC (`process_manager = "openrc"`) instead of systemd  
 **macOS** — Python 3.11+, [Homebrew](https://brew.sh) (dev only — no `sudo` setup)
 
 Derivatives that set `ID_LIKE` in `/etc/os-release` (Linux Mint, EndeavourOS, …)
@@ -45,7 +44,7 @@ exception is a genuinely root shell — e.g. logging into a fresh VPS as `root`
 — which install.sh detects and handles by creating a non-root bench user for
 you (see "Running as root" below).
 
-On a bare box (no curl/bash preinstalled — e.g. a fresh Alpine or a distro
+On a bare box (no curl/bash preinstalled — e.g. a fresh distro
 container) bootstrap with `wget` + `sh` instead — the installer uses the
 distro's package manager to install git, curl, bash, sudo and the build deps
 itself:
@@ -207,7 +206,7 @@ tls = false                        # server-wide HTTPS opt-in (Let's Encrypt); f
 
 [production]
 enabled = true                     # set by `bench setup production`
-process_manager = "supervisor"     # systemd | supervisor | openrc
+process_manager = "supervisor"     # systemd | supervisor
 use_companion_manager = false      # run scheduler/workers/socketio inside gunicorn
 
 [gunicorn]
@@ -230,7 +229,7 @@ Apps and sites are tracked by the filesystem — no need to list them in `bench.
 | `bench init -b <name>` | Install deps, create venv, clone framework, generate Procfile (needs `-b <name>` or run inside the bench dir) |
 | `bench start` | Start all processes (web, workers, Redis, admin UI) |
 | `bench stop` | Stop a running bench from another terminal |
-| `bench restart` | Restart all processes — supervisor, systemd, or OpenRC (production only) |
+| `bench restart` | Restart all processes — supervisor or systemd (production only) |
 | `bench get-app <repo>` | Clone and install an app |
 | `bench new-site <name>` | Create a site |
 | `bench rename-site <old> <new>` | Rename a site (checks the hostname is free across all benches) |
@@ -320,7 +319,7 @@ That's the whole change — `bench hello` now works. Commands that take argument
 ```toml
 [production]
 enabled = true                   # set by `bench setup production`
-process_manager = "supervisor"   # systemd | supervisor | openrc
+process_manager = "supervisor"   # systemd | supervisor
 use_companion_manager = false      # run scheduler/workers/socketio inside gunicorn
 
 [gunicorn]
@@ -350,7 +349,6 @@ bench remove production        # tear down production, back to dev (keeps certs/
 **Process managers:**
 - **Supervisor** — runs a bench-owned `supervisord` instance, no root needed.
 - **Systemd** — uses `systemctl --user` units; requires `loginctl enable-linger` once.
-- **OpenRC** — the Alpine counterpart of systemd: one `supervise-daemon` init script per process under `/etc/init.d/`. Selected automatically on Alpine.
 - **None** — development mode; use `bench start` / Procfile runner.
 
 **Companion manager:**

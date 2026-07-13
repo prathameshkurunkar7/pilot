@@ -8,15 +8,7 @@ from pathlib import Path
 
 from pilot.config.postgres_config import PostgresConfig
 from pilot.package_managers import get_package_manager
-from pilot.platform import (
-    _privileged,
-    is_alpine,
-    is_macos,
-    service_command,
-    service_enable_command,
-    service_running,
-    which,
-)
+from pilot.platform import is_macos, which
 from pilot.utils import run_command
 
 DEFAULT_VERSION = "16"
@@ -26,12 +18,6 @@ DEFAULT_VERSION = "16"
 # per-bench units.
 _STATE_DIR = Path.home() / ".local" / "share" / "pilot" / "postgres"
 _UNIT_NAME = "pilot-postgres.service"
-
-# Alpine has no systemd --user equivalent, and Alpine containers commonly
-# already run as root, so this one platform keeps using the conventional
-# system-wide postgresql-<version> service instead of a per-user unit.
-_ALPINE_DATA_DIR = Path(f"/var/lib/postgresql/{DEFAULT_VERSION}/data")
-_ALPINE_SERVICE = "postgresql"
 
 
 class PostgresManager:
@@ -43,7 +29,7 @@ class PostgresManager:
         self.config = config
 
     def data_dir(self) -> Path:
-        return _ALPINE_DATA_DIR if is_alpine() else _STATE_DIR / "data"
+        return _STATE_DIR / "data"
 
     # ── install ──────────────────────────────────────────────────────────────
 
@@ -56,24 +42,11 @@ class PostgresManager:
         if is_macos():
             get_package_manager().install(self._brew_package())
             return
-        if is_alpine():
-            # Alpine images commonly run as root already; _privileged() is a
-            # no-op there, so installing here (rather than only via install.sh)
-            # keeps root-in-container images working out of the box.
-            get_package_manager().install(*self._alpine_packages())
-            return
         raise RuntimeError(
             "PostgreSQL is not installed. Re-run install.sh as root to install "
             "it (it provisions postgresql for every supported distro), or "
             "install 'postgresql' yourself."
         )
-
-    def _alpine_packages(self) -> list[str]:
-        return [f"postgresql{DEFAULT_VERSION}", f"postgresql{DEFAULT_VERSION}-client"]
-
-    def alpine_dev_package(self) -> str:
-        """libpq build headers for psycopg — versioned on Alpine."""
-        return f"postgresql{DEFAULT_VERSION}-dev"
 
     def _brew_package(self) -> str:
         return self._installed_brew_formula() or f"postgresql@{DEFAULT_VERSION}"
@@ -103,32 +76,24 @@ class PostgresManager:
     def is_running(self) -> bool:
         if is_macos():
             return self._brew_service_running()
-        if is_alpine():
-            return service_running(_ALPINE_SERVICE)
         result = subprocess.run(self._systemctl("is-active", _UNIT_NAME), env=self._systemctl_env(), capture_output=True)
         return result.returncode == 0
 
     def start(self) -> None:
         if is_macos():
             run_command(["brew", "services", "start", self._brew_package()])
-        elif is_alpine():
-            run_command(service_command("start", _ALPINE_SERVICE))
         else:
             run_command(self._systemctl("start", _UNIT_NAME), env=self._systemctl_env())
 
     def restart(self) -> None:
         if is_macos():
             run_command(["brew", "services", "restart", self._brew_package()])
-        elif is_alpine():
-            run_command(service_command("restart", _ALPINE_SERVICE))
         else:
             run_command(self._systemctl("restart", _UNIT_NAME), env=self._systemctl_env())
 
     def stop(self) -> None:
         if is_macos():
             run_command(["brew", "services", "stop", self._brew_package()])
-        elif is_alpine():
-            run_command(service_command("stop", _ALPINE_SERVICE))
         else:
             run_command(self._systemctl("stop", _UNIT_NAME), env=self._systemctl_env())
 
@@ -162,8 +127,6 @@ class PostgresManager:
         if is_macos():
             if not self.is_running():
                 self.start()
-        elif is_alpine():
-            self._provision_alpine()
         else:
             self._provision_user_owned()
         self._wait_until_reachable()
@@ -218,16 +181,6 @@ class PostgresManager:
     def _user_unit_dir(self) -> Path:
         return Path.home() / ".config" / "systemd" / "user"
 
-    def _provision_alpine(self) -> None:
-        """apk neither initialises the data dir nor enables the service.
-        Initialise once; safe to re-run."""
-        if not self.is_provisioned():
-            run_command(_privileged(["install", "-d", "-m", "700", "-o", "postgres", "-g", "postgres", str(self.data_dir())]))
-            run_command(["sudo", "-u", "postgres", "initdb", "-D", str(self.data_dir())])
-            run_command(service_enable_command(_ALPINE_SERVICE))
-        if not self.is_running():
-            self.start()
-
     def secure(self) -> None:
         """Ensure the admin role exists with the configured password so frappe can
         connect over TCP. Idempotent: a no-op once credentials work."""
@@ -273,11 +226,9 @@ class PostgresManager:
         )
 
     def _run_sql_as_superuser(self, sql: str) -> None:
-        # Unix-socket peer auth: on Alpine the bootstrap superuser is the
-        # 'postgres' OS account; everywhere else it's whoever ran initdb (the
-        # bench user itself, no sudo needed). -p targets this server's port.
-        cmd = ["sudo", "-u", "postgres", "psql"] if is_alpine() else [self._psql() or "psql"]
-        cmd += ["-p", str(self.config.port), "-v", "ON_ERROR_STOP=1", "-d", "postgres"]
+        # Unix-socket peer auth: the bootstrap superuser is whoever ran initdb
+        # (the bench user itself, no sudo needed). -p targets this server's port.
+        cmd = [self._psql() or "psql", "-p", str(self.config.port), "-v", "ON_ERROR_STOP=1", "-d", "postgres"]
         subprocess.run(cmd, input=sql, text=True, check=True)
 
     def _wait_until_reachable(self, timeout: float = 30.0) -> None:

@@ -37,7 +37,7 @@ admin_user = "root"      # MariaDB user bench connects as for admin ops; change 
 
 # ── PostgreSQL (used when bench.db_type = "postgres"; installed by init) ──────
 # `bench new` generates the password. On systemd Linux a postgres bench gets its
-# own cluster; on Alpine/macOS it shares the system server (port 5432).
+# own cluster; on macOS it shares the system server (port 5432).
 [postgres]
 host = "localhost"
 port = 5432
@@ -64,7 +64,7 @@ count = 1
 # ── Production (set by `bench setup production`) ──────────────────────────────
 # [production]
 # enabled = false        # true once deployed; cleared by `bench remove production`
-# process_manager = ""   # systemd | supervisor | openrc
+# process_manager = ""   # systemd | supervisor
 
 # ── Nginx (production only) ───────────────────────────────────────────────────
 [nginx]
@@ -138,16 +138,16 @@ Declares the framework app (frappe) to clone during `bench init`. After init, ad
 | `admin_user` | string | no | `root` | MariaDB user bench connects as for admin operations (creating databases, users, running secure_installation). Defaults to `root`; change this if your MariaDB root account uses a different username. |
 | `version` | string | no | `11.8` | MariaDB version to install (e.g. `"11.8"`, `"11.4"`). On Linux, bench adds MariaDB's official APT repository pinned to this version and installs `mariadb-server` from it; on macOS it selects the `mariadb@<version>` Homebrew formula. Omit to install the default **11.8 LTS** series. |
 | `socket_path` | string | no | — | Unix socket to connect through. For a dedicated instance this is the per-instance socket (e.g. `/run/mysqld/mysqld-<instance>.sock`). |
-| `instance` | string | no | — | **Dedicated vs shared MariaDB.** When empty, the bench connects to the shared system MariaDB (`mariadb.service`, port 3306). When set, the bench gets its own MariaDB instance with an isolated datadir, socket, and port — a `mariadb@<instance>` systemd unit on most Linux, or a generated `mariadb-<instance>` OpenRC service on Alpine. `bench new` sets this to the bench name by default on Linux (both systemd and Alpine); the setup wizard lets you clear it to use the shared server instead. macOS always uses the shared server. |
+| `instance` | string | no | — | **Dedicated vs shared MariaDB.** When empty, the bench connects to the shared system MariaDB (`mariadb.service`, port 3306). When set, the bench gets its own MariaDB instance with an isolated datadir, socket, and port — a `mariadb@<instance>` systemd unit. `bench new` sets this to the bench name by default on Linux; the setup wizard lets you clear it to use the shared server instead. macOS always uses the shared server. |
 | `data_dir` | string | no | `/var/lib/mysql-<instance>` | Datadir for the dedicated instance — a **sibling** of `/var/lib/mysql`, never nested inside it. Must be an absolute path. Ignored in shared mode. |
 
 > **Dedicated vs shared.** On Linux, `bench new` defaults to a dedicated instance, giving the bench its own isolated MariaDB server. Choose shared (clear `instance` in the setup wizard) to connect to the pre-existing system MariaDB — useful when you already manage MariaDB separately. See [Per-bench MariaDB instances](architecture.md#per-bench-mariadb-instances) for the mechanics.
 
 ### `[postgres]`
 
-Used when the bench's engine is PostgreSQL (`[bench] db_type = "postgres"`). `bench init` installs PostgreSQL (apt/Homebrew/apk) and provisions it: it ensures the `admin_user` superuser exists and sets its password to `root_password`. The engine is chosen per bench, not per site — every site on a PostgreSQL bench uses PostgreSQL (and a MariaDB bench never installs PostgreSQL). `bench new` generates `root_password` automatically.
+Used when the bench's engine is PostgreSQL (`[bench] db_type = "postgres"`). `bench init` installs PostgreSQL (apt/Homebrew) and provisions it: it ensures the `admin_user` superuser exists and sets its password to `root_password`. The engine is chosen per bench, not per site — every site on a PostgreSQL bench uses PostgreSQL (and a MariaDB bench never installs PostgreSQL). `bench new` generates `root_password` automatically.
 
-**Dedicated vs shared.** On systemd Linux, `bench new` defaults to a dedicated cluster (`pg_createcluster`) with its own `instance` and `port`; clear `instance` (setup wizard) for the shared system server on 5432. Alpine and macOS always use the shared server.
+**Dedicated vs shared.** On systemd Linux, `bench new` defaults to a dedicated cluster (`pg_createcluster`) with its own `instance` and `port`; clear `instance` (setup wizard) for the shared system server on 5432. macOS always uses the shared server.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -203,7 +203,7 @@ count = 1
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `enabled` | bool | no | `false` | `true` once the bench is deployed to production. Set by `bench setup production` and cleared by `bench remove production`; gates `bench restart`, nginx setup, and production process management. |
-| `process_manager` | string | no | `""` | Production process manager: `systemd`, `supervisor`, or `openrc` (Alpine). Empty on an undeployed bench. |
+| `process_manager` | string | no | `""` | Production process manager: `systemd` or `supervisor`. Empty on an undeployed bench. |
 | `use_companion_manager` | bool | no | `false` | Run scheduler, RQ workers, and socket.io as Gunicorn companion processes under a single preloaded master. Requires the Frappe Gunicorn fork with companion support. |
 
 ### `[nginx]` _(production only)_

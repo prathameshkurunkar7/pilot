@@ -263,7 +263,7 @@ _PASSWORD_KEYS = ("mariadb_password", "postgres_password")
 
 
 def _read_defaults(bench_root: Path) -> dict:
-    from pilot.platform import is_alpine, is_linux, native_process_manager
+    from pilot.platform import is_linux, native_process_manager
 
     # This is a read endpoint the wizard polls before login — it must never echo
     # a DB password back, default or real, whether or not bench.toml has one set.
@@ -272,7 +272,6 @@ def _read_defaults(bench_root: Path) -> dict:
     result = {
         "bench_name": bench_root.name,
         "is_linux": is_linux(),
-        "is_alpine": is_alpine(),
         "native_process_manager": native_process_manager(),
         **defaults,
     }

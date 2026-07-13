@@ -26,30 +26,15 @@ def test_socket_path_honors_explicit_value() -> None:
     assert MariaDBManager(MariaDBConfig(socket_path="/tmp/custom.sock")).socket_path() == "/tmp/custom.sock"
 
 
-def test_socket_path_on_alpine_uses_system_path() -> None:
-    with patch(f"{MODULE}.is_alpine", return_value=True):
-        assert _manager().socket_path() == "/run/mysqld/mysqld.sock"
-
-
 # ── install ──────────────────────────────────────────────────────────────────
 
 
 def test_install_raises_when_missing_on_linux() -> None:
     m = _manager()
     with patch.object(m, "is_installed", return_value=False), \
-         patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.is_alpine", return_value=False):
+         patch(f"{MODULE}.is_macos", return_value=False):
         with pytest.raises(RuntimeError, match="install.sh"):
             m.install()
-
-
-def test_install_uses_package_manager_on_alpine() -> None:
-    from unittest.mock import MagicMock
-
-    m, pkg = _manager(), MagicMock()
-    with patch.object(m, "is_installed", return_value=False), patch(f"{MODULE}.is_macos", return_value=False), \
-         patch(f"{MODULE}.is_alpine", return_value=True), patch(f"{MODULE}.get_package_manager", return_value=pkg):
-        m.install()
-    pkg.install.assert_called_once_with("mariadb", "mariadb-client")
 
 
 # ── service control ──────────────────────────────────────────────────────────
@@ -57,19 +42,10 @@ def test_install_uses_package_manager_on_alpine() -> None:
 
 def test_start_targets_systemctl_user_on_linux() -> None:
     m = _manager()
-    with patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.is_alpine", return_value=False), \
+    with patch(f"{MODULE}.is_macos", return_value=False), \
          patch(f"{MODULE}.run_command") as rc:
         m.start()
     assert rc.call_args.args[0] == ["systemctl", "--user", "start", "pilot-mariadb.service"]
-
-
-def test_start_targets_rc_service_on_alpine() -> None:
-    m = _manager()
-    with patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.is_alpine", return_value=True), \
-         patch(f"{MODULE}.run_command") as rc, patch(f"{MODULE}.service_command", return_value=["rc-service", "mariadb", "start"]) as sc:
-        m.start()
-    sc.assert_called_once_with("start", "mariadb")
-    rc.assert_called_once_with(["rc-service", "mariadb", "start"])
 
 
 # ── provisioning ──────────────────────────────────────────────────────────────
@@ -77,7 +53,7 @@ def test_start_targets_rc_service_on_alpine() -> None:
 
 def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
     m = _manager()
-    with patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.is_alpine", return_value=False), \
+    with patch(f"{MODULE}.is_macos", return_value=False), \
          patch.object(m, "install"), patch.object(m, "data_dir", return_value=tmp_path / "data"), \
          patch.object(m, "is_provisioned", return_value=False), \
          patch.object(m, "is_running", return_value=False), \
@@ -93,7 +69,7 @@ def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
 
 def test_provision_reuses_already_provisioned_server() -> None:
     m = _manager()
-    with patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.is_alpine", return_value=False), \
+    with patch(f"{MODULE}.is_macos", return_value=False), \
          patch.object(m, "install"), patch.object(m, "is_provisioned", return_value=True), \
          patch.object(m, "is_running", return_value=True), \
          patch.object(m, "_install_unit") as install_unit, \
@@ -148,24 +124,13 @@ def test_secure_installation_creates_and_grants() -> None:
     assert "FLUSH PRIVILEGES;" in sql
 
 
-def test_run_sql_as_superuser_no_sudo_off_alpine() -> None:
+def test_run_sql_as_superuser_no_sudo() -> None:
     m = _manager()
-    with patch(f"{MODULE}.is_alpine", return_value=False), patch(f"{MODULE}.subprocess.run") as run:
+    with patch(f"{MODULE}.subprocess.run") as run:
         m._run_sql_as_superuser("SELECT 1;")
     cmd = run.call_args[0][0]
     assert "sudo" not in cmd
     assert cmd[0] == "mariadb"
-
-
-def test_run_sql_as_superuser_uses_sudo_on_alpine() -> None:
-    m = _manager()
-    # is_root patched False: _privileged() only adds 'sudo' when not already
-    # root, and this suite may itself run as root (e.g. in a container).
-    with patch(f"{MODULE}.is_alpine", return_value=True), patch("pilot.platform.is_root", return_value=False), \
-         patch(f"{MODULE}.subprocess.run") as run:
-        m._run_sql_as_superuser("SELECT 1;")
-    cmd = run.call_args[0][0]
-    assert cmd[:2] == ["sudo", "mariadb"]
 
 
 # ── check_credentials ─────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.package_managers import get_package_manager
-from pilot.platform import _privileged, is_alpine
+from pilot.platform import _privileged
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
@@ -16,9 +16,8 @@ _CERT_EXPIRY_THRESHOLD_DAYS = 30
 
 
 def _nginx_reload_hook() -> str:
-    """Shell command certbot runs after a successful (re)issue to pick up the new
-    cert — rc-service on Alpine, systemctl elsewhere."""
-    return "rc-service nginx reload" if is_alpine() else "systemctl reload nginx"
+    """Shell command certbot runs after a successful (re)issue to pick up the new cert."""
+    return "systemctl reload nginx"
 
 
 def _is_public_domain(domain: str) -> bool:

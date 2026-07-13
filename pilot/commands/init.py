@@ -147,18 +147,6 @@ class InitCommand(Command):
             print("  Pre-built download failed — building from source (requires Node.js)...")
             BuildAdminCommand().run()
 
-    # Build/runtime deps for compiling frappe's Python and Node wheels on Alpine.
-    # musl ships no manylinux wheels, so the full header set is needed; bash and
-    # tzdata are runtime deps frappe assumes are present. python3-dev provides
-    # Python.h: Alpine ships a system python that `uv venv` reuses, so C
-    # extensions (mysqlclient, etc.) need the matching dev headers to compile.
-    _ALPINE_BUILD_PACKAGES = (
-        "build-base", "pkgconf", "git", "bash", "tzdata",
-        "python3-dev", "linux-headers", "libffi-dev", "openssl-dev", "libxml2-dev",
-        "libxslt-dev", "jpeg-dev", "zlib-dev", "freetype-dev", "tiff-dev",
-        "lcms2-dev", "openjpeg-dev",
-    )
-
     def _install_system_packages(self) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager
         from pilot.managers.redis_manager import RedisManager
@@ -183,28 +171,23 @@ class InitCommand(Command):
     def _install_build_headers(self, pkg) -> None:
         # frappe imports mysqlclient in its __init__.py for every engine, so the
         # MariaDB client headers are always required; postgres benches additionally
-        # need libpq headers for psycopg. On Alpine (commonly already root)
-        # these are installed directly; elsewhere install.sh provisions them
-        # once for the whole host, so bench init only ever verifies them.
+        # need libpq headers for psycopg. install.sh provisions them once for the
+        # whole host, so bench init only ever verifies them.
         from pilot.exceptions import BenchError
-        from pilot.platform import is_alpine, is_linux
+        from pilot.platform import is_linux
 
+        if not is_linux():
+            return
         postgres = self.bench.config.db_type == "postgres"
-        if is_alpine():
-            packages = [*self._ALPINE_BUILD_PACKAGES, "mariadb-dev"]
-            if postgres:
-                packages.append(self._postgres_manager().alpine_dev_package())
-            pkg.install(*packages)
-        elif is_linux():
-            packages = ["build-essential", "pkg-config", "git", "python3-dev", "libmariadb-dev"]
-            if postgres:
-                packages.append("libpq-dev")
-            missing = [p for p in packages if not pkg.is_installed(p)]
-            if missing:
-                raise BenchError(
-                    f"Missing system packages: {', '.join(missing)}. Re-run install.sh "
-                    "as root to install them, or install them yourself."
-                )
+        packages = ["build-essential", "pkg-config", "git", "python3-dev", "libmariadb-dev"]
+        if postgres:
+            packages.append("libpq-dev")
+        missing = [p for p in packages if not pkg.is_installed(p)]
+        if missing:
+            raise BenchError(
+                f"Missing system packages: {', '.join(missing)}. Re-run install.sh "
+                "as root to install them, or install them yourself."
+            )
 
     def _postgres_manager(self):
         from pilot.managers.postgres_manager import PostgresManager

@@ -32,18 +32,6 @@ def make_bench(tmp_path: Path) -> Bench:
     return Bench(config, tmp_path)
 
 
-# ── InitCommand build deps ──────────────────────────────────────────────────────
-
-
-def test_alpine_build_packages_include_python_headers() -> None:
-    """uv reuses Alpine's system python for the venv, so C-extension wheels
-    (e.g. mysqlclient) need python3-dev's Python.h to compile — a regression
-    guard so it can't be dropped from the Alpine build deps again."""
-    from pilot.commands.init import InitCommand
-
-    assert "python3-dev" in InitCommand._ALPINE_BUILD_PACKAGES
-
-
 # ── NewCommand ────────────────────────────────────────────────────────────────
 
 

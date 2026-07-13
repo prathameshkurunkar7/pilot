@@ -4,7 +4,7 @@ import { Button, Dialog, ErrorMessage, FormControl, LoadingIndicator, Select } f
 import { authApi } from '@/api/auth'
 import { benchesApi } from '@/api/benches'
 
-const PM_LABELS = { systemd: 'Systemd', openrc: 'OpenRC', supervisor: 'Supervisor' }
+const PM_LABELS = { systemd: 'Systemd', supervisor: 'Supervisor' }
 
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue'])
@@ -15,7 +15,7 @@ const show = computed({
 })
 
 const name = ref('')
-// The host's native production manager: 'openrc' on Alpine, 'systemd' elsewhere.
+// The host's native production manager.
 const nativeProcessManager = ref('systemd')
 const processManager = ref('systemd')
 const adminDomain = ref('')

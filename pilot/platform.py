@@ -39,7 +39,6 @@ class Distro(Enum):
     UBUNTU = "ubuntu"
     FEDORA = "fedora"
     ARCH = "arch"
-    ALPINE = "alpine"
     UNKNOWN = "unknown"
 
 
@@ -73,13 +72,6 @@ def detect_distro() -> Distro:
     return Distro.UNKNOWN
 
 
-def is_alpine() -> bool:
-    """Return True on Alpine Linux (apk package manager, OpenRC, musl libc)."""
-    if not is_linux():
-        return False
-    return Path("/etc/alpine-release").exists() or detect_distro() == Distro.ALPINE
-
-
 def os_version() -> str:
     """Best-effort human-readable OS name and version.
 
@@ -105,11 +97,7 @@ def is_root() -> bool:
 
 
 def _privileged(command: list[str]) -> list[str]:
-    """Prefix a command with sudo unless we are already root.
-
-    Alpine images commonly run as root, so dropping the prefix when euid is 0
-    keeps installs and service calls working whether or not sudo is present.
-    """
+    """Prefix a command with sudo unless we are already root."""
     if is_root():
         return command
     return ["sudo", *command]
@@ -126,41 +114,26 @@ def has_passwordless_sudo() -> bool:
 
 
 def service_command(action: str, name: str) -> list[str]:
-    """Return the privileged argv to run an init action (start/stop/restart/reload).
-
-    Alpine uses OpenRC (``rc-service``); other Linux servers use systemd
-    (``systemctl``).
-    """
-    if is_alpine():
-        return _privileged(["rc-service", name, action])
+    """Return the privileged argv to run a systemd action (start/stop/restart/reload)."""
     return _privileged(["systemctl", action, name])
 
 
 def service_enable_command(name: str) -> list[str]:
     """Return the privileged argv to enable a service at boot."""
-    if is_alpine():
-        return _privileged(["rc-update", "add", name, "default"])
     return _privileged(["systemctl", "enable", name])
 
 
 def service_disable_command(name: str) -> list[str]:
     """Return the privileged argv to disable a service at boot."""
-    if is_alpine():
-        return _privileged(["rc-update", "del", name, "default"])
     return _privileged(["systemctl", "disable", name])
 
 
 def service_running(name: str) -> bool:
     """Return True if the named system service is currently running."""
-    if is_alpine():
-        # rc-service lives in /sbin (off a non-root login PATH) and reads
-        # root-owned run state, so query it with privilege — otherwise it's
-        # "command not found" for the bench user and every service looks stopped.
-        argv = _privileged(["rc-service", name, "status"])
-    else:
-        argv = ["systemctl", "is-active", "--quiet", name]
     try:
-        return subprocess.run(argv, capture_output=True).returncode == 0
+        return subprocess.run(
+            ["systemctl", "is-active", "--quiet", name], capture_output=True
+        ).returncode == 0
     except FileNotFoundError:
         return False
 
@@ -168,22 +141,15 @@ def service_running(name: str) -> bool:
 def native_process_manager() -> str:
     """The init system used to manage production benches on this host.
 
-    OpenRC on Alpine, systemd everywhere else. This is the recommended (and, on
-    Alpine, the only available) native manager; the supervisor manager is the
+    systemd is the recommended native manager; the supervisor manager is the
     cross-platform alternative and is never the platform default. UI and CLI
     deploy paths use this to offer the right default instead of assuming systemd.
     """
-    return "openrc" if is_alpine() else "systemd"
+    return "systemd"
 
 
 def default_nginx_config_dir() -> Path:
-    """Directory nginx includes server blocks from (distro-specific).
-
-    Alpine's nginx includes ``/etc/nginx/http.d/*.conf``; Debian/Ubuntu use
-    ``/etc/nginx/conf.d/``.
-    """
-    if is_alpine():
-        return Path("/etc/nginx/http.d")
+    """Directory nginx includes server blocks from (``/etc/nginx/conf.d``)."""
     return Path("/etc/nginx/conf.d")
 
 

@@ -430,7 +430,7 @@ Accepts a JSON body with any subset of the settings sections. Only keys present 
 { "ok": true, "restarted": true, "restart_error": null }
 ```
 
-**Process restart:** If any value in `bench.http_port`, `bench.socketio_port`, `redis.*_port`, `workers.*`, or `production.process_manager` changed, bench regenerates config files and restarts the running process manager (supervisor, systemd, or OpenRC on Alpine) automatically — excluding the admin process itself so the response is delivered before the restart.
+**Process restart:** If any value in `bench.http_port`, `bench.socketio_port`, `redis.*_port`, `workers.*`, or `production.process_manager` changed, bench regenerates config files and restarts the running process manager (supervisor or systemd) automatically — excluding the admin process itself so the response is delivered before the restart.
 
 **Error responses:**
 
@@ -456,12 +456,12 @@ The frontend presents settings as a tabbed modal dialog. Tabs are:
 | **Nginx** | Worker Processes, Client Max Body Size, Config Directory | HTTP Port, HTTPS Port |
 | **HTTPS** | Enable HTTPS toggle (`admin.tls`), Let's Encrypt email; "Enable HTTPS & issue certificate" action | — |
 | **Let's Encrypt** | Email, Webroot Path | — |
-| **Production** | Process Manager (none/supervisor + the host's native manager: systemd, or OpenRC on Alpine) | — |
+| **Production** | Process Manager (none/supervisor + the host's native manager: systemd) | — |
 | **Updates** | — | Current version, update availability badge; Update button |
 
 MariaDB fields are read-only because the host, port, credentials, and socket path are set once during `bench init` and cannot be meaningfully changed by editing `bench.toml` after the fact — the database server itself is not reconfigured.
 
-The Process Manager dropdown lets you switch between `none`, `supervisor`, and the host's native manager — `systemd` on most Linux, `openrc` on Alpine (the backend reports `native_process_manager` so the UI never offers an unavailable option). A change here writes to `bench.toml` and triggers a process restart.
+The Process Manager dropdown lets you switch between `none`, `supervisor`, and the host's native manager — `systemd` on Linux (the backend reports `native_process_manager` so the UI never offers an unavailable option). A change here writes to `bench.toml` and triggers a process restart.
 
 The **HTTPS** toggle sets the server-wide `admin.tls` flag. Enabling it (with a Let's Encrypt email) persists the choice and runs `setup-letsencrypt` to obtain certificates and rewrite nginx with the HTTP→HTTPS redirect; disabling it runs `setup-nginx` to fall back to plain HTTP. `admin.tls` governs HTTPS for both the admin domain and all SSL-enabled sites — per-site SSL is hidden while it is off.
 

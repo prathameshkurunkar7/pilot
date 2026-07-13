@@ -34,7 +34,7 @@ def test_install_skips_when_present() -> None:
 def test_install_raises_when_missing_on_linux() -> None:
     m = _mgr()
     with patch.object(m, "is_installed", return_value=False), \
-         patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.is_alpine", return_value=False):
+         patch(f"{MODULE}.is_macos", return_value=False):
         with pytest.raises(RuntimeError, match="install.sh"):
             m.install()
 
@@ -45,18 +45,6 @@ def test_install_uses_brew_formula_on_macos() -> None:
          patch.object(m, "_installed_brew_formula", return_value=None), patch(f"{MODULE}.get_package_manager", return_value=pkg):
         m.install()
     pkg.install.assert_called_once_with("postgresql@16")
-
-
-def test_install_uses_versioned_packages_on_alpine() -> None:
-    m, pkg = _mgr(), MagicMock()
-    with patch.object(m, "is_installed", return_value=False), patch(f"{MODULE}.is_macos", return_value=False), \
-         patch(f"{MODULE}.is_alpine", return_value=True), patch(f"{MODULE}.get_package_manager", return_value=pkg):
-        m.install()
-    pkg.install.assert_called_once_with("postgresql16", "postgresql16-client")
-
-
-def test_alpine_dev_package_is_versioned() -> None:
-    assert _mgr().alpine_dev_package() == "postgresql16-dev"
 
 
 # ── secure ────────────────────────────────────────────────────────────────────
@@ -128,7 +116,7 @@ def test_check_credentials_false_without_psql() -> None:
 
 def test_start_targets_systemctl_user_on_linux() -> None:
     m = _mgr()
-    with patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.is_alpine", return_value=False), \
+    with patch(f"{MODULE}.is_macos", return_value=False), \
          patch(f"{MODULE}.run_command") as rc:
         m.start()
     assert rc.call_args.args[0] == ["systemctl", "--user", "start", "pilot-postgres.service"]
@@ -141,21 +129,12 @@ def test_start_targets_brew_on_macos() -> None:
     rc.assert_called_once_with(["brew", "services", "start", "postgresql@16"])
 
 
-def test_start_targets_rc_service_on_alpine() -> None:
-    m = _mgr()
-    with patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.is_alpine", return_value=True), \
-         patch(f"{MODULE}.run_command") as rc, patch(f"{MODULE}.service_command", return_value=["rc-service", "postgresql", "start"]) as sc:
-        m.start()
-    sc.assert_called_once_with("start", "postgresql")
-    rc.assert_called_once_with(["rc-service", "postgresql", "start"])
-
-
 # ── provisioning ──────────────────────────────────────────────────────────────
 
 
 def test_provision_orchestrates_steps_on_linux() -> None:
     m = _mgr(root_password="pw")
-    with patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.is_alpine", return_value=False), \
+    with patch(f"{MODULE}.is_macos", return_value=False), \
          patch.object(m, "install") as ins, patch.object(m, "_provision_user_owned") as prov, \
          patch.object(m, "_wait_until_reachable"), patch.object(m, "secure") as sec:
         m.provision()
@@ -209,20 +188,12 @@ def test_provision_user_owned_reuses_already_provisioned_server() -> None:
     rc.assert_not_called()
 
 
-def test_run_sql_as_superuser_uses_local_psql_off_alpine() -> None:
+def test_run_sql_as_superuser_uses_local_psql() -> None:
     m = _mgr(port=5440)
-    with patch(f"{MODULE}.is_alpine", return_value=False), patch.object(m, "_psql", return_value="/usr/bin/psql"), \
+    with patch.object(m, "_psql", return_value="/usr/bin/psql"), \
          patch(f"{MODULE}.subprocess.run") as run:
         m._run_sql_as_superuser("SELECT 1;")
     cmd = run.call_args[0][0]
     assert cmd[0] == "/usr/bin/psql"
     assert "sudo" not in cmd
     assert cmd[cmd.index("-p") + 1] == "5440"
-
-
-def test_run_sql_as_superuser_uses_sudo_postgres_on_alpine() -> None:
-    m = _mgr(port=5440)
-    with patch(f"{MODULE}.is_alpine", return_value=True), patch(f"{MODULE}.subprocess.run") as run:
-        m._run_sql_as_superuser("SELECT 1;")
-    cmd = run.call_args[0][0]
-    assert cmd[:4] == ["sudo", "-u", "postgres", "psql"]

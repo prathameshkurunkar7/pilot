@@ -258,18 +258,12 @@ class ConfigPatcher:
             return None
         if "process_manager" in production:
             from pilot.config.production_config import VALID_PROCESS_MANAGERS
-            from pilot.platform import is_alpine
 
             process_manager = str(production["process_manager"])
             valid = ("none", *VALID_PROCESS_MANAGERS)
             if process_manager not in valid:
                 return f"process_manager must be one of: {', '.join(valid)}"
             pm = "" if process_manager == "none" else process_manager
-            if is_alpine() and pm == "systemd":
-                # Alpine has no systemd; coerce a stale systemd request to OpenRC
-                # (the native Alpine manager), matching the new-bench endpoint, so
-                # a cached client default can't break the deployment.
-                pm = "openrc"
             self.config.production.process_manager = pm
             self.config.production.enabled = pm != ""
         return None
@@ -323,20 +317,6 @@ def _restart_supervisor(manager, bench_name: str) -> tuple[bool, str | None]:
     return (result.returncode == 0), (result.stderr or result.stdout if result.returncode != 0 else None)
 
 
-def _restart_openrc(manager) -> tuple[bool, str | None]:
-    if not manager.is_running():
-        return False, None
-    # Configs were regenerated already; re-link any new services (e.g. an added
-    # worker group) before restarting the workload. The admin service is left
-    # running so the control plane stays reachable across the restart.
-    try:
-        manager.install_config()
-        manager.restart()
-    except Exception as error:
-        return False, str(error)
-    return True, None
-
-
 def _restart_systemd(manager) -> tuple[bool, str | None]:
     if not manager.is_running():
         return False, None
@@ -352,7 +332,6 @@ def _restart_systemd(manager) -> tuple[bool, str | None]:
 def _do_restart(bench_root: Path, config: BenchConfig) -> tuple[bool, str | None]:
     from pilot.core.bench import Bench
     from pilot.managers.process_manager import ProcessManager
-    from pilot.managers.process_managers.openrc import OpenRCProcessManager
     from pilot.managers.process_managers.supervisor import SupervisorProcessManager
     from pilot.managers.process_managers.systemd import SystemdProcessManager
 
@@ -362,8 +341,6 @@ def _do_restart(bench_root: Path, config: BenchConfig) -> tuple[bool, str | None
         return _restart_supervisor(manager, config.name)
     if isinstance(manager, SystemdProcessManager):
         return _restart_systemd(manager)
-    if isinstance(manager, OpenRCProcessManager):
-        return _restart_openrc(manager)
     return False, None
 
 
