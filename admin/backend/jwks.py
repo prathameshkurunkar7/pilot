@@ -41,6 +41,8 @@ def verify_jwks_token(token: str, jwks_url: str, audience: str) -> dict | None:
 def _client(jwks_url: str) -> PyJWKClient:
     client = _clients.get(jwks_url)
     if client is None:
-        client = PyJWKClient(jwks_url)
+        # A real User-Agent; urllib's default is blocked as a bot by Cloudflare
+        # and similar WAFs fronting an issuer, which would fail every fetch.
+        client = PyJWKClient(jwks_url, headers={"User-Agent": "bench-admin"})
         _clients[jwks_url] = client
     return client
