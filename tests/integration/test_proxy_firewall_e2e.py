@@ -161,11 +161,11 @@ def _bench_nginx(tmp_path: Path, firewall: dict | None):
         _stop(proc)
 
 
-def _get(port: int, client_ip: str | None) -> tuple[int, str]:
+def _get(port: int, client_ip: str | None, path: str = "/") -> tuple[int, str]:
     headers = {"Host": "site1.localhost"}
     if client_ip is not None:
         headers["X-Test-Client"] = client_ip
-    request = urllib.request.Request(f"http://127.0.0.1:{port}/", headers=headers)
+    request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=5) as resp:
             return resp.status, resp.read().decode()
@@ -181,6 +181,9 @@ def test_direct_connection_is_blocked_only_proxy_gets_through(tmp_path, backend,
         status, body = _get(_EDGE_PORT, "1.2.3.4")
         assert status == 200
         assert body == "1.2.3.4"
+        # ACME stays reachable on a direct hit (404 = no such token, not 403 = gated),
+        # so cert issuance/renewal survives certbot reaching the bench directly.
+        assert _get(_BENCH_PORT, None, "/.well-known/acme-challenge/probe")[0] == 404
 
 
 def test_allowlist_filters_client_but_never_the_proxy(tmp_path, backend, edge):

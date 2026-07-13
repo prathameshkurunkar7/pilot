@@ -130,16 +130,25 @@ class NginxManager:
         The connection filter tests $realip_remote_addr — the actual TCP peer, which
         real_ip preserves — not $remote_addr, which real_ip has already rewritten to
         the (never-a-proxy) client IP by the access phase. Client-IP filtering stays
-        the firewall's job (_render_firewall), which sees that rewritten client IP."""
+        the firewall's job (_render_firewall), which sees that rewritten client IP.
+
+        The gate runs in the rewrite phase, before location matching, so it exempts
+        the ACME challenge path explicitly — certbot must still reach it on a direct
+        hit (e.g. during setup, before the proxy is in front). The exemption tests
+        $request_uri, not $uri, so it survives the internal redirect to the error
+        page (try_files =404) that a missing challenge file triggers."""
         proxies = self._proxy_servers
         if not proxies:
             return ""
-        peers = "|".join(ip.replace(".", r"\.") for ip in proxies)
+        peers = "|".join(re.escape(ip) for ip in proxies)
         return (
             "".join(f"    set_real_ip_from   {ip};\n" for ip in proxies)
             + "    real_ip_header     X-Forwarded-For;\n"
             + "    real_ip_recursive  on;\n"
-            + f'    if ($realip_remote_addr !~ "^({peers})$") {{ return 403; }}\n\n'
+            + "    set $bench_from_proxy 0;\n"
+            + f'    if ($realip_remote_addr ~ "^({peers})$") {{ set $bench_from_proxy 1; }}\n'
+            + '    if ($request_uri ~ "^/\\.well-known/acme-challenge/") { set $bench_from_proxy 1; }\n'
+            + "    if ($bench_from_proxy = 0) { return 403; }\n\n"
         )
 
     def _render_firewall(self) -> str:

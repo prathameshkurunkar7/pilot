@@ -291,7 +291,10 @@ def test_proxy_servers_gate_tcp_peer_and_trust_xff(tmp_path: Path) -> None:
     assert "real_ip_header     X-Forwarded-For;" in config
     # Accept TCP connections from the proxies alone, tested on the real peer
     # ($realip_remote_addr) since real_ip has already rewritten $remote_addr.
-    assert r'if ($realip_remote_addr !~ "^(203\.0\.113\.5|203\.0\.113\.6)$") { return 403; }' in config
+    assert r'if ($realip_remote_addr ~ "^(203\.0\.113\.5|203\.0\.113\.6)$") { set $bench_from_proxy 1; }' in config
+    assert "if ($bench_from_proxy = 0) { return 403; }" in config
+    # ACME challenges stay reachable directly, so cert issuance never 403s.
+    assert r'if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }' in config
     # The old allow-proxy/deny-all (which tested the rewritten client IP) is gone.
     assert "allow              203.0.113.5;" not in config
     assert "deny               all;" not in config

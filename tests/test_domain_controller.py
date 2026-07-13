@@ -173,6 +173,7 @@ def test_nginx_gates_tcp_peer_to_provider_proxy_servers(tmp_path: Path, monkeypa
     )
 
     assert "set_real_ip_from   203.0.113.10;" in config
-    assert r'if ($realip_remote_addr !~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { return 403; }' in config
+    assert r'if ($realip_remote_addr ~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { set $bench_from_proxy 1; }' in config
+    assert "if ($bench_from_proxy = 0) { return 403; }" in config
     assert "deny               all;" not in config
     assert "X-Forwarded-For    $http_x_forwarded_for" in config
