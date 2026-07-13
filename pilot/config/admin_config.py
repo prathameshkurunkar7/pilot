@@ -8,6 +8,7 @@ class AdminConfig:
     enabled: bool = False
     password: str = ""
     jwt_secret: str = ""
+    jwks_url: str = ""  # trust session tokens minted by a remote issuer publishing keys here
     domain: str = ""
     tls: bool = False
     allow_bench_management: bool = True
