@@ -1,6 +1,6 @@
 import re
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import List
 
@@ -80,8 +80,8 @@ class BenchConfig:
             )
             for a in data.get("apps", [])
         ]
-        mariadb = MariaDBConfig(**data.get("mariadb", {}))
-        postgres = PostgresConfig(**data.get("postgres", {}))
+        mariadb = MariaDBConfig(**cls._known_fields(MariaDBConfig, data.get("mariadb", {})))
+        postgres = PostgresConfig(**cls._known_fields(PostgresConfig, data.get("postgres", {})))
         redis = cls._parse_redis(data.get("redis", {}))
         workers = cls._parse_workers(data.get("workers", []))
         production = cls._parse_production(data.get("production"))
@@ -117,6 +117,13 @@ class BenchConfig:
             firewall=firewall,
             s3=s3,
         )
+
+    @staticmethod
+    def _known_fields(dataclass_type: type, data: dict) -> dict:
+        """Drop keys a bench.toml table has that the dataclass no longer
+        declares, so a config written by an older bench-cli still loads."""
+        known = {f.name for f in fields(dataclass_type)}
+        return {k: v for k, v in data.items() if k in known}
 
     @staticmethod
     def _parse_redis(data: dict) -> RedisConfig:
@@ -247,9 +254,6 @@ class BenchConfig:
         self._validate_worker_counts()
         self._validate_letsencrypt_email()
         self._validate_gunicorn()
-        self._validate_mariadb_version()
-        self._validate_mariadb_instance()
-        self._validate_postgres_instance()
         self._validate_redis_version()
         self._validate_production()
         self._validate_admin_domain()
@@ -384,26 +388,6 @@ class BenchConfig:
             raise ConfigError(f"gunicorn.max_requests must be a non-negative integer, got '{self.gunicorn.max_requests}'.")
         if not isinstance(self.gunicorn.max_requests_jitter, int) or self.gunicorn.max_requests_jitter < 0:
             raise ConfigError(f"gunicorn.max_requests_jitter must be a non-negative integer, got '{self.gunicorn.max_requests_jitter}'.")
-
-    def _validate_mariadb_version(self) -> None:
-        if self.mariadb.version and not _VERSION_PATTERN.match(self.mariadb.version):
-            raise ConfigError(f"mariadb.version '{self.mariadb.version}' is invalid. Must be a version string like '11.8' or '11.4'.")
-
-    def _validate_mariadb_instance(self) -> None:
-        instance = self.mariadb.instance
-        if instance and not _BENCH_NAME_PATTERN.match(instance):
-            raise ConfigError(
-                f"mariadb.instance '{instance}' is invalid. Must start with a letter and contain only letters, digits, underscores, or hyphens."
-            )
-        if self.mariadb.data_dir and not Path(self.mariadb.data_dir).is_absolute():
-            raise ConfigError(f"mariadb.data_dir '{self.mariadb.data_dir}' must be an absolute path.")
-
-    def _validate_postgres_instance(self) -> None:
-        instance = self.postgres.instance
-        if instance and not _BENCH_NAME_PATTERN.match(instance):
-            raise ConfigError(
-                f"postgres.instance '{instance}' is invalid. Must start with a letter and contain only letters, digits, underscores, or hyphens."
-            )
 
     def _validate_redis_version(self) -> None:
         if self.redis.version and not _VERSION_PATTERN.match(self.redis.version):

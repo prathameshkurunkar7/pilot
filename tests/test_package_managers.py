@@ -181,35 +181,39 @@ def test_install_uses_sudo_when_not_root(monkeypatch) -> None:
 
 
 # ── node install branching ────────────────────────────────────────────────────
+# Node.js is installed once by install.sh's root bootstrap now, not per bench
+# init — _install_node only covers macOS (brew) and Alpine (commonly already
+# root); everywhere else it fails loud rather than shelling out to sudo.
 
-def _node_install_commands(monkeypatch, distro: Distro) -> list[list[str]]:
+
+def test_install_node_uses_brew_on_macos(monkeypatch) -> None:
     from pilot.managers import python_env_manager as module
 
     manager = module.PythonEnvManager(bench=None)
     commands: list[list[str]] = []
-    monkeypatch.setattr(module, "is_macos", lambda: False)
-    monkeypatch.setattr(module, "detect_distro", lambda: distro)
+    monkeypatch.setattr(module, "is_macos", lambda: True)
     monkeypatch.setattr(module, "run_command", lambda argv, **kwargs: commands.append(argv))
+    manager._install_node()
+    assert commands == [["brew", "install", "node"]]
+
+
+def test_install_node_uses_package_manager_on_alpine(monkeypatch) -> None:
+    from pilot.managers import python_env_manager as module
+
+    manager = module.PythonEnvManager(bench=None)
+    monkeypatch.setattr(module, "is_macos", lambda: False)
+    monkeypatch.setattr(module, "is_alpine", lambda: True)
     with patch.object(module, "get_package_manager") as gpm:
         manager._install_node()
-        if gpm.return_value.install.called:
-            commands.append(list(gpm.return_value.install.call_args[0]))
-    return commands
+    gpm.return_value.install.assert_called_once_with("nodejs", "npm")
 
 
-def test_install_node_debian_uses_nodesource_deb(monkeypatch) -> None:
-    commands = _node_install_commands(monkeypatch, Distro.DEBIAN)
-    assert "deb.nodesource.com" in commands[0][2]
-    assert commands[1] == ["sudo", "apt-get", "install", "-y", "nodejs"]
+def test_install_node_raises_on_other_linux(monkeypatch) -> None:
+    from pilot.exceptions import BenchError
+    from pilot.managers import python_env_manager as module
 
-
-def test_install_node_fedora_uses_nodesource_rpm(monkeypatch) -> None:
-    commands = _node_install_commands(monkeypatch, Distro.FEDORA)
-    assert "rpm.nodesource.com" in commands[0][2]
-    assert commands[1] == ["sudo", "dnf", "install", "-y", "nodejs"]
-
-
-@pytest.mark.parametrize("distro", [Distro.ARCH, Distro.ALPINE])
-def test_install_node_native_repos(monkeypatch, distro) -> None:
-    commands = _node_install_commands(monkeypatch, distro)
-    assert commands == [["nodejs", "npm"]]
+    manager = module.PythonEnvManager(bench=None)
+    monkeypatch.setattr(module, "is_macos", lambda: False)
+    monkeypatch.setattr(module, "is_alpine", lambda: False)
+    with pytest.raises(BenchError, match="install.sh"):
+        manager._install_node()

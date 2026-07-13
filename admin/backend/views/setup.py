@@ -44,15 +44,6 @@ def save_config():
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
-    # A fresh install can only secure the pre-existing 'root' account
-    # (secure_installation runs ALTER USER 'root'@'localhost' — an arbitrary name
-    # is never created), so reject a custom root user for fresh installs. An
-    # existing DB can legitimately use a custom superuser.
-    admin_user = data.get("mariadb_admin_user") or "root"
-    if admin_user != "root" and _will_install_fresh(bench_root, data):
-        return jsonify({"ok": False, "error":
-            "A fresh MariaDB install only has the 'root' superuser; set the MariaDB root user to 'root'."}), 400
-
     # Preserve any settings the wizard didn't send (e.g. python version, fields
     # not shown in the current step). Incoming data wins on conflicts.
     toml_path = bench_root / "bench.toml"
@@ -65,7 +56,6 @@ def save_config():
             pass
 
     settings = {**existing, **data, "admin_enabled": True}
-    _assign_postgres_port(bench_root, settings)
     store.write_flat(_current_name(bench_root), settings, port_offset=current_port_offset(toml_path))
 
     resp = jsonify({"ok": True})
@@ -85,26 +75,20 @@ def _issue_setup_session(resp, toml_path: Path) -> None:
 
 @setup_bp.route("/validate-mariadb", methods=["POST"])
 def validate_mariadb():
-    """Tell the wizard whether the entered credentials will work.
-
-    Dedicated instance: not yet provisioned → bench init will create it → will_install.
-    Shared instance: must validate against the running system MariaDB.
-    """
+    """Tell the wizard whether the entered credentials will work against the
+    single MariaDB server every bench for this OS user shares. Not yet
+    provisioned → bench init will create and secure it → will_install."""
     from pilot.managers.mariadb_manager import MariaDBManager
 
     data = request.get_json(silent=True) or {}
     password = data.get("mariadb_password", "")
     admin_user = data.get("mariadb_admin_user", "root")
-    dedicated = data.get("dedicated_db", True)  # True = dedicated, False = shared
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config = _mariadb_config(bench_root, password, admin_user, dedicated=dedicated)
+    config = _mariadb_config(bench_root, password, admin_user)
     manager = MariaDBManager(config)
 
-    # Fresh install → init will install + secure it (the wizard locks the root
-    # user to 'root' in this case, since secure_installation can only ALTER the
-    # pre-existing root account).
-    if _is_fresh_install(manager, dedicated):
+    if _is_fresh_install(manager):
         return jsonify({"state": "will_install"})
 
     if manager.check_credentials(password):
@@ -115,88 +99,46 @@ def validate_mariadb():
 
 @setup_bp.route("/validate-postgres", methods=["POST"])
 def validate_postgres():
-    """Tell the wizard whether the entered PostgreSQL credentials will work.
-
-    A dedicated cluster (or a server not yet installed) is created and secured by
-    init, so its password is whatever the user enters now → will_install. An
-    existing shared server validates the live credentials.
-    """
+    """Tell the wizard whether the entered PostgreSQL credentials will work
+    against the single PostgreSQL server every bench for this OS user shares."""
     from pilot.config.postgres_config import PostgresConfig
     from pilot.managers.postgres_manager import PostgresManager
 
     data = request.get_json(silent=True) or {}
     password = data.get("postgres_password", "")
     admin_user = data.get("postgres_admin_user") or "postgres"
-    dedicated = bool(data.get("dedicated"))
 
     manager = PostgresManager(PostgresConfig(root_password=password, admin_user=admin_user))
-    if dedicated or not manager.is_installed():
+    if _is_fresh_install(manager):
         return jsonify({"state": "will_install"})
     if manager.check_credentials(password):
         return jsonify({"state": "valid"})
     return jsonify({"state": "invalid"})
 
 
-def _is_fresh_install(manager, dedicated: bool) -> bool:
-    """True when init will install/provision + secure MariaDB itself (rather than
-    connecting to an already-configured server)."""
+def _is_fresh_install(manager) -> bool:
+    """True when init will install/provision + secure the server itself
+    (rather than connecting to an already-configured one). is_provisioned()
+    checks for the manager's own systemd --user unit — the single source of
+    truth for whether this bench user's server has already been set up."""
     if not manager.is_installed():
         return True
-    # Dedicated instance not yet provisioned — init will create + secure it.
-    if dedicated and manager.is_dedicated and not manager.service_is_active():
-        return True
-    return False
+    return not manager.is_provisioned()
 
 
-def _will_install_fresh(bench_root: Path, data: dict) -> bool:
-    """Fresh-install check for the /save payload (shared if no instance name)."""
-    from pilot.managers.mariadb_manager import MariaDBManager
-
-    dedicated = bool(data.get("mariadb_instance"))
-    config = _mariadb_config(
-        bench_root,
-        data.get("mariadb_password", ""),
-        data.get("mariadb_admin_user") or "root",
-        dedicated=dedicated,
-    )
-    return _is_fresh_install(MariaDBManager(config), dedicated)
-
-
-def _mariadb_config(bench_root: Path, password: str, admin_user: str = "root", dedicated: bool = True):
-    """Build a MariaDBConfig from the bench's toml with the entered credentials applied.
-
-    For shared DB (dedicated=False) we don't read the bench toml — the toml may
-    already have a dedicated instance name set (written by `bench new`), which would
-    make the manager try the dedicated socket that doesn't exist yet.
-    """
+def _mariadb_config(bench_root: Path, password: str, admin_user: str = "root"):
+    """Build a MariaDBConfig from the bench's toml with the entered credentials applied."""
     from pilot.config.mariadb_config import MariaDBConfig
 
     config = MariaDBConfig(root_password=password, admin_user=admin_user)
-    if dedicated:
-        toml_path = bench_root / "bench.toml"
-        if toml_path.exists():
-            try:
-                settings = BenchTomlStore(toml_path).read_flat()
-                config.instance = settings.get("mariadb_instance", "") or ""
-                config.socket_path = settings.get("mariadb_socket_path", "") or ""
-            except Exception:
-                pass
+    toml_path = bench_root / "bench.toml"
+    if toml_path.exists():
+        try:
+            settings = BenchTomlStore(toml_path).read_flat()
+            config.socket_path = settings.get("mariadb_socket_path", "") or ""
+        except Exception:
+            pass
     return config
-
-
-def _assign_postgres_port(bench_root: Path, settings: dict) -> None:
-    """A dedicated PostgreSQL cluster gets its own port; the shared server is 5432.
-    Idempotent: keep an already-assigned dedicated port across re-saves."""
-    if settings.get("db_type") != "postgres":
-        return
-    from pilot.managers.postgres_manager import pick_dedicated_postgres_port
-
-    if settings.get("postgres_instance"):
-        port = settings.get("postgres_port")
-        if not port or int(port) == 5432:
-            settings["postgres_port"] = pick_dedicated_postgres_port(bench_root)
-    else:
-        settings["postgres_port"] = 5432
 
 
 def _validate(data: dict) -> str | None:
@@ -221,16 +163,12 @@ def start_setup():
     reload, simply reattaches to the one running task. Production is a separate
     step the user runs from the terminal afterwards (`bench setup production`).
     """
-    from pilot.config.bench_config import BenchConfig
-    from pilot.platform import has_passwordless_sudo, is_linux
-
     bench_root = Path(current_app.config["BENCH_ROOT"])
 
-    # The wizard runs as a no-TTY task; without passwordless sudo it would hang on
-    # a hidden password prompt. Surface a clean error instead.
-    if is_linux() and not has_passwordless_sudo():
-        return jsonify({"ok": False, "error": "Passwordless sudo is not configured. "
-                        "Run install.sh (or add /etc/sudoers.d/<user> NOPASSWD) and retry."}), 400
+    # No passwordless-sudo preflight needed: bench init runs rootless (a
+    # per-bench-user systemd --user MariaDB/PostgreSQL server — see
+    # MariaDBManager/PostgresManager), except on Alpine, which commonly
+    # already runs as root.
 
     # Pre-flight validation so config errors surface in the wizard instead of
     # failing deep inside the task.

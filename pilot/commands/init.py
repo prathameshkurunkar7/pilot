@@ -62,15 +62,7 @@ class InitCommand(Command):
 
     def _do_run(self) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager
-        from pilot.platform import is_linux
 
-        self._check_passwordless_sudo()
-
-        # A dedicated MariaDB instance is only provisioned for MariaDB benches;
-        # PostgreSQL benches run against the shared server (no per-bench instance).
-        dedicated_db = is_linux() and self.bench.config.db_type == "mariadb" and bool(self.bench.config.mariadb.instance)
-        # Passwordless sudo is set up by install.sh and enforced above by
-        # _check_passwordless_sudo, so the steps below never block on a prompt.
         python_env_manager = PythonEnvManager(self.bench)
 
         # The ordered list of steps that will actually run, so the progress total
@@ -78,15 +70,14 @@ class InitCommand(Command):
         # that drifts whenever a step is added or removed. Production deployment
         # (process manager, nginx, TLS) is intentionally NOT done here — it's a
         # separate `bench setup production` step, run by the wizard when the user
-        # opts in and available standalone from the CLI.
+        # opts in and available standalone from the CLI. bench init never needs
+        # root: system packages/services are installed once by install.sh, and
+        # MariaDB/PostgreSQL run as a rootless per-user server (see
+        # MariaDBManager/PostgresManager).
         steps: list[tuple[str, Callable[[], None]]] = [
             ("Validate bench.toml", self.bench.config.validate),
             ("Ensure admin password", self._ensure_admin_password),
             ("Install system packages", self._install_system_packages),
-        ]
-        if dedicated_db:
-            steps.append(("Provision MariaDB instance", self._provision_mariadb_instance))
-        steps += [
             ("Create bench directory structure", self._create_bench_structure),
             ("Create Python virtualenv", lambda: self._create_virtualenv(python_env_manager)),
             ("Clone and install framework app", lambda: self._install_framework_apps(python_env_manager)),
@@ -145,19 +136,6 @@ class InitCommand(Command):
 
         ProcessManager.for_bench(self.bench).write_config()
 
-    def _check_passwordless_sudo(self) -> None:
-        from pilot.platform import has_passwordless_sudo, is_linux
-
-        if not is_linux() or has_passwordless_sudo():
-            return
-        raise RuntimeError(
-            "Passwordless sudo is not configured for this user. bench init needs it to "
-            "install packages and manage services without a password prompt.\n"
-            "Set it up by re-running the installer:\n"
-            "  curl -fsSL https://raw.githubusercontent.com/frappe/bench-cli/main/install.sh | bash\n"
-            "or add /etc/sudoers.d/<user> containing: <user> ALL=(ALL) NOPASSWD: ALL"
-        )
-
     def _step(self, description: str) -> None:
         self._step_counter += 1
         print(f"[{self._step_counter}/{self._total_steps}] {description}...", flush=True)
@@ -168,11 +146,6 @@ class InitCommand(Command):
         if not download_admin_frontend(_cli_root()):
             print("  Pre-built download failed — building from source (requires Node.js)...")
             BuildAdminCommand().run()
-
-    def _provision_mariadb_instance(self) -> None:
-        from pilot.managers.mariadb_manager import MariaDBManager
-
-        MariaDBManager(self.bench.config.mariadb).provision_instance(self.bench.config_path)
 
     # Build/runtime deps for compiling frappe's Python and Node wheels on Alpine.
     # musl ships no manylinux wheels, so the full header set is needed; bash and
@@ -190,19 +163,18 @@ class InitCommand(Command):
         from pilot.managers.python_env_manager import PythonEnvManager
         from pilot.managers.redis_manager import RedisManager
         from pilot.package_managers import get_package_manager
-        from pilot.platform import is_linux
 
         pkg = get_package_manager()
-        if is_linux():
-            pkg.update()
 
-        # A bench runs exactly one engine; install/provision only that one.
+        # A bench runs exactly one engine; install/provision only that one. Every
+        # bench for this OS user shares the same MariaDB/PostgreSQL server, so
+        # provision() just reuses whatever a prior bench already brought up.
         if self.bench.config.db_type == "postgres":
             self._postgres_manager().provision()
         elif self.bench.config.db_type == "sqlite":
             pass
         else:
-            self._install_mariadb()
+            self._mariadb_manager().provision()
 
         RedisManager(self.bench.config.redis, self.bench).install()
         self._install_build_headers(pkg)
@@ -211,7 +183,10 @@ class InitCommand(Command):
     def _install_build_headers(self, pkg) -> None:
         # frappe imports mysqlclient in its __init__.py for every engine, so the
         # MariaDB client headers are always required; postgres benches additionally
-        # need libpq headers for psycopg.
+        # need libpq headers for psycopg. On Alpine (commonly already root)
+        # these are installed directly; elsewhere install.sh provisions them
+        # once for the whole host, so bench init only ever verifies them.
+        from pilot.exceptions import BenchError
         from pilot.platform import is_alpine, is_linux
 
         postgres = self.bench.config.db_type == "postgres"
@@ -224,41 +199,19 @@ class InitCommand(Command):
             packages = ["build-essential", "pkg-config", "git", "python3-dev", "libmariadb-dev"]
             if postgres:
                 packages.append("libpq-dev")
-            pkg.install(*packages)
+            missing = [p for p in packages if not pkg.is_installed(p)]
+            if missing:
+                raise BenchError(
+                    f"Missing system packages: {', '.join(missing)}. Re-run install.sh "
+                    "as root to install them, or install them yourself."
+                )
 
     def _postgres_manager(self):
         from pilot.managers.postgres_manager import PostgresManager
 
         return PostgresManager(self.bench.config.postgres)
 
-    def _install_mariadb(self) -> None:
+    def _mariadb_manager(self):
         from pilot.managers.mariadb_manager import MariaDBManager
-        from pilot.platform import is_linux
 
-        mariadb_manager = MariaDBManager(self.bench.config.mariadb)
-        freshly_installed = not mariadb_manager.is_installed()
-        mariadb_manager.install()
-
-        if mariadb_manager.is_dedicated:
-            # Install the package only; the instance is provisioned separately
-            # (see _do_run / _provision_mariadb_instance).
-            if freshly_installed and is_linux():
-                # apt auto-starts the shared mariadb service on port 3306; stop and
-                # disable it so the dedicated instance can claim its port.
-                mariadb_manager.stop_shared()
-            return
-
-        port_config_written = mariadb_manager.configure_shared_port()
-        if port_config_written:
-            # Config was written — restart to apply the new port (also starts a
-            # stopped service).
-            mariadb_manager.restart()
-        else:
-            mariadb_manager.start()
-        if freshly_installed or mariadb_manager.is_unsecured():
-            mariadb_manager.secure_installation()
-        elif not mariadb_manager.check_credentials():
-            raise RuntimeError(
-                "MariaDB is already installed but the configured root password is incorrect. "
-                "Fix mariadb.root_password in bench.toml (or secure the existing MariaDB) and retry."
-            )
+        return MariaDBManager(self.bench.config.mariadb)

@@ -5,7 +5,6 @@ from pathlib import Path
 
 from pilot.commands.base import Command
 from pilot.exceptions import BenchError
-from pilot.platform import is_linux
 from pilot.utils import iter_sibling_benches
 
 
@@ -79,16 +78,19 @@ class NewCommand(Command):
             "admin_tls": admin_tls,
             "db_type": self.db_type,
         }
+        if self.db_type == "mariadb":
+            # Every bench for this OS user shares one MariaDB server (see
+            # MariaDBManager), so a new bench must inherit whichever port a
+            # sibling already established for it. If none exists yet, pick a
+            # free port up front — 3306 is often already taken by a
+            # system-wide MariaDB, and MariaDBManager refuses to bind an
+            # occupied port.
+            settings["mariadb_port"] = self._sibling_mariadb_port() or self._pick_mariadb_port()
         if self.db_type == "postgres":
-            # bench provisions PostgreSQL during init; this becomes its superuser password.
-            settings["postgres_password"] = secrets.token_hex(nbytes=8)
-            # Default to a dedicated per-bench cluster where supported (systemd
-            # Linux); elsewhere (Alpine/macOS) sites use the shared server.
-            from pilot.managers.postgres_manager import pick_dedicated_postgres_port, supports_dedicated_postgres
-
-            if supports_dedicated_postgres():
-                settings["postgres_instance"] = self.name
-                settings["postgres_port"] = pick_dedicated_postgres_port(self.target_directory)
+            # Every bench for this OS user shares one PostgreSQL server, so a new
+            # bench must inherit the password that already secured it — a fresh
+            # random one here would lock it out of a server a sibling provisioned.
+            settings["postgres_password"] = self._sibling_postgres_password() or secrets.token_hex(nbytes=8)
         if self.process_manager:
             settings["production_process_manager"] = self.process_manager
         # The Let's Encrypt account email is a server-wide setting; inherit it
@@ -97,19 +99,8 @@ class NewCommand(Command):
         sibling_email = self._sibling_letsencrypt_email()
         if sibling_email:
             settings["letsencrypt_email"] = sibling_email
-        # MariaDB benches get their own instance with an isolated socket/datadir;
-        # mariadb.port is offset automatically via _PORT_FIELDS. Linux uses a
-        # per-bench instance (systemd mariadb@<name>, or a generated OpenRC
-        # mariadb-<name> on Alpine). macOS (Homebrew) and PostgreSQL benches have
-        # no per-instance mechanism, so they stay on the shared server.
-        if self.db_type == "mariadb" and is_linux():
-            settings.update(
-                {
-                    "mariadb_instance": self.name,
-                    "mariadb_socket_path": f"/run/mysqld/mysqld-{self.name}.sock",
-                    "mariadb_data_dir": f"/var/lib/mysql-{self.name}",
-                }
-            )
+        # Every bench for this OS user shares the same MariaDB/PostgreSQL server
+        # (see MariaDBManager/PostgresManager) — no per-bench instance to set up.
         BenchTomlStore(bench_toml).write_flat(self.name, settings, port_offset=offset)
 
         admin_port = default_ports()["admin.port"] + offset
@@ -125,6 +116,35 @@ class NewCommand(Command):
             email = getattr(config.letsencrypt, "email", "")
             if email:
                 return email
+        return ""
+
+    def _sibling_mariadb_port(self) -> int:
+        """The MariaDB port a sibling bench already established for the
+        shared user-owned server (see MariaDBManager), so this bench points
+        at the same running instance instead of a fresh guess."""
+        for _, config in iter_sibling_benches(self.target_directory):
+            if config.db_type == "mariadb" and config.mariadb.port:
+                return config.mariadb.port
+        return 0
+
+    def _pick_mariadb_port(self) -> int:
+        """Smallest port at/above the default 3306 that isn't already live —
+        used only when no sibling has picked one yet, so the very first
+        MariaDB bench on a host doesn't collide with a system-wide MariaDB
+        already listening on 3306."""
+        from pilot.config.mariadb_config import MariaDBConfig
+
+        port = MariaDBConfig().port
+        while self._port_is_live(port):
+            port += 1
+        return port
+
+    def _sibling_postgres_password(self) -> str:
+        """The PostgreSQL superuser password from any sibling Postgres bench —
+        every bench for this OS user shares one server (see PostgresManager)."""
+        for _, config in iter_sibling_benches(self.target_directory):
+            if config.db_type == "postgres" and config.postgres.root_password:
+                return config.postgres.root_password
         return ""
 
     def _sibling_admin_tls(self) -> bool:

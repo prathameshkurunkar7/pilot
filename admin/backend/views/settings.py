@@ -387,7 +387,6 @@ def _build_settings_response(config: BenchConfig) -> dict:
             "port": config.mariadb.port,
             "admin_user": config.mariadb.admin_user,
             "socket_path": config.mariadb.socket_path,
-            "version": config.mariadb.version or "",
         },
         "postgres": {
             "host": config.postgres.host,

@@ -115,15 +115,13 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
 
 
 def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A `--database postgres` bench records db_type, generates a postgres
-    password, and gets no dedicated MariaDB instance."""
+    """A `--database postgres` bench records db_type and generates a postgres
+    password (there's no dedicated cluster/instance anymore — one shared
+    server per OS user)."""
     from pilot.commands.new import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("pilot.commands.new.is_linux", lambda: True)
-    # Shared server (no dedicated cluster) for a deterministic shape across hosts.
-    monkeypatch.setattr("pilot.managers.postgres_manager.supports_dedicated_postgres", lambda: False)
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "pg", "pg", db_type="postgres").run()
 
@@ -131,27 +129,25 @@ def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         data = tomllib.load(f)
     assert data["bench"]["db_type"] == "postgres"
     assert data["postgres"]["root_password"]  # generated for provisioning
-    assert not data["mariadb"].get("instance")  # shared, no dedicated instance
-    assert not data["postgres"].get("instance")  # shared server
 
 
-def test_new_command_dedicated_postgres_cluster(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Where supported (systemd Linux), a postgres bench defaults to its own
-    cluster with an assigned, non-shared port."""
+def test_new_command_second_postgres_bench_inherits_password(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every bench for this OS user shares one PostgreSQL server, so a second
+    bench must reuse the password that already secured it — not a fresh
+    random one that would lock it out."""
     from pilot.commands.new import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("pilot.commands.new.is_linux", lambda: True)
-    monkeypatch.setattr("pilot.managers.postgres_manager.supports_dedicated_postgres", lambda: True)
-    monkeypatch.setattr("pilot.managers.postgres_manager.pick_dedicated_postgres_port", lambda path: 5439)
     benches_dir = tmp_path / "benches"
-    NewCommand(benches_dir / "pg", "pg", db_type="postgres").run()
+    NewCommand(benches_dir / "pg1", "pg1", db_type="postgres").run()
+    NewCommand(benches_dir / "pg2", "pg2", db_type="postgres").run()
 
-    with open(benches_dir / "pg" / "bench.toml", "rb") as f:
-        data = tomllib.load(f)
-    assert data["postgres"]["instance"] == "pg"
-    assert data["postgres"]["port"] == 5439
+    with open(benches_dir / "pg1" / "bench.toml", "rb") as f:
+        first = tomllib.load(f)
+    with open(benches_dir / "pg2" / "bench.toml", "rb") as f:
+        second = tomllib.load(f)
+    assert first["postgres"]["root_password"] == second["postgres"]["root_password"]
 
 
 def test_new_command_mariadb_bench_has_no_postgres_password(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -159,7 +155,6 @@ def test_new_command_mariadb_bench_has_no_postgres_password(tmp_path: Path, monk
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("pilot.commands.new.is_linux", lambda: False)
     NewCommand(tmp_path / "benches" / "m", "m").run()
 
     with open(tmp_path / "benches" / "m" / "bench.toml", "rb") as f:
@@ -168,41 +163,22 @@ def test_new_command_mariadb_bench_has_no_postgres_password(tmp_path: Path, monk
     assert not data["postgres"]["root_password"]  # not provisioned for mariadb benches
 
 
-def test_new_command_writes_dedicated_mariadb_instance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """New benches default to their own MariaDB instance with an isolated
-    socket/datadir and an offset port."""
+def test_new_command_mariadb_port_is_not_offset_between_benches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every bench for this OS user shares one MariaDB server, so mariadb.port
+    must stay identical across benches — unlike http_port/redis ports, which
+    are offset per bench."""
     from pilot.commands.new import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("pilot.commands.new.is_linux", lambda: True)
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "first", "first").run()
     NewCommand(benches_dir / "second", "second").run()
 
     with open(benches_dir / "second" / "bench.toml", "rb") as f:
         data = tomllib.load(f)
-    assert data["mariadb"]["instance"] == "second"
-    assert data["mariadb"]["socket_path"] == "/run/mysqld/mysqld-second.sock"
-    assert data["mariadb"]["data_dir"] == "/var/lib/mysql-second"
-    assert data["mariadb"]["port"] == 3307  # base 3306 + offset 1
-
-
-def test_new_command_writes_dedicated_mariadb_instance_on_alpine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Alpine gets a per-bench instance too (run under OpenRC), at parity with
-    systemd — only macOS stays on the shared server."""
-    from pilot.commands.new import NewCommand
-
-    monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
-    monkeypatch.setattr("pilot.commands.new.is_linux", lambda: True)
-    target = tmp_path / "benches" / "alp"
-    NewCommand(target, "alp").run()
-
-    with open(target / "bench.toml", "rb") as f:
-        data = tomllib.load(f)
-    assert data["mariadb"]["instance"] == "alp"
-    assert data["mariadb"]["socket_path"] == "/run/mysqld/mysqld-alp.sock"
+    assert data["mariadb"]["port"] == 3306
+    assert data["bench"]["http_port"] == 8001  # other ports still offset
 
 
 def test_new_command_skips_offset_with_live_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1022,12 +998,12 @@ def test_start_rebuild_config_writes_process_and_common_site_config(tmp_path: Pa
 # ── DropBenchCommand ────────────────────────────────────────────────────────
 
 
-def _drop_config(name: str, instance: str = "") -> BenchConfig:
+def _drop_config(name: str) -> BenchConfig:
     return BenchConfig(
         name=name,
         python_version="3.14",
         apps=[AppConfig(name="frappe", repo="x", branch="y")],
-        mariadb=MariaDBConfig(root_password="root", instance=instance),
+        mariadb=MariaDBConfig(root_password="root"),
         redis=RedisConfig(cache_port=13000, queue_port=11000),
         workers=WorkerConfig(groups=[WorkerGroup(queues=["default"], count=1)]),
     )
@@ -1088,56 +1064,19 @@ def test_drop_bench_refuses_when_sites_exist(tmp_path: Path) -> None:
     assert tmp_path.exists()
 
 
-def test_drop_bench_keeps_mariadb_instance_shared_with_sibling(tmp_path: Path) -> None:
+def test_drop_bench_deletes_directory_with_no_sites(tmp_path: Path) -> None:
+    """No dedicated database instance to reason about anymore — every bench for
+    this OS user shares one MariaDB/PostgreSQL server, so a clean drop (no
+    sites) just removes the bench directory."""
     from pilot.commands.drop_bench import DropBenchCommand
 
     benches = tmp_path / "benches"
-    (benches / "one").mkdir(parents=True)
-    sibling = benches / "two"
-    sibling.mkdir(parents=True)
-    (sibling / "bench.toml").write_text('[bench]\nname = "two"\n\n[mariadb]\ninstance = "shared"\n')
+    bench_dir = benches / "one"
+    bench_dir.mkdir(parents=True)
+    bench = Bench(_drop_config("one"), bench_dir)
 
-    bench = Bench(_drop_config("one", instance="shared"), benches / "one")
-    assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is True
-
-
-def test_drop_bench_removes_unique_mariadb_instance(tmp_path: Path) -> None:
-    from pilot.commands.drop_bench import DropBenchCommand
-
-    benches = tmp_path / "benches"
-    (benches / "one").mkdir(parents=True)
-    sibling = benches / "two"
-    sibling.mkdir(parents=True)
-    # A genuinely separate instance: own name, own datadir/socket, own port.
-    (sibling / "bench.toml").write_text(
-        '[bench]\nname = "two"\n\n[mariadb]\ninstance = "two"\nport = 3308\n'
-    )
-
-    config = _drop_config("one", instance="one")
-    config.mariadb.port = 3307
-    bench = Bench(config, benches / "one")
-    assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is False
-
-
-def test_drop_bench_keeps_mariadb_when_sibling_shares_host_port(tmp_path: Path) -> None:
-    """A sibling pointed at this bench's DB over TCP (same host:port) — even with
-    a different instance name — must keep the database alive."""
-    from pilot.commands.drop_bench import DropBenchCommand
-
-    benches = tmp_path / "benches"
-    (benches / "one").mkdir(parents=True)
-    sibling = benches / "two"
-    sibling.mkdir(parents=True)
-    # Different instance name, but connects to bench one's port on localhost.
-    (sibling / "bench.toml").write_text(
-        '[bench]\nname = "two"\n\n[mariadb]\ninstance = "two"\nhost = "127.0.0.1"\nport = 3307\n'
-    )
-
-    config = _drop_config("one", instance="one")
-    config.mariadb.host = "localhost"
-    config.mariadb.port = 3307
-    bench = Bench(config, benches / "one")
-    assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is True
+    DropBenchCommand(bench, skip_confirm=True).run()
+    assert not bench_dir.exists()
 
 
 # ── BuildAdminCommand node-version guard ──────────────────────────────────────

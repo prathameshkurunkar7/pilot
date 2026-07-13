@@ -22,21 +22,18 @@ FLAT_KEYS = {
     "db_type": "db_type",
     "mariadb_password": "mariadb.root_password",
     "mariadb_admin_user": "mariadb.admin_user",
-    "mariadb_instance": "mariadb.instance",
     "mariadb_socket_path": "mariadb.socket_path",
-    "mariadb_data_dir": "mariadb.data_dir",
-    # NB: mariadb.port is deliberately NOT a flat key. Like the other ports
-    # (http/admin/redis) it is offset-managed via _PORT_FIELDS. Exposing it as a
-    # flat key made read_settings() round-trip the already-offset value, which
-    # render() then offset a *second* time — so every wizard /save compounded the
-    # offset onto mariadb.port alone (e.g. 3306→3312→3318), drifting it off-grid
-    # and colliding with sibling instances.
-    # postgres.port is safe as a flat key — it's a shared server, never offset
-    # (not in _PORT_FIELDS), so it doesn't hit the double-offset issue above.
+    # mariadb.port and postgres.port are deliberately NOT offset-managed
+    # (not in _PORT_FIELDS): every bench for a given OS user shares the same
+    # single MariaDB/PostgreSQL server, so their ports must stay identical
+    # across benches rather than being offset per bench. mariadb.port is
+    # still a flat key (unlike the offset-managed ports) so NewCommand can
+    # set it explicitly — the shared server's port isn't always the default
+    # 3306 (e.g. a system-wide MariaDB may already be running there).
+    "mariadb_port": "mariadb.port",
     "postgres_password": "postgres.root_password",
     "postgres_admin_user": "postgres.admin_user",
     "postgres_port": "postgres.port",
-    "postgres_instance": "postgres.instance",
     "admin_enabled": "admin.enabled",
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",
@@ -67,7 +64,7 @@ def _default_config(name: str = "") -> BenchConfig:
 # and dotted paths — callers needing them (e.g. NewCommand's port offset
 # logic) should go through default_ports()/BenchTomlBuilder, not duplicate
 # the numbers themselves.
-_PORT_FIELDS = ("http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port", "mariadb.port")
+_PORT_FIELDS = ("http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port")
 
 
 def default_ports() -> dict[str, int]:

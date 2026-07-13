@@ -32,8 +32,6 @@
         <!-- Database -->
         <div v-show="currentStep === 'database'" class="flex flex-col gap-4">
           <Select label="Database engine" v-model="dbType" :options="dbTypeOptions" />
-          <Select v-show="showDeploymentMode" label="Deployment mode" v-model="deploymentMode"
-            :options="deploymentOptions" />
           <TextInput v-show="showRootUsername" label="Root username" v-model="dbUser"
             :placeholder="rootUserPlaceholder" />
           <div>
@@ -157,17 +155,14 @@ const {
   isAdminPasswordValid,
   adminPassword,
   dbType,
-  deploymentMode,
   dbUser,
   dbPassword,
   appRepo,
   appBranch,
-  showDeploymentMode,
   showRootUsername,
   rootUserPlaceholder,
   rootPasswordDescription,
   dbTypeOptions,
-  deploymentOptions,
   branchOptions,
   stepSequence,
   stepNumber,

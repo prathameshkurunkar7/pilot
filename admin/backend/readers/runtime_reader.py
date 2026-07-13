@@ -26,7 +26,7 @@ class RuntimeVersionReader:
         versions = {
             "Python": self._config.python_version,
             "Node": self._flag_version("node", ["--version"], r"v?([\d.]+)"),
-            "MariaDB": self._flag_version("mariadbd", ["--version"], r"Ver ([\d.]+)") or self._config.mariadb.version or "",
+            "MariaDB": self._flag_version("mariadbd", ["--version"], r"Ver ([\d.]+)") or "",
             "PostgreSQL": self._flag_version("psql", ["--version"], r"(\d+\.\d+)"),
             "Redis": RedisManager.installed_version() or self._config.redis.version or "",
             "Nginx": self._nginx_version(),

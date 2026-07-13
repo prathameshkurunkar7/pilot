@@ -172,6 +172,27 @@ def test_validate_internal_imports_ignores_relative_imports(tmp_path: Path) -> N
     Validator(app).validate()
 
 
+def test_validate_passes_for_dependency_declared_in_optional_group(tmp_path: Path) -> None:
+    """A dependency declared under [project.optional-dependencies] (e.g. a
+    'test' or 'dev' extras group) counts as declared, not just the base
+    [project.dependencies] list — apps commonly gate test-only imports like
+    hypothesis behind such a group rather than a hard runtime dependency."""
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        (
+            '[project]\nname = "myapp"\ndependencies = []\n'
+            "[project.optional-dependencies]\n"
+            'test = ["hypothesis~=6.77.0"]\n'
+        ),
+        {
+            "myapp/hooks.py": "app_name = 'myapp'\n",
+            "myapp/tests/test_utils.py": "import hypothesis\n",
+        },
+    )
+    Validator(app).validate()
+
+
 def test_validate_passes_for_dependency_declared_by_frappe(tmp_path: Path) -> None:
     _make_app(
         tmp_path,

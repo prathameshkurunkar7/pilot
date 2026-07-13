@@ -81,6 +81,7 @@ class SetupProductionCommand(Command):
 
     def run(self) -> None:
         self._require_linux()
+        self._check_sudo_available()
         self._resolve_target()
         self._require_production_inputs()
         self._check_admin_domain()
@@ -234,6 +235,25 @@ class SetupProductionCommand(Command):
                 file=sys.stderr,
             )
             sys.exit(1)
+
+    def _check_sudo_available(self) -> None:
+        """Unlike `bench init`, production setup does need root — for nginx,
+        certbot, and systemd's linger/user-manager bootstrap. It isn't
+        pre-granted (bench init needs none of that), so either passwordless
+        sudo is already cached/configured, or there's a TTY sudo can prompt
+        on. Neither means this would hang or silently fail partway through."""
+        from pilot.platform import has_passwordless_sudo, is_root, which
+
+        if is_root() or has_passwordless_sudo():
+            return
+        if which("sudo") is None:
+            raise BenchError("sudo is required to deploy to production (nginx, certbot, systemd) but is not installed.")
+        if not sys.stdin.isatty():
+            raise BenchError(
+                "Deploying to production needs root (nginx, certbot, systemd) and there's no "
+                "terminal to prompt for a sudo password. Run this interactively, or configure "
+                "passwordless sudo for this user first."
+            )
 
     def _check_admin_domain(self) -> None:
         """Admin is reached only via its domain in production. Use whatever is in

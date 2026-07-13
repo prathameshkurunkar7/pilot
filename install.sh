@@ -144,6 +144,61 @@ bootstrap_packages() {
     esac
 }
 
+# ── database engines ──────────────────────────────────────────────────────────
+# bench runs one MariaDB server and one PostgreSQL server per bench user
+# (rootless, systemctl --user) shared across that user's benches, so the
+# engines must already be installed system-wide before `bench init` ever
+# runs — the runtime never installs packages itself. Root, one-time.
+_MARIADB_REPO_SETUP_URL="https://r.mariadb.com/downloads/mariadb_repo_setup"
+_MARIADB_VERSION="11.8"
+
+install_database_engines() {
+    # Dev headers for building the Python client libraries (mysqlclient,
+    # psycopg) that frappe's virtualenv compiles during `bench init` — listed
+    # here so bench init never has to install a package itself.
+    case "$DISTRO" in
+        debian|ubuntu)
+            # Debian/Ubuntu ship an older MariaDB than 11.8 by default; pin
+            # the official repo first, same version the runtime expects
+            # (pilot/managers/mariadb_manager.py DEFAULT_VERSION).
+            MARIADB_SETUP_TMP="$(mktemp)"
+            curl -fsSL "$_MARIADB_REPO_SETUP_URL" -o "$MARIADB_SETUP_TMP"
+            run_sudo bash "$MARIADB_SETUP_TMP" --mariadb-server-version="mariadb-$_MARIADB_VERSION"
+            rm -f "$MARIADB_SETUP_TMP"
+            pkg_update
+            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config
+            ;;
+        fedora)
+            pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config ;;
+        arch)
+            pkg_install mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf ;;
+        alpine)
+            # bench init installs Alpine's dev headers itself (Alpine images
+            # commonly already run as root) — just the servers/clients here.
+            pkg_install mariadb mariadb-client postgresql16 postgresql16-client ;;
+    esac
+}
+
+# Distro packages auto-start/enable a system-wide service on the default
+# port (3306/5432). bench never uses that — it runs a per-user instance
+# instead — so free the ports right away rather than have every `bench
+# init` fight over them.
+disable_system_db_services() {
+    case "$DISTRO" in
+        alpine)
+            run_sudo rc-service mariadb stop 2>/dev/null || true
+            run_sudo rc-update del mariadb default 2>/dev/null || true
+            run_sudo rc-service postgresql stop 2>/dev/null || true
+            run_sudo rc-update del postgresql default 2>/dev/null || true
+            ;;
+        macos|unknown) ;;
+        *)
+            run_sudo systemctl disable --now mariadb 2>/dev/null || true
+            run_sudo systemctl disable --now postgresql 2>/dev/null || true
+            ;;
+    esac
+}
+
 bootstrap() {
     case "$DISTRO" in
         macos|unknown) return 0 ;;
@@ -166,33 +221,16 @@ bootstrap() {
     echo "$DISTRO detected — installing base dependencies..."
     pkg_update
     bootstrap_packages
+    install_database_engines
+    disable_system_db_services
 }
 
 bootstrap
 
-# ── passwordless sudo configuration ──────────────────────────────────────────
-# Writes /etc/sudoers.d/<user> granting passwordless sudo. Validated with visudo
-# before being installed so a bad file can never lock anyone out.
-write_sudoers() {
-    user="$1"
-    file="/etc/sudoers.d/$user"
-    tmp="$(mktemp)"
-
-    printf '# Frappe bench — managed by install.sh, do not edit\n%s ALL=(ALL) NOPASSWD: ALL\n' "$user" > "$tmp"
-
-    if run_sudo visudo -cf "$tmp" >/dev/null; then
-        run_sudo install -m 0440 "$tmp" "$file"
-        echo "Configured passwordless sudo at $file"
-    else
-        echo "Generated sudoers file is invalid — aborting."
-        rm -f "$tmp"
-        exit 1
-    fi
-    rm -f "$tmp"
-}
-
-# The group conventionally granted admin rights (only cosmetic here — actual
-# access comes from the sudoers.d file above).
+# The group conventionally granted admin rights, so the bench user can
+# authenticate sudo interactively later (e.g. `bench setup production`,
+# or this script's own one-off Node.js install below). bench itself never
+# relies on a standing passwordless grant.
 admin_group() {
     case "$DISTRO" in
         debian|ubuntu|unknown) echo sudo ;;
@@ -212,11 +250,10 @@ if [ "$(id -u)" -eq 0 ]; then
         usermod -aG "$(admin_group)" "$BENCH_USER" 2>/dev/null || true
     fi
 
-    write_sudoers "$BENCH_USER"
-
     echo ""
     echo "========================================================================"
-    echo " User '$BENCH_USER' is ready with passwordless sudo."
+    echo " User '$BENCH_USER' is ready — base tools and database engines are"
+    echo " installed system-wide, so day-to-day bench commands never need root."
     echo ""
     echo " bench must NOT be installed as root. Switch to '$BENCH_USER' and run"
     echo " the installer again:"
@@ -274,15 +311,8 @@ if ! command -v sudo >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "Bench needs passwordless sudo to install packages and manage services."
-if [ "$DISTRO" = "macos" ]; then
-    echo ""
-    echo "NOTE: this will grant the current user '$(id -un)' passwordless sudo"
-    echo "      access by writing /etc/sudoers.d/$(id -un)."
-    echo ""
-fi
+echo "Setting up your environment (installing Node.js needs a one-off sudo prompt)..."
 authenticate_sudo
-write_sudoers "$(id -un)"
 
 # ── clone or update the repo ──────────────────────────────────────────────────
 if [ -d "$PILOT_DIR" ]; then

@@ -18,7 +18,7 @@ from pilot.config.bench_toml_builder import BenchTomlBuilder, current_port_offse
 def test_default_ports_returns_all_fields() -> None:
     ports = default_ports()
     assert set(ports) == {
-        "http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port", "mariadb.port",
+        "http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port",
     }
 
 
@@ -29,7 +29,6 @@ def test_default_ports_values_match_known_defaults() -> None:
     assert ports["redis.cache_port"] == 13000
     assert ports["redis.queue_port"] == 11000
     assert ports["admin.port"] == 7000
-    assert ports["mariadb.port"] == 3306
 
 
 # ── BenchTomlBuilder port_offset ─────────────────────────────────────────────
@@ -55,7 +54,9 @@ def test_port_offset_shifts_all_fields_together(tmp_path: Path) -> None:
     assert data["redis"]["cache_port"] == 13001
     assert data["redis"]["queue_port"] == 11001
     assert data["admin"]["port"] == 7001
-    assert data["mariadb"]["port"] == 3307
+    # mariadb.port is deliberately NOT offset: every bench for this OS user
+    # shares one MariaDB server, so it must stay identical across benches.
+    assert data["mariadb"]["port"] == 3306
 
 
 def test_port_fields_not_settable_via_settings(tmp_path: Path) -> None:

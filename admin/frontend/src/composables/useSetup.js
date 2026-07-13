@@ -9,10 +9,6 @@ const DB_TYPE_OPTIONS = [
   { label: 'MariaDB', value: 'mariadb' },
   { label: 'PostgreSQL', value: 'postgres' },
 ]
-const DEPLOYMENT_OPTIONS = [
-  { label: 'Dedicated Instance (Recommended)', value: 'dedicated' },
-  { label: 'Shared Instance', value: 'shared' },
-]
 const STEP_TITLES = {
   passwords: 'Admin password',
   database: 'Database',
@@ -35,8 +31,7 @@ export function useSetup() {
   const isLinux = ref(true)
   const isAlpine = ref(false)
   const isProductionHandoff = ref(false)
-  const dedicatedMariadbWillInstall = ref(false)
-  const sharedMariadbWillInstall = ref(false)
+  const mariadbWillInstall = ref(false)
   const postgresWillInstall = ref(false)
   const availableBranches = ref([])
 
@@ -48,48 +43,31 @@ export function useSetup() {
   // User inputs
   const adminPassword = ref('')
   const dbType = ref('mariadb')
-  const deploymentMode = ref('dedicated')
   const dbUser = ref('')
   const dbPassword = ref('')
   const appRepo = ref('https://github.com/frappe/frappe')
   const appBranch = ref('develop')
 
-  // Derived database state
-  const mariadbWillInstall = computed(() =>
-    isLinux.value && deploymentMode.value === 'dedicated'
-      ? dedicatedMariadbWillInstall.value
-      : sharedMariadbWillInstall.value,
+  // Derived database state. Every bench for this OS user shares one
+  // MariaDB/PostgreSQL server (see MariaDBManager/PostgresManager) — there's
+  // no per-bench deployment mode to choose, just whether that shared server
+  // still needs to be installed and secured, or already exists.
+  const dbWillInstall = computed(() =>
+    dbType.value === 'postgres' ? postgresWillInstall.value : mariadbWillInstall.value,
   )
   const isAdminPasswordValid = computed(() => meetsPasswordRequirements(adminPassword.value))
-  const isPostgresDedicated = computed(
-    () => isLinux.value && !isAlpine.value && deploymentMode.value === 'dedicated',
-  )
 
-  // Database step: MariaDB and PostgreSQL share one set of fields
-  const showDeploymentMode = computed(() => {
-    if (dbType.value === 'mariadb') return isLinux.value
-    return isLinux.value && !isAlpine.value
-  })
-  const showRootUsername = computed(() => {
-    if (dbType.value === 'mariadb') {
-      return (!isLinux.value || deploymentMode.value === 'shared') && !mariadbWillInstall.value
-    }
-    return !isPostgresDedicated.value
-  })
+  const showRootUsername = computed(() => !dbWillInstall.value)
   const rootUserPlaceholder = computed(() => (dbType.value === 'mariadb' ? 'root' : 'postgres'))
   // The username the API receives: what the user typed, or the engine default
-  // whenever the field is hidden (dedicated instances and fresh installs).
+  // whenever the field is hidden (a fresh install always uses the default).
   const resolvedDbUser = computed(() =>
     showRootUsername.value && dbUser.value ? dbUser.value : rootUserPlaceholder.value,
   )
   const rootPasswordDescription = computed(() => {
-    if (dbType.value === 'mariadb') {
-      return mariadbWillInstall.value
-        ? 'MariaDB will be installed and its root password set to this value.'
-        : undefined
-    }
-    return postgresWillInstall.value
-      ? 'PostgreSQL will be installed and its superuser password set to this value.'
+    const engine = dbType.value === 'mariadb' ? 'MariaDB' : 'PostgreSQL'
+    return dbWillInstall.value
+      ? `${engine} will be installed and its ${dbType.value === 'mariadb' ? 'root' : 'superuser'} password set to this value.`
       : undefined
   })
 
@@ -116,12 +94,12 @@ export function useSetup() {
   })
   const stepSubtitle = computed(() => STEP_SUBTITLES[currentStep.value] || null)
 
-  // A dedicated instance is ours to provision, so give it a generated password.
-  // A shared instance keeps its own, so the field is cleared for re-entry.
+  // A fresh install is ours to provision, so give it a generated password.
+  // An existing server keeps its own, so the field is cleared for re-entry.
   watch(
-    deploymentMode,
-    (mode) => {
-      if (mode === 'shared') dbPassword.value = ''
+    dbWillInstall,
+    (willInstall) => {
+      if (!willInstall) dbPassword.value = ''
       else if (!dbPassword.value) dbPassword.value = generateRandomPassword()
     },
     { immediate: true, flush: 'post' },
@@ -154,11 +132,6 @@ export function useSetup() {
         if (config.mariadb_password) dbPassword.value = config.mariadb_password
       }
 
-      if (isLinux.value) {
-        const instance =
-          config.db_type === 'postgres' ? config.postgres_instance : config.mariadb_instance
-        deploymentMode.value = instance ? 'dedicated' : 'shared'
-      }
       if (config.running_setup_task_id) startStream(config.running_setup_task_id)
       else currentStep.value = 'passwords'
     } catch {
@@ -178,12 +151,8 @@ export function useSetup() {
 
   async function detectMariadbInstallState() {
     try {
-      const [dedicated, shared] = await Promise.all([
-        setupApi.validateMariadb({ mariadb_password: '', dedicated_db: true }),
-        setupApi.validateMariadb({ mariadb_password: '', dedicated_db: false }),
-      ])
-      dedicatedMariadbWillInstall.value = dedicated.state === 'will_install'
-      sharedMariadbWillInstall.value = shared.state === 'will_install'
+      const { state } = await setupApi.validateMariadb({ mariadb_password: '' })
+      mariadbWillInstall.value = state === 'will_install'
     } catch {}
   }
 
@@ -229,16 +198,13 @@ export function useSetup() {
 
   async function validateMariadbStep() {
     if (!dbPassword.value) return 'MariaDB password is required'
-    const dedicated = isLinux.value && deploymentMode.value === 'dedicated'
     isSubmitting.value = true
     try {
       const { state } = await setupApi.validateMariadb({
         mariadb_password: dbPassword.value,
         mariadb_admin_user: resolvedDbUser.value,
-        dedicated_db: dedicated,
       })
-      if (dedicated) dedicatedMariadbWillInstall.value = state === 'will_install'
-      else sharedMariadbWillInstall.value = state === 'will_install'
+      mariadbWillInstall.value = state === 'will_install'
       if (state === 'invalid') return 'Incorrect MariaDB credentials.'
     } catch {
     } finally {
@@ -254,7 +220,6 @@ export function useSetup() {
       const { state } = await setupApi.validatePostgres({
         postgres_password: dbPassword.value,
         postgres_admin_user: resolvedDbUser.value,
-        dedicated: isPostgresDedicated.value,
       })
       postgresWillInstall.value = state === 'will_install'
       if (state === 'invalid') return 'Incorrect PostgreSQL credentials.'
@@ -305,38 +270,16 @@ export function useSetup() {
         ...base,
         postgres_password: dbPassword.value,
         postgres_admin_user: resolvedDbUser.value,
-        postgres_instance: isPostgresDedicated.value ? benchName.value : '',
         mariadb_password: '',
         mariadb_admin_user: 'root',
-        mariadb_instance: '',
-        mariadb_socket_path: '',
-        mariadb_data_dir: '',
       }
     }
-    const mariadb = {
+    return {
       ...base,
       mariadb_password: dbPassword.value,
       mariadb_admin_user: resolvedDbUser.value,
       postgres_password: '',
       postgres_admin_user: 'postgres',
-    }
-    if (!isLinux.value) return mariadb
-    if (deploymentMode.value === 'dedicated') {
-      return {
-        ...mariadb,
-        mariadb_admin_user: 'root',
-        mariadb_instance: benchName.value,
-        mariadb_socket_path: `/run/mysqld/mysqld-${benchName.value}.sock`,
-        mariadb_data_dir: `/var/lib/mysql-${benchName.value}`,
-        postgres_instance: '',
-      }
-    }
-    return {
-      ...mariadb,
-      mariadb_instance: '',
-      mariadb_socket_path: '',
-      mariadb_data_dir: '',
-      postgres_instance: '',
     }
   }
 
@@ -391,17 +334,14 @@ export function useSetup() {
     isAdminPasswordValid,
     adminPassword,
     dbType,
-    deploymentMode,
     dbUser,
     dbPassword,
     appRepo,
     appBranch,
-    showDeploymentMode,
     showRootUsername,
     rootUserPlaceholder,
     rootPasswordDescription,
     dbTypeOptions: DB_TYPE_OPTIONS,
-    deploymentOptions: DEPLOYMENT_OPTIONS,
     branchOptions,
     stepSequence,
     stepNumber,
