@@ -35,8 +35,6 @@ def test_socket_path_on_alpine_uses_system_path() -> None:
 
 
 def test_install_raises_when_missing_on_linux() -> None:
-    import pytest
-
     m = _manager()
     with patch.object(m, "is_installed", return_value=False), \
          patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.is_alpine", return_value=False):
@@ -82,7 +80,6 @@ def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
     with patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.is_alpine", return_value=False), \
          patch.object(m, "install"), patch.object(m, "data_dir", return_value=tmp_path / "data"), \
          patch.object(m, "is_provisioned", return_value=False), \
-         patch.object(m, "_ensure_port_available"), \
          patch.object(m, "is_running", return_value=False), \
          patch.object(m, "_install_unit") as install_unit, \
          patch.object(m, "_wait_until_reachable"), patch.object(m, "secure_installation") as secure, \
@@ -92,24 +89,6 @@ def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
     secure.assert_called_once()
     argv_calls = [c.args[0] for c in rc.call_args_list]
     assert any("mariadb-install-db" in argv for argv in argv_calls)
-
-
-def test_ensure_port_available_raises_when_port_taken() -> None:
-    m = _manager()
-    import socket as socket_module
-
-    with socket_module.socket(socket_module.AF_INET, socket_module.SOCK_STREAM) as srv:
-        srv.bind(("127.0.0.1", 0))
-        srv.listen(1)
-        m.config.port = srv.getsockname()[1]
-        with pytest.raises(RuntimeError, match="already in use"):
-            m._ensure_port_available()
-
-
-def test_ensure_port_available_passes_when_free() -> None:
-    m = _manager()
-    m.config.port = 65533  # unlikely to be bound in test environments
-    m._ensure_port_available()  # no raise
 
 
 def test_provision_reuses_already_provisioned_server() -> None:
