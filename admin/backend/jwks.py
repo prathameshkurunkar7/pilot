@@ -17,21 +17,27 @@ _ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "P
 _clients: dict[str, PyJWKClient] = {}
 
 
-def verify_jwks_token(token: str, jwks_url: str) -> dict | None:
+def verify_jwks_token(token: str, jwks_url: str, audience: str = "") -> dict | None:
     """Return the token's claims if a key from the JWKS endpoint verifies it and
-    it has not expired, else None. Fails closed on any error."""
+    it has not expired, else None. Fails closed on any error. When ``audience``
+    is set, the token's ``aud`` claim must match it."""
     if not token or not jwks_url:
         return None
     try:
-        signing_key = _client(jwks_url).get_signing_key_from_jwt(token)
-        return jwt.decode(token, signing_key.key, algorithms=_ALGORITHMS, options={"verify_aud": False})
-    except jwt.PyJWTError:  # PyJWKClientError (fetch/kid failures) subclasses this too
+        kid = jwt.get_unverified_header(token).get("kid")
+        # Match against the cached key set only. The set self-refreshes on its
+        # 5-minute lifespan, so an unknown kid never triggers a per-request
+        # refetch an attacker could use to hammer the issuer.
+        signing_key = PyJWKClient.match_kid(_client(jwks_url).get_signing_keys(), kid)
+        if signing_key is None:
+            return None
+        return jwt.decode(token, signing_key.key, algorithms=_ALGORITHMS,
+                          audience=audience or None, options={"verify_aud": bool(audience)})
+    except jwt.PyJWTError:  # PyJWKClientError (fetch failures) subclasses this too
         return None
 
 
 def _client(jwks_url: str) -> PyJWKClient:
-    """One client per URL — PyJWKClient caches the key set and refreshes it on a
-    kid miss, so key rotation just works."""
     client = _clients.get(jwks_url)
     if client is None:
         client = PyJWKClient(jwks_url)

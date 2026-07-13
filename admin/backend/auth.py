@@ -16,7 +16,7 @@ def decode_session_token(token: str, config) -> dict | None:
     if config.admin.jwks_url:
         from .jwks import verify_jwks_token
 
-        return verify_jwks_token(token, config.admin.jwks_url)
+        return verify_jwks_token(token, config.admin.jwks_url, config.admin.jwks_audience)
     return None
 
 

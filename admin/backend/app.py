@@ -196,9 +196,11 @@ def create_app(bench_root: Path) -> Flask:
         if sid is not None:
             payload = decode_session_token(sid, config)
             jti = payload.get("jti") if payload else None
-            # Local login links always carry a jti and are single-use; a remote
-            # JWKS-minted token without one is accepted on its signature + expiry.
-            if payload is None or (jti and not used_logins.use(jti, payload["exp"])):
+            # A ?sid= sign-in must be a single-use (jti), bench-scoped token.
+            # Requiring a jti also blocks site-scoped API tokens (which carry
+            # none) from being exchanged for a full admin session, and stops a
+            # captured token from being replayed for fresh sessions.
+            if payload is None or not jti or payload.get("scope", "bench") != "bench" or not used_logins.use(jti, payload["exp"]):
                 return jsonify({"ok": False, "error": "Invalid or expired sign-in link"}), 401
         elif not hmac.compare_digest(str(data.get("password", "")), config.admin.password):
             return jsonify({"ok": False, "error": "Incorrect password"}), 401

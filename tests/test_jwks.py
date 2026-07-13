@@ -80,6 +80,25 @@ def test_no_jwks_url_rejected() -> None:
     assert verify_jwks_token(_mint(), "") is None
 
 
+# ── audience binding ──────────────────────────────────────────────────────────
+
+
+def test_audience_accepted_when_matching() -> None:
+    assert verify_jwks_token(_mint(aud="bench-a"), JWKS_URL, "bench-a")
+
+
+def test_audience_rejected_when_mismatched() -> None:
+    assert verify_jwks_token(_mint(aud="bench-b"), JWKS_URL, "bench-a") is None
+
+
+def test_audience_required_but_absent_rejected() -> None:
+    assert verify_jwks_token(_mint(), JWKS_URL, "bench-a") is None
+
+
+def test_no_audience_config_ignores_aud_claim() -> None:
+    assert verify_jwks_token(_mint(aud="anything"), JWKS_URL)
+
+
 # ── unified session decoding ────────────────────────────────────────────────
 
 
@@ -87,6 +106,7 @@ class _Config:
     class admin:
         jwt_secret = "local-secret"
         jwks_url = JWKS_URL
+        jwks_audience = ""
 
 
 def test_session_decode_accepts_local_secret() -> None:
@@ -146,11 +166,32 @@ def test_jwks_ec_bearer_token_authenticates(tmp_path: Path) -> None:
     assert resp.status_code != 401
 
 
-def test_jwks_sid_login_without_jti_sets_cookie(tmp_path: Path) -> None:
+def test_jwks_sid_login_with_jti_sets_cookie(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    resp = client.post("/api/login", json={"sid": _mint()})
+    resp = client.post("/api/login", json={"sid": _mint(jti="login-1")})
     assert resp.status_code == 200
     assert client.get("/api/benches/").status_code != 401
+
+
+def test_jwks_sid_login_requires_jti(tmp_path: Path) -> None:
+    # A token without a jti must not be exchangeable for a session (else it is
+    # replayable until expiry).
+    client = _client(tmp_path)
+    assert client.post("/api/login", json={"sid": _mint()}).status_code == 401
+
+
+def test_jwks_sid_login_is_single_use(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    sid = _mint(jti="login-2")
+    assert client.post("/api/login", json={"sid": sid}).status_code == 200
+    assert client.post("/api/login", json={"sid": sid}).status_code == 401
+
+
+def test_jwks_site_scoped_token_cannot_bootstrap_session(tmp_path: Path) -> None:
+    # A site-scoped token (even with a jti) must not escalate to a bench session.
+    client = _client(tmp_path)
+    resp = client.post("/api/login", json={"sid": _mint(jti="login-3", scope="site", site="a.com")})
+    assert resp.status_code == 401
 
 
 def test_jwks_site_scoped_bearer_is_enforced(tmp_path: Path) -> None:
