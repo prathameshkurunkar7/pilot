@@ -274,24 +274,27 @@ def test_no_proxy_servers_keeps_direct_defaults(tmp_path: Path) -> None:
     config = manager._generate_site_config(_BASE_SITE, ssl_ready=False)
 
     assert "set_real_ip_from" not in config
-    assert "deny" not in config
+    assert "realip_remote_addr" not in config  # no proxy gate; XFF untrusted
     assert "X-Forwarded-For    $proxy_add_x_forwarded_for" in config
 
 
-def test_proxy_servers_trust_only_those_ips(tmp_path: Path) -> None:
+def test_proxy_servers_gate_tcp_peer_and_trust_xff(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
     manager._proxy_servers_cache = ["203.0.113.5", "203.0.113.6"]
 
     config = manager._generate_site_config(_BASE_SITE, ssl_ready=False)
 
-    # Trust the proxy IPs and accept connections from them alone.
+    # Trust the proxy IPs to supply the real client IP via X-Forwarded-For.
     assert "set_real_ip_from   203.0.113.5;" in config
     assert "set_real_ip_from   203.0.113.6;" in config
     assert "real_ip_header     X-Forwarded-For;" in config
-    assert "allow              203.0.113.5;" in config
-    assert "allow              203.0.113.6;" in config
-    assert "deny               all;" in config
+    # Accept TCP connections from the proxies alone, tested on the real peer
+    # ($realip_remote_addr) since real_ip has already rewritten $remote_addr.
+    assert r'if ($realip_remote_addr !~ "^(203\.0\.113\.5|203\.0\.113\.6)$") { return 403; }' in config
+    # The old allow-proxy/deny-all (which tested the rewritten client IP) is gone.
+    assert "allow              203.0.113.5;" not in config
+    assert "deny               all;" not in config
     # Trust the proxy's X-Forwarded-For unchanged rather than appending to it.
     assert "X-Forwarded-For    $http_x_forwarded_for" in config
     assert "$proxy_add_x_forwarded_for" not in config

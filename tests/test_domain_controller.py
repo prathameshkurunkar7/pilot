@@ -166,13 +166,13 @@ def test_builtin_dns_records_without_provider(tmp_path: Path, monkeypatch) -> No
 
 # --- end to end: provider proxy IPs reach the nginx config -------------------
 
-def test_nginx_locks_down_to_provider_proxy_servers(tmp_path: Path, monkeypatch) -> None:
+def test_nginx_gates_tcp_peer_to_provider_proxy_servers(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
     config = NginxManager(_make_bench(tmp_path))._generate_site_config(
         SiteConfig(name="site1.example.com", apps=["frappe"]), ssl_ready=False
     )
 
     assert "set_real_ip_from   203.0.113.10;" in config
-    assert "allow              203.0.113.11;" in config
-    assert "deny               all;" in config
+    assert r'if ($realip_remote_addr !~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { return 403; }' in config
+    assert "deny               all;" not in config
     assert "X-Forwarded-For    $http_x_forwarded_for" in config
