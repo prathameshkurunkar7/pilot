@@ -18,6 +18,8 @@ declare module 'vue' {
     AppIcon: typeof import('./src/components/AppIcon.vue')['default']
     Apps: typeof import('./src/components/sites/Apps.vue')['default']
     AppSidebar: typeof import('./src/components/AppSidebar.vue')['default']
+    Audit: typeof import('./src/components/settings/Audit.vue')['default']
+    Backup: typeof import('./src/components/settings/Backup.vue')['default']
     Backups: typeof import('./src/components/sites/Backups.vue')['default']
     BenchSwitcherDialog: typeof import('./src/components/BenchSwitcherDialog.vue')['default']
     ChartCard: typeof import('./src/components/ChartCard.vue')['default']

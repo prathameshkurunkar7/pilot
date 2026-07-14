@@ -37,6 +37,8 @@
           <Firewall v-else-if="currentSection === 'firewall'" />
           <Git v-else-if="currentSection === 'github'" />
           <S3Bucket v-else-if="currentSection === 's3-bucket'" />
+          <Backup v-else-if="currentSection === 'backup'" />
+          <Audit v-else-if="currentSection === 'audit'" />
           <SshKeys v-else-if="currentSection === 'ssh-keys'" ref="sshKeysRef" />
           <SystemInfo v-else-if="currentSection === 'system-info'" />
         </div>
@@ -48,6 +50,8 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { Dialog, Button } from 'frappe-ui'
+import Audit from '@/components/settings/Audit.vue'
+import Backup from '@/components/settings/Backup.vue'
 import Firewall from '@/components/settings/Firewall.vue'
 import Git from '@/components/settings/Git.vue'
 import S3Bucket from '@/components/settings/S3Bucket.vue'
@@ -63,6 +67,8 @@ const isMobile = useIsMobile()
 const sections = computed(() => [
   { id: 'github', label: 'Git Settings', icon: 'lucide-git-branch' },
   { id: 's3-bucket', label: 'S3 Bucket', icon: 'lucide-archive' },
+  { id: 'backup', label: 'Backup', icon: 'lucide-database-backup' },
+  { id: 'audit', label: 'Audit', icon: 'lucide-scroll-text' },
   { id: 'workers', label: 'Workers', icon: 'lucide-server-cog' },
   { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
   { id: 'ssh-keys', label: 'SSH Keys', icon: 'lucide-key-round' },
