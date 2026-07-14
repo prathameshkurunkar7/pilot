@@ -91,6 +91,7 @@ class NewCommand(Command):
                 nbytes=8
             )
         if self.db_type == "postgres":
+            settings["postgres_port"] = self._sibling_postgres_port() or self._pick_postgres_port()
             settings["postgres_password"] = self._sibling_postgres_password() or secrets.token_hex(
                 nbytes=8
             )
@@ -136,10 +137,18 @@ class NewCommand(Command):
         """Smallest port at/above the default 3306 that isn't already live —
         used only when no sibling has picked one yet, so the very first
         MariaDB bench on a host doesn't collide with a system-wide MariaDB
-        already listening on 3306."""
+        already listening on 3306.
+
+        macOS never creates a bindable-anywhere instance of its own —
+        MariaDBManager just starts Homebrew's single shared service via
+        `brew services`.
+        """
         from pilot.config.mariadb_config import MariaDBConfig
+        from pilot.platform import is_macos
 
         port = MariaDBConfig().port
+        if is_macos():
+            return port
         while self._port_is_live(port):
             port += 1
         return port
@@ -151,6 +160,35 @@ class NewCommand(Command):
             if config.db_type == "mariadb" and config.mariadb.root_password:
                 return config.mariadb.root_password
         return ""
+
+    def _sibling_postgres_port(self) -> int:
+        """The PostgreSQL port a sibling bench already established for the
+        shared server (see PostgresManager), so this bench points at the
+        same running instance instead of a fresh guess."""
+        for _, config in iter_sibling_benches(self.target_directory):
+            if config.db_type == "postgres" and config.postgres.port:
+                return config.postgres.port
+        return 0
+
+    def _pick_postgres_port(self) -> int:
+        """Smallest port at/above the default 5432 that isn't already live —
+        used only when no sibling has picked one yet, so the very first
+        Postgres bench on a host doesn't collide with a system-wide
+        PostgreSQL already listening on 5432. Mirrors _pick_mariadb_port().
+
+        macOS never creates a bindable-anywhere instance of its own —
+        PostgresManager just starts Homebrew's single shared service via
+        `brew services`
+        """
+        from pilot.config.postgres_config import PostgresConfig
+        from pilot.platform import is_macos
+
+        port = PostgresConfig().port
+        if is_macos():
+            return port
+        while self._port_is_live(port):
+            port += 1
+        return port
 
     def _sibling_postgres_password(self) -> str:
         """The PostgreSQL superuser password from any sibling Postgres bench —
