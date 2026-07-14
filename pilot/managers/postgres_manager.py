@@ -49,23 +49,30 @@ class PostgresManager(UserOwnedDBManager):
         return super().is_provisioned()
 
     def is_unsecured(self) -> bool:
-        """True if the admin role has no password yet and is reachable via
-        local peer auth (i.e. a fresh, not-yet-secured install)."""
+        """True if the admin role has no password set yet (i.e. a fresh,
+        not-yet-secured install). Queries the catalog directly via a local
+        bootstrap connection (peer auth on Linux, trust on macOS by default)
+        rather than testing whether a passwordless connection succeeds —
+        local trust/peer auth grants access regardless of whether the role
+        has a password, so a successful connection alone proves nothing."""
+        role = self._sql_quote(self.config.admin_user)
         cmd = [
             self._psql() or "psql",
             "-p",
             str(self.config.port),
-            "-U",
-            self.config.admin_user,
             "-d",
             "postgres",
             "-tAc",
-            "SELECT 1",
+            f"SELECT rolpassword IS NULL FROM pg_authid WHERE rolname = {role}",
         ]
         if not is_macos():
             cmd[1:1] = ["-h", str(self.socket_dir())]
         result = subprocess.run(cmd, capture_output=True, text=True)
-        return result.returncode == 0
+        if result.returncode != 0:
+            return False
+        output = result.stdout.strip()
+        # Empty output means the role doesn't exist yet at all — also fresh.
+        return output in ("", "t")
 
     # ── provisioning ─────────────────────────────────────────────────────────
 

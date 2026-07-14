@@ -171,6 +171,35 @@ def test_is_unsecured_targets_own_socket_dir_on_linux() -> None:
     assert cmd[cmd.index("-h") + 1] == str(m.socket_dir())
 
 
+def test_is_unsecured_ignores_trust_auth_and_checks_catalog() -> None:
+    """Regression: Homebrew/vanilla initdb default local connections to
+    'trust', which grants access regardless of whether a password is set —
+    a successful connection alone must never be read as 'still passwordless'."""
+    m = _mgr()
+
+    def fake_run(cmd, **kwargs):
+        assert "rolpassword" in cmd[-1]
+        return MagicMock(returncode=0, stdout="f\n")  # role HAS a password
+
+    with patch.object(m, "_psql", return_value="/usr/bin/psql"), \
+         patch(f"{MODULE}.subprocess.run", side_effect=fake_run):
+        assert m.is_unsecured() is False
+
+
+def test_is_unsecured_true_when_role_has_no_password() -> None:
+    m = _mgr()
+    with patch.object(m, "_psql", return_value="/usr/bin/psql"), \
+         patch(f"{MODULE}.subprocess.run", return_value=MagicMock(returncode=0, stdout="t\n")):
+        assert m.is_unsecured() is True
+
+
+def test_is_unsecured_true_when_role_does_not_exist_yet() -> None:
+    m = _mgr()
+    with patch.object(m, "_psql", return_value="/usr/bin/psql"), \
+         patch(f"{MODULE}.subprocess.run", return_value=MagicMock(returncode=0, stdout="")):
+        assert m.is_unsecured() is True
+
+
 def test_provision_user_owned_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
     m = _mgr(port=5440)
     with patch.object(m, "data_dir", return_value=tmp_path / "data"), \
