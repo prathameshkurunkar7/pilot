@@ -10,10 +10,10 @@ VALID_SCHEMES = (SCHEME_FIFO, SCHEME_GFS)
 class BackupConfig:
     scheme: str = SCHEME_GFS  # "fifo" | "gfs"
     keep_last: int = 7  # FIFO: newest N runs kept
-    keep_daily: int = 7  # GFS tiers below
-    keep_weekly: int = 4
-    keep_monthly: int = 6
-    keep_yearly: int = 1
+    keep_daily: int = 7  # GFS: last 7 days
+    keep_weekly: int = 5  # one per week across the current month
+    keep_monthly: int = 12  # one per month, past year
+    keep_yearly: int = 5  # one per year, kept a few years
 
     @property
     def counts(self) -> dict[str, int]:

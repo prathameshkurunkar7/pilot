@@ -75,9 +75,9 @@ const hour = ref(2)
 const scheme = ref('gfs')
 const keepLast = ref(7)
 const keepDaily = ref(7)
-const keepWeekly = ref(4)
-const keepMonthly = ref(6)
-const keepYearly = ref(1)
+const keepWeekly = ref(5)
+const keepMonthly = ref(12)
+const keepYearly = ref(5)
 
 const schemeHint = computed(() =>
   scheme.value === 'fifo'
@@ -105,9 +105,9 @@ function applyRetention(retention) {
   scheme.value = retention.scheme || 'gfs'
   keepLast.value = retention.keep_last ?? 7
   keepDaily.value = retention.keep_daily ?? 7
-  keepWeekly.value = retention.keep_weekly ?? 4
-  keepMonthly.value = retention.keep_monthly ?? 6
-  keepYearly.value = retention.keep_yearly ?? 1
+  keepWeekly.value = retention.keep_weekly ?? 5
+  keepMonthly.value = retention.keep_monthly ?? 12
+  keepYearly.value = retention.keep_yearly ?? 5
 }
 
 async function open() {
