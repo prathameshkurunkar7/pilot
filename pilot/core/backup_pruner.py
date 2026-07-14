@@ -16,19 +16,26 @@ class BackupPruner:
         self._backups_dir = bench.sites_path / site / "private" / "backups"
 
     def prune(self) -> list[str]:
-        """Delete runs the policy rejects, returning the pruned timestamps."""
+        """Delete runs the policy rejects, returning the timestamps actually pruned."""
         offsite = self._offsite()
         offsite_runs = offsite.list_backups(self.site) if offsite else {}
         timestamps = sorted(set(self._local_timestamps()) | set(offsite_runs))
 
         policy = BackupRetentionPolicy(self.bench.config.backup)
-        deletions = policy.select_deletions(timestamps)
+        return [ts for ts in policy.select_deletions(timestamps) if self._delete_run(offsite, offsite_runs, ts)]
 
-        for timestamp in deletions:
-            self._delete_local(timestamp)
-            if timestamp in offsite_runs:
+    def _delete_run(self, offsite, offsite_runs: dict, timestamp: str) -> bool:
+        """Delete one run offsite-first, then local. On an offsite error the run is
+        left intact in both stores (retried next prune) rather than half-deleted, and
+        the timestamp is not reported as pruned."""
+        if timestamp in offsite_runs:
+            try:
                 self._delete_offsite(offsite, timestamp, offsite_runs[timestamp])
-        return deletions
+            except Exception as error:
+                print(f"Kept backup {timestamp}: offsite delete failed: {error}")
+                return False
+        self._delete_local(timestamp)
+        return True
 
     def _local_timestamps(self) -> list[str]:
         if not self._backups_dir.is_dir():

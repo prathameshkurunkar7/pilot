@@ -37,7 +37,7 @@
         class="py-12 border border-dashed rounded-xl border-outline-gray-2 text-ink-gray-5 text-p-sm text-center">
         No entries match these filters.
       </div>
-      <ListView v-else :columns="entryColumns" :rows="rows" row-key="id"
+      <ListView v-else :columns="entryColumns" :rows="rows" row-key="key"
         :options="{ selectable: false, showTooltip: false }">
         <template #cell="{ column, row, item }">
           <span v-if="column.key === 'status'" class="flex items-center gap-1.5">
@@ -101,8 +101,9 @@ const detailsOf = (entry) => {
 }
 
 const rows = computed(() =>
-  entries.value.map((entry, index) => ({
-    id: index,
+  entries.value.map((entry) => ({
+    // logged_at is stamped per append, so it stays stable across filtering.
+    key: `${entry.logged_at}|${entry.type}|${entry.site ?? ''}`,
     date: fmt(entry.finished_at || entry.logged_at),
     site: entry.site || '—',
     status: entry.status || '',
