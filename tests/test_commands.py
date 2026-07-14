@@ -173,6 +173,41 @@ def test_new_command_second_postgres_bench_inherits_password(tmp_path: Path, mon
     assert first["postgres"]["root_password"] == second["postgres"]["root_password"]
 
 
+def test_new_command_postgres_port_is_not_offset_between_benches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every bench for this OS user shares one PostgreSQL server, so
+    postgres.port must stay identical across benches — unlike http_port/redis
+    ports, which are offset per bench. Mirrors the equivalent mariadb test."""
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    benches_dir = tmp_path / "benches"
+    NewCommand(benches_dir / "first", "first", db_type="postgres").run()
+    NewCommand(benches_dir / "second", "second", db_type="postgres").run()
+
+    with open(benches_dir / "second" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["postgres"]["port"] == 5432
+    assert data["bench"]["http_port"] == 8001  # other ports still offset
+
+
+def test_new_command_postgres_port_ignores_live_scan_on_macos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """On macOS, PostgresManager just starts Homebrew's single shared service
+    (`brew services start`, no -p override) — the actual server always binds
+    to its own default regardless of config. Mirrors the mariadb version."""
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    # 5432 reads as live, which would normally push the picker to 5433+.
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: port == 5432))
+    with patch("pilot.platform.is_macos", return_value=True):
+        NewCommand(tmp_path / "benches" / "pg", "pg", db_type="postgres").run()
+
+    with open(tmp_path / "benches" / "pg" / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    assert data["postgres"]["port"] == 5432
+
+
 def test_new_command_mariadb_bench_has_no_postgres_password(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.commands.new import NewCommand
 
