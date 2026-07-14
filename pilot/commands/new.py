@@ -141,9 +141,7 @@ class NewCommand(Command):
 
         macOS never creates a bindable-anywhere instance of its own —
         MariaDBManager just starts Homebrew's single shared service via
-        `brew services`, which always uses its own default port and ignores
-        this config entirely. Scanning for a "free" port there would just
-        record a value the real server will never actually bind to.
+        `brew services`.
         """
         from pilot.config.mariadb_config import MariaDBConfig
         from pilot.platform import is_macos
@@ -180,11 +178,7 @@ class NewCommand(Command):
 
         macOS never creates a bindable-anywhere instance of its own —
         PostgresManager just starts Homebrew's single shared service via
-        `brew services`, which always uses its own default port and ignores
-        this config entirely. Scanning for a "free" port there would just
-        record a value the real server will never actually bind to. Linux
-        does run a genuine per-user instance (a systemd --user unit started
-        with -p <config>), so scanning is meaningful there.
+        `brew services`
         """
         from pilot.config.postgres_config import PostgresConfig
         from pilot.platform import is_macos
