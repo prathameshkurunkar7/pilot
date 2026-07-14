@@ -1,0 +1,174 @@
+<template>
+  <Dialog v-model="show" :options="{ title: 'Configure automated backups', size: 'lg' }">
+    <template #body-content>
+      <div class="space-y-4">
+        <div class="gap-3 grid grid-cols-2">
+          <div class="space-y-1.5">
+            <p class="font-medium text-ink-gray-7 text-sm">Frequency</p>
+            <Select v-model="frequency" :options="FREQ_OPTIONS" />
+          </div>
+          <div class="space-y-1.5">
+            <p class="font-medium text-ink-gray-7 text-sm">Time</p>
+            <Select v-model.number="hour" :options="hourOptions" />
+          </div>
+          <div v-if="frequency === 'weekly'" class="space-y-1.5">
+            <p class="font-medium text-ink-gray-7 text-sm">Day of week</p>
+            <Select v-model.number="weekday" :options="weekdayOptions" />
+          </div>
+          <div v-if="frequency === 'monthly'" class="space-y-1.5">
+            <p class="font-medium text-ink-gray-7 text-sm">Day of month</p>
+            <Select v-model.number="monthDay" :options="monthDayOptions" />
+          </div>
+        </div>
+
+        <div class="space-y-1.5 pt-2 border-t border-outline-gray-1">
+          <p class="font-medium text-ink-gray-7 text-sm">Retention</p>
+          <Select v-model="scheme" :options="SCHEME_OPTIONS" />
+          <p class="text-ink-gray-5 text-p-sm">{{ schemeHint }}</p>
+        </div>
+
+        <FormControl v-if="scheme === 'fifo'" label="Backups to keep" type="number" min="0" v-model.number="keepLast" />
+        <div v-else class="gap-3 grid grid-cols-2">
+          <FormControl label="Daily" type="number" min="0" v-model.number="keepDaily" />
+          <FormControl label="Weekly" type="number" min="0" v-model.number="keepWeekly" />
+          <FormControl label="Monthly" type="number" min="0" v-model.number="keepMonthly" />
+          <FormControl label="Yearly" type="number" min="0" v-model.number="keepYearly" />
+        </div>
+
+        <ErrorMessage v-if="error" :message="error" />
+      </div>
+
+      <div class="flex justify-between items-center gap-2 mt-6">
+        <Button v-if="enabled" variant="ghost" theme="red" :loading="disabling" @click="disable">
+          Turn off
+        </Button>
+        <span v-else />
+        <div class="flex gap-2">
+          <Button variant="ghost" @click="show = false">Cancel</Button>
+          <Button variant="solid" :loading="saving" @click="save">{{ enabled ? 'Save' : 'Enable' }}</Button>
+        </div>
+      </div>
+    </template>
+  </Dialog>
+</template>
+
+<script setup>
+import { computed, ref } from 'vue'
+import { Button, Dialog, ErrorMessage, FormControl, Select } from 'frappe-ui'
+import { sitesApi } from '@/api/sites'
+import { formatHour } from '@/utils/backup'
+
+const props = defineProps({ siteName: { type: String, required: true } })
+const emit = defineEmits(['saved'])
+
+const FREQ_OPTIONS = [
+  { label: 'Daily', value: 'daily' },
+  { label: 'Weekly', value: 'weekly' },
+  { label: 'Monthly', value: 'monthly' },
+]
+const SCHEME_OPTIONS = [
+  { label: 'GFS (daily / weekly / monthly / yearly)', value: 'gfs' },
+  { label: 'FIFO (keep newest N)', value: 'fifo' },
+]
+const weekdayOptions = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  .map((label, value) => ({ label, value }))
+const monthDayOptions = Array.from({ length: 31 }, (_, i) => ({ label: `${i + 1}`, value: i + 1 }))
+const hourOptions = Array.from({ length: 24 }, (_, h) => ({ label: formatHour(h), value: h }))
+
+const show = ref(false)
+const enabled = ref(false)
+const saving = ref(false)
+const disabling = ref(false)
+const error = ref('')
+
+const frequency = ref('daily')
+const weekday = ref(0)
+const monthDay = ref(1)
+const hour = ref(2)
+const scheme = ref('gfs')
+const keepLast = ref(7)
+const keepDaily = ref(7)
+const keepWeekly = ref(4)
+const keepMonthly = ref(6)
+const keepYearly = ref(1)
+
+const schemeHint = computed(() =>
+  scheme.value === 'fifo'
+    ? 'Keeps the newest N backups; older ones are pruned.'
+    : 'Keeps recent daily, weekly, monthly and yearly backups; the rest are pruned.',
+)
+
+const cron = computed(() => {
+  if (frequency.value === 'weekly') return `0 ${hour.value} * * ${weekday.value}`
+  if (frequency.value === 'monthly') return `0 ${hour.value} ${monthDay.value} * *`
+  return `0 ${hour.value} * * *`
+})
+
+function applySchedule(schedule) {
+  if (!schedule) return
+  const [, h, dom, , dow] = schedule.split(' ')
+  hour.value = parseInt(h) || 0
+  if (dom !== '*') { frequency.value = 'monthly'; monthDay.value = parseInt(dom) || 1 }
+  else if (dow !== '*') { frequency.value = 'weekly'; weekday.value = parseInt(dow) || 0 }
+  else frequency.value = 'daily'
+}
+
+function applyRetention(retention) {
+  if (!retention) return
+  scheme.value = retention.scheme || 'gfs'
+  keepLast.value = retention.keep_last ?? 7
+  keepDaily.value = retention.keep_daily ?? 7
+  keepWeekly.value = retention.keep_weekly ?? 4
+  keepMonthly.value = retention.keep_monthly ?? 6
+  keepYearly.value = retention.keep_yearly ?? 1
+}
+
+async function open() {
+  error.value = ''
+  const data = await sitesApi.backups.schedule.get(props.siteName)
+  enabled.value = !!data.schedule
+  applySchedule(data.schedule)
+  applyRetention(data.retention)
+  show.value = true
+}
+
+async function save() {
+  saving.value = true
+  error.value = ''
+  try {
+    const retention = {
+      scheme: scheme.value,
+      keep_last: keepLast.value,
+      keep_daily: keepDaily.value,
+      keep_weekly: keepWeekly.value,
+      keep_monthly: keepMonthly.value,
+      keep_yearly: keepYearly.value,
+    }
+    const result = await sitesApi.backups.schedule.set(props.siteName, { schedule: cron.value, retention })
+    if (!result.ok) { error.value = result.error || 'Could not save.'; return }
+    show.value = false
+    emit('saved')
+  } catch (e) {
+    error.value = e.message || 'Could not save.'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function disable() {
+  disabling.value = true
+  error.value = ''
+  try {
+    const result = await sitesApi.backups.schedule.remove(props.siteName)
+    if (!result.ok) { error.value = result.error || 'Could not turn off.'; return }
+    show.value = false
+    emit('saved')
+  } catch (e) {
+    error.value = e.message || 'Could not turn off.'
+  } finally {
+    disabling.value = false
+  }
+}
+
+defineExpose({ open })
+</script>
