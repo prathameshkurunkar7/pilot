@@ -64,42 +64,63 @@ detect_distro() {
 DISTRO="$(detect_distro)"
 
 # ── sudo wrapper ──────────────────────────────────────────────────────────────
-# Injects SUDO_PASS when provided so the script works unattended; otherwise
-# relies on cached/passwordless sudo.
+# Injects SUDO_PASS when provided so the script works unattended. Otherwise,
+# if sudo would actually need a password (no cached/passwordless sudo), we
+# prompt for it ourselves via /dev/tty and cache the answer in SUDO_PASS —
+# piping this script through `curl | sh` leaves stdin occupied by the script
+# itself, so sudo's own prompt can't read an answer from it.
 run_sudo() {
     if [ "$(id -u)" -eq 0 ]; then
         "$@"
-    elif [ -n "$SUDO_PASS" ]; then
+        return
+    fi
+    if [ -z "$SUDO_PASS" ] && ! sudo -n true 2>/dev/null; then
+        if [ -r /dev/tty ]; then
+            printf "[sudo] password for %s: " "$(id -un)" > /dev/tty
+            stty -echo < /dev/tty 2>/dev/null
+            read -r SUDO_PASS < /dev/tty
+            stty echo < /dev/tty 2>/dev/null
+            printf "\n" > /dev/tty
+        fi
+    fi
+    if [ -n "$SUDO_PASS" ]; then
         echo "$SUDO_PASS" | sudo -S "$@"
     else
         sudo "$@"
     fi
 }
 
-# Downloads a vendor bootstrap script (MariaDB repo setup, NodeSource) over a
-# pinned HTTPS/TLS floor and runs it as root. These vendors only publish
+# Downloads a vendor bootstrap script (MariaDB repo setup, NodeSource,
+# Homebrew) over a pinned HTTPS/TLS floor. These vendors only publish
 # "curl | bash" installers with no checksum/signature to pin against, so the
 # content itself is trusted the same way their own docs instruct — but a
 # truncated transfer, non-HTTPS redirect, or empty/garbage response is caught
-# before anything runs as root.
-fetch_and_run_as_root() {
-    url="$1"; shift
+# before anything runs.
+download_installer() {
+    url="$1"
     tmp="$(mktemp)"
-    trap 'rm -f "$tmp"' EXIT
     curl -fsSL --proto '=https' --tlsv1.2 "$url" -o "$tmp"
     if [ ! -s "$tmp" ] || ! head -c 2 "$tmp" | grep -q '^#'; then
         echo "Downloaded installer from $url looks invalid, aborting." >&2
+        rm -f "$tmp"
         exit 1
     fi
+    echo "$tmp"
+}
+
+fetch_and_run_as_root() {
+    url="$1"; shift
+    tmp="$(download_installer "$url")" || exit 1
     run_sudo bash "$tmp" "$@"
     rm -f "$tmp"
-    trap - EXIT
 }
 
 # ── package manager primitives ────────────────────────────────────────────────
 # Unknown distros fall back to apt, mirroring the runtime in pilot/platform.py.
+# macOS uses Homebrew, ownership-per-user, so it never goes through run_sudo.
 pkg_update() {
     case "$DISTRO" in
+        macos)  ensure_homebrew; brew update ;;
         fedora) run_sudo dnf -y makecache ;;
         arch)   run_sudo pacman -Sy --noconfirm --disable-download-timeout ;;
         *)      run_sudo apt-get update ;;
@@ -108,6 +129,7 @@ pkg_update() {
 
 pkg_install() {
     case "$DISTRO" in
+        macos)  ensure_homebrew; brew install "$@" ;;
         # --allowerasing: containers ship curl-minimal, which conflicts with curl.
         fedora) run_sudo dnf install -y --allowerasing "$@" ;;
         # -Sy: sync the package database first; stale Arch mirrors 404 otherwise.
@@ -119,10 +141,43 @@ pkg_install() {
 
 pkg_installed() {
     case "$DISTRO" in
+        macos)  brew list --versions "$1" >/dev/null 2>&1 ;;
         fedora) rpm -q "$1" >/dev/null 2>&1 ;;
         arch)   pacman -Qi "$1" >/dev/null 2>&1 ;;
         *)      dpkg -l "$1" 2>/dev/null | grep -q '^ii' ;;
     esac
+}
+
+# download_installer (mariadb/nodesource/homebrew) needs curl before anything
+# else runs, and bootstrap_packages()'s own curl install happens too late for
+# that — so get it on its own, ahead of everything else in bootstrap().
+# macOS always ships curl, so this is a no-op there.
+ensure_curl() {
+    command -v curl >/dev/null 2>&1 && return 0
+    [ "$DISTRO" = "macos" ] && return 0
+    echo "Installing curl..."
+    pkg_update
+    pkg_install curl
+}
+
+# Homebrew is the one base dependency on macOS the runtime can't lazily
+# install itself (pilot/package_managers.py's BrewPackageManager assumes
+# `brew` already exists). On Intel Macs, Homebrew's own installer needs sudo
+# for the initial /usr/local setup; priming the sudo timestamp cache first
+# means it reuses that instead of prompting separately (or failing outright
+# if --sudo-password was given but the installer's own prompt can't read it).
+ensure_homebrew() {
+    command -v brew >/dev/null 2>&1 && return 0
+    echo "Installing Homebrew..."
+    run_sudo true
+    tmp="$(download_installer "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh")" || exit 1
+    NONINTERACTIVE=1 bash "$tmp"
+    rm -f "$tmp"
+    if [ -x /opt/homebrew/bin/brew ]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [ -x /usr/local/bin/brew ]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
 }
 
 # ── base dependency bootstrap ─────────────────────────────────────────────────
@@ -130,9 +185,14 @@ pkg_installed() {
 # of this script and bench need before they're first used: git/curl/bash, sudo
 # + user tooling (so the user-setup path's useradd/usermod/visudo work), a
 # Python, and the base build deps for compiling the admin venv (psutil) and
-# frappe wheels.
+# frappe wheels. macOS ships curl/bash/sudo itself, so brew (the one thing it
+# can't lazily install for itself) takes their place here.
 bootstrap_needed() {
-    tools="git curl bash sudo python3"
+    if [ "$DISTRO" = "macos" ]; then
+        tools="git brew python3"
+    else
+        tools="git curl bash sudo python3"
+    fi
     for tool in $tools; do
         command -v "$tool" >/dev/null 2>&1 || return 0
     done
@@ -141,6 +201,8 @@ bootstrap_needed() {
 
 bootstrap_packages() {
     case "$DISTRO" in
+        macos)
+            pkg_install git python3 ;;
         debian|ubuntu)
             pkg_install git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata ;;
         fedora)
@@ -157,20 +219,33 @@ bootstrap_packages() {
 # runs — the runtime never installs packages itself. Root, one-time.
 _MARIADB_REPO_SETUP_URL="https://r.mariadb.com/downloads/mariadb_repo_setup"
 _MARIADB_VERSION="11.8"
+_POSTGRES_VERSION="16"
+
+# Debian/Ubuntu ship an older MariaDB than 11.8 by default, so the official
+# repo must be added before bootstrap()'s single pkg_update() runs — that one
+# call then refreshes both the base indices and this new repo together,
+# instead of a second apt-get update just for it.
+add_distro_repos() {
+    case "$DISTRO" in
+        debian|ubuntu)
+            # Same version the runtime expects (MariaDBManager DEFAULT_VERSION).
+            fetch_and_run_as_root "$_MARIADB_REPO_SETUP_URL" --mariadb-server-version="mariadb-$_MARIADB_VERSION" ;;
+    esac
+}
 
 install_database_engines() {
     # Dev headers for building the Python client libraries (mysqlclient,
     # psycopg) that frappe's virtualenv compiles during `bench init` — listed
     # here so bench init never has to install a package itself.
     case "$DISTRO" in
+        macos)
+            # Versions pinned to match the runtime's own defaults
+            # (MariaDBManager/PostgresManager _DEFAULT_VERSION), so the formula
+            # this installs is the same one BrewPackageManager would lazily
+            # reach for later.
+            pkg_install "mariadb@$_MARIADB_VERSION" "postgresql@$_POSTGRES_VERSION" ;;
         debian|ubuntu)
-            # Debian/Ubuntu ship an older MariaDB than 11.8 by default; pin
-            # the official repo first, same version the runtime expects
-            # (pilot/managers/mariadb_manager.py DEFAULT_VERSION).
-            fetch_and_run_as_root "$_MARIADB_REPO_SETUP_URL" --mariadb-server-version="mariadb-$_MARIADB_VERSION"
-            pkg_update
-            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config
-            ;;
+            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config ;;
         fedora)
             pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config ;;
         arch)
@@ -206,6 +281,7 @@ install_node_nodesource() {
 install_node() {
     command -v node >/dev/null 2>&1 && return 0
     case "$DISTRO" in
+        macos)  echo "Installing Node.js..."; pkg_install node ;;
         debian|ubuntu)
             echo "Installing Node.js..."
             install_node_nodesource deb apt-get install -y nodejs ;;
@@ -224,11 +300,10 @@ install_node() {
 }
 
 bootstrap() {
-    case "$DISTRO" in
-        macos|unknown) return 0 ;;
-    esac
+    [ "$DISTRO" = "unknown" ] && return 0
     # Root always bootstraps (idempotent, and bare containers need it before
-    # useradd); a normal user only when a base tool is actually missing.
+    # useradd); a normal user only when a base tool is actually missing
+    # (bootstrap_needed is platform-aware: brew on macOS, sudo elsewhere).
     if [ "$(id -u)" -ne 0 ]; then
         bootstrap_needed || return 0
         if ! command -v sudo >/dev/null 2>&1; then
@@ -243,6 +318,8 @@ bootstrap() {
         fi
     fi
     echo "$DISTRO detected — installing base dependencies..."
+    ensure_curl
+    add_distro_repos
     pkg_update
     bootstrap_packages
     install_database_engines
