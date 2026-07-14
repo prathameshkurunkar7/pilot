@@ -40,7 +40,7 @@ export const sitesApi = {
       request.get(`sites/${encodeURIComponent(name)}/backups/${encodeURIComponent(timestamp)}/offsite-urls`).json(),
     schedule: {
       get: (name) => request.get(`sites/${encodeURIComponent(name)}/backup-schedule`).json(),
-      set: (name, schedule) => request.post(`sites/${encodeURIComponent(name)}/backup-schedule`, { json: { schedule } }).json(),
+      set: (name, payload) => request.post(`sites/${encodeURIComponent(name)}/backup-schedule`, { json: payload }).json(),
       remove: (name) => request.delete(`sites/${encodeURIComponent(name)}/backup-schedule`).json(),
     },
   },

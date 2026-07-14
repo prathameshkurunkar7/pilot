@@ -425,6 +425,30 @@ def get_settings():
     return jsonify(_build_settings_response(config))
 
 
+_AUDIT_LOG_LIMIT = 500  # newest entries returned; the log has no dedicated UI, it's viewed as raw JSON
+
+
+@settings_bp.route("/audit/log")
+def audit_log():
+    """The bench-wide audit log as JSON, newest first, for direct viewing in a
+    browser. Optional ``type``/``status``/``site``/``limit`` query params filter it."""
+    from pilot.core.audit_log import AuditLog
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    limit = request.args.get("limit", _AUDIT_LOG_LIMIT, type=int)
+    try:
+        log = AuditLog(Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root))
+        entries = log.entries(
+            entry_type=request.args.get("type") or None,
+            site=request.args.get("site") or None,
+            status=request.args.get("status") or None,
+            limit=limit,
+        )
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
+    return jsonify(entries)
+
+
 @settings_bp.route("/my-ip")
 def my_ip():
     """The requesting client's IP, so the UI can tell the operator which address to

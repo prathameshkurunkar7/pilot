@@ -61,9 +61,9 @@ const open = defineModel()
 const isMobile = useIsMobile()
 
 const sections = computed(() => [
-  { id: 'github', label: 'Git Settings', icon: 'lucide-git-branch' },
-  { id: 's3-bucket', label: 'S3 Bucket', icon: 'lucide-archive' },
+  { id: 'github', label: 'Git', icon: 'lucide-git-branch' },
   { id: 'workers', label: 'Workers', icon: 'lucide-server-cog' },
+  { id: 's3-bucket', label: 'S3 Bucket', icon: 'lucide-archive' },
   { id: 'firewall', label: 'Firewall', icon: 'lucide-shield' },
   { id: 'ssh-keys', label: 'SSH Keys', icon: 'lucide-key-round' },
   { id: 'system-info', label: 'System Info', icon: 'lucide-info' },
