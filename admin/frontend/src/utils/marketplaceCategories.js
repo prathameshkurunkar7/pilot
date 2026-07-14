@@ -36,7 +36,8 @@ const PILL_BY_CATEGORY = {
 
 // 'Featured' is a meta-tag; unknown values default to Utility.
 function pillsFor(app) {
-  const mapped = (app.categories || [])
+  const categories = app.categories?.length ? app.categories : app.category ? [app.category] : []
+  const mapped = categories
     .filter((category) => category !== 'Featured')
     .map((category) => PILL_BY_CATEGORY[category] || 'Utility')
   return new Set(mapped)
