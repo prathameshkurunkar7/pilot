@@ -13,7 +13,10 @@ _FIELDS = set(BackupConfig().__dict__)
 
 
 def read_retention(site_config_path: Path) -> BackupConfig | None:
-    block = _load(site_config_path).get(_KEY)
+    try:
+        block = _load(site_config_path).get(_KEY)
+    except (json.JSONDecodeError, OSError):
+        return None
     if not isinstance(block, dict):
         return None
     return BackupConfig(**{k: v for k, v in block.items() if k in _FIELDS})
@@ -32,9 +35,8 @@ def clear_retention(site_config_path: Path) -> None:
 
 
 def _load(path: Path) -> dict:
+    """Existing config as a dict. Raises on a corrupt/unreadable file so writers
+    never overwrite (and erase) a config they couldn't parse; readers catch it."""
     if not path.is_file():
         return {}
-    try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {}
+    return json.loads(path.read_text())
