@@ -22,7 +22,7 @@ e2e = ["pytest>=8.0", "pytest-playwright>=0.5", "playwright>=1.40"]
 where = ["."]
 
 [tool.ruff]
-line-length = 200
+line-length = 100
 
 [tool.ruff.format]
 line-ending = "auto"

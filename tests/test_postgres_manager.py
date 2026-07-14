@@ -1,26 +1,18 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from pilot.config.postgres_config import PostgresConfig
-from pilot.managers.postgres_manager import (
-    PostgresManager,
-    pick_dedicated_postgres_port,
-    supports_dedicated_postgres,
-)
+from pilot.managers.postgres_manager import PostgresManager
 
 MODULE = "pilot.managers.postgres_manager"
+BASE_MODULE = "pilot.managers.user_owned_db_manager"
 
 
 def _mgr(**kwargs) -> PostgresManager:
     return PostgresManager(PostgresConfig(**kwargs))
-
-
-def _dedicated(instance: str = "b1", **kwargs) -> PostgresManager:
-    return PostgresManager(PostgresConfig(instance=instance, **kwargs))
 
 
 # ── install ───────────────────────────────────────────────────────────────────
@@ -35,21 +27,23 @@ def test_is_installed_checks_binaries() -> None:
 
 def test_install_skips_when_present() -> None:
     m = _mgr()
-    with patch.object(m, "is_installed", return_value=True), patch(f"{MODULE}.get_package_manager") as gpm:
+    with patch.object(m, "is_installed", return_value=True), patch(f"{BASE_MODULE}.get_package_manager") as gpm:
         m.install()
     gpm.assert_not_called()
 
 
-def test_install_uses_apt_packages_on_linux() -> None:
-    m, pkg = _mgr(), MagicMock()
-    with patch.object(m, "is_installed", return_value=False), patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.get_package_manager", return_value=pkg):
-        m.install()
-    pkg.install.assert_called_once_with("postgresql", "postgresql-client")
+def test_install_raises_when_missing_on_linux() -> None:
+    m = _mgr()
+    with patch.object(m, "is_installed", return_value=False), \
+         patch(f"{BASE_MODULE}.is_macos", return_value=False):
+        with pytest.raises(RuntimeError, match="install.sh"):
+            m.install()
 
 
 def test_install_uses_brew_formula_on_macos() -> None:
-    m, pkg = _mgr(version="16"), MagicMock()
-    with patch.object(m, "is_installed", return_value=False), patch(f"{MODULE}.is_macos", return_value=True), patch.object(m, "_installed_brew_formula", return_value=None), patch(f"{MODULE}.get_package_manager", return_value=pkg):
+    m, pkg = _mgr(), MagicMock()
+    with patch.object(m, "is_installed", return_value=False), patch(f"{BASE_MODULE}.is_macos", return_value=True), \
+         patch.object(m, "_installed_brew_formula", return_value=None), patch(f"{BASE_MODULE}.get_package_manager", return_value=pkg):
         m.install()
     pkg.install.assert_called_once_with("postgresql@16")
 
@@ -118,142 +112,133 @@ def test_check_credentials_false_without_psql() -> None:
         assert _mgr(root_password="pw").check_credentials() is False
 
 
-# ── service control & provisioning ─────────────────────────────────────────────
+# ── service control ─────────────────────────────────────────────────────────────
 
 
-def test_start_targets_systemctl_on_linux() -> None:
+def test_start_targets_systemctl_user_on_linux() -> None:
     m = _mgr()
-    with patch(f"{MODULE}.is_macos", return_value=False), patch(f"{MODULE}.run_command") as rc:
+    with patch(f"{BASE_MODULE}.is_macos", return_value=False), \
+         patch(f"{BASE_MODULE}.run_command") as rc:
         m.start()
-    rc.assert_called_once_with(["sudo", "systemctl", "start", "postgresql"])
+    assert rc.call_args.args[0] == ["systemctl", "--user", "start", "pilot-postgres.service"]
 
 
 def test_start_targets_brew_on_macos() -> None:
     m = _mgr()
-    with patch(f"{MODULE}.is_macos", return_value=True), patch.object(m, "_installed_brew_formula", return_value="postgresql@16"), patch(f"{MODULE}.run_command") as rc:
+    with patch(f"{BASE_MODULE}.is_macos", return_value=True), patch.object(m, "_installed_brew_formula", return_value="postgresql@16"), patch(f"{BASE_MODULE}.run_command") as rc:
         m.start()
     rc.assert_called_once_with(["brew", "services", "start", "postgresql@16"])
 
 
-def test_provision_orchestrates_steps() -> None:
+# ── provisioning ──────────────────────────────────────────────────────────────
+
+
+def test_provision_orchestrates_steps_on_linux() -> None:
     m = _mgr(root_password="pw")
-    with patch(f"{MODULE}.is_alpine", return_value=False), patch.object(m, "install") as ins, patch.object(m, "enable") as en, patch.object(m, "is_running", return_value=False), patch.object(m, "start") as st, patch.object(m, "_wait_until_reachable"), patch.object(m, "secure") as sec:
+    with patch(f"{MODULE}.is_macos", return_value=False), \
+         patch.object(m, "install") as ins, patch.object(m, "_provision_user_owned") as prov, \
+         patch.object(m, "_wait_until_reachable"), patch.object(m, "secure") as sec:
         m.provision()
     ins.assert_called_once()
-    en.assert_called_once()
-    st.assert_called_once()
+    prov.assert_called_once()
     sec.assert_called_once()
 
 
-# ── Alpine package naming ───────────────────────────────────────────────────────
+def test_provision_user_owned_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "data_dir", return_value=tmp_path / "data"), \
+         patch.object(m, "is_provisioned", return_value=False), \
+         patch.object(m, "_ensure_port_available"), \
+         patch.object(m, "is_running", return_value=False), \
+         patch.object(m, "_install_unit") as install_unit, \
+         patch(f"{MODULE}.run_command") as rc:
+        m._provision_user_owned()
+    install_unit.assert_called_once()
+    argv_calls = [c.args[0] for c in rc.call_args_list]
+    assert any("initdb" in argv for argv in argv_calls)
+    initdb_call = next(argv for argv in argv_calls if "initdb" in argv)
+    assert "-D" in initdb_call
+    assert "--username" not in initdb_call  # bootstrap superuser = current OS user
 
 
-def test_install_uses_versioned_packages_on_alpine() -> None:
-    m, pkg = _mgr(), MagicMock()
-    with patch.object(m, "is_installed", return_value=False), patch(f"{MODULE}.is_macos", return_value=False), \
-         patch(f"{MODULE}.is_alpine", return_value=True), patch.object(m, "_alpine_major", return_value="17"), \
-         patch(f"{MODULE}.get_package_manager", return_value=pkg):
-        m.install()
-    pkg.install.assert_called_once_with("postgresql17", "postgresql17-client")
+def test_ensure_port_available_raises_when_port_taken() -> None:
+    import socket as socket_module
+
+    m = _mgr()
+    with socket_module.socket(socket_module.AF_INET, socket_module.SOCK_STREAM) as srv:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        m.config.port = srv.getsockname()[1]
+        with pytest.raises(RuntimeError, match="already in use"):
+            m._ensure_port_available()
 
 
-def test_alpine_dev_package_is_versioned() -> None:
-    with patch.object(PostgresManager, "_alpine_major", return_value="17"):
-        assert _mgr().alpine_dev_package() == "postgresql17-dev"
+def test_ensure_port_available_passes_when_free() -> None:
+    m = _mgr(port=65532)
+    m._ensure_port_available()  # no raise
 
 
-def test_alpine_major_prefers_configured_version() -> None:
-    assert _mgr(version="16.2")._alpine_major() == "16"
-
-
-# ── dedicated cluster ───────────────────────────────────────────────────────────
-
-
-def test_is_dedicated() -> None:
-    assert _mgr().is_dedicated is False
-    assert _dedicated("b1").is_dedicated is True
-
-
-def test_service_unit_shared_and_dedicated() -> None:
-    assert _mgr().service_unit() == "postgresql"
-    with patch.object(PostgresManager, "_cluster_version", return_value="16"):
-        assert _dedicated("b1").service_unit() == "postgresql@16-b1"
-
-
-def test_supports_dedicated_postgres_needs_systemd() -> None:
-    with patch(f"{MODULE}.is_linux", return_value=True), patch(f"{MODULE}.is_alpine", return_value=False):
-        assert supports_dedicated_postgres() is True
-    with patch(f"{MODULE}.is_linux", return_value=True), patch(f"{MODULE}.is_alpine", return_value=True):
-        assert supports_dedicated_postgres() is False
-    with patch(f"{MODULE}.is_linux", return_value=False), patch(f"{MODULE}.is_alpine", return_value=False):
-        assert supports_dedicated_postgres() is False
-
-
-def test_pick_dedicated_postgres_port_skips_shared_and_siblings(tmp_path) -> None:
-    siblings = [("a", SimpleNamespace(postgres=SimpleNamespace(instance="a", port=5433)))]
-    with patch("pilot.utils.iter_sibling_benches", return_value=siblings), patch(f"{MODULE}._port_is_live", return_value=False):
-        # 5432 (shared) and 5433 (sibling) are taken, so 5434 is next.
-        assert pick_dedicated_postgres_port(tmp_path) == 5434
-
-
-def test_provision_routes_to_instance_when_dedicated() -> None:
-    m = _dedicated("b1", root_password="pw")
-    with patch.object(m, "install"), patch.object(m, "_provision_instance") as prov, \
-         patch.object(m, "_wait_until_reachable"), patch.object(m, "secure"):
-        m.provision()
-    prov.assert_called_once()
-
-
-def test_provision_instance_creates_then_starts_cluster() -> None:
-    m = _dedicated("b1", port=5440)
-    with patch(f"{MODULE}.supports_dedicated_postgres", return_value=True), \
-         patch.object(m, "_cluster_row", return_value=[]), patch.object(m, "_detected_version", return_value="16"), \
-         patch.object(m, "is_running", return_value=False), patch.object(m, "start") as start, \
-         patch.object(m, "enable"), patch(f"{MODULE}.run_command") as rc:
-        m._provision_instance()
-    args = rc.call_args[0][0]
-    assert "pg_createcluster" in args and "16" in args and "b1" in args
-    assert args[args.index("-p") + 1] == "5440"
-    # Started directly afterwards, not via pg_createcluster --start (systemd).
-    assert "--start" not in args
-    start.assert_called_once()
-
-
-def test_ctlcluster_skips_systemctl_redirect() -> None:
-    m = _dedicated("b1")
-    with patch.object(m, "_cluster_version", return_value="16"), patch(f"{MODULE}.run_command") as rc:
-        m.start()
-    args = rc.call_args[0][0]
-    assert args[:2] == ["sudo", "pg_ctlcluster"]
-    assert "--skip-systemctl-redirect" in args and args[-1] == "start"
-
-
-def test_provision_instance_rejects_when_unsupported() -> None:
-    m = _dedicated("b1")
-    with patch(f"{MODULE}.supports_dedicated_postgres", return_value=False):
-        with pytest.raises(RuntimeError, match="systemd"):
-            m._provision_instance()
-
-
-def test_remove_instance_drops_cluster() -> None:
-    m = _dedicated("b1")
-    with patch(f"{MODULE}.supports_dedicated_postgres", return_value=True), \
-         patch.object(m, "_cluster_version", return_value="16"), patch(f"{MODULE}.run_command") as rc:
-        m.remove_instance()
-    args = rc.call_args[0][0]
-    assert "pg_dropcluster" in args and "16" in args and "b1" in args and "--stop" in args
-
-
-def test_remove_instance_noop_for_shared() -> None:
-    with patch(f"{MODULE}.run_command") as rc:
-        _mgr().remove_instance()
+def test_provision_user_owned_reuses_already_provisioned_server() -> None:
+    m = _mgr()
+    with patch.object(m, "is_provisioned", return_value=True), \
+         patch.object(m, "is_running", return_value=True), \
+         patch.object(m, "_install_unit") as install_unit, \
+         patch(f"{MODULE}.run_command") as rc:
+        m._provision_user_owned()
+    install_unit.assert_not_called()
     rc.assert_not_called()
 
 
-def test_run_sql_as_superuser_targets_cluster_port() -> None:
-    m = _dedicated("b1", port=5440)
-    with patch(f"{MODULE}.is_linux", return_value=True), patch(f"{MODULE}.subprocess.run") as run:
+def test_run_sql_as_superuser_uses_local_psql() -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "_psql", return_value="/usr/bin/psql"), \
+         patch(f"{MODULE}.subprocess.run") as run:
         m._run_sql_as_superuser("SELECT 1;")
     cmd = run.call_args[0][0]
-    assert cmd[:4] == ["sudo", "-u", "postgres", "psql"]
+    assert cmd[0] == "/usr/bin/psql"
+    assert "sudo" not in cmd
     assert cmd[cmd.index("-p") + 1] == "5440"
+
+
+def test_run_sql_as_superuser_targets_own_socket_dir_on_linux() -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "_psql", return_value="/usr/bin/psql"), \
+         patch(f"{MODULE}.is_macos", return_value=False), \
+         patch(f"{MODULE}.subprocess.run") as run:
+        m._run_sql_as_superuser("SELECT 1;")
+    cmd = run.call_args[0][0]
+    assert cmd[cmd.index("-h") + 1] == str(m.socket_dir())
+
+
+def test_run_sql_as_superuser_uses_default_socket_on_macos() -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "_psql", return_value="/usr/bin/psql"), \
+         patch(f"{MODULE}.is_macos", return_value=True), \
+         patch(f"{MODULE}.subprocess.run") as run:
+        m._run_sql_as_superuser("SELECT 1;")
+    cmd = run.call_args[0][0]
+    assert "-h" not in cmd
+
+
+def test_install_unit_pins_unix_socket_directories_to_owned_dir(tmp_path) -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "unit_path", return_value=tmp_path / "pilot-postgres.service"), \
+         patch.object(m, "_user_unit_dir", return_value=tmp_path), \
+         patch(f"{MODULE}.which", return_value="/usr/lib/postgresql/bin/postgres"), \
+         patch(f"{MODULE}.run_command"):
+        m._install_unit()
+    content = (tmp_path / "pilot-postgres.service").read_text()
+    assert f"unix_socket_directories={m.socket_dir()}" in content
+
+
+def test_provision_user_owned_creates_socket_dir(tmp_path) -> None:
+    m = _mgr(port=5440)
+    with patch.object(m, "data_dir", return_value=tmp_path / "data"), \
+         patch.object(m, "socket_dir", return_value=tmp_path / "run"), \
+         patch.object(m, "is_provisioned", return_value=False), \
+         patch.object(m, "_ensure_port_available"), \
+         patch.object(m, "is_running", return_value=False), \
+         patch.object(m, "_install_unit"), \
+         patch(f"{MODULE}.run_command"):
+        m._provision_user_owned()
+    assert (tmp_path / "run").is_dir()

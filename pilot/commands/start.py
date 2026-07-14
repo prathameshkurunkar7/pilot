@@ -47,17 +47,13 @@ class RunCommand(Command):
             manager.start()
             return
 
-        # Production bench (systemd/supervisor/openrc): the admin always runs
-        # under the process manager. Pick by the configured manager rather than
-        # via the factory, which gates on production.enabled.
+        # Production bench (systemd/supervisor): the admin always runs under the
+        # process manager. Pick by the configured manager rather than via the
+        # factory, which gates on production.enabled.
         if process_manager == "systemd":
             from pilot.managers.process_managers.systemd import SystemdProcessManager
 
             manager = SystemdProcessManager(self.bench)
-        elif process_manager == "openrc":
-            from pilot.managers.process_managers.openrc import OpenRCProcessManager
-
-            manager = OpenRCProcessManager(self.bench)
         else:
             from pilot.managers.process_managers.supervisor import SupervisorProcessManager
 

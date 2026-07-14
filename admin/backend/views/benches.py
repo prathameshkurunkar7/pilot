@@ -178,15 +178,12 @@ def new():
         return jsonify({"error": "Bench name must contain only letters, numbers, '-' and '_'"}), 400
 
     from pilot.config.production_config import VALID_PROCESS_MANAGERS
-    from pilot.platform import is_alpine
 
     process_manager = (data.get("process_manager") or "").strip().lower()
     if process_manager == "supervisord":
         process_manager = "supervisor"
     if process_manager not in VALID_PROCESS_MANAGERS:
         return jsonify({"error": f"Choose a process manager: {', '.join(VALID_PROCESS_MANAGERS)}."}), 400
-    if is_alpine() and process_manager == "systemd":
-        process_manager = "openrc"
 
     db_type = (data.get("db_type") or "mariadb").strip()
     if db_type not in ("mariadb", "postgres", "sqlite"):
@@ -238,8 +235,6 @@ def new():
             configured_pm = bench.config.production.process_manager
             if configured_pm == "systemd":
                 from pilot.managers.process_managers.systemd import SystemdProcessManager as PM
-            elif configured_pm == "openrc":
-                from pilot.managers.process_managers.openrc import OpenRCProcessManager as PM
             else:
                 from pilot.managers.process_managers.supervisor import SupervisorProcessManager as PM
             pm = PM(bench)

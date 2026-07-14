@@ -12,10 +12,8 @@ from pilot.package_managers import get_package_manager
 from pilot.platform import (
     _privileged,
     default_nginx_config_dir,
-    is_alpine,
     is_linux,
     service_command,
-    service_enable_command,
     service_running,
 )
 from pilot.utils import run_command
@@ -29,19 +27,15 @@ _SHARED_ERROR_DIR = Path("/usr/share/nginx/bench-error-pages")
 def _catchall_conf() -> Path:
     """Server-wide catch-all so unknown hosts get our 404 instead of nginx's
     stock welcome page. One default_server per port, shared by every bench, so
-    it lives in the distro's include dir (conf.d on Debian, http.d on Alpine)."""
+    it lives in the include dir (conf.d)."""
     return default_nginx_config_dir() / "00-bench-default.conf"
 
 
 def _stock_default_sites() -> list[Path]:
     """The distro's own default vhost(s), which also claim default_server on :80
     and would conflict with our catch-all. Debian symlinks sites-enabled/default
-    (removed on every Linux, as upstream does); Alpine additionally ships
-    http.d/default.conf."""
-    sites = [Path("/etc/nginx/sites-enabled/default")]
-    if is_alpine():
-        sites.append(default_nginx_config_dir() / "default.conf")
-    return sites
+    (removed on every Linux, as upstream does)."""
+    return [Path("/etc/nginx/sites-enabled/default")]
 
 # Custom pages for nginx-generated errors (downed upstream, missing static
 # file). App responses pass through unchanged — proxy_intercept_errors is off.
@@ -656,8 +650,6 @@ class NginxManager:
             run_command(["nginx", "-s", "reload"])
             return
         # reload needs a running nginx; a fresh install may not be started yet.
-        if is_alpine():
-            run_command(service_enable_command("nginx"))
         action = "reload" if service_running("nginx") else "start"
         run_command(service_command(action, "nginx"))
 

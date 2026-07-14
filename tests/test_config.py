@@ -200,11 +200,25 @@ def test_rule_11_invalid_letsencrypt_email() -> None:
 # ── Dependency version tests ──────────────────────────────────────────────────
 
 
-def test_mariadb_version_accepted() -> None:
+def test_stale_mariadb_instance_key_is_ignored_not_a_hard_error() -> None:
+    """bench.toml written by an older bench-cli may still have mariadb.instance/
+    version/data_dir — every bench now shares one MariaDB server, so these keys
+    must be tolerated (dropped), not raise a TypeError from the dataclass ctor."""
     data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["mariadb"]["instance"] = "old-bench"
     data["mariadb"]["version"] = "10.6"
+    data["mariadb"]["data_dir"] = "/var/lib/mysql-old-bench"
     config = load_from_dict(data)
-    assert config.mariadb.version == "10.6"
+    assert not hasattr(config.mariadb, "instance")
+    assert config.mariadb.root_password == "root"
+
+
+def test_stale_postgres_instance_key_is_ignored_not_a_hard_error() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["postgres"] = {"instance": "old-bench", "version": "15", "root_password": "secret"}
+    config = load_from_dict(data)
+    assert not hasattr(config.postgres, "instance")
+    assert config.postgres.root_password == "secret"
 
 
 def test_redis_version_accepted() -> None:
@@ -212,11 +226,6 @@ def test_redis_version_accepted() -> None:
     data["redis"]["version"] = "7"
     config = load_from_dict(data)
     assert config.redis.version == "7"
-
-
-def test_mariadb_version_defaults_to_none() -> None:
-    config = BenchConfig.from_file(FIXTURES_DIR / "minimal.toml")
-    assert config.mariadb.version is None
 
 
 def test_redis_version_defaults_to_none() -> None:
@@ -233,40 +242,6 @@ def test_central_config_round_trips_through_typed_writer() -> None:
     assert "[central]" in toml
     assert 'endpoint = "https://central.test"' in toml
     assert 'auth_token = "tok-123"' in toml
-
-
-def test_invalid_mariadb_version() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["mariadb"]["version"] = "invalid"
-    config = BenchConfig._from_dict(data)
-    with pytest.raises(ConfigError) as exc_info:
-        config.validate()
-    assert "mariadb.version" in str(exc_info.value)
-
-
-def test_mariadb_instance_defaults_to_shared() -> None:
-    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
-    assert config.mariadb.instance == ""
-    assert config.mariadb.data_dir == ""
-
-
-def test_mariadb_instance_and_data_dir_roundtrip() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["mariadb"]["instance"] = "test-bench"
-    data["mariadb"]["data_dir"] = "/var/lib/mysql/test-bench"
-    config = load_from_dict(data)
-    assert config.mariadb.instance == "test-bench"
-    assert config.mariadb.data_dir == "/var/lib/mysql/test-bench"
-    # instance/data_dir survive serialization and only appear when set
-    toml = bench_config_to_toml(config)
-    assert 'instance = "test-bench"' in toml
-    assert 'data_dir = "/var/lib/mysql/test-bench"' in toml
-
-
-def test_mariadb_instance_omitted_from_toml_when_shared() -> None:
-    toml = bench_config_to_toml(load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA)))
-    assert "instance =" not in toml
-    assert "data_dir =" not in toml
 
 
 # ── PostgreSQL ────────────────────────────────────────────────────────────────
@@ -300,54 +275,6 @@ def test_invalid_postgres_port_rejected() -> None:
     with pytest.raises(ConfigError) as exc_info:
         load_from_dict(data)
     assert "postgres.port" in str(exc_info.value)
-
-
-def test_postgres_instance_defaults_to_shared() -> None:
-    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
-    assert config.postgres.instance == ""
-
-
-def test_postgres_instance_roundtrip() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["postgres"] = {"instance": "my-bench", "port": 5433, "root_password": "secret"}
-    config = load_from_dict(data)
-    assert config.postgres.instance == "my-bench"
-    toml = bench_config_to_toml(config)
-    assert 'instance = "my-bench"' in toml
-
-
-def test_postgres_instance_omitted_from_toml_when_shared() -> None:
-    config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
-    pg_section = bench_config_to_toml(config).split("[postgres]")[1].split("[")[0]
-    assert "instance =" not in pg_section
-
-
-def test_invalid_postgres_instance_name() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["postgres"] = {"instance": "1bad name"}
-    config = BenchConfig._from_dict(data)
-    with pytest.raises(ConfigError) as exc_info:
-        config.validate()
-    assert "postgres.instance" in str(exc_info.value)
-
-
-def test_invalid_mariadb_instance_name() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["mariadb"]["instance"] = "1bad name"
-    config = BenchConfig._from_dict(data)
-    with pytest.raises(ConfigError) as exc_info:
-        config.validate()
-    assert "mariadb.instance" in str(exc_info.value)
-
-
-def test_mariadb_data_dir_must_be_absolute() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["mariadb"]["instance"] = "test-bench"
-    data["mariadb"]["data_dir"] = "relative/path"
-    config = BenchConfig._from_dict(data)
-    with pytest.raises(ConfigError) as exc_info:
-        config.validate()
-    assert "mariadb.data_dir" in str(exc_info.value)
 
 
 def test_invalid_redis_version() -> None:

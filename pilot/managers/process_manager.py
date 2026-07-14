@@ -75,10 +75,6 @@ class ProcessManager:
         prod = bench.config.production
         if not prod.enabled:
             return ProcessManager(bench)
-        if prod.process_manager == "openrc":
-            from pilot.managers.process_managers.openrc import OpenRCProcessManager
-
-            return OpenRCProcessManager(bench)
         if prod.process_manager == "systemd":
             from pilot.managers.process_managers.systemd import SystemdProcessManager
 
@@ -91,8 +87,6 @@ class ProcessManager:
     def detect_running(cls, bench: "Bench") -> "ProcessManager":
         # Probe runtime state, not config presence, so a lingering config from a
         # switched manager can't mislead. Falls back to for_bench when none runs.
-        if bench.config.production.process_manager == "openrc":
-            return cls.for_bench(bench)
         from pilot.managers.process_managers.supervisor import SupervisorProcessManager
         from pilot.managers.process_managers.systemd import SystemdProcessManager
 

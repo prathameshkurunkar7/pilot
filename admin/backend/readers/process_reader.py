@@ -145,16 +145,6 @@ class ProcessReader:
         config = BenchTomlStore.for_bench(self._bench_root).read()
         bench = Bench(config, self._bench_root)
 
-        # Alpine: only OpenRC is present, so probe it directly (the systemd /
-        # supervisor probes would shell out to CLIs that aren't installed).
-        if config.production.process_manager == "openrc":
-            from pilot.managers.process_managers.openrc import OpenRCProcessManager
-
-            openrc = OpenRCProcessManager(bench)
-            if openrc.is_running() or openrc.is_admin_running():
-                return self._read_from_openrc(openrc)
-            return self._read_from_pids()
-
         from pilot.managers.process_managers.supervisor import SupervisorProcessManager
         from pilot.managers.process_managers.systemd import SystemdProcessManager
 
@@ -166,36 +156,6 @@ class ProcessReader:
             return self._read_from_supervisor(supervisor)
 
         return self._read_from_pids()
-
-    # ── OpenRC ─────────────────────────────────────────────────────────────────
-
-    def _read_from_openrc(self, openrc) -> list[ProcessInfo]:
-        from pilot.platform import service_running
-
-        infos: list[ProcessInfo] = []
-        for pd in openrc._all_definitions():
-            service = openrc._service_name(pd.name)
-            running = service_running(service)
-            pid = self._read_pidfile(Path(f"/run/{service}.pid"))
-            status = "running" if running else "stopped"
-            running_now = bool(running and pid)
-            if running_now and pid is not None:
-                cpu, rss, pss = _get_process_stats(pid)
-                uptime = _proc_uptime(pid)
-            else:
-                cpu = rss = pss = uptime = None
-            infos.append(ProcessInfo(
-                name=pd.name, status=status, pid=pid, uptime=uptime,
-                log_file=pd.log_file, cpu_percent=cpu, rss_mb=rss, pss_mb=pss,
-            ))
-        return infos
-
-    @staticmethod
-    def _read_pidfile(pid_file: Path) -> int | None:
-        try:
-            return int(pid_file.read_text().strip())
-        except (ValueError, OSError):
-            return None
 
     # ── Systemd ──────────────────────────────────────────────────────────────
 

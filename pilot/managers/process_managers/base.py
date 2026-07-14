@@ -30,7 +30,7 @@ class ServiceRenderer(ABC):
 
 
 class ManagedProcessManager(ProcessManager, ABC):
-    """Base for production process managers (systemd / supervisor / openrc).
+    """Base for production process managers (systemd / supervisor).
 
     Lifecycle
     ---------
@@ -50,7 +50,7 @@ class ManagedProcessManager(ProcessManager, ABC):
        * ``install_config``  – register units with the init system (symlinks,
                                enable, etc.). Called once at setup time.
        * ``reload_manager_config`` – tell the init system to pick up new config
-                               (daemon-reload / reread+update / no-op for openrc).
+                               (daemon-reload / reread+update).
        * ``ensure_ready``        – per-start readiness check called before ``apply_unit_action``;
                                ensures the daemon is up and config is current.
        * ``apply_unit_action(action, role)`` – apply *action* (``"start"``, ``"stop"`` or

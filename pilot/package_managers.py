@@ -56,35 +56,6 @@ class AptPackageManager(SystemPackageManager):
         subprocess.run(_privileged(["apt-get", "-y", "update"]))
 
 
-class ApkPackageManager(SystemPackageManager):
-    package_aliases = {
-        "build-essential": "build-base",
-        "pkg-config": "pkgconf",
-        "libmariadb-dev": "mariadb-dev",
-        "mariadb-server": "mariadb",
-        "mariadb-client": "mariadb-client",
-        "redis-server": "redis",
-        "supervisor": "supervisor",
-    }
-
-    def install(self, *packages: str) -> None:
-        subprocess.run(
-            _privileged(["apk", "add", "--no-cache", *self._resolve(*packages)]),
-            check=True,
-        )
-
-    def is_installed(self, package: str) -> bool:
-        resolved = self._resolve(package)[0]
-        result = subprocess.run(
-            ["apk", "info", "-e", resolved],
-            capture_output=True,
-        )
-        return result.returncode == 0
-
-    def update(self):
-        subprocess.run(_privileged(["apk", "update"]))
-
-
 class DnfPackageManager(SystemPackageManager):
     package_aliases = {
         "build-essential": ("gcc", "gcc-c++", "make"),
@@ -171,7 +142,6 @@ class BrewPackageManager(SystemPackageManager):
 
 
 _LINUX_PACKAGE_MANAGERS: dict[Distro, type[SystemPackageManager]] = {
-    Distro.ALPINE: ApkPackageManager,
     Distro.FEDORA: DnfPackageManager,
     Distro.ARCH: PacmanPackageManager,
 }
