@@ -200,6 +200,18 @@ _MARIADB_REPO_SETUP_URL="https://r.mariadb.com/downloads/mariadb_repo_setup"
 _MARIADB_VERSION="11.8"
 _POSTGRES_VERSION="16"
 
+# Debian/Ubuntu ship an older MariaDB than 11.8 by default, so the official
+# repo must be added before bootstrap()'s single pkg_update() runs — that one
+# call then refreshes both the base indices and this new repo together,
+# instead of a second apt-get update just for it.
+add_distro_repos() {
+    case "$DISTRO" in
+        debian|ubuntu)
+            # Same version the runtime expects (MariaDBManager DEFAULT_VERSION).
+            fetch_and_run_as_root "$_MARIADB_REPO_SETUP_URL" --mariadb-server-version="mariadb-$_MARIADB_VERSION" ;;
+    esac
+}
+
 install_database_engines() {
     # Dev headers for building the Python client libraries (mysqlclient,
     # psycopg) that frappe's virtualenv compiles during `bench init` — listed
@@ -212,13 +224,7 @@ install_database_engines() {
             # reach for later.
             pkg_install "mariadb@$_MARIADB_VERSION" "postgresql@$_POSTGRES_VERSION" ;;
         debian|ubuntu)
-            # Debian/Ubuntu ship an older MariaDB than 11.8 by default; pin
-            # the official repo first, same version the runtime expects
-            # (pilot/managers/mariadb_manager.py DEFAULT_VERSION).
-            fetch_and_run_as_root "$_MARIADB_REPO_SETUP_URL" --mariadb-server-version="mariadb-$_MARIADB_VERSION"
-            pkg_update
-            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config
-            ;;
+            pkg_install mariadb-server mariadb-client libmariadb-dev postgresql postgresql-client libpq-dev pkg-config ;;
         fedora)
             pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config ;;
         arch)
@@ -292,6 +298,7 @@ bootstrap() {
         fi
     fi
     echo "$DISTRO detected — installing base dependencies..."
+    add_distro_repos
     pkg_update
     bootstrap_packages
     install_database_engines
