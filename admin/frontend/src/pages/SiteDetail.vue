@@ -9,10 +9,10 @@
   </div>
   <div v-else-if="site" class="mx-auto w-full max-w-3xl">
     <!-- Hero -->
-    <div class="relative -mx-6 -mt-6 px-6 pt-6 pb-7 overflow-hidden">
+    <div class="relative -mx-4 sm:-mx-6 -mt-6 px-4 sm:px-6 pt-6 pb-7 overflow-hidden">
       <div class="absolute inset-0 pointer-events-none dot-field" aria-hidden="true" />
       <div
-        class="relative flex justify-between items-center gap-3 bg-surface-base p-4 border rounded-xl border-outline-gray-2">
+        class="relative flex justify-between items-center gap-3 bg-surface-base p-2 sm:p-4 border rounded-xl border-outline-gray-2">
         <div class="flex items-center gap-3 min-w-0">
           <span
             class="place-items-center grid bg-surface-elevation-1 border rounded-xl border-outline-gray-2 size-10 sm:size-12 text-ink-gray-6 shrink-0">
@@ -65,7 +65,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch, watchEffect } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge, Button, Dropdown, ErrorMessage, LoadingText, TabButtons, toast } from 'frappe-ui'
 import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
@@ -92,8 +92,8 @@ setBreadcrumbs([
   { label: siteName },
 ])
 
-const STATUS_THEMES = { online: 'green', broken: 'red', offline: 'orange' }
-const STATUS_LABELS = { online: 'Live', broken: 'Broken', offline: 'Paused' }
+const STATUS_THEMES = { online: 'green', broken: 'red', offline: 'orange', provisioning: 'blue' }
+const STATUS_LABELS = { online: 'Live', broken: 'Broken', offline: 'Paused', provisioning: 'Creating' }
 
 const statusLabel = computed(() => STATUS_LABELS[status.value] ?? status.value)
 const statusBadgeTheme = computed(() => STATUS_THEMES[status.value] ?? 'gray')
@@ -133,7 +133,7 @@ function goToMarketplace() {
 
 function loginAsAdmin() {
   toast.promise(login(), {
-    loading: 'Logging in as admin…',
+    loading: 'Logging in as admin',
     success: 'Logged in as admin',
     error: 'Could not log in as admin',
   })
@@ -154,6 +154,19 @@ const menuOptions = computed(() => [
   { label: 'Login as admin', icon: 'lucide-log-in', onClick: loginAsAdmin },
   { label: 'Back up now', icon: 'lucide-archive', onClick: backupNow },
 ])
+
+// Provisioning is a transient state (a new-site/reinstall task still running);
+// poll until it clears instead of leaving the badge stuck on "Creating".
+let provisioningPoll = null
+watch(status, (value) => {
+  if (value === 'provisioning' && !provisioningPoll) {
+    provisioningPoll = setInterval(load, 3000)
+  } else if (value !== 'provisioning' && provisioningPoll) {
+    clearInterval(provisioningPoll)
+    provisioningPoll = null
+  }
+})
+onUnmounted(() => { if (provisioningPoll) clearInterval(provisioningPoll) })
 
 onMounted(() => {
   load()

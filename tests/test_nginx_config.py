@@ -1,12 +1,14 @@
 """Tests for NginxManager config generation — no real nginx required."""
 import copy
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from pilot.config.bench_config import BenchConfig
 from pilot.config.site_config import SiteConfig
 from pilot.core.bench import Bench
+from pilot.exceptions import CommandError
 from pilot.managers.nginx_manager import NginxManager
 
 
@@ -272,24 +274,30 @@ def test_no_proxy_servers_keeps_direct_defaults(tmp_path: Path) -> None:
     config = manager._generate_site_config(_BASE_SITE, ssl_ready=False)
 
     assert "set_real_ip_from" not in config
-    assert "deny" not in config
+    assert "realip_remote_addr" not in config  # no proxy gate; XFF untrusted
     assert "X-Forwarded-For    $proxy_add_x_forwarded_for" in config
 
 
-def test_proxy_servers_trust_only_those_ips(tmp_path: Path) -> None:
+def test_proxy_servers_gate_tcp_peer_and_trust_xff(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
     manager._proxy_servers_cache = ["203.0.113.5", "203.0.113.6"]
 
     config = manager._generate_site_config(_BASE_SITE, ssl_ready=False)
 
-    # Trust the proxy IPs and accept connections from them alone.
+    # Trust the proxy IPs to supply the real client IP via X-Forwarded-For.
     assert "set_real_ip_from   203.0.113.5;" in config
     assert "set_real_ip_from   203.0.113.6;" in config
     assert "real_ip_header     X-Forwarded-For;" in config
-    assert "allow              203.0.113.5;" in config
-    assert "allow              203.0.113.6;" in config
-    assert "deny               all;" in config
+    # Accept TCP connections from the proxies alone, tested on the real peer
+    # ($realip_remote_addr) since real_ip has already rewritten $remote_addr.
+    assert r'if ($realip_remote_addr ~ "^(203\.0\.113\.5|203\.0\.113\.6)$") { set $bench_from_proxy 1; }' in config
+    assert "if ($bench_from_proxy = 0) { return 403; }" in config
+    # ACME challenges stay reachable directly, so cert issuance never 403s.
+    assert r'if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }' in config
+    # The old allow-proxy/deny-all (which tested the rewritten client IP) is gone.
+    assert "allow              203.0.113.5;" not in config
+    assert "deny               all;" not in config
     # Trust the proxy's X-Forwarded-For unchanged rather than appending to it.
     assert "X-Forwarded-For    $http_x_forwarded_for" in config
     assert "$proxy_add_x_forwarded_for" not in config
@@ -457,6 +465,18 @@ def test_firewall_allowlist_emits_allow_then_deny_all(tmp_path: Path) -> None:
     assert out.index("allow 203.0.113.4;") < out.index("deny all;")
 
 
+def test_firewall_never_blocks_trusted_proxy(tmp_path: Path) -> None:
+    # Even an allowlist and an explicit deny on the proxy IP must not block it:
+    # allow wins as access rules are first-match.
+    rules = [{"ip": "203.0.113.5", "action": "deny"}]
+    bench = _make_bench(tmp_path, _firewall_data(True, "deny", rules))
+    manager = NginxManager(bench)
+    manager._proxy_servers_cache = ["203.0.113.5"]
+    out = manager._render_firewall()
+    assert out.index("allow 203.0.113.5;") < out.index("deny 203.0.113.5;")
+    assert out.index("allow 203.0.113.5;") < out.index("deny all;")
+
+
 def test_firewall_appears_in_site_and_admin_blocks(tmp_path: Path) -> None:
     data = _firewall_data(True, "allow", [{"ip": "203.0.113.4", "action": "deny"}])
     data["admin"] = {"domain": "admin.example.com"}
@@ -472,3 +492,39 @@ def test_error_pages_include_403_and_errors_allow_all(tmp_path: Path) -> None:
     block = manager._render_error_pages()
     assert "error_page 403 /_errors/403.html;" in block
     assert "allow all;" in block  # blocked client can still fetch its 403 page
+
+
+def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> None:
+    """A broken config for one bench must not leave a dangling symlink behind —
+    that breaks the shared nginx.conf test for every other bench on the box."""
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    symlink_path = tmp_path / "test-bench.conf"
+
+    with patch.object(manager, "reload", side_effect=CommandError("nginx -t failed", returncode=1)), \
+         patch("pilot.managers.nginx_manager.run_command") as mock_run:
+        with pytest.raises(CommandError):
+            manager._reload_or_rollback(symlink_path)
+
+    mock_run.assert_called_once()
+    assert mock_run.call_args[0][0][-2:] == ["unlink", str(symlink_path)]
+
+
+def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> None:
+    """A bench dropped without going through its own teardown (e.g. its
+    directory deleted directly) leaves its vhost symlink dangling; that alone
+    fails nginx -t for every bench sharing the config dir, so install_config
+    must sweep it away regardless of which bench it belonged to."""
+    nginx_dir = tmp_path / "conf.d"
+    nginx_dir.mkdir()
+    target = tmp_path / "real-target.conf"
+    target.write_text("server {}\n")
+    (nginx_dir / "alive-bench.conf").symlink_to(target)
+    (nginx_dir / "dropped-bench.conf").symlink_to(tmp_path / "deleted-bench" / "include.conf")
+    (nginx_dir / "00-bench-default.conf").write_text("server {}\n")
+
+    with patch("pilot.managers.nginx_manager.run_command") as mock_run:
+        NginxManager._prune_dangling_symlinks(nginx_dir)
+
+    mock_run.assert_called_once()
+    assert mock_run.call_args[0][0][-2:] == ["unlink", str(nginx_dir / "dropped-bench.conf")]

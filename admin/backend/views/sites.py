@@ -92,6 +92,8 @@ def site_apps(name: str):
             result.append(
                 {
                     "name": app_name,
+                    "title": info.title,
+                    "description": info.description,
                     "branch": info.branch,
                     "commit": info.current_commit,
                     "version": info.installed_version,
@@ -103,6 +105,8 @@ def site_apps(name: str):
             result.append(
                 {
                     "name": app_name,
+                    "title": app_name,
+                    "description": "",
                     "branch": "",
                     "commit": "",
                     "version": "",
@@ -134,6 +138,7 @@ def create():
     name = (data.get("name") or "").strip()
     admin_password = secrets.token_urlsafe(16)
     db_type = (data.get("db_type") or "").strip()
+    apps = [app.strip() for app in data.get("apps") or [] if isinstance(app, str) and app.strip()]
     if db_type and db_type not in ("mariadb", "postgres", "sqlite"):
         return jsonify({"ok": False, "error": f"Invalid db_type '{db_type}'."})
     err = validate_site_name(name) or _new_site_name_error(bench_root, name)
@@ -143,6 +148,8 @@ def create():
     task_args: dict = {"name": name, "admin_password": admin_password}
     if db_type:
         task_args["db_type"] = db_type
+    if apps:
+        task_args["apps"] = apps
     try:
         task_id = TaskRunner(bench_root).run(
             "new-site",
@@ -298,6 +305,7 @@ def get_and_install_app(name: str):
         if not repo:
             return jsonify({"ok": False, "error": "Repo URL is required."})
         from pilot.core.git_providers import GitProviderError, resolve_app_name_from_repo
+
         try:
             app = resolve_app_name_from_repo(bench_root, repo, target)["name"]
         except GitProviderError as e:
@@ -391,7 +399,10 @@ def _get_site_sid(bench_root: Path, site: str, user: str = "Administrator") -> t
 
     result = subprocess.run(
         [str(bench_bin), "-b", bench_name, "--site", site, "browse", "--user", user],
-        capture_output=True, text=True, timeout=30, cwd=str(benches_dir),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(benches_dir),
     )
     output = (result.stdout or "") + (result.stderr or "")
     if m := re.search(r"sid=([a-zA-Z0-9]+)", output):
@@ -602,14 +613,18 @@ def update_config(name: str):
     return jsonify({"ok": True})
 
 
+_DEFAULT_BACKUPS_PAGE_SIZE = 20
+
+
 @sites_bp.route("/<name>/backups")
 @require_scope(site_name)
 def list_backups(name: str):
     from ..readers.backup_reader import BackupReader
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    limit = request.args.get("limit", _DEFAULT_BACKUPS_PAGE_SIZE, type=int)
     try:
-        sets = BackupReader(bench_root, name).read_all()
+        sets = BackupReader(bench_root, name).read_all(limit=limit)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     return jsonify(
@@ -617,6 +632,7 @@ def list_backups(name: str):
             {
                 "timestamp": s.timestamp,
                 "created_at": s.created_at.isoformat(),
+                "is_offsite": s.is_offsite,
                 "files": [
                     {
                         "filename": f.filename,
@@ -648,6 +664,38 @@ def download_backup(name: str):
     return send_file(target, as_attachment=True, download_name=filename)
 
 
+@sites_bp.route("/<name>/backups/<timestamp>/offsite-urls")
+@require_scope(site_name)
+def offsite_backup_urls(name: str, timestamp: str):
+    """Pre-signed S3 URLs for a backup run's files — the user downloads
+    straight from the bucket, so this server never proxies the transfer."""
+    from pilot.config.toml_store import BenchTomlStore
+    from pilot.integrations.s3.backups import OffsiteBackup
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    config = BenchTomlStore.for_bench(bench_root).read()
+    try:
+        offsite_backup = OffsiteBackup.from_config(config.s3)
+        files = offsite_backup.get_backup(name, timestamp)
+        if not files:
+            return jsonify({"error": f"No offsite backup found for {timestamp}"}), 404
+        urls = {
+            kind: offsite_backup.presigned_url(name, timestamp, filename)
+            for kind, filename in files.items()
+        }
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"ok": True, "urls": urls})
+
+
+def _backup_cron_command(bench_root: Path, site: str) -> str:
+    python = bench_root / "env" / "bin" / "python"
+    sites_dir = bench_root / "sites"
+    log_file = bench_root / "logs" / f"backup-{site}.log"
+    return f"cd {sites_dir} && {python} -m frappe.utils.bench_helper frappe --site {site} backup --with-files >> {log_file} 2>&1"
+
+
 @sites_bp.route("/<name>/backup-schedule", methods=["GET"])
 @require_scope(site_name)
 def get_backup_schedule(name: str):
@@ -673,7 +721,7 @@ def set_backup_schedule(name: str):
     if err:
         return jsonify({"ok": False, "error": err})
     try:
-        CronManager(bench_root).set_schedule(name, schedule)
+        CronManager(bench_root).set_schedule(name, schedule, _backup_cron_command(bench_root, name))
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True})

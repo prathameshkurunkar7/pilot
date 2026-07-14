@@ -20,7 +20,7 @@
       <!-- Status filter -->
       <FormControl v-model="statusFilter" type="select" :options="statusOptions" class="max-w-24 sm:max-w-32" />
       <!-- List view type -->
-      <TabButtons v-model="view" :options="viewOptions" />
+      <TabButtons v-model="view" :options="viewOptions" class="hidden sm:block" />
     </div>
 
     <div v-if="loading" class="flex justify-center mt-16">
@@ -35,7 +35,7 @@
       <div v-if="view === 'grid'" class="gap-3 grid grid-cols-1 md:grid-cols-2">
         <!-- Site Card -->
         <div v-for="site in filteredSites" :key="site.name"
-          class="flex items-center gap-3 bg-surface-elevation-1 hover:bg-surface-gray-1 p-4 border rounded-xl border-outline-gray-2 hover:border-outline-gray-3 transition-colors">
+          class="flex items-center gap-3 bg-surface-elevation-1 hover:bg-surface-gray-1 p-2 sm:p-4 border rounded-xl border-outline-gray-2 hover:border-outline-gray-3 transition-colors">
           <RouterLink :to="{ name: 'SiteDetail', params: { name: site.name } }"
             class="flex flex-1 items-center gap-3 min-w-0 no-underline">
             <!-- Icon -->
@@ -124,8 +124,7 @@
     </Button>
   </Teleport>
 
-  <NewSiteDialog v-model="showCreate" :sites="sites"
-    @created="(name) => router.push({ name: 'SiteDetail', params: { name } })" />
+  <NewSiteDialog v-model="showCreate" :sites="sites" @started="(taskId) => openTaskDetailPage(router, taskId)" />
 </template>
 
 <script setup>
@@ -168,6 +167,7 @@ const SITE_STATUS = {
   online: { label: 'Active', theme: 'green' },
   broken: { label: 'Broken', theme: 'red' },
   offline: { label: 'Paused', theme: 'orange' },
+  provisioning: { label: 'Creating', theme: 'blue' },
 }
 
 const statusOptions = [
@@ -175,9 +175,13 @@ const statusOptions = [
   { label: 'Active', value: 'online' },
   { label: 'Broken', value: 'broken' },
   { label: 'Paused', value: 'offline' },
+  { label: 'Creating', value: 'provisioning' },
 ]
 
 function siteStatus(site) {
+  // Provisioning wins over "offline": the site dir/site_config.json may not
+  // exist yet in the earliest moments of a new-site/reinstall task.
+  if (site.provisioning) return 'provisioning'
   if (!site.exists) return 'offline'
   if (site.broken) return 'broken'
   return 'online'
@@ -223,7 +227,7 @@ async function loginAsAdmin(site) {
 
 function openSite(site) {
   toast.promise(loginAsAdmin(site), {
-    loading: 'Logging in as admin…',
+    loading: 'Logging in as admin',
     success: 'Logged in as admin',
     error: 'Could not log in as admin',
   })

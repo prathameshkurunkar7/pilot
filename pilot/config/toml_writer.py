@@ -12,6 +12,9 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f"http_port = {config.http_port}")
     parts.append(f"socketio_port = {config.socketio_port}")
     parts.append(f'socketio_backend = "{config.socketio_backend}"')
+    parts.append(f"watch_apps_js = {'true' if config.watch_apps_js else 'false'}")
+    parts.append(f"reload_python = {'true' if config.reload_python else 'false'}")
+    parts.append(f"watch_admin_js = {'true' if config.watch_admin_js else 'false'}")
     parts.append(f'db_type = "{config.db_type}"')
     if config.default_branch:
         parts.append(f'default_branch = "{config.default_branch}"')
@@ -102,29 +105,21 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f'password = "{a.password}"')
     if a.jwt_secret:
         parts.append(f'jwt_secret = "{a.jwt_secret}"')
+    if a.jwks_url:
+        parts.append(f'jwks_url = "{a.jwks_url}"')
+    if a.jwks_audience:
+        parts.append(f'jwks_audience = "{a.jwks_audience}"')
     parts.append(f'domain = "{a.domain}"')
     parts.append(f"tls = {'true' if a.tls else 'false'}")
+    parts.append(f"allow_bench_management = {'true' if a.allow_bench_management else 'false'}")
     parts.append("")
 
-    v = config.volume
-    parts.append("[volume]")
-    parts.append(f"enabled = {'true' if v.enabled else 'false'}")
-    if v.enabled:
-        parts.append(f'pool = "{v.pool}"')
-        parts.append(f'backing = "{v.backing}"')
-        if v.backing == "image":
-            parts.append("")
-            parts.append("[volume.image]")
-            parts.append(f'size = "{v.image.size}"')
-            parts.append(f'path = "{v.image_path}"')
-        elif v.backing == "device":
-            parts.append(f'device = "{v.device}"')
-        # backing = "auto" carries no device/image fields — resolved during bench init
+    c = config.central
+    if c.endpoint or c.auth_token:
+        parts.append("[central]")
+        parts.append(f'endpoint = "{c.endpoint}"')
+        parts.append(f'auth_token = "{c.auth_token}"')
         parts.append("")
-        parts.append("[volume.dataset]")
-        parts.append(f'reservation = "{v.dataset.reservation}"')
-        parts.append(f'quota = "{v.dataset.quota}"')
-    parts.append("")
 
     fw = config.firewall
     if fw.enabled or fw.rules:
@@ -138,6 +133,16 @@ def bench_config_to_toml(config: BenchConfig) -> str:
             parts.append(f'action = "{rule.action}"')
             parts.append(f'description = "{rule.description}"')
             parts.append("")
+
+    s3 = config.s3
+    if s3.access_key or s3.secret_key or s3.bucket or s3.provider or s3.region:
+        parts.append("[s3]")
+        parts.append(f'access_key = "{s3.access_key}"')
+        parts.append(f'secret_key = "{s3.secret_key}"')
+        parts.append(f'bucket = "{s3.bucket}"')
+        parts.append(f'provider = "{s3.provider}"')
+        parts.append(f'region = "{s3.region}"')
+        parts.append("")
 
     # Only add monitoring section if production is enabled
     if p.enabled:

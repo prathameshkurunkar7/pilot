@@ -114,6 +114,41 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
     assert data["admin"]["port"] == 7001
 
 
+def test_new_command_inherits_sibling_jwks_url_and_audience(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The remote JWKS issuer is server-wide, so a new bench carries both the
+    URL and the audience forward from a sibling that already trusts one."""
+    from pilot.commands.new import NewCommand
+    from pilot.config.toml_store import BenchTomlStore
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    benches_dir = tmp_path / "benches"
+    NewCommand(benches_dir / "first", "first").run()
+    store = BenchTomlStore.for_bench(benches_dir / "first")
+    data = store.read_raw()
+    admin = data.setdefault("admin", {})
+    admin["jwks_url"] = "https://issuer.example.com/jwks.json"
+    admin["jwks_audience"] = "bench-fleet"
+    store.write_raw(data)
+
+    NewCommand(benches_dir / "second", "second").run()
+    with open(benches_dir / "second" / "bench.toml", "rb") as f:
+        inherited = tomllib.load(f)["admin"]
+    assert inherited["jwks_url"] == "https://issuer.example.com/jwks.json"
+    assert inherited["jwks_audience"] == "bench-fleet"
+
+
+def test_new_command_first_bench_has_no_jwks_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    target = tmp_path / "benches" / "only"
+    NewCommand(target, "only").run()
+    with open(target / "bench.toml", "rb") as f:
+        assert "jwks_url" not in tomllib.load(f).get("admin", {})
+
+
 def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A `--database postgres` bench records db_type, generates a postgres
     password, and gets no dedicated MariaDB instance."""
@@ -205,52 +240,6 @@ def test_new_command_writes_dedicated_mariadb_instance_on_alpine(tmp_path: Path,
     assert data["mariadb"]["socket_path"] == "/run/mysqld/mysqld-alp.sock"
 
 
-def test_volume_setup_binds_mariadb_to_instance_datadir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """For an instance bench, the dataset's mariadb subdir bind-mounts onto the
-    instance's sibling datadir (not the shared /var/lib/mysql)."""
-    from pilot.commands import volume as volume_cmd
-    from pilot.commands.volume import VolumeSetupCommand
-
-    data = {
-        "bench": {"name": "shop", "python": "3.14"},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
-        "mariadb": {
-            "root_password": "root",
-            "instance": "shop",
-            "data_dir": "/var/lib/mysql-shop",
-            "socket_path": "/run/mysqld/mysqld-shop.sock",
-        },
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-        "volume": {"enabled": True, "pool": "shop-pool"},
-    }
-    config = BenchConfig._from_dict(data)
-    cmd = VolumeSetupCommand(config.volume, tmp_path / "shop", bench_config=config)
-
-    monkeypatch.setattr(volume_cmd, "run_command", MagicMock())
-    manager = MagicMock()
-    cmd._bind_mariadb(manager, Path("/shop-pool/shop"))
-
-    manager.bind_mount.assert_called_once()
-    source, target = manager.bind_mount.call_args[0]
-    assert source == Path("/shop-pool/shop/mariadb")
-    assert str(target) == "/var/lib/mysql-shop"
-    manager.persist_bind_mount.assert_called_once()
-
-
-def test_volume_config_dataset_path_is_per_bench() -> None:
-    """Each bench gets one dataset named after it inside the shared pool."""
-    data = {
-        "bench": {"name": "shop", "python": "3.14"},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
-        "mariadb": {"root_password": "root"},
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-        "volume": {"enabled": True, "pool": "bench-pool"},
-    }
-    config = BenchConfig._from_dict(data)
-    assert config.volume.name == "shop"
-    assert config.volume.dataset_path == "bench-pool/shop"
-
-
 def test_new_command_skips_offset_with_live_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An orphaned process holding a port with no matching bench.toml must
     also be avoided, not just offsets already on disk."""
@@ -265,6 +254,29 @@ def test_new_command_skips_offset_with_live_port(tmp_path: Path, monkeypatch: py
     with open(target / "bench.toml", "rb") as f:
         data = tomllib.load(f)
     assert data["bench"]["http_port"] == 8001
+
+
+def test_new_command_skips_offset_with_live_admin_internal_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """admin.internal_port (admin.port + 1) is where systemd actually binds a
+    socket-activated admin — a sibling live there must be avoided even though
+    it isn't one of the stored port fields checked directly."""
+    from pilot.commands.new import NewCommand
+
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    # 7001 is admin.port(7000) + 1 at offset 0 — without the internal-port
+    # check, offset 0 would be wrongly accepted since nothing else probes it.
+    # (It also collides with the plain admin.port base check one offset later,
+    # at offset 1, which is why the picker lands on offset 2, not 1.)
+    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: port == 7001))
+
+    target = tmp_path / "benches" / "my-bench"
+    NewCommand(target, "my-bench").run()
+
+    with open(target / "bench.toml", "rb") as f:
+        data = tomllib.load(f)
+    # The concrete regression guard: offset 0 (http_port 8000) must not be
+    # chosen, since its admin.internal_port (7001) is already live.
+    assert data["bench"]["http_port"] == 8002
 
 
 # ── NewSiteCommand ────────────────────────────────────────────────────────────
@@ -963,9 +975,11 @@ def test_start_dev_uninitialized_runs_wizard(tmp_path: Path) -> None:
 
     bench = make_bench(tmp_path)  # no process manager → dev
     with patch.object(RunCommand, "_start_wizard") as wizard, \
+         patch.object(RunCommand, "_rebuild_config") as rebuild, \
          patch("pilot.managers.process_manager.ProcessManager.stop"):
         RunCommand(bench).run()
     wizard.assert_called_once()
+    rebuild.assert_not_called()
 
 
 def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
@@ -974,10 +988,27 @@ def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)  # dev
     _mark_initialized(bench)
     with patch("pilot.managers.process_manager.ProcessManager.stop") as stop, \
+         patch.object(RunCommand, "_rebuild_config") as rebuild, \
          patch("pilot.managers.process_manager.ProcessManager.start") as start:
         RunCommand(bench).run()
     stop.assert_called_once()
+    rebuild.assert_called_once()
     start.assert_called_once()
+
+
+def test_start_dev_watch_admin_js_from_config_skips_static_admin_build(tmp_path: Path) -> None:
+    from pilot.commands.start import RunCommand
+
+    bench = make_bench(tmp_path)
+    bench.config.watch_admin_js = True
+    _mark_initialized(bench)
+    with patch("pilot.managers.process_manager.ProcessManager.stop"), \
+         patch.object(RunCommand, "_rebuild_config"), \
+         patch.object(RunCommand, "_ensure_admin_dist") as ensure_admin_dist, \
+         patch("pilot.managers.process_manager.ProcessManager.start"):
+        RunCommand(bench).run()
+
+    ensure_admin_dist.assert_not_called()
 
 
 def test_start_production_uninitialized_brings_up_admin(tmp_path: Path) -> None:
@@ -989,9 +1020,11 @@ def test_start_production_uninitialized_brings_up_admin(tmp_path: Path) -> None:
     bench.config.production.process_manager = "systemd"
     bench.config.admin.domain = "admin.example.com"
     with patch("pilot.managers.process_managers.systemd.SystemdProcessManager.start_admin") as start_admin, \
+         patch.object(RunCommand, "_rebuild_config") as rebuild, \
          patch.object(RunCommand, "_start_wizard") as wizard:
         RunCommand(bench).run()
     start_admin.assert_called_once()
+    rebuild.assert_not_called()
     wizard.assert_not_called()
 
 
@@ -1002,41 +1035,23 @@ def test_start_production_initialized_starts_manager(tmp_path: Path) -> None:
     bench.config.production.process_manager = "systemd"
     _mark_initialized(bench)
     with patch("pilot.managers.process_managers.systemd.SystemdProcessManager.is_configured", return_value=True), \
+         patch.object(RunCommand, "_rebuild_config") as rebuild, \
          patch("pilot.managers.process_managers.systemd.SystemdProcessManager.start") as start:
         RunCommand(bench).run()
+    rebuild.assert_called_once()
     start.assert_called_once()
 
 
-# ── snapshot orchestrator (single global dataset) ─────────────────────────────
+def test_start_rebuild_config_writes_process_and_common_site_config(tmp_path: Path) -> None:
+    from pilot.commands.start import RunCommand
 
+    bench = make_bench(tmp_path)
+    manager = MagicMock()
+    with patch.object(bench, "write_common_site_config") as common_site:
+        RunCommand(bench)._rebuild_config(manager)
 
-def test_orchestrator_create_snapshot_quiesces_mariadb() -> None:
-    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
-
-    volume = MagicMock()
-    volume.config.dataset_path = "bench-pool/shop"
-    mariadb = MagicMock()
-    SnapshotOrchestrator(volume, mariadb, None).create_snapshot("tag1")
-
-    mariadb.snapshot_lock.assert_called_once()
-    volume.snapshot.assert_called_once_with("bench-pool/shop", "tag1")
-
-
-def test_orchestrator_rollback_stops_mariadb_and_sets_maintenance() -> None:
-    from unittest.mock import call
-
-    from pilot.managers.snapshot_orchestrator import SnapshotOrchestrator
-
-    volume = MagicMock()
-    volume.config.dataset_path = "bench-pool/shop"
-    mariadb = MagicMock()
-    bench = MagicMock()
-    SnapshotOrchestrator(volume, mariadb, bench).rollback_snapshot("tag1")
-
-    mariadb.stop.assert_called_once()
-    mariadb.start.assert_called_once()
-    volume.rollback_snapshot.assert_called_once_with("bench-pool/shop", "tag1")
-    assert bench.set_maintenance_mode.call_args_list == [call(True), call(False)]
+    manager.write_config.assert_called_once()
+    common_site.assert_called_once()
 
 
 # ── DropBenchCommand ────────────────────────────────────────────────────────
@@ -1051,6 +1066,47 @@ def _drop_config(name: str, instance: str = "") -> BenchConfig:
         redis=RedisConfig(cache_port=13000, queue_port=11000),
         workers=WorkerConfig(groups=[WorkerGroup(queues=["default"], count=1)]),
     )
+
+
+def test_unmount_legacy_bind_mount_noop_when_not_mounted(tmp_path: Path) -> None:
+    """A bench that was never volume-backed has nothing mounted at its dir, so
+    this must be a silent no-op — no sudo calls, no fstab rewrite."""
+    from pilot.commands.drop_bench import DropBenchCommand
+
+    target = tmp_path / "not-a-mountpoint"
+    target.mkdir()
+    with patch("pilot.commands.drop_bench.subprocess.run") as run:
+        DropBenchCommand._unmount_legacy_bind_mount(target)
+    run.assert_not_called()
+
+
+def test_unmount_legacy_bind_mount_unmounts_and_cleans_fstab(tmp_path: Path) -> None:
+    """A leftover ZFS-era bind mount must be unmounted and its fstab line
+    dropped, without depending on any ZFS/volume code being present."""
+    from pilot.commands.drop_bench import DropBenchCommand
+
+    target = tmp_path / "old-bench"
+    target.mkdir()
+    fstab = tmp_path / "fstab"
+    fstab.write_text(
+        "UUID=abc / ext4 defaults 0 1\n"
+        f"/bench-pool/old-bench {target} none bind,nofail 0 0\n"
+    )
+
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        if args[:2] == ["sudo", "tee"]:
+            fstab.write_bytes(kwargs["input"])
+        return MagicMock(returncode=0)
+
+    with patch("pilot.commands.drop_bench.subprocess.run", side_effect=fake_run), \
+         patch.object(Path, "is_mount", return_value=True):
+        DropBenchCommand._unmount_legacy_bind_mount(target, fstab_path=fstab)
+
+    assert ["sudo", "umount", "-l", str(target)] in calls
+    assert fstab.read_text() == "UUID=abc / ext4 defaults 0 1\n"
 
 
 def test_drop_bench_refuses_when_sites_exist(tmp_path: Path) -> None:
@@ -1119,60 +1175,6 @@ def test_drop_bench_keeps_mariadb_when_sibling_shares_host_port(tmp_path: Path) 
     assert DropBenchCommand(bench, skip_confirm=True)._mariadb_shared_with_other_bench() is True
 
 
-def test_drop_bench_destroys_zfs_dataset_on_full_teardown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.commands.drop_bench import DropBenchCommand
-    from pilot.config.volume_config import VolumeConfig
-
-    config = _drop_config("one", instance="one")
-    config.volume = VolumeConfig(enabled=True, pool="bench-pool", name="one")
-    bench = Bench(config, tmp_path)
-
-    fake_mgr = MagicMock()
-    monkeypatch.setattr("pilot.platform.is_linux", lambda: True)
-    monkeypatch.setattr("pilot.managers.volume_manager.VolumeManager", lambda cfg: fake_mgr)
-
-    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=True)
-
-    fake_mgr.destroy_dataset.assert_called_once_with("bench-pool/one")
-    # Both the bench-files bind and the MariaDB datadir bind are unmounted.
-    assert fake_mgr.unmount.call_count == 2
-
-
-def test_drop_bench_keeps_zfs_dataset_when_db_shared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.commands.drop_bench import DropBenchCommand
-    from pilot.config.volume_config import VolumeConfig
-
-    config = _drop_config("one", instance="one")
-    config.volume = VolumeConfig(enabled=True, pool="bench-pool", name="one")
-    bench = Bench(config, tmp_path)
-
-    fake_mgr = MagicMock()
-    monkeypatch.setattr("pilot.platform.is_linux", lambda: True)
-    monkeypatch.setattr("pilot.managers.volume_manager.VolumeManager", lambda cfg: fake_mgr)
-
-    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=False)
-
-    fake_mgr.destroy_dataset.assert_not_called()
-    # Only the bench-files bind is freed; the shared DB's datadir is left mounted.
-    fake_mgr.unmount.assert_called_once_with(tmp_path)
-
-
-def test_drop_bench_skips_volume_when_not_using_zfs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.commands.drop_bench import DropBenchCommand
-
-    bench = Bench(_drop_config("one", instance="one"), tmp_path)  # volume disabled by default
-    called = {"made": False}
-    monkeypatch.setattr("pilot.platform.is_linux", lambda: True)
-    monkeypatch.setattr(
-        "pilot.managers.volume_manager.VolumeManager",
-        lambda cfg: called.__setitem__("made", True),
-    )
-
-    DropBenchCommand(bench, skip_confirm=True)._remove_volume(destroy_dataset=True)
-
-    assert called["made"] is False
-
-
 # ── BuildAdminCommand node-version guard ──────────────────────────────────────
 
 
@@ -1200,6 +1202,54 @@ def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr("subprocess.run", _missing)
     with pytest.raises(BenchError, match="Node.js is required"):
         BuildAdminCommand(force_build=True)._check_node_version()
+
+
+def test_build_admin_installs_when_node_modules_missing(tmp_path: Path) -> None:
+    from pilot.commands.admin import BuildAdminCommand
+
+    (tmp_path / "package.json").write_text("{}")
+
+    assert BuildAdminCommand(force_build=True)._needs_npm_install(tmp_path) is True
+
+
+def test_build_admin_installs_when_manifest_is_newer_than_installed_deps(tmp_path: Path) -> None:
+    import os
+
+    from pilot.commands.admin import BuildAdminCommand
+
+    node_modules = tmp_path / "node_modules"
+    node_modules.mkdir()
+    install_state = node_modules / ".package-lock.json"
+    install_state.write_text("{}")
+    package_json = tmp_path / "package.json"
+    package_json.write_text("{}")
+    package_lock = tmp_path / "package-lock.json"
+    package_lock.write_text("{}")
+    os.utime(install_state, (100, 100))
+    os.utime(package_json, (200, 200))
+    os.utime(package_lock, (100, 100))
+
+    assert BuildAdminCommand(force_build=True)._needs_npm_install(tmp_path) is True
+
+
+def test_build_admin_skips_install_when_installed_deps_are_current(tmp_path: Path) -> None:
+    import os
+
+    from pilot.commands.admin import BuildAdminCommand
+
+    package_json = tmp_path / "package.json"
+    package_json.write_text("{}")
+    package_lock = tmp_path / "package-lock.json"
+    package_lock.write_text("{}")
+    node_modules = tmp_path / "node_modules"
+    node_modules.mkdir()
+    install_state = node_modules / ".package-lock.json"
+    install_state.write_text("{}")
+    os.utime(package_json, (100, 100))
+    os.utime(package_lock, (100, 100))
+    os.utime(install_state, (200, 200))
+
+    assert BuildAdminCommand(force_build=True)._needs_npm_install(tmp_path) is False
 
 
 # ── bench start: rebuild the admin UI when source changed ─────────────────────

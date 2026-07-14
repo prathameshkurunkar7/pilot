@@ -35,7 +35,7 @@ Installs and configures the entire environment described in `bench.toml`. Safe t
 bench init --sudo-password <password>
 ```
 
-Passing `--sudo-password` writes a sudoers drop-in at `/etc/sudoers.d/<user>` so that `apt-get`, `nginx`, `systemctl`, `loginctl`, `ln`, `unlink`, `zpool`, `zfs`, and `rsync` can all run without a password prompt during and after setup.
+Passing `--sudo-password` writes a sudoers drop-in at `/etc/sudoers.d/<user>` so that `apt-get`, `nginx`, `systemctl`, `loginctl`, `ln`, `unlink`, and `rsync` can all run without a password prompt during and after setup.
 
 **The password is never stored.** It is forwarded directly to `sudo -S tee` in a single subprocess call and discarded immediately. Nothing is written to disk, logged, or retained in memory beyond that call.
 
@@ -48,8 +48,6 @@ The sudoers file grants `NOPASSWD` only for the specific commands bench manages:
 <user> ALL=(ALL) NOPASSWD: /usr/bin/loginctl
 <user> ALL=(ALL) NOPASSWD: /usr/bin/ln
 <user> ALL=(ALL) NOPASSWD: /usr/bin/unlink
-<user> ALL=(ALL) NOPASSWD: /usr/sbin/zpool
-<user> ALL=(ALL) NOPASSWD: /usr/sbin/zfs
 <user> ALL=(ALL) NOPASSWD: /usr/bin/rsync
 ```
 
@@ -63,9 +61,6 @@ If the `IS_SUDOERS_SETUP` environment variable is set, `bench init` assumes the 
 0.  Configure passwordless sudo (only when --sudo-password is given and IS_SUDOERS_SETUP is unset)
 1.  Validate bench.toml
 2.  Install system packages
-2b. Set up ZFS volumes (Linux only — mandatory) — resolves backing = "auto"
-    by discovering an unused disk (or falling back to a disk image) and persists the
-    resolved values to bench.toml; see docs/volume.md
 3.  Create bench directory structure
 4.  Create Python virtualenv
 5.  Clone and install framework app
@@ -99,7 +94,7 @@ If the `IS_SUDOERS_SETUP` environment variable is set, `bench init` assumes the 
 
 After installation, MariaDB is started:
 - **Shared server** (no `mariadb.instance`): `MariaDBManager.start()` runs `systemctl start mariadb` (Ubuntu) / `brew services start mariadb` (macOS), then sets the root password if the install is fresh.
-- **Own instance** (`mariadb.instance` set, Linux): `MariaDBManager.provision_instance()` stages the `[mariadbd.<instance>]` config, creates the datadir, runs `systemctl enable --now mariadb@<instance>`, and secures it. This runs **after** ZFS volume setup so a volume-backed datadir is mounted first. See [Per-bench MariaDB instances](architecture.md#per-bench-mariadb-instances).
+- **Own instance** (`mariadb.instance` set, Linux): `MariaDBManager.provision_instance()` stages the `[mariadbd.<instance>]` config, creates the datadir, runs `systemctl enable --now mariadb@<instance>`, and secures it. See [Per-bench MariaDB instances](architecture.md#per-bench-mariadb-instances).
 
 #### Step 3 — Create bench directory structure
 
@@ -308,19 +303,24 @@ Starts all bench processes using the built-in Procfile runner.
 ### Steps
 
 ```
-1.  Check Procfile exists
-2.  Start processes
+1.  Check bench initialization
+2.  Regenerate runtime config
+3.  Start processes
 ```
 
-#### Step 1 — Check Procfile exists
+#### Step 1 — Check bench initialization
 
-If `config/Procfile` is missing, print a message telling the user to run `bench init` first and exit with code 1.
+If the bench is not initialized yet, start the setup wizard instead of the normal workload. For initialized benches, generated config files are rebuilt before processes launch.
 
-#### Step 2 — Start processes
+#### Step 2 — Regenerate runtime config
+
+`bench start` rewrites the process-manager config from `bench.toml` before launching, and refreshes `sites/common_site_config.json`. This means changes such as `[bench] watch_apps_js`, `[bench] reload_python`, or `[bench] watch_admin_js` are picked up on the next start without running `bench setup config` separately.
+
+#### Step 3 — Start processes
 
 `ProcessManager.start()` reads `config/Procfile` and spawns each process with `subprocess.Popen`. A dedicated thread per process streams output to stdout with a color-coded `[<name>]` prefix — each process name gets a distinct ANSI color so concurrent output is easy to read. Per-process PID files are written to `pids/<name>.pid`.
 
-The `admin:` entry in the Procfile means the admin UI is always available at `http://localhost:8002` while the bench is running.
+The `admin:` entry in the Procfile means the admin UI is always available at `http://localhost:8002` while the bench is running. In development mode, set `[bench] watch_apps_js = true` in `bench.toml` to also start a `watch:` process for Frappe JS assets, `[bench] reload_python = true` to let the dev web process autoreload on Python changes, or `[bench] watch_admin_js = true` to run the admin UI Vite dev server.
 
 `bench start` **blocks** — it stays in the foreground until `SIGINT` (Ctrl-C). On `SIGINT`, all child processes receive `SIGTERM` and are waited on before the parent exits.
 
@@ -390,7 +390,7 @@ bench build --force  # skip download, rebuild from source
 
 ## `bench update`
 
-Pulls the latest commits for all apps, reinstalls Python packages, rebuilds assets, and migrates all sites. Fails fast on the first error. When the bench sits on a ZFS volume, a snapshot is taken before any changes are made and the bench is automatically rolled back if anything goes wrong.
+Pulls the latest commits for all apps, reinstalls Python packages, rebuilds assets, and migrates all sites. Fails fast on the first error.
 
 ```
 bench update [--yes] [--apps <app> ...]
@@ -404,7 +404,6 @@ bench update [--yes] [--apps <app> ...]
 ### Steps
 
 ```
-[pre]     Take a snapshot           (ZFS benches only)
 [fetch]   Fetch latest code         git pull for each app
 [install] Install dependencies      uv pip install -e for each app
 [assets]  Build assets              bench build for each app
@@ -417,24 +416,6 @@ Each step emits a `STEP KEY,TIMESTAMP Label` line that the admin UI uses to disp
 
 On disk, the task runner wraps every output line (steps included) in an RFC 5424 syslog envelope, e.g. `<14>1 2026-07-01T12:34:56.789012+00:00 host update 1234 - - STEP fetch,1793620496.789 Fetch latest code`, so `output.log` can be shipped as-is to a generic log ingestion service. The admin API/UI strips this envelope back off before display — end users only ever see the plain message.
 
-### ZFS snapshot and automatic rollback
-
-When `volume.enabled = true` in `bench.toml`, the update command:
-
-1. Enters maintenance mode before touching anything.
-2. Takes a timestamped snapshot (`YYYYMMDD-HHMMSS`) covering both the bench dataset and the MariaDB dataset (via the snapshot orchestrator).
-3. Runs the normal fetch → install → assets → migrate → restart sequence.
-4. **On failure:** marks the failed step, prints the full traceback, then rolls back to the snapshot and reloads the web service so the bench returns to a known-good state.
-5. Exits maintenance mode in the `finally` block whether or not the update succeeded.
-
-#### Log preservation across rollback
-
-Because the task directory lives inside the ZFS dataset, a pool revert would erase `output.log` along with everything else. To keep the complete log:
-
-1. The current log is copied to `/tmp/bench-update-rollback-<tag>.log` before the rollback runs.
-2. The rollback step's own output is appended to that `/tmp` file (via `redirect_stdout`/`redirect_stderr`).
-3. After the revert, a fresh `output.log` is written from the `/tmp` copy and `sys.stdout`/`sys.stderr` are redirected there so subsequent steps (restart, maintenance-mode release) are also captured.
-
 ### Pre-conditions
 
 - `bench init` has been run.
@@ -443,8 +424,7 @@ Because the task directory lives inside the ZFS dataset, a pool revert would era
 ### Failure behaviour
 
 - Fails fast on the first error in any step (app pull, install, asset build, or site migration).
-- Raises `MigrateError`, which `UpdateTask` catches to set the exit code to 1.
-- On ZFS benches the bench is rolled back before exiting; on non-ZFS benches the process exits immediately after printing the traceback.
+- Raises `MigrateError`, which `UpdateTask` catches to set the exit code to 1, and the process exits immediately after printing the traceback.
 
 ---
 
@@ -501,6 +481,8 @@ bench generate-admin-session --full-path  # prints the full admin URL with ?sid=
 ```
 
 Open the `--full-path` URL in a browser within **5 minutes**: the frontend exchanges the `?sid=` token for a 1-day `HttpOnly` session cookie, and the sign-in token is consumed (single-use). Both are HS256 JWTs signed with `admin.jwt_secret` in `bench.toml` (generated on first run). Requires `admin.password` to be set.
+
+A remote control plane can mint its own `?sid=` tokens (and Bearer tokens) instead of using this command, by signing them with a key published at `admin.jwks_url` — see [Remote login via JWKS](admin.md#remote-login-via-jwks).
 
 ---
 

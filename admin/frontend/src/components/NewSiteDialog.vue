@@ -27,7 +27,7 @@
             </div>
             <!-- Example site name -->
             <p class="mt-1.5 text-ink-gray-5 text-p-sm"> Web address:
-              <span class="font-medium text-ink-gray-7">site.frappe.cloud</span>
+              <span class="font-medium text-ink-gray-7">{{ newSiteName || `mysite${selectedSuffix}` }}</span>
             </p>
           </div>
         </div>
@@ -61,7 +61,7 @@
         </div>
 
         <!-- Choose apps -->
-        <div v-if="!loading && registry.length">
+        <div v-if="!loading && combinedApps.length">
           <div class="flex justify-between items-center mb-2">
             <span class="text-ink-gray-7 text-p-sm-medium">Choose apps</span>
             <span class="text-ink-gray-5 text-xs">
@@ -109,6 +109,7 @@
 import { ref, computed, watch } from 'vue'
 import { Button, Checkbox, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import AppIcon from '@/components/AppIcon.vue'
+import { appsApi } from '@/api/apps'
 import { authApi } from '@/api/auth'
 import { sitesApi } from '@/api/sites'
 import { useAppRegistry } from '@/composables/useAppRegistry'
@@ -118,10 +119,11 @@ defineProps({
   sites: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['created'])
+const emit = defineEmits(['started'])
 const open = defineModel()
 
 const { registry, load: loadRegistry } = useAppRegistry()
+const benchApps = ref([])
 
 const newSiteName = ref('')
 const sitePrefix = ref('')
@@ -132,15 +134,28 @@ const creating = ref(false)
 const error = ref('')
 
 const benchDbType = ref('')
-const dbType = ref('')
+const dbType = ref('mariadb')
 
 const selectedApps = ref([])
 const appSearch = ref('')
 
+// Apps already cloned onto this bench but not published to the marketplace
+// (e.g. a private/custom app) — offer those too, alongside the catalog.
+const customApps = computed(() => {
+  const registryNames = new Set(registry.value.map((app) => app.name))
+  return benchApps.value
+    .filter((app) => app.name !== 'frappe' && !registryNames.has(app.name))
+    .map((app) => ({ name: app.name, title: app.title || app.name, stars: null }))
+})
+
+const combinedApps = computed(() => [
+  ...registry.value.filter((app) => app.name !== 'frappe'),
+  ...customApps.value,
+])
+
 const filteredRegistry = computed(() => {
   const query = appSearch.value.toLowerCase().trim()
-  return registry.value
-    .filter((app) => app.name !== 'frappe')
+  return combinedApps.value
     .filter(
       (app) =>
         !query ||
@@ -177,8 +192,16 @@ async function reset() {
   selectedApps.value = []
   appSearch.value = ''
   loading.value = true
-  await Promise.all([loadWildcardDomains(), loadBenchDbType(), loadRegistry()])
+  await Promise.all([loadWildcardDomains(), loadBenchDbType(), loadRegistry(), loadBenchApps()])
   loading.value = false
+}
+
+async function loadBenchApps() {
+  try {
+    benchApps.value = await appsApi.installed()
+  } catch {
+    benchApps.value = []
+  }
 }
 
 function toggleApp(name) {
@@ -189,7 +212,7 @@ function toggleApp(name) {
 
 async function loadWildcardDomains() {
   try {
-    const { domains } = await sitesApi.wildcardDomains()
+    const { domains } = await sitesApi.domains.wildcardList()
     wildcardDomains.value = domains || []
     selectedSuffix.value = wildcardDomains.value[0] || ''
   } catch {
@@ -232,7 +255,7 @@ async function submit() {
     })
     if (result.ok) {
       open.value = false
-      emit('created', name)
+      emit('started', result.task_id)
     } else {
       error.value = result.error || 'Could not create site.'
     }

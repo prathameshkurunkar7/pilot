@@ -6,6 +6,7 @@ from typing import List
 
 from pilot.config.admin_config import AdminConfig
 from pilot.config.app_config import AppConfig
+from pilot.config.central_config import CentralConfig
 from pilot.config.firewall_config import FirewallConfig, FirewallRule
 from pilot.config.gunicorn_config import GunicornConfig
 from pilot.config.letsencrypt_config import LetsEncryptConfig
@@ -15,14 +16,13 @@ from pilot.config.nginx_config import NginxConfig
 from pilot.config.postgres_config import PostgresConfig
 from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
-from pilot.config.volume_config import DatasetConfig, ImageConfig, VolumeConfig
+from pilot.config.s3_config import S3Config
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 from pilot.exceptions import ConfigError
 
 _BENCH_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
 _EMAIL_PATTERN = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
 _VERSION_PATTERN = re.compile(r"^\d+(\.\d+)*$")
-_ZFS_SIZE_PATTERN = re.compile(r"^[1-9]\d*[KMGTkmgt]?$")
 # Lenient hostname: dotted labels of alphanumerics/hyphens. Allows dev names
 # like "admin1.localhost" and real domains like "admin.example.com".
 _HOSTNAME_PATTERN = re.compile(r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
@@ -44,6 +44,9 @@ class BenchConfig:
     http_port: int = 8000
     socketio_port: int = 9000
     socketio_backend: str = "node"
+    watch_apps_js: bool = False
+    reload_python: bool = False
+    watch_admin_js: bool = False
     # The single database engine for this bench's sites: "mariadb" or "postgres".
     db_type: str = "mariadb"
     default_branch: str = ""
@@ -53,8 +56,9 @@ class BenchConfig:
     gunicorn: GunicornConfig = field(default_factory=GunicornConfig)
     letsencrypt: LetsEncryptConfig = field(default_factory=LetsEncryptConfig)
     admin: AdminConfig = field(default_factory=AdminConfig)
-    volume: VolumeConfig = field(default_factory=VolumeConfig)
+    central: CentralConfig = field(default_factory=CentralConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
+    s3: S3Config = field(default_factory=S3Config)
 
     @classmethod
     def from_file(cls, path: Path) -> "BenchConfig":
@@ -85,17 +89,18 @@ class BenchConfig:
         gunicorn = cls._parse_gunicorn(data.get("gunicorn", {}), bench_data.get("http_port", 8000))
         letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
         admin = cls._parse_admin(data.get("admin", {}))
-        volume = cls._parse_volume(data.get("volume"))
+        central = cls._parse_central(data.get("central", {}))
         firewall = cls._parse_firewall(data.get("firewall"))
-        # One dataset per bench, named after the bench unless explicitly set.
-        if not volume.name:
-            volume.name = bench_data.get("name", "")
+        s3 = S3Config(**data.get("s3", {}))
         return cls(
             name=bench_data.get("name", ""),
             python_version=bench_data.get("python", ""),
             http_port=bench_data.get("http_port", 8000),
             socketio_port=bench_data.get("socketio_port", 9000),
             socketio_backend=bench_data.get("socketio_backend", "node"),
+            watch_apps_js=bench_data.get("watch_apps_js", False),
+            reload_python=bench_data.get("reload_python", False),
+            watch_admin_js=bench_data.get("watch_admin_js", False),
             db_type=bench_data.get("db_type", "mariadb"),
             default_branch=bench_data.get("default_branch", ""),
             apps=apps,
@@ -108,8 +113,9 @@ class BenchConfig:
             gunicorn=gunicorn,
             letsencrypt=letsencrypt,
             admin=admin,
-            volume=volume,
+            central=central,
             firewall=firewall,
+            s3=s3,
         )
 
     @staticmethod
@@ -201,37 +207,18 @@ class BenchConfig:
             enabled=data.get("enabled", False),
             password=data.get("password", ""),
             jwt_secret=data.get("jwt_secret", ""),
+            jwks_url=data.get("jwks_url", ""),
+            jwks_audience=data.get("jwks_audience", ""),
             domain=data.get("domain", ""),
             tls=data.get("tls", False),
+            allow_bench_management=data.get("allow_bench_management", True),
         )
 
     @staticmethod
-    def _parse_volume(data: dict | None) -> VolumeConfig:
-        if data is None:
-            return VolumeConfig()
-        dataset_data = data.get("dataset", {})
-        image_data = data.get("image", {})
-        # Older tomls predate `backing`: an explicit device implies device backing.
-        backing = data.get("backing") or ("device" if data.get("device") else "auto")
-        if "enabled" in data:
-            enabled = bool(data["enabled"])
-        else:
-            # Legacy: [volume] section without enabled key means it was enabled.
-            enabled = True
-        return VolumeConfig(
-            enabled=enabled,
-            pool=data.get("pool", "bench-pool"),
-            name=data.get("name", ""),
-            backing=backing,
-            device=data.get("device", ""),
-            image=ImageConfig(
-                size=image_data.get("size", ""),
-                path=image_data.get("path", ""),
-            ),
-            dataset=DatasetConfig(
-                reservation=dataset_data.get("reservation", "5G"),
-                quota=dataset_data.get("quota", "50G"),
-            ),
+    def _parse_central(data: dict) -> CentralConfig:
+        return CentralConfig(
+            endpoint=data.get("endpoint", ""),
+            auth_token=data.get("auth_token", ""),
         )
 
     @staticmethod
@@ -270,8 +257,6 @@ class BenchConfig:
         self._validate_production()
         self._validate_admin_domain()
         self._validate_firewall()
-        if self.volume.enabled:
-            self._validate_volume()
 
     def _validate_required_fields(self) -> None:
         if not self.name:
@@ -426,47 +411,6 @@ class BenchConfig:
     def _validate_redis_version(self) -> None:
         if self.redis.version and not _VERSION_PATTERN.match(self.redis.version):
             raise ConfigError(f"redis.version '{self.redis.version}' is invalid. Must be a version string like '7' or '7.0'.")
-
-    def _validate_volume(self) -> None:
-        if not self.volume.enabled:
-            return
-        if not self.volume.pool:
-            raise ConfigError("volume.pool is required.")
-        self._validate_volume_backing()
-        self._validate_zfs_size("volume.dataset.reservation", self.volume.dataset.reservation)
-        self._validate_zfs_size("volume.dataset.quota", self.volume.dataset.quota)
-        self._validate_reservation_quota()
-
-    def _validate_volume_backing(self) -> None:
-        backing = self.volume.backing
-        if backing not in ("device", "image", "auto"):
-            raise ConfigError(f"volume.backing '{backing}' is invalid. Must be 'device', 'image', or 'auto'.")
-        if backing == "auto":
-            # Resolved to a concrete backing (with smart sizes) during bench init.
-            return
-        if backing == "device":
-            if not self.volume.device:
-                raise ConfigError("volume.device is required when volume.backing = 'device'.")
-            return
-        if not self.volume.image.size:
-            raise ConfigError("volume.image.size is required when volume.backing = 'image'.")
-        self._validate_zfs_size("volume.image.size", self.volume.image.size)
-        if self.volume.image.path and not Path(self.volume.image.path).is_absolute():
-            raise ConfigError(f"volume.image.path '{self.volume.image.path}' must be an absolute path.")
-
-    def _validate_reservation_quota(self) -> None:
-        from pilot.managers.volume_manager import VolumeManager
-
-        dataset = self.volume.dataset
-        if error := VolumeManager.validate_reservation_within_quota(dataset.reservation, dataset.quota):
-            raise ConfigError(error)
-
-    @staticmethod
-    def _validate_zfs_size(field_name: str, value: str) -> None:
-        if not _ZFS_SIZE_PATTERN.match(value):
-            raise ConfigError(
-                f"{field_name} '{value}' is not a valid ZFS size. Must be a positive integer with an optional K/M/G/T suffix — examples: '10G', '512M', '1T'. Decimals and negatives are not allowed."
-            )
 
     @property
     def framework_app(self) -> AppConfig:

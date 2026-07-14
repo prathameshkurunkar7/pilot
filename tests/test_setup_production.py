@@ -165,29 +165,12 @@ def test_require_production_inputs_passes_with_domain_and_email(tmp_path: Path) 
 # ── monitor log path resolution ───────────────────────────────────────────────
 
 
-def test_resolve_monitor_log_path_without_volume(tmp_path: Path) -> None:
+def test_resolve_monitor_log_path_default(tmp_path: Path) -> None:
     from pilot.core.monitor import resolve_monitor_log_path
 
     bench = _make_bench(tmp_path)
     result = resolve_monitor_log_path(bench.config)
     assert result.name == f"{bench.config.name}-stats.log"
-
-
-def test_resolve_monitor_log_path_with_volume(tmp_path: Path, monkeypatch) -> None:
-    from pilot.core.monitor import resolve_monitor_log_path
-    from pilot.managers.volume_manager import VolumeManager
-
-    bench = _make_bench(tmp_path)
-    bench.config.volume.enabled = True
-    bench.config.volume.pool = "bench-pool"
-
-    fake_mountpoint = tmp_path / "mnt" / "logs"
-    monkeypatch.setattr(VolumeManager, "create_dataset", lambda self, dataset: None)
-    monkeypatch.setattr(VolumeManager, "get_mountpoint", lambda self, dataset: fake_mountpoint)
-
-    result = resolve_monitor_log_path(bench.config)
-
-    assert result == fake_mountpoint / f"{bench.config.name}-stats.log"
 
 
 def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch) -> None:
@@ -220,6 +203,38 @@ def test_setup_monitoring_log_path_is_path_on_config(tmp_path: Path, monkeypatch
 
     assert isinstance(bench.config.monitor.log_path, Path)
     assert bench.config.monitor.log_path.name == f"{bench.config.name}-stats.log"
+
+
+# ── best-effort TLS (wizard hand-off) ───────────────────────────────────────
+
+
+def test_setup_letsencrypt_reraises_by_default(tmp_path: Path, monkeypatch) -> None:
+    from pilot.commands.setup import letsencrypt as letsencrypt_module
+
+    bench = _make_bench(tmp_path, admin_domain="admin.example.com", email="x@y.com")
+    monkeypatch.setattr(letsencrypt_module.SetupLetsEncryptCommand, "run",
+                         lambda self: (_ for _ in ()).throw(RuntimeError("dns not ready")))
+    cmd = SetupProductionCommand(bench)
+
+    with pytest.raises(RuntimeError, match="dns not ready"):
+        cmd._setup_letsencrypt_if_needed()
+
+
+def test_setup_letsencrypt_swallows_when_best_effort(tmp_path: Path, monkeypatch, capsys) -> None:
+    """The wizard's automatic hand-off (unlike an explicit CLI --tls request)
+    shouldn't roll back an otherwise-working deployment just because a cert
+    can't issue yet - e.g. DNS for a domain created moments ago hasn't
+    propagated. The bench should stay live on HTTP instead."""
+    from pilot.commands.setup import letsencrypt as letsencrypt_module
+
+    bench = _make_bench(tmp_path, admin_domain="admin.example.com", email="x@y.com")
+    monkeypatch.setattr(letsencrypt_module.SetupLetsEncryptCommand, "run",
+                         lambda self: (_ for _ in ()).throw(RuntimeError("dns not ready")))
+    cmd = SetupProductionCommand(bench, best_effort_tls=True)
+
+    cmd._setup_letsencrypt_if_needed()  # must not raise
+
+    assert "dns not ready" in capsys.readouterr().err
 
 
 def test_persist_production_state_writes_enabled_and_drops_nginx(tmp_path: Path) -> None:
