@@ -39,6 +39,11 @@ class MariaDBManager(UserOwnedDBManager):
         # which() searches sbin too; mysqld/mariadbd live in /usr/sbin.
         return bool(which("mysqld") or which("mariadbd"))
 
+    def is_provisioned(self) -> bool:
+        if is_macos():
+            return self.is_running() and not self.is_unsecured()
+        return super().is_provisioned()
+
     def _provision_macos(self):
         if not self.is_running():
             self.start()
@@ -114,16 +119,10 @@ class MariaDBManager(UserOwnedDBManager):
         unix-socket auth (i.e. a fresh, not-yet-secured install). The bench
         user owns this server outright, so no privilege escalation is needed
         to connect as its admin account."""
-        cmd = [
-            "mariadb",
-            f"--socket={self.socket_path()}",
-            "-u",
-            self.config.admin_user,
-            "--batch",
-            "--skip-column-names",
-            "-e",
-            "SELECT 1",
-        ]
+        cmd = ["mariadb"]
+        if not is_macos():
+            cmd.append(f"--socket={self.socket_path()}")
+        cmd += ["-u", self.config.admin_user, "--batch", "--skip-column-names", "-e", "SELECT 1"]
         result = subprocess.run(cmd, capture_output=True, text=True)
         return result.returncode == 0
 
