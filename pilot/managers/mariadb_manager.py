@@ -57,7 +57,9 @@ class MariaDBManager(UserOwnedDBManager):
         if not self.is_provisioned():
             self._initialize_data_dir()
             self._install_unit()
-            run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
+            run_command(
+                self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env()
+            )
 
         elif not self.is_running():
             run_command(self._systemctl("start", self._UNIT_NAME), env=self._systemctl_env())

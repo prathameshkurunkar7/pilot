@@ -52,7 +52,9 @@ class UserOwnedDBManager:
         if is_macos():
             return self._brew_service_running()
         result = subprocess.run(
-            self._systemctl("is-active", self._UNIT_NAME), env=self._systemctl_env(), capture_output=True
+            self._systemctl("is-active", self._UNIT_NAME),
+            env=self._systemctl_env(),
+            capture_output=True,
         )
         return result.returncode == 0
 
@@ -89,7 +91,9 @@ class UserOwnedDBManager:
     # ── homebrew (macOS) ─────────────────────────────────────────────────────
 
     def _brew_package(self) -> str:
-        return self._installed_brew_formula() or f"{self._BREW_FORMULA_BASE}@{self._DEFAULT_VERSION}"
+        return (
+            self._installed_brew_formula() or f"{self._BREW_FORMULA_BASE}@{self._DEFAULT_VERSION}"
+        )
 
     def _installed_brew_formula(self) -> str | None:
         """The formula Homebrew already manages, so install/start/stop target

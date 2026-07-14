@@ -68,7 +68,9 @@ class PostgresManager(UserOwnedDBManager):
             # auth — no sudo, no OS-level 'postgres' account involved.
             run_command(["initdb", "-D", str(self.data_dir())])
             self._install_unit()
-            run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
+            run_command(
+                self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env()
+            )
         elif not self.is_running():
             run_command(self._systemctl("start", self._UNIT_NAME), env=self._systemctl_env())
 
@@ -132,8 +134,24 @@ class PostgresManager(UserOwnedDBManager):
         psql = self._psql()
         if not psql:
             return False
-        cmd = [psql, "-h", self.config.host, "-p", str(self.config.port), "-U", self.config.admin_user, "-d", "postgres", "-tAc", "SELECT 1"]
-        result = subprocess.run(cmd, env={**os.environ, "PGPASSWORD": pw}, capture_output=True, text=True)
+        result = subprocess.run(
+            [
+                psql,
+                "-h",
+                self.config.host,
+                "-p",
+                str(self.config.port),
+                "-U",
+                self.config.admin_user,
+                "-d",
+                "postgres",
+                "-tAc",
+                "SELECT 1",
+            ],
+            env={**os.environ, "PGPASSWORD": pw},
+            capture_output=True,
+            text=True,
+        )
         return result.returncode == 0
 
     def _ensure_role_sql(self) -> str:
@@ -156,7 +174,15 @@ class PostgresManager(UserOwnedDBManager):
         # compiled-in default is owned by the 'postgres' OS user, not us; on
         # macOS, Homebrew already points postgres at a user-owned socket, so
         # the default (no -h) is used as-is.
-        cmd = [self._psql() or "psql", "-p", str(self.config.port), "-v", "ON_ERROR_STOP=1", "-d", "postgres"]
+        cmd = [
+            self._psql() or "psql",
+            "-p",
+            str(self.config.port),
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-d",
+            "postgres",
+        ]
         if not is_macos():
             cmd[1:1] = ["-h", str(self.socket_dir())]
         subprocess.run(cmd, input=sql, text=True, check=True)
@@ -171,7 +197,9 @@ class PostgresManager(UserOwnedDBManager):
     def _accepting_connections(self) -> bool:
         ready = which("pg_isready")
         if ready:
-            result = subprocess.run([ready, "-h", self.config.host, "-p", str(self.config.port)], capture_output=True)
+            result = subprocess.run(
+                [ready, "-h", self.config.host, "-p", str(self.config.port)], capture_output=True
+            )
             return result.returncode == 0
         return self.is_running()
 
@@ -180,7 +208,9 @@ class PostgresManager(UserOwnedDBManager):
         if found:
             return found
         if is_macos():
-            result = subprocess.run(["brew", "--prefix", self._brew_package()], capture_output=True, text=True)
+            result = subprocess.run(
+                ["brew", "--prefix", self._brew_package()], capture_output=True, text=True
+            )
             if result.returncode == 0:
                 candidate = Path(result.stdout.strip()) / "bin" / "psql"
                 if candidate.exists():
