@@ -110,7 +110,7 @@ download_installer() {
 
 fetch_and_run_as_root() {
     url="$1"; shift
-    tmp="$(download_installer "$url")"
+    tmp="$(download_installer "$url")" || exit 1
     run_sudo bash "$tmp" "$@"
     rm -f "$tmp"
 }
@@ -158,7 +158,7 @@ ensure_homebrew() {
     command -v brew >/dev/null 2>&1 && return 0
     echo "Installing Homebrew..."
     run_sudo true
-    tmp="$(download_installer "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh")"
+    tmp="$(download_installer "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh")" || exit 1
     NONINTERACTIVE=1 bash "$tmp"
     rm -f "$tmp"
     if [ -x /opt/homebrew/bin/brew ]; then
