@@ -1,9 +1,9 @@
 <template>
   <div class="space-y-4 mt-5">
     <CronScheduleControl ref="scheduleRef" title="Automatic backups" noun="backups"
-      enabled-hint="Taken on a schedule and kept for 30 days." disabled-hint="Automatic backups are disabled."
+      :enabled-hint="`Taken on a schedule. ${retentionSummary}`" disabled-hint="Automatic backups are disabled."
       disable-body="Automatic backups will stop. Existing backups are kept."
-      retention-hint="Kept 30 days. Times shown in your timezone." :fetch-schedule="fetchSchedule"
+      :retention-hint="`${retentionSummary} Times shown in your timezone.`" :fetch-schedule="fetchSchedule"
       :set-schedule="setSchedule" :remove-schedule="removeSchedule">
       <template #actions>
         <Button size="sm" :loading="backingUp" @click="backupNow">
@@ -79,6 +79,7 @@ import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, ErrorMessage, ListFooter, ListView, ListRowItem, LoadingText } from 'frappe-ui'
 import CronScheduleControl from '@/components/CronScheduleControl.vue'
 import { sitesApi } from '@/api/sites'
+import { settingsApi } from '@/api/settings'
 import { useSite } from '@/composables/useSite'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
@@ -99,6 +100,15 @@ const footerOptions = computed(() => ({
 
 const backingUp = ref(false)
 const error = ref('')
+
+const retention = ref(null)
+
+const retentionSummary = computed(() => {
+  const r = retention.value
+  if (!r) return 'Old backups are pruned automatically.'
+  if (r.scheme === 'fifo') return `Keeping the newest ${r.keep_last} backups.`
+  return `Keeping ${r.keep_daily} daily · ${r.keep_weekly} weekly · ${r.keep_monthly} monthly · ${r.keep_yearly} yearly backups.`
+})
 
 const scheduleRef = ref(null)
 const nextHint = computed(() => scheduleRef.value?.currentScheduleLabel?.toLowerCase() ?? '')
@@ -221,5 +231,16 @@ async function confirmDelete() {
   }
 }
 
-onMounted(() => { loadBackups() })
+async function loadRetention() {
+  try {
+    retention.value = (await settingsApi.get()).backup || null
+  } catch {
+    retention.value = null
+  }
+}
+
+onMounted(() => {
+  loadBackups()
+  loadRetention()
+})
 </script>
