@@ -148,6 +148,18 @@ pkg_installed() {
     esac
 }
 
+# download_installer (mariadb/nodesource/homebrew) needs curl before anything
+# else runs, and bootstrap_packages()'s own curl install happens too late for
+# that — so get it on its own, ahead of everything else in bootstrap().
+# macOS always ships curl, so this is a no-op there.
+ensure_curl() {
+    command -v curl >/dev/null 2>&1 && return 0
+    [ "$DISTRO" = "macos" ] && return 0
+    echo "Installing curl..."
+    pkg_update
+    pkg_install curl
+}
+
 # Homebrew is the one base dependency on macOS the runtime can't lazily
 # install itself (pilot/package_managers.py's BrewPackageManager assumes
 # `brew` already exists). On Intel Macs, Homebrew's own installer needs sudo
@@ -306,6 +318,7 @@ bootstrap() {
         fi
     fi
     echo "$DISTRO detected — installing base dependencies..."
+    ensure_curl
     add_distro_repos
     pkg_update
     bootstrap_packages
