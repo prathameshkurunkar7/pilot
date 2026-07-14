@@ -150,10 +150,14 @@ pkg_installed() {
 
 # Homebrew is the one base dependency on macOS the runtime can't lazily
 # install itself (pilot/package_managers.py's BrewPackageManager assumes
-# `brew` already exists).
+# `brew` already exists). On Intel Macs, Homebrew's own installer needs sudo
+# for the initial /usr/local setup; priming the sudo timestamp cache first
+# means it reuses that instead of prompting separately (or failing outright
+# if --sudo-password was given but the installer's own prompt can't read it).
 ensure_homebrew() {
     command -v brew >/dev/null 2>&1 && return 0
     echo "Installing Homebrew..."
+    run_sudo true
     tmp="$(download_installer "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh")"
     NONINTERACTIVE=1 bash "$tmp"
     rm -f "$tmp"
@@ -169,9 +173,14 @@ ensure_homebrew() {
 # of this script and bench need before they're first used: git/curl/bash, sudo
 # + user tooling (so the user-setup path's useradd/usermod/visudo work), a
 # Python, and the base build deps for compiling the admin venv (psutil) and
-# frappe wheels.
+# frappe wheels. macOS ships curl/bash/sudo itself, so brew (the one thing it
+# can't lazily install for itself) takes their place here.
 bootstrap_needed() {
-    tools="git curl bash sudo python3"
+    if [ "$DISTRO" = "macos" ]; then
+        tools="git brew python3"
+    else
+        tools="git curl bash sudo python3"
+    fi
     for tool in $tools; do
         command -v "$tool" >/dev/null 2>&1 || return 0
     done
@@ -281,10 +290,9 @@ install_node() {
 bootstrap() {
     [ "$DISTRO" = "unknown" ] && return 0
     # Root always bootstraps (idempotent, and bare containers need it before
-    # useradd); a normal user only when a base tool is actually missing.
-    # macOS has no root/user split (Homebrew is always per-user) and always
-    # has sudo, so it skips straight past both checks below.
-    if [ "$DISTRO" != "macos" ] && [ "$(id -u)" -ne 0 ]; then
+    # useradd); a normal user only when a base tool is actually missing
+    # (bootstrap_needed is platform-aware: brew on macOS, sudo elsewhere).
+    if [ "$(id -u)" -ne 0 ]; then
         bootstrap_needed || return 0
         if ! command -v sudo >/dev/null 2>&1; then
             # A non-root user can't install packages without sudo. Re-run as
