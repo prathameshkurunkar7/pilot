@@ -12,7 +12,7 @@ from flask import Flask, g, jsonify, request, send_file
 from .rate_limit import rate_limit, UsedTokens
 from .views.apps import apps_bp
 from .views.benches import benches_bp
-from .views.billing import site_billing_bp
+from .views.central_proxy import central_proxy_bp
 from .views.dashboard import dashboard_bp
 from .views.database import database_bp
 from .views.git import git_bp
@@ -221,7 +221,7 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(apps_bp, url_prefix="/api/apps")
     app.register_blueprint(benches_bp, url_prefix="/api/benches")
     app.register_blueprint(sites_bp, url_prefix="/api/sites")
-    app.register_blueprint(site_billing_bp, url_prefix="/api/sites")
+    app.register_blueprint(central_proxy_bp, url_prefix="/api/sites")
     app.register_blueprint(processes_bp, url_prefix="/api/processes")
     app.register_blueprint(logs_bp, url_prefix="/api/logs")
     app.register_blueprint(database_bp, url_prefix="/api/database")

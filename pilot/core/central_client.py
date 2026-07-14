@@ -25,14 +25,14 @@ def _message(payload: Any) -> Any:
 class CentralClient:
     """Calls Central's HTTP API on behalf of this bench's pilot.
 
-    Reads ``central.endpoint`` + ``central.auth_token`` from ``bench.toml`` (written
-    by ``bench set-central-config`` at deploy) and authenticates with the
-    ``X-Pilot-Token`` header — the reverse of the
-    site→bench ``pilot_auth_token`` (PR #133).
+    Reads ``central.endpoint`` + ``central.auth_token`` from ``bench.toml`` and
+    authenticates with the ``X-Pilot-Token`` header — the reverse of the
+    site→bench ``pilot_auth_token``. This is a thin transport: individual Central
+    methods are not mirrored here; the admin proxy forwards them by path (see
+    ``admin/backend/views/central_proxy.py``).
     """
 
     TOKEN_HEADER = "X-Pilot-Token"
-    BILLING = "central.billing.api.billing_api"
 
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
@@ -42,78 +42,11 @@ class CentralClient:
         (team + pilot_credential_id)."""
         return self._get("/api/method/central.api.pilot.heartbeat")
 
-    # --- billing (the credential's team + asset are resolved by Central) ------
-
-    def billing_summary(self) -> dict[str, Any]:
-        """Plan, estimate, credit and payment-method state for this bench's asset."""
-        return self._billing_get("get_billing_summary")
-
-    def available_plans(self) -> dict[str, Any]:
-        """Plans this bench's asset can switch to, flattened + priced for display."""
-        return self._billing_get("get_plan_options")
-
-    def change_plan(self, plan: str) -> dict[str, Any]:
-        """Switch this bench's asset onto a preset plan."""
-        return self._billing_post("change_plan", {"plan": plan})
-
-    def billing_profile(self) -> dict[str, Any]:
-        """The team's billing identity + address, with derived setup state."""
-        return self._billing_get("get_billing_profile")
-
-    def save_billing_profile(self, fields: dict[str, Any]) -> dict[str, Any]:
-        """Create/update the team's billing identity + address."""
-        return self._billing_post("save_billing_profile", fields)
-
-    def payment_methods(self) -> list[dict[str, Any]]:
-        """The team's saved payment methods (label, brand, last4, default)."""
-        return self._billing_get("list_payment_methods")
-
-    def remove_payment_method(self, payment_method: str) -> dict[str, Any]:
-        """Remove one of the team's payment methods."""
-        return self._billing_post("remove_payment_method", {"payment_method": payment_method})
-
-    def payment_gateways(self) -> list[dict[str, Any]]:
-        """The gateways the team can pay through (one per adapter), for the Pay-through choice."""
-        return self._billing_get("get_payment_gateways")
-
-    def add_payment_method(self, method_type: str, contact: str | None = None,
-                           gateway: str | None = None) -> dict[str, Any]:
-        """Begin adding a payment method on the chosen gateway; returns the handles to complete it."""
-        return self._billing_post(
-            "add_payment_method",
-            {"method_type": method_type, "contact": contact, "gateway": gateway},
-        )
-
-    def confirm_payment_method(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Finalize the payment method the gateway SDK/checkout tokenised."""
-        return self._billing_post("confirm_payment_method", payload)
-
-    def create_payment_method_checkout(self, redirect_url: str, gateway: str | None = None) -> dict[str, Any]:
-        """Start adding a card via hosted setup checkout; returns {checkout_url, reference, …}."""
-        return self._billing_post("create_payment_method_checkout",
-                                  {"redirect_url": redirect_url, "gateway": gateway})
-
-    def confirm_payment_method_checkout(self, reference: str) -> dict[str, Any]:
-        """Poll a hosted card setup; on completion stores + validates the card → Active."""
-        return self._billing_post("confirm_payment_method_checkout", {"reference": reference})
-
-    def reconcile_payment_setup(self) -> dict[str, Any]:
-        """Activate any card whose hosted setup finished while the user was away."""
-        return self._billing_post("reconcile_payment_setup", {})
-
-    def create_topup_checkout(self, amount: float, redirect_url: str) -> dict[str, Any]:
-        """Start a wallet top-up via hosted checkout; returns {checkout_url, reference, …}."""
-        return self._billing_post("create_topup_checkout", {"amount": amount, "redirect_url": redirect_url})
-
-    def checkout_status(self, reference: str) -> dict[str, Any]:
-        """Poll a hosted checkout; on first observed paid, credits the wallet idempotently."""
-        return self._billing_post("get_checkout_status", {"reference": reference})
-
-    def _billing_get(self, method: str) -> Any:
-        return _message(self._get(f"/api/method/{self.BILLING}.{method}"))
-
-    def _billing_post(self, method: str, data: dict[str, Any]) -> Any:
-        return _message(self._post(f"/api/method/{self.BILLING}.{method}", data))
+    def forward(self, method_path: str, http_method: str, data: dict[str, Any] | None = None) -> Any:
+        """Proxy an arbitrary Central pilot-API method with this bench's X-Pilot-Token and
+        return its result (Frappe's ``{"message": ...}`` envelope unwrapped). The caller
+        decides which methods are reachable — this makes no policy choice of its own."""
+        return _message(self._request(f"/api/method/{method_path}", method=http_method, data=data))
 
     def _credentials(self) -> tuple[str, str]:
         endpoint, token = self._bench_toml_credentials()
