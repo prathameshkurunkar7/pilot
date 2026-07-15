@@ -7,8 +7,9 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 from pilot.core.app_validator.base import python_files
-from pilot.core.app_validator.module_resolver import ModuleResolver
-from pilot.core.app_validator.tmp_env import TmpEnv
+from pilot.core.app_validator.utils.module_resolver import ModuleResolver
+from pilot.core.app_validator.utils.tmp_env import TmpEnv
+from pilot.exceptions import AppValidationError
 
 if typing.TYPE_CHECKING:
     from pilot.core.app import App
@@ -62,7 +63,7 @@ class ImportCheck:
             if isinstance(node, ast.Import):
                 modules.update(alias.name for alias in node.names)
             else:
-                modules.add(self._resolve_module(app, path, node.level, node.module))
+                modules.add(self._resolve_module(app, path, node))
         return modules
 
     def _runtime_imports(
@@ -83,10 +84,14 @@ class ImportCheck:
 
     @staticmethod
     def _handles_import_error(node: ast.Try) -> bool:
-        catchers = {"ImportError", "ModuleNotFoundError", "Exception", "BaseException"}
+        # Only an explicit ImportError/ModuleNotFoundError handler marks an
+        # import as genuinely optional. A bare `except:` or `except Exception:`
+        # matches any try block that happens to contain an import, which would
+        # wrongly mask a real missing dependency elsewhere in that block.
+        catchers = {"ImportError", "ModuleNotFoundError"}
         for handler in node.handlers:
             if handler.type is None:
-                return True
+                continue
             names = {n.id for n in ast.walk(handler.type) if isinstance(n, ast.Name)}
             names |= {n.attr for n in ast.walk(handler.type) if isinstance(n, ast.Attribute)}
             if names & catchers:
@@ -100,11 +105,18 @@ class ImportCheck:
         )
 
     @staticmethod
-    def _resolve_module(app: "App", path: Path, level: int, module: str | None) -> str:
-        if level == 0:
-            return module or ""
+    def _resolve_module(app: "App", path: Path, node: ast.ImportFrom) -> str:
+        if node.level == 0:
+            # `from module import ...` — always has a module name (never bare).
+            return typing.cast(str, node.module)
+
         parts = path.relative_to(app.path).with_suffix("").parts[:-1]
-        if level > 1:
-            parts = parts[: -(level - 1)] if level - 1 <= len(parts) else ()
-        base = ".".join(parts)
-        return f"{base}.{module}" if module else base
+        cut = node.level - 1
+        if cut >= len(parts):
+            raise AppValidationError(
+                f"'{app.config.name}' has an invalid relative import in "
+                f"{path.relative_to(app.path)} (line {node.lineno}): "
+                "goes above the app's own package."
+            )
+        base = ".".join(parts[: len(parts) - cut])
+        return f"{base}.{node.module}" if node.module else base
