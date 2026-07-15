@@ -125,7 +125,8 @@ class TaskRunner:
         pid_text = (task_dir / "pid").read_text().strip()
         pid = int(pid_text)
         try:
-            os.kill(pid, signal.SIGTERM)
+            if os.getpgid(pid) == pid:
+                os.killpg(pid, signal.SIGTERM)
         except OSError:
             pass
         (task_dir / "status").write_text("killed")

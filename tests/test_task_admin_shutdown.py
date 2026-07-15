@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+import admin.backend.tasks.manager.task_runner as task_runner_module
+from admin.backend.tasks.manager.task_runner import TaskRunner
 from pilot.managers.process_manager import ProcessDefinition
 from pilot.managers.process_managers.supervisor import SupervisorRenderer
 from pilot.managers.process_managers.systemd import SystemdRenderer
@@ -21,6 +23,14 @@ def wait_for_pid(path: Path) -> int:
             return int(path.read_text())
         time.sleep(0.01)
     raise AssertionError("task process did not start")
+
+
+def pid_is_running(pid: int) -> bool:
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().split()[2]
+        return state != "Z"
+    except (FileNotFoundError, ProcessLookupError):
+        return False
 
 
 def stop_process_group(pid: int) -> None:
@@ -94,3 +104,54 @@ def test_supervisor_admin_shutdown_signals_only_the_admin_group(tmp_path: Path) 
     assert "killasgroup=true" in program
     assert "[group:test-bench-admin]" in config
     assert "programs=test-bench-admin" in config
+
+
+def test_task_cancel_stops_wrapper_and_workload_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workload_pid_path = tmp_path / "workload.pid"
+    workload = [
+        sys.executable,
+        "-c",
+        "import os,sys,time; from pathlib import Path; "
+        "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)",
+        str(workload_pid_path),
+    ]
+    original_popen = subprocess.Popen
+    captured = {}
+
+    def start_wrapper(*args, **kwargs):
+        process = original_popen(*args, **kwargs)
+        captured["process"] = process
+        return process
+
+    monkeypatch.setattr(TaskRunner, "_build_argv", lambda self, command, args: workload)
+    monkeypatch.setattr(task_runner_module.subprocess, "Popen", start_wrapper)
+    runner = TaskRunner(tmp_path)
+    wrapper_pid = None
+
+    try:
+        task_id = runner.run("build", {})
+        wrapper_pid = int((tmp_path / "tasks" / task_id / "pid").read_text())
+        workload_pid = wait_for_pid(workload_pid_path)
+        assert os.getpgid(wrapper_pid) == wrapper_pid
+        assert os.getpgid(workload_pid) == wrapper_pid
+
+        runner.kill(task_id)
+        captured["process"].wait(timeout=5)
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and pid_is_running(workload_pid):
+            time.sleep(0.01)
+        if pid_is_running(workload_pid):
+            raise AssertionError("task workload survived cancellation")
+    finally:
+        if wrapper_pid is not None:
+            try:
+                os.killpg(wrapper_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        process = captured.get("process")
+        if process and process.poll() is None:
+            process.wait(timeout=5)

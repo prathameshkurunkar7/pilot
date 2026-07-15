@@ -236,7 +236,8 @@ def test_kill_signals_task_pid_and_marks_it_killed(
     (task_dir / "status").write_text("running")
     (task_dir / "pid").write_text("4321")
     signals = []
-    monkeypatch.setattr(os, "kill", lambda pid, sig: signals.append((pid, sig)))
+    monkeypatch.setattr(os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: signals.append((pid, sig)))
 
     TaskRunner(tmp_path).kill(TASK_ID)
 
@@ -253,13 +254,31 @@ def test_kill_marks_task_killed_when_pid_is_stale(
     (task_dir / "status").write_text("running")
     (task_dir / "pid").write_text("4321")
 
-    def missing_process(pid: int, sig: int) -> None:
+    def missing_process(pid: int) -> None:
         raise ProcessLookupError
 
-    monkeypatch.setattr(os, "kill", missing_process)
+    monkeypatch.setattr(os, "getpgid", missing_process)
 
     TaskRunner(tmp_path).kill(TASK_ID)
 
+    assert (task_dir / "status").read_text() == "killed"
+
+
+def test_kill_does_not_signal_reused_non_leader_pid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_dir = tmp_path / "tasks" / TASK_ID
+    task_dir.mkdir(parents=True)
+    (task_dir / "status").write_text("running")
+    (task_dir / "pid").write_text("4321")
+    signals = []
+    monkeypatch.setattr(os, "getpgid", lambda pid: 9999)
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: signals.append((pid, sig)))
+
+    TaskRunner(tmp_path).kill(TASK_ID)
+
+    assert signals == []
     assert (task_dir / "status").read_text() == "killed"
 
 
