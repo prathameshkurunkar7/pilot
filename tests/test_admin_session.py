@@ -194,7 +194,49 @@ def test_login_with_sid_sets_httponly_cookie(tmp_path: Path) -> None:
     assert resp.status_code == 200
     cookie = next(h for k, h in resp.headers if k == "Set-Cookie" and h.startswith("sid="))
     assert "HttpOnly" in cookie
+    assert "Secure" not in cookie
     assert client.get("/api/benches/").status_code != 401
+
+
+def test_login_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    client.application.config["SESSION_COOKIE_SECURE"] = True
+
+    response = client.post("/api/login", json={"sid": issue_login_token("k3y")})
+
+    cookie = next(
+        value
+        for key, value in response.headers
+        if key == "Set-Cookie" and value.startswith("sid=")
+    )
+    assert "Secure" in cookie
+
+
+def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> None:
+    from admin.backend.app import _secure_cookie_setting
+
+    config = SimpleNamespace(
+        production=SimpleNamespace(enabled=True),
+        admin=SimpleNamespace(tls=False),
+    )
+    store = SimpleNamespace(read=lambda: config)
+
+    monkeypatch.setattr(
+        "pilot.core.domain_controller.DomainRouteProvider.proxy_servers", lambda: []
+    )
+    assert _secure_cookie_setting(store) is False
+
+    monkeypatch.setattr(
+        "pilot.core.domain_controller.DomainRouteProvider.proxy_servers",
+        lambda: ["203.0.113.10"],
+    )
+    assert _secure_cookie_setting(store) is True
+
+    config.admin.tls = True
+    monkeypatch.setattr(
+        "pilot.core.domain_controller.DomainRouteProvider.proxy_servers", lambda: []
+    )
+    assert _secure_cookie_setting(store) is True
 
 
 def test_login_with_invalid_sid_rejected(tmp_path: Path) -> None:

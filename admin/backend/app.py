@@ -96,6 +96,7 @@ def create_app(bench_root: Path) -> Flask:
     app.config["MAX_CONTENT_LENGTH"] = MAX_RESTORE_UPLOAD_BYTES
     app.config["TEMPLATES_AUTO_RELOAD"] = False
     app.config["TRUSTED_PROXY_PEERS"] = _trusted_proxy_peers(config_store)
+    app.config["SESSION_COOKIE_SECURE"] = _secure_cookie_setting(config_store)
 
     _install_idle_watchdog(app)
     used_logins = UsedTokens()
@@ -126,13 +127,13 @@ def create_app(bench_root: Path) -> Flask:
             return auth_header[7:]
         return request.cookies.get("sid")
 
-    def _set_sid_cookie(resp, sid: str, config: BenchConfig):
+    def _set_sid_cookie(resp, sid: str):
         resp.set_cookie(
             "sid",
             sid,
             max_age=24 * 3600,
             httponly=True,
-            secure=config.production.enabled and config.admin.tls,
+            secure=app.config["SESSION_COOKIE_SECURE"],
             samesite="Lax",
         )
 
@@ -235,7 +236,7 @@ def create_app(bench_root: Path) -> Flask:
         elif not hmac.compare_digest(str(data.get("password", "")), config.admin.password):
             return jsonify({"ok": False, "error": "Incorrect password"}), 401
         resp = jsonify({"ok": True})
-        _set_sid_cookie(resp, issue_token(ensure_jwt_secret(bench_root / "bench.toml")), config)
+        _set_sid_cookie(resp, issue_token(ensure_jwt_secret(bench_root / "bench.toml")))
         return resp
 
     @app.route("/api/logout", methods=["POST"])
@@ -287,6 +288,25 @@ def _trusted_proxy_peers(config_store: BenchTomlStore) -> tuple[str, ...]:
     # Production nginx reaches the admin over loopback or a Unix socket. An
     # empty REMOTE_ADDR is how the latter is represented by the WSGI server.
     return ("127.0.0.1", "::1", "")
+
+
+def _secure_cookie_setting(config_store: BenchTomlStore) -> bool:
+    """Whether the browser reaches Admin over explicitly configured HTTPS."""
+    try:
+        config = config_store.read()
+    except Exception:
+        return False
+    if not config.production.enabled:
+        return False
+    if config.admin.tls:
+        return True
+
+    from pilot.core.domain_controller import DomainRouteProvider
+
+    try:
+        return bool(DomainRouteProvider.proxy_servers())
+    except Exception:
+        return False
 
 
 def _handle_config_error(error: ConfigError):
