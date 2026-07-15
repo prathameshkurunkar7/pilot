@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.internal.toml import TomlDataclassCodec, loads, read, write
+from pilot.internal.toml import Toml, TomlDataclassCodec
 
 
 @dataclass
@@ -35,15 +35,15 @@ def test_toml_dict_round_trip() -> None:
         "routes": [{"name": "api", "hosts": ["one.test", "two.test"]}],
     }
 
-    assert loads(write(data)) == data
+    assert Toml.loads(Toml.dumps(data)) == data
 
 
-def test_simple_read_and_write_api(tmp_path: Path) -> None:
+def test_simple_loads_and_dumps_api(tmp_path: Path) -> None:
     data = {"service": {"name": "worker", "port": 7000}}
     path = tmp_path / "service.toml"
-    path.write_text(write(data), encoding="utf-8")
+    path.write_text(Toml.dumps(data), encoding="utf-8")
 
-    assert read(path) == data
+    assert Toml.loads(path.read_text(encoding="utf-8")) == data
 
 
 def test_toml_string_round_trip_preserves_escaped_and_unicode_text() -> None:
@@ -55,7 +55,7 @@ def test_toml_string_round_trip_preserves_escaped_and_unicode_text() -> None:
         "unicode": "café — 東京 🚀",
     }
 
-    assert loads(write(data)) == data
+    assert Toml.loads(Toml.dumps(data)) == data
 
 
 def test_toml_key_round_trip_preserves_literal_keys() -> None:
@@ -70,7 +70,7 @@ def test_toml_key_round_trip_preserves_literal_keys() -> None:
         },
     }
 
-    assert loads(write(data)) == data
+    assert Toml.loads(Toml.dumps(data)) == data
 
 
 def test_toml_nested_tables_and_arrays_of_tables_round_trip() -> None:
@@ -96,7 +96,7 @@ def test_toml_nested_tables_and_arrays_of_tables_round_trip() -> None:
         "empty root table": {},
     }
 
-    assert loads(write(data)) == data
+    assert Toml.loads(Toml.dumps(data)) == data
 
 
 def test_toml_native_date_time_and_float_values_round_trip() -> None:
@@ -115,7 +115,7 @@ def test_toml_native_date_time_and_float_values_round_trip() -> None:
         "negative_zero": -0.0,
     }
 
-    decoded = loads(write(data))
+    decoded = Toml.loads(Toml.dumps(data))
 
     for key in (
         "local_date",
@@ -143,7 +143,7 @@ def test_toml_native_date_time_and_float_values_round_trip() -> None:
 )
 def test_toml_dump_rejects_none(data: dict[str, object]) -> None:
     with pytest.raises(TypeError):
-        write(data)
+        Toml.dumps(data)
 
 
 def test_dataclass_dict_round_trip() -> None:

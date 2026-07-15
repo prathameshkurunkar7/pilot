@@ -5,12 +5,11 @@ import json
 import stat
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 import pytest
 
-from pilot.internal.toml import write as write_toml
+from pilot.internal.toml import Toml
 from pilot.utils import host_owner, normalize_host, run_command
 
 
@@ -112,7 +111,7 @@ def test_normalize_host() -> None:
 
 
 def _roundtrip(tmp_path: Path, data: dict) -> dict:
-    return tomllib.loads(write_toml(data))
+    return Toml.loads(Toml.dumps(data))
 
 
 def test_write_toml_scalars(tmp_path: Path) -> None:
@@ -179,5 +178,4 @@ def test_write_toml_file_is_valid_toml(tmp_path: Path) -> None:
         "mariadb": {"root_password": "r"},
         "redis": {"cache_port": 13000, "queue_port": 11000},
     }
-    # If tomllib.loads raises, the serialized value is invalid TOML.
-    tomllib.loads(write_toml(data))
+    Toml.loads(Toml.dumps(data))

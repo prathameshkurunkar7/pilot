@@ -153,7 +153,7 @@ BENCH_TOML_CODEC = TomlDataclassCodec(
 
 
 def load_config(path: Path, *, validate: bool = True) -> BenchConfig:
-    config = BENCH_TOML_CODEC.load(path)
+    config = BENCH_TOML_CODEC.loads(path.read_text(encoding="utf-8"))
     if validate:
         config.validate()
     return config

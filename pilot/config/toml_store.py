@@ -11,9 +11,7 @@ from pilot.internal.atomic_file import (
     replace_private_text_locked,
 )
 from pilot.config.bench_toml import dumps_config, load_config
-from pilot.internal.toml import loads as loads_toml
-from pilot.internal.toml import read as read_toml
-from pilot.internal.toml import write as write_toml
+from pilot.internal.toml import Toml
 from pilot.config.bench_config import BenchConfig
 
 
@@ -43,7 +41,7 @@ class BenchTomlStore:
 
     def read_raw(self) -> dict:
         """Parsed TOML as a plain dict, preserving every section as written."""
-        return read_toml(self.path)
+        return Toml.loads(self.path.read_text(encoding="utf-8"))
 
     def read_flat(self) -> dict:
         """Wizard's flat-key settings dict (parse-only)."""
@@ -68,11 +66,11 @@ class BenchTomlStore:
     def edit_raw(self) -> Iterator[dict]:
         """Lock, load, and commit one raw read-modify-write transaction."""
         with exclusive_file_lock(self.path):
-            data = read_toml(self.path)
+            data = Toml.loads(self.path.read_text(encoding="utf-8"))
             original = copy.deepcopy(data)
             yield data
             if data != original:
-                content = write_toml(data)
+                content = Toml.dumps(data)
                 self._validate_serialized(content)
                 replace_private_text_locked(self.path, content)
 
@@ -89,19 +87,18 @@ class BenchTomlStore:
         config = BenchTomlBuilder(name, settings, port_offset=port_offset).build()
         with exclusive_file_lock(self.path):
             if self.path.exists():
-                config.production.enabled = read_toml(self.path).get("production", {}).get(
-                    "enabled", False
-                )
+                raw = Toml.loads(self.path.read_text(encoding="utf-8"))
+                config.production.enabled = raw.get("production", {}).get("enabled", False)
             replace_private_text_locked(self.path, self._serialized_config(config))
 
     def write_raw(self, data: dict) -> None:
-        content = write_toml(data)
+        content = Toml.dumps(data)
         self._validate_serialized(content)
         atomic_write_private_text(self.path, content)
 
     @staticmethod
     def _validate_serialized(content: str) -> None:
-        config = BenchConfig._from_dict(loads_toml(content))
+        config = BenchConfig._from_dict(Toml.loads(content))
         config.validate()
 
     @classmethod

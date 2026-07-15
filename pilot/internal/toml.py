@@ -6,7 +6,6 @@ import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time
-from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 ConfigT = TypeVar("ConfigT")
@@ -24,13 +23,21 @@ _ESCAPES = {
 }
 
 
-class TomlWriter:
+class Toml:
     def __init__(self) -> None:
         self._lines: list[str] = []
 
-    def dumps(self, data: Mapping[str, Any]) -> str:
-        self._write_table(data, ())
-        return "\n".join(self._lines) + ("\n" if self._lines else "")
+    @staticmethod
+    def loads(value: str) -> ConfigDict:
+        return tomllib.loads(value)
+
+    @classmethod
+    def dumps(cls, data: Mapping[str, Any]) -> str:
+        writer = cls()
+        writer._write_table(data, ())
+        content = "\n".join(writer._lines) + ("\n" if writer._lines else "")
+        cls.loads(content)
+        return content
 
     def _write_table(self, data: Mapping[str, Any], path: tuple[str, ...]) -> None:
         scalars, tables, arrays = self._partition(data)
@@ -139,21 +146,6 @@ class TomlWriter:
             raise TypeError(f"TOML keys must be strings, got {type(value).__name__}")
 
 
-def read(path: Path) -> ConfigDict:
-    with path.open("rb") as handle:
-        return tomllib.load(handle)
-
-
-def loads(value: str) -> ConfigDict:
-    return tomllib.loads(value)
-
-
-def write(data: Mapping[str, Any]) -> str:
-    content = TomlWriter().dumps(data)
-    loads(content)
-    return content
-
-
 @dataclass(frozen=True)
 class TomlDataclassCodec(Generic[ConfigT]):
     from_config_dict: Callable[[ConfigDict], ConfigT]
@@ -166,10 +158,7 @@ class TomlDataclassCodec(Generic[ConfigT]):
         return self.to_config_dict(config)
 
     def loads(self, value: str) -> ConfigT:
-        return self.from_dict(loads(value))
-
-    def load(self, path: Path) -> ConfigT:
-        return self.from_dict(read(path))
+        return self.from_dict(Toml.loads(value))
 
     def dumps(self, config: ConfigT) -> str:
-        return write(self.to_dict(config))
+        return Toml.dumps(self.to_dict(config))
