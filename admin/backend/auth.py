@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import functools
+from flask import g
 
-from flask import g, jsonify
+
+_SITE_SCOPE_RESOLVER = "_site_scope_resolver"
 
 
 def decode_session_token(token: str, config) -> dict | None:
@@ -21,26 +22,31 @@ def decode_session_token(token: str, config) -> dict | None:
 
 
 def require_scope(site):
-    """Allow or reject the request based on the JWT ``scope`` claim."""
-    from pilot.commands.generate_session import has_scope
-
     if callable(site):
         resolve = site
     else:
+
         def resolve(kwargs):
             return site
 
     def decorator(view):
-        @functools.wraps(view)
-        def wrapper(*args, **kwargs):
-            claims = getattr(g, "jwt_claims", None)
-            if not has_scope(claims, resolve(kwargs)):
-                return jsonify({"error": "Not authorized for this site"}), 403
-            return view(*args, **kwargs)
-
-        return wrapper
+        setattr(view, _SITE_SCOPE_RESOLVER, resolve)
+        return view
 
     return decorator
+
+
+def authorization_error(claims: dict | None, view, view_args: dict) -> str | None:
+    from pilot.commands.generate_session import has_scope
+
+    resolve_site = getattr(view, _SITE_SCOPE_RESOLVER, None)
+    if resolve_site is not None:
+        return (
+            None if has_scope(claims, resolve_site(view_args)) else "Not authorized for this site"
+        )
+    if claims and claims.get("scope") == "bench":
+        return None
+    return "Not authorized for this bench"
 
 
 def current_site_scope() -> str | None:

@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from pilot.commands.generate_session import decode_token, has_scope, issue_login_token, issue_site_token, issue_token, verify_token
+from pilot.commands.generate_session import (
+    decode_token,
+    has_scope,
+    issue_login_token,
+    issue_site_token,
+    issue_token,
+    verify_token,
+)
 from pilot.config.bench_config import BenchConfig
 from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.core.bench import Bench
@@ -99,7 +106,11 @@ def _initialized_bench(bench_dir: Path, password: str, jwt_secret: str) -> None:
 
     bench_dir.mkdir(parents=True, exist_ok=True)
     toml_path = bench_dir / "bench.toml"
-    toml_path.write_text(BenchTomlBuilder(bench_dir.name, {"admin_enabled": True, "admin_password": password}).render())
+    toml_path.write_text(
+        BenchTomlBuilder(
+            bench_dir.name, {"admin_enabled": True, "admin_password": password}
+        ).render()
+    )
     config = BenchConfig.from_file(toml_path)
     config.admin.jwt_secret = jwt_secret
     toml_path.write_text(bench_config_to_toml(config))
@@ -273,6 +284,26 @@ def test_issue_site_token_custom_ttl() -> None:
     assert claims["exp"] - claims["iat"] == 3600
 
 
+@pytest.mark.parametrize(
+    ("scope", "site"),
+    [
+        ("site", "example.com"),
+        ("unknown", None),
+    ],
+)
+def test_non_bench_token_cannot_access_bench_route(
+    tmp_path: Path,
+    scope: str,
+    site: str | None,
+) -> None:
+    client = _client(tmp_path)
+    token = issue_token("k3y", scope=scope, site=site)
+
+    response = client.get("/api/tasks/", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 403
+
+
 def test_require_scope_allows_unscoped_token(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
@@ -336,7 +367,7 @@ def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
 def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.auth import current_site_scope
+    from admin.backend.auth import current_site_scope, require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -344,6 +375,7 @@ def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
     app.config["TESTING"] = True
 
     @app.route("/api/test-scope")
+    @require_scope("example.com")
     def scope_view():
         return jsonify({"site": current_site_scope()})
 

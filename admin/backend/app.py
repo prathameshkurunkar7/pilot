@@ -123,14 +123,28 @@ def create_app(bench_root: Path) -> Flask:
         return request.cookies.get("sid")
 
     def _set_sid_cookie(resp, sid: str, config: BenchConfig):
-        resp.set_cookie("sid", sid, max_age=24 * 3600, httponly=True,
-                        secure=config.production.enabled and config.admin.tls, samesite="Lax")
+        resp.set_cookie(
+            "sid",
+            sid,
+            max_age=24 * 3600,
+            httponly=True,
+            secure=config.production.enabled and config.admin.tls,
+            samesite="Lax",
+        )
 
     def _check_password(config: BenchConfig):
         if not config.admin.password:
-            return jsonify({"error": "No admin password configured in bench.toml", "enabled": False}), 503
+            return jsonify(
+                {"error": "No admin password configured in bench.toml", "enabled": False}
+            ), 503
         if not _is_authenticated(config):
             return jsonify({"error": "Authentication required"}), 401
+        from .auth import authorization_error
+
+        view = app.view_functions.get(request.endpoint) if request.endpoint else None
+        error = authorization_error(g.jwt_claims, view, request.view_args or {})
+        if error:
+            return jsonify({"error": error}), 403
         return None
 
     @app.before_request
@@ -170,15 +184,17 @@ def create_app(bench_root: Path) -> Flask:
                 return jsonify(_wizard_status(bench_root))
         from pilot.platform import native_process_manager
 
-        return jsonify({
-            "enabled": config.admin.enabled,
-            "name": config.name,
-            "db_type": config.db_type,
-            "production": config.production.enabled,
-            "native_process_manager": native_process_manager(),
-            "allow_bench_management": config.admin.allow_bench_management,
-            "authenticated": _is_authenticated(config),
-        })
+        return jsonify(
+            {
+                "enabled": config.admin.enabled,
+                "name": config.name,
+                "db_type": config.db_type,
+                "production": config.production.enabled,
+                "native_process_manager": native_process_manager(),
+                "allow_bench_management": config.admin.allow_bench_management,
+                "authenticated": _is_authenticated(config),
+            }
+        )
 
     @app.route("/api/login", methods=["POST"])
     @rate_limit(5, 60, user_ip=True)
@@ -188,7 +204,9 @@ def create_app(bench_root: Path) -> Flask:
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 503
         if not config.admin.password:
-            return jsonify({"ok": False, "error": "No admin password configured in bench.toml"}), 503
+            return jsonify(
+                {"ok": False, "error": "No admin password configured in bench.toml"}
+            ), 503
         from .auth import decode_session_token
         from pilot.commands.generate_session import ensure_jwt_secret, issue_token
 
@@ -201,7 +219,12 @@ def create_app(bench_root: Path) -> Flask:
             # Requiring a jti also blocks site-scoped API tokens (which carry
             # none) from being exchanged for a full admin session, and stops a
             # captured token from being replayed for fresh sessions.
-            if payload is None or not jti or payload.get("scope", "bench") != "bench" or not used_logins.use(jti, payload["exp"]):
+            if (
+                payload is None
+                or not jti
+                or payload.get("scope", "bench") != "bench"
+                or not used_logins.use(jti, payload["exp"])
+            ):
                 return jsonify({"ok": False, "error": "Invalid or expired sign-in link"}), 401
         elif not hmac.compare_digest(str(data.get("password", "")), config.admin.password):
             return jsonify({"ok": False, "error": "Incorrect password"}), 401
