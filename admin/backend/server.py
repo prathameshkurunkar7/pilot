@@ -2,13 +2,9 @@ from __future__ import annotations
 
 import argparse
 import os
-import signal
 import subprocess
 import threading
-import time
 from pathlib import Path
-
-_last_request = time.monotonic()
 
 
 def main() -> None:
@@ -37,19 +33,14 @@ def main() -> None:
             pass
 
     if not skip_watchdog:
+        from admin.backend.watchdog import AdminProcessOwner, install_idle_watchdog
 
-        @app.before_request
-        def _touch() -> None:
-            global _last_request
-            _last_request = time.monotonic()
-
-        def _watchdog() -> None:
-            while True:
-                time.sleep(60)
-                if time.monotonic() - _last_request > args.timeout:
-                    os.kill(os.getpid(), signal.SIGTERM)
-
-        threading.Thread(target=_watchdog, daemon=True).start()
+        install_idle_watchdog(
+            app,
+            bench_root,
+            args.timeout,
+            AdminProcessOwner.current(),
+        )
 
     # Start vite only in the outer watcher process, not in the child that
     # werkzeug's reloader spawns (WERKZEUG_RUN_MAIN is set in that child).

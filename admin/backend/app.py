@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import hmac
 import os
-import signal
-import threading
-import time
 from pathlib import Path
 
 from flask import Flask, g, jsonify, request, send_file
@@ -63,34 +60,30 @@ def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
     return True
 
 
-def _install_idle_watchdog(app: Flask) -> None:
-    """Stop the admin after a period of inactivity when socket-activated."""
+def _install_idle_watchdog(
+    app: Flask,
+    bench_root: Path | None = None,
+):
     raw = os.environ.get("BENCH_ADMIN_IDLE_TIMEOUT")
     if not raw:
-        return
+        return None
     timeout = int(raw)
     if timeout <= 0:
-        return
+        return None
+    from admin.backend.watchdog import (
+        AdminProcessOwner,
+        install_idle_watchdog,
+    )
 
-    last_request = time.monotonic()
-    lock = threading.Lock()
-
-    @app.before_request
-    def _touch() -> None:
-        nonlocal last_request
-        with lock:
-            last_request = time.monotonic()
-
-    def _watchdog() -> None:
-        while True:
-            time.sleep(min(timeout, 30))
-            with lock:
-                idle = time.monotonic() - last_request
-            if idle > timeout:
-                os.kill(os.getppid(), signal.SIGTERM)
-                return
-
-    threading.Thread(target=_watchdog, daemon=True).start()
+    root = bench_root or app.config.get("BENCH_ROOT")
+    if root is None:
+        raise ValueError("Bench root is required for the Admin idle watchdog")
+    return install_idle_watchdog(
+        app,
+        Path(root),
+        timeout,
+        AdminProcessOwner.parent(),
+    )
 
 
 def create_app(bench_root: Path) -> Flask:
@@ -102,7 +95,7 @@ def create_app(bench_root: Path) -> Flask:
     app.config["TRUSTED_PROXY_PEERS"] = _trusted_proxy_peers(config_store)
     app.config["SESSION_COOKIE_SECURE"] = _secure_cookie_setting(config_store)
 
-    _install_idle_watchdog(app)
+    _install_idle_watchdog(app, bench_root)
     used_logins = UsedTokens()
 
     def _load_config():
