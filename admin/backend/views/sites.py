@@ -21,6 +21,7 @@ from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text
 
 from admin.backend.api_contract import error_response
 from admin.backend.auth import require_scope
+from admin.backend.site_paths import site_config_path, site_exists
 from admin.backend.tasks.task_response import accepted_task_response
 from admin.backend.uploads import (
     UploadError,
@@ -97,7 +98,7 @@ def list_sites():
 @require_scope(site_name)
 def detail(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not _site_exists(bench_root, name):
+    if not site_exists(bench_root, name):
         return _site_not_found()
     try:
         site = SiteReader(bench_root).read_one(name)
@@ -139,7 +140,7 @@ def detail(name: str):
 @require_scope(site_name)
 def site_apps(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not _site_exists(bench_root, name):
+    if not site_exists(bench_root, name):
         return _site_not_found()
     try:
         site = SiteReader(bench_root).read_one(name)
@@ -322,7 +323,7 @@ def create_site_restore():
 @require_scope(site_name)
 def drop_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not _site_exists(bench_root, name):
+    if not site_exists(bench_root, name):
         return _site_not_found()
     try:
         task_id = TaskRunner(bench_root).run(
@@ -340,7 +341,7 @@ def drop_site(name: str):
 @require_scope(site_name)
 def reinstall_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not _site_exists(bench_root, name):
+    if not site_exists(bench_root, name):
         return _site_not_found()
     data = request.get_json(silent=True)
     if data is None:
@@ -377,7 +378,7 @@ def backup_site(name: str):
 @require_scope(site_name)
 def clear_cache(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not _site_exists(bench_root, name):
+    if not site_exists(bench_root, name):
         return _site_not_found()
     try:
         task_id = TaskRunner(bench_root).run(
@@ -395,7 +396,7 @@ def clear_cache(name: str):
 @require_scope(site_name)
 def migrate_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not _site_exists(bench_root, name):
+    if not site_exists(bench_root, name):
         return _site_not_found()
     try:
         task_id = TaskRunner(bench_root).run(
@@ -577,8 +578,8 @@ def login_to_site(name: str):
     import json
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    site_config_path = bench_root / "sites" / name / "site_config.json"
-    if not site_config_path.exists():
+    config_path = site_config_path(bench_root, name)
+    if config_path is None:
         return _site_not_found()
 
     try:
@@ -600,7 +601,7 @@ def login_to_site(name: str):
 
     if nginx_enabled:
         try:
-            ssl = bool(json.loads(site_config_path.read_text()).get("ssl"))
+            ssl = bool(json.loads(config_path.read_text()).get("ssl"))
         except Exception:
             ssl = False
         url = f"{'https' if ssl else 'http'}://{name}/desk?sid={sid}"
@@ -614,7 +615,7 @@ def login_to_site(name: str):
 @require_scope(site_name)
 def enable_tls(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config_path = _site_config_path(bench_root, name)
+    config_path = site_config_path(bench_root, name)
     if config_path is None:
         return _site_not_found()
 
@@ -701,7 +702,7 @@ def _apply_domains(bench_root: Path, name: str) -> str:
 @require_scope(site_name)
 def list_domains(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not _site_exists(bench_root, name):
+    if not site_exists(bench_root, name):
         return _site_not_found()
     try:
         routes = _domain_routes(bench_root)
@@ -717,7 +718,7 @@ def list_domains(name: str):
 def domain_dns_records(name: str):
     """Step 1 of attaching a domain: validate it, return CNAME/A record options."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not _site_exists(bench_root, name):
+    if not site_exists(bench_root, name):
         return _site_not_found()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -741,7 +742,7 @@ def domain_dns_records(name: str):
 @require_scope(site_name)
 def add_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not _site_exists(bench_root, name):
+    if not site_exists(bench_root, name):
         return _site_not_found()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -766,7 +767,7 @@ def add_domain(name: str):
 @require_scope(site_name)
 def remove_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not _site_exists(bench_root, name):
+    if not site_exists(bench_root, name):
         return _site_not_found()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -791,7 +792,7 @@ def remove_domain(name: str):
 @require_scope(site_name)
 def set_primary_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not _site_exists(bench_root, name):
+    if not site_exists(bench_root, name):
         return _site_not_found()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -817,7 +818,7 @@ def set_primary_domain(name: str):
 @require_scope(site_name)
 def get_configuration(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config_path = _site_config_path(bench_root, name)
+    config_path = site_config_path(bench_root, name)
     if config_path is None:
         return _site_not_found()
     try:
@@ -833,7 +834,7 @@ def get_configuration(name: str):
 @require_scope(site_name)
 def update_configuration(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config_path = _site_config_path(bench_root, name)
+    config_path = site_config_path(bench_root, name)
     if config_path is None:
         return _site_not_found()
 
@@ -1028,26 +1029,6 @@ def delete_backup_schedule(name: str):
     except Exception:
         return _internal_error("Could not remove the backup schedule.")
     return jsonify({"ok": True})
-
-
-def _site_exists(bench_root: Path, name: str) -> bool:
-    return _site_config_path(bench_root, name) is not None
-
-
-def _site_config_path(bench_root: Path, name: str) -> Path | None:
-    if validate_site_name(name):
-        return None
-    raw_sites_path = bench_root / "sites"
-    if raw_sites_path.is_symlink():
-        return None
-    sites_path = raw_sites_path.resolve()
-    site_path = sites_path / name
-    if site_path.is_symlink() or site_path.resolve(strict=False).parent != sites_path:
-        return None
-    config_path = site_path / "site_config.json"
-    if config_path.is_symlink() or not config_path.is_file():
-        return None
-    return config_path
 
 
 def _site_resource(site: SiteInfo) -> dict:
