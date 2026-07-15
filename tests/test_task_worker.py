@@ -11,7 +11,7 @@ import admin.backend.tasks.manager.worker as worker_module
 from admin.backend.tasks.manager.task_state import TaskStatus
 from admin.backend.tasks.manager.task_store import TaskStore
 from admin.backend.tasks.manager.worker import TaskWorker
-from admin.backend.tasks.manager.worker_state import WorkerStatus, WorkerStore
+from admin.backend.tasks.manager.worker_state import WorkerIntent, WorkerStatus, WorkerStore
 
 
 def enqueue(store: TaskStore, task_id: str, sequence: int) -> None:
@@ -199,6 +199,41 @@ def test_running_drain_finishes_current_task_and_leaves_next_queued(
     assert not worker.is_alive()
     assert store.read_status(current) == TaskStatus.SUCCESS
     assert store.read_status(queued) == TaskStatus.QUEUED
+
+
+def test_stopped_intent_survives_start_and_resumes_queued_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = TaskStore(tmp_path)
+    state = WorkerStore(tmp_path)
+    task_id = "20260715-120000-111111"
+    enqueue(store, task_id, 1)
+    state.write_intent(WorkerIntent.STOPPED)
+    completed = threading.Event()
+
+    class Process:
+        pid = 4321
+
+        def wait(self, timeout: float | None = None) -> int:
+            store.transition(task_id, TaskStatus.RUNNING, TaskStatus.SUCCESS)
+            completed.set()
+            return 0
+
+    monkeypatch.setattr(worker_module.subprocess, "Popen", lambda *args, **kwargs: Process())
+    worker = TaskWorker(tmp_path)
+    worker.start()
+    wait_for_status(state, WorkerStatus.STOPPED)
+
+    assert store.read_status(task_id) == TaskStatus.QUEUED
+    assert worker.is_alive()
+
+    state.write_intent(WorkerIntent.RUNNING)
+    assert completed.wait(2)
+    worker.request_drain()
+    worker.join(2)
+
+    assert store.read_status(task_id) == TaskStatus.SUCCESS
 
 
 def wait_for_status(store: WorkerStore, expected: WorkerStatus) -> None:

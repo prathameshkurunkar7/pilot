@@ -9,7 +9,9 @@ from pathlib import Path
 from admin.backend.tasks.manager.task_queue import TaskQueue
 from admin.backend.tasks.manager.task_state import TERMINAL_TASK_STATUSES
 from admin.backend.tasks.manager.task_store import TaskStore
-from admin.backend.tasks.manager.worker_state import WorkerStatus, WorkerStore
+from admin.backend.tasks.manager.worker_state import WorkerIntent, WorkerStatus, WorkerStore
+
+_CONTROL_POLL_SECONDS = 0.2
 
 
 class TaskWorker:
@@ -21,6 +23,7 @@ class TaskWorker:
         self._wake = threading.Event()
         self._drain = threading.Event()
         self._claim_lock = threading.Lock()
+        self._last_state: tuple[WorkerStatus, int | None, str | None] | None = None
         self._thread = threading.Thread(
             target=self._run,
             name="bench-task-worker",
@@ -51,29 +54,35 @@ class TaskWorker:
         pid = os.getpid()
         with lock:
             self._worker.write_pid(pid)
-            self._worker.write_state(WorkerStatus.STARTING, pid)
+            self._write_state(WorkerStatus.STARTING, pid)
             try:
                 self._work(pid)
             finally:
-                self._worker.write_state(WorkerStatus.STOPPED, None)
+                self._write_state(WorkerStatus.STOPPED, None)
                 self._worker.write_pid(None)
 
     def _work(self, pid: int) -> None:
         while not self._drain.is_set():
             self._wake.clear()
+            if self._intent_stopped():
+                self._write_state(WorkerStatus.STOPPED, pid)
+                self._wake.wait(_CONTROL_POLL_SECONDS)
+                continue
             if self._run_next(pid):
                 continue
             if self._drain.is_set():
                 break
-            self._worker.write_state(WorkerStatus.IDLE, pid)
-            self._wake.wait()
+            if self._intent_stopped():
+                continue
+            self._write_state(WorkerStatus.IDLE, pid)
+            self._wake.wait(_CONTROL_POLL_SECONDS)
 
     def _run_next(self, pid: int) -> bool:
         task_id = self._claim_next()
         if task_id is None:
             return False
 
-        self._worker.write_state(WorkerStatus.RUNNING, pid, task_id)
+        self._write_state(WorkerStatus.RUNNING, pid, task_id)
         process = self._start_task(task_id)
         self._tasks.write_pid(task_id, process.pid)
         self._wait_for_task(process, pid, task_id)
@@ -93,15 +102,36 @@ class TaskWorker:
                 process.wait(timeout=0.1)
                 return
             except subprocess.TimeoutExpired:
-                if self._drain.is_set() and not draining:
-                    self._worker.write_state(WorkerStatus.DRAINING, pid, task_id)
+                if self._should_drain() and not draining:
+                    self._write_state(WorkerStatus.DRAINING, pid, task_id)
                     draining = True
 
     def _claim_next(self) -> str | None:
         with self._claim_lock:
             if self._drain.is_set():
                 return None
-            return self._queue.claim_next()
+            with self._worker.locked_intent() as intent:
+                if intent == WorkerIntent.STOPPED:
+                    return None
+                return self._queue.claim_next()
+
+    def _should_drain(self) -> bool:
+        return self._drain.is_set() or self._intent_stopped()
+
+    def _intent_stopped(self) -> bool:
+        return self._worker.read_intent() == WorkerIntent.STOPPED
+
+    def _write_state(
+        self,
+        status: WorkerStatus,
+        pid: int | None,
+        task_id: str | None = None,
+    ) -> None:
+        state = (status, pid, task_id)
+        if state == self._last_state:
+            return
+        self._worker.write_state(status, pid, task_id)
+        self._last_state = state
 
     def _start_task(self, task_id: str) -> subprocess.Popen:
         task_dir = self._tasks.task_dir(task_id)
