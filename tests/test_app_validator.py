@@ -184,15 +184,15 @@ def _modules_for(app: App, relpath: str, source: str) -> set[str]:
 
 
 def test_import_check_skips_stdlib_imports(tmp_path: Path) -> None:
-    # Stdlib filtering happens in _imported_modules (across all files), not
-    # per-file — os/sys/json show up in the raw per-file parse either way.
+    # Stdlib filtering happens in _imported_module_locations (across all
+    # files), not per-file — os/sys/json show up in the raw per-file parse.
     app = _make_app(
         tmp_path,
         "myapp",
         '[project]\nname = "myapp"\n',
         {"myapp/hooks.py": "", "myapp/utils.py": "import os\nimport sys\nimport json\n"},
     )
-    assert ImportCheck()._imported_modules(app) == []
+    assert ImportCheck()._imported_module_locations(app) == {}
 
 
 def test_import_check_resolves_bare_relative_import_at_package_root(tmp_path: Path) -> None:
@@ -245,8 +245,8 @@ def test_import_check_skips_type_checking_only_imports(tmp_path: Path) -> None:
     app = _make_app(
         tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": "", "myapp/utils.py": source}
     )
-    # `typing` itself is stdlib, filtered out at the _imported_modules level.
-    assert ImportCheck()._imported_modules(app) == ["required_dependency"]
+    # `typing` itself is stdlib, filtered out at the _imported_module_locations level.
+    assert list(ImportCheck()._imported_module_locations(app)) == ["required_dependency"]
 
 
 def test_import_check_error_reports_source_location(tmp_path: Path) -> None:
@@ -276,4 +276,4 @@ def test_import_check_skips_test_files(tmp_path: Path) -> None:
         },
     )
     check = ImportCheck()
-    assert check._imported_modules(app) == []
+    assert check._imported_module_locations(app) == {}

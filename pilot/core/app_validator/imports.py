@@ -38,34 +38,28 @@ class ImportCheck:
         unresolved = resolver.unresolved(locations)
         if not unresolved:
             return
-        try:
-            self.tmp_env.resolve_modules(unresolved)
-        except AppValidationError as exc:
-            raise AppValidationError(self._with_locations(str(exc), locations)) from exc
 
-    @staticmethod
-    def _with_locations(message: str, locations: dict[str, list[str]]) -> str:
-        """Append the file:line each unresolved module was imported from, so
-        the error points at the exact source instead of just a bare name."""
-        annotated = []
-        for line in message.splitlines():
-            module = line.split(":", 1)[0]
-            where = locations.get(module)
-            annotated.append(f"{line}\n   imported at: {', '.join(where)}" if where else line)
-        return "\n".join(annotated)
+        reasons = self.tmp_env.resolve_modules(unresolved)
+        if not reasons:
+            return  # find_spec disagrees with the stat check — nothing's actually missing
 
-    def _imported_modules(self, app: "App") -> list[str]:
-        return sorted(self._imported_module_locations(app))
+        lines = [
+            f"{module}: {reason}\n    imported at: {', '.join(locations[module])}"
+            for module, reason in reasons.items()
+        ]
+        raise AppValidationError("Import errors:\n" + "\n".join(lines))
 
     def _imported_module_locations(self, app: "App") -> dict[str, list[str]]:
+        stdlib = sys.stdlib_module_names
         locations: dict[str, list[str]] = {}
         for path in python_files(app):
             if self._is_test_file(path):
                 continue
+            relpath = path.relative_to(app.path)
             for module, lineno in self._file_imported_modules(app, path):
-                if module.split(".")[0] in sys.stdlib_module_names:
+                if module.split(".", 1)[0] in stdlib:
                     continue
-                where = f"{path.relative_to(app.path)}:{lineno}"
+                where = f"{relpath}:{lineno}"
                 locations.setdefault(module, [])
                 if where not in locations[module]:
                     locations[module].append(where)

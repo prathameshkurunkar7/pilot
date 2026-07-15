@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 import typing
@@ -47,29 +48,29 @@ class TmpEnv:
         except CommandError as exc:
             raise AppValidationError(f"'{app.config.name}' failed to install:\n{exc.message}")
 
-    def resolve_modules(self, module_names: list[str]) -> None:
+    def resolve_modules(self, module_names: list[str]) -> dict[str, str]:
+        """Return {module: reason} for names that don't resolve via find_spec
+        (no code runs — this just confirms what the stat-based check found)."""
         try:
-            run_command(
+            result = run_command(
                 [str(self.path / "bin" / "python"), "-c", self._resolve_check_script(module_names)]
             )
         except CommandError as exc:
-            raise AppValidationError(f"Import errors:\n{exc.message}")
+            raise AppValidationError(f"Failed to check imports:\n{exc.message}")
+        return json.loads(result.stdout)
 
     @staticmethod
     def _resolve_check_script(module_names: list[str]) -> str:
-        # Resolves each module via find_spec instead of importing it, so we
-        # catch missing/renamed modules without running their top-level code.
         return (
-            "import importlib.util, sys\n"
-            "errors = []\n"
+            "import importlib.util, json\n"
+            "errors = {}\n"
             f"for name in {module_names!r}:\n"
             "    try:\n"
             "        if importlib.util.find_spec(name) is None:\n"
             "            raise ModuleNotFoundError(f'No module named {name!r}')\n"
             "    except Exception as exc:\n"
-            "        errors.append(f'{name}: {exc}')\n"
-            "if errors:\n"
-            "    sys.exit('\\n'.join(errors))\n"
+            "        errors[name] = str(exc)\n"
+            "print(json.dumps(errors))\n"
         )
 
     def _pip_install(self, paths: list[Path]) -> None:
