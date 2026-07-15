@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 
+from admin.backend.auth import allow_during_setup
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.events import sse_message
 from admin.backend.tasks.manager.task_runner import TaskRunner
@@ -36,17 +37,20 @@ def wizard_marker_path(bench_root: Path) -> Path:
 
 
 @setup_bp.route("/config")
+@allow_during_setup
 def get_config():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     return jsonify(_read_defaults(bench_root))
 
 
 @setup_bp.route("/branches")
+@allow_during_setup
 def get_branches():
     return jsonify({"branches": FRAMEWORK_BRANCHES})
 
 
 @setup_bp.route("/save", methods=["POST"])
+@allow_during_setup
 def save_config():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
@@ -92,6 +96,7 @@ def _issue_setup_session(resp, toml_path: Path) -> None:
 
 
 @setup_bp.route("/validate-mariadb", methods=["POST"])
+@allow_during_setup
 def validate_mariadb():
     """Tell the wizard whether the entered credentials will work against the
     single MariaDB server every bench for this OS user shares. Not yet
@@ -123,6 +128,7 @@ def validate_mariadb():
 
 
 @setup_bp.route("/validate-postgres", methods=["POST"])
+@allow_during_setup
 def validate_postgres():
     """Tell the wizard whether the entered PostgreSQL credentials will work
     against the single PostgreSQL server every bench for this OS user shares."""
@@ -211,6 +217,7 @@ def _validate(data: dict) -> str | None:
 
 
 @setup_bp.route("/start", methods=["POST"])
+@allow_during_setup
 def start_setup():
     """Run the wizard as one task that initializes the bench — see WizardSetupTask.
 
@@ -249,6 +256,7 @@ def start_setup():
 
 
 @setup_bp.route("/finish", methods=["POST"])
+@allow_during_setup
 def finish_setup():
     """Shut down the standalone wizard server so the user can run `bench start`.
 
@@ -283,6 +291,7 @@ def finish_setup():
 
 
 @setup_bp.route("/new-site", methods=["POST"])
+@allow_during_setup
 def start_new_site():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True) or {}
@@ -303,6 +312,7 @@ def start_new_site():
 
 
 @setup_bp.route("/stream/<task_id>")
+@allow_during_setup
 def stream_task(task_id: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     reader = TaskReader(bench_root)

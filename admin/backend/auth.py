@@ -1,9 +1,32 @@
 from __future__ import annotations
 
+from enum import StrEnum
+
 from flask import g
 
 
 _SITE_SCOPE_RESOLVER = "_site_scope_resolver"
+_AUTH_POLICY = "_auth_policy"
+
+
+class AuthPolicy(StrEnum):
+    AUTHENTICATED = "authenticated"
+    OPEN = "open"
+    SETUP_CONDITIONAL = "setup-conditional"
+
+
+def allow_unauthenticated(view):
+    setattr(view, _AUTH_POLICY, AuthPolicy.OPEN)
+    return view
+
+
+def allow_during_setup(view):
+    setattr(view, _AUTH_POLICY, AuthPolicy.SETUP_CONDITIONAL)
+    return view
+
+
+def endpoint_auth_policy(view) -> AuthPolicy:
+    return getattr(view, _AUTH_POLICY, AuthPolicy.AUTHENTICATED)
 
 
 def decode_session_token(token: str, config) -> dict | None:

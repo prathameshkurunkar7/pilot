@@ -2,9 +2,9 @@ from collections import Counter
 from pathlib import Path
 
 from admin.backend.app import create_app
+from admin.backend.auth import AuthPolicy, endpoint_auth_policy
 
 
-OPEN_ENDPOINTS = {"api_login", "api_logout", "api_ping", "api_status"}
 SITE_SCOPED_ENDPOINTS = {
     "sites.add_domain",
     "sites.backup_site",
@@ -35,11 +35,11 @@ SITE_SCOPED_ENDPOINTS = {
 }
 
 
-def auth_policy(endpoint: str) -> str:
-    if endpoint in OPEN_ENDPOINTS:
-        return "open"
-    if endpoint.startswith("setup."):
-        return "setup-conditional"
+def auth_policy(app, endpoint: str) -> str:
+    view = app.view_functions[endpoint]
+    policy = endpoint_auth_policy(view)
+    if policy != AuthPolicy.AUTHENTICATED:
+        return policy.value
     if endpoint in SITE_SCOPED_ENDPOINTS:
         return "authenticated+site-scope"
     if endpoint.startswith("benches."):
@@ -54,7 +54,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             ",".join(sorted(rule.methods - {"HEAD", "OPTIONS"})),
             rule.rule,
             rule.endpoint,
-            auth_policy(rule.endpoint),
+            auth_policy(app, rule.endpoint),
         )
         for rule in app.url_map.iter_rules()
         if rule.rule.startswith("/api")

@@ -6,6 +6,8 @@ from pathlib import Path
 
 from flask import Flask, g, jsonify, request, send_file
 
+from .api_contract import error_response, is_api_path
+from .auth import AuthPolicy, allow_unauthenticated, endpoint_auth_policy
 from .rate_limit import rate_limit, UsedTokens
 from .uploads import MAX_RESTORE_UPLOAD_BYTES
 from .views.apps import apps_bp
@@ -27,9 +29,6 @@ from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import ConfigError
 
 _STATIC_DIR = Path(__file__).parent / "static"
-_OPEN_PATHS = {"/api/status", "/api/login", "/api/logout", "/api/ping"}
-
-
 def _wizard_status(bench_root: Path) -> dict:
     name = bench_root.name
     try:
@@ -151,9 +150,15 @@ def create_app(bench_root: Path) -> Flask:
     @app.before_request
     def _guard():
         g.jwt_claims = None
-        if not request.path.startswith("/api") or request.path in _OPEN_PATHS:
+        if not is_api_path(request.path):
             return None
-        is_setup = request.path.startswith("/api/setup/")
+        view = app.view_functions.get(request.endpoint) if request.endpoint else None
+        if view is None:
+            return None
+        policy = endpoint_auth_policy(view)
+        if policy == AuthPolicy.OPEN:
+            return None
+        is_setup = policy == AuthPolicy.SETUP_CONDITIONAL
         try:
             config = _load_config()
         except Exception as exc:
@@ -165,12 +170,14 @@ def create_app(bench_root: Path) -> Flask:
         return _check_enabled(config) or _check_password(config)
 
     @app.route("/api/ping")
+    @allow_unauthenticated
     def api_ping():
         resp = jsonify({"ok": True})
         resp.headers["Access-Control-Allow-Origin"] = "*"
         return resp
 
     @app.route("/api/status")
+    @allow_unauthenticated
     def api_status():
         initialized = (bench_root / "env" / "bin" / "python").exists()
         try:
@@ -202,6 +209,7 @@ def create_app(bench_root: Path) -> Flask:
         )
 
     @app.route("/api/login", methods=["POST"])
+    @allow_unauthenticated
     @rate_limit(5, 60, user_ip=True)
     def api_login():
         try:
@@ -238,6 +246,7 @@ def create_app(bench_root: Path) -> Flask:
         return resp
 
     @app.route("/api/logout", methods=["POST"])
+    @allow_unauthenticated
     def api_logout():
         resp = jsonify({"ok": True})
         resp.delete_cookie("sid")
@@ -261,9 +270,18 @@ def create_app(bench_root: Path) -> Flask:
     app.register_error_handler(ConfigError, _handle_config_error)
     app.register_error_handler(FileNotFoundError, _handle_file_not_found)
 
+    @app.errorhandler(405)
+    def _method_not_allowed(error):
+        if is_api_path(request.path):
+            return error_response("method_not_allowed", "Method not allowed.", 405)
+        return error
+
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
+    @allow_unauthenticated
     def serve_spa(path):
+        if path == "api" or path.startswith("api/"):
+            return error_response("not_found", "API route not found.", 404)
         dist = _STATIC_DIR / "dist"
         if not dist.exists():
             return "Frontend not built. Run: cd admin/frontend && npm install && npm run build", 503
