@@ -103,7 +103,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "marketplace": 1,
         "monitor-history": 1,
         "monitor-status": 1,
-        "processes": 4,
+        "runtime": 4,
         "settings": 4,
         "setup": 7,
         "site-login-handoffs": 1,
@@ -183,6 +183,16 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("POST", "/api/v1/task-worker/actions/stop"),
     } <= route_keys
     assert {
+        ("GET", "/api/v1/runtime/processes"),
+        ("POST", "/api/v1/runtime/actions/start"),
+        ("POST", "/api/v1/runtime/actions/stop"),
+        ("POST", "/api/v1/runtime/actions/restart"),
+        ("GET", "/api/v1/logs"),
+        ("GET", "/api/v1/logs/<filename>"),
+        ("GET", "/api/v1/logs/<filename>/events"),
+        ("GET", "/api/v1/logs/<filename>/content"),
+    } <= route_keys
+    assert {
         ("GET", "/api/v1/setup/configuration"),
         ("PUT", "/api/v1/setup/configuration"),
         ("GET", "/api/v1/setup/framework-branches"),
@@ -240,5 +250,12 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             "/api/v1/apps/<name>/remove",
             "/api/v1/apps/<name>/set-upstream",
             "/api/v1/updates/",
+            "/api/v1/processes/",
+            "/api/v1/processes/start",
+            "/api/v1/processes/stop",
+            "/api/v1/processes/restart",
+            "/api/v1/logs/",
+            "/api/v1/logs/<filename>/download",
+            "/api/v1/logs/<filename>/stream",
         }
     }

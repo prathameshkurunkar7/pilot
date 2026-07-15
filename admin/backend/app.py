@@ -155,7 +155,7 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(sites_bp, url_prefix=f"{API_V1_PREFIX}/sites")
     app.register_blueprint(site_restores_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(site_login_bp, url_prefix=API_V1_PREFIX)
-    app.register_blueprint(processes_bp, url_prefix=f"{API_V1_PREFIX}/processes")
+    app.register_blueprint(processes_bp, url_prefix=f"{API_V1_PREFIX}/runtime")
     app.register_blueprint(logs_bp, url_prefix=f"{API_V1_PREFIX}/logs")
     app.register_blueprint(database_bp, url_prefix=f"{API_V1_PREFIX}/database")
     app.register_blueprint(tasks_bp, url_prefix=f"{API_V1_PREFIX}/tasks")

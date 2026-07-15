@@ -305,7 +305,8 @@ function startLive() {
   rawLines.value = []
   eventSource = new EventSource(logsApi.streamUrl(selectedFile.value))
   eventSource.onmessage = (event) => {
-    rawLines.value.push(event.data)
+    const data = JSON.parse(event.data)
+    rawLines.value.push(data.error ? `ERROR: ${data.error}` : data.line)
     if (rawLines.value.length > 2000) rawLines.value.shift()
     terminal.value?.scrollToBottom()
   }

@@ -46,8 +46,7 @@ def _non_admin_programs(conf: Path, bench_name: str) -> list[str]:
     return programs
 
 
-@processes_bp.route("/")
-def index():
+def _process_list_response():
     bench_root = current_app.config["BENCH_ROOT"]
     try:
         processes = ProcessReader(bench_root).read_all()
@@ -73,7 +72,12 @@ def index():
     })
 
 
-@processes_bp.route("/restart", methods=["POST"])
+@processes_bp.get("/processes")
+def index():
+    return _process_list_response()
+
+
+@processes_bp.post("/actions/restart")
 def restart():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     conf = _supervisor_conf(bench_root)
@@ -92,10 +96,10 @@ def restart():
     result = _supervisorctl(conf, "restart", *programs)
     if result.returncode != 0:
         return error_response("process_restart_failed", "Could not restart processes.", 500)
-    return jsonify({"ok": True})
+    return _process_list_response()
 
 
-@processes_bp.route("/stop", methods=["POST"])
+@processes_bp.post("/actions/stop")
 def stop():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     conf = _supervisor_conf(bench_root)
@@ -114,10 +118,10 @@ def stop():
     result = _supervisorctl(conf, "stop", *programs)
     if result.returncode != 0:
         return error_response("process_stop_failed", "Could not stop processes.", 500)
-    return jsonify({"ok": True})
+    return _process_list_response()
 
 
-@processes_bp.route("/start", methods=["POST"])
+@processes_bp.post("/actions/start")
 def start():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     conf = _supervisor_conf(bench_root)
@@ -132,4 +136,4 @@ def start():
     result = _supervisorctl(conf, "start", f"{bench}:*")
     if result.returncode != 0:
         return error_response("process_start_failed", "Could not start processes.", 500)
-    return jsonify({"ok": True})
+    return _process_list_response()

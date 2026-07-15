@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 
 from admin.backend.api_contract import error_response
@@ -10,7 +12,7 @@ logs_bp = Blueprint("logs", __name__)
 _MAX_LINES = 5000
 
 
-@logs_bp.route("/")
+@logs_bp.get("")
 def index():
     bench_root = current_app.config["BENCH_ROOT"]
     try:
@@ -60,7 +62,7 @@ def viewer(filename: str):
     })
 
 
-@logs_bp.route("/<filename>/download")
+@logs_bp.get("/<filename>/content")
 def download_log(filename: str):
     bench_root = current_app.config["BENCH_ROOT"]
     try:
@@ -79,7 +81,7 @@ def download_log(filename: str):
     )
 
 
-@logs_bp.route("/<filename>/stream")
+@logs_bp.get("/<filename>/events")
 def stream_log(filename: str):
     bench_root = current_app.config["BENCH_ROOT"]
     reader = LogReader(bench_root)
@@ -87,8 +89,8 @@ def stream_log(filename: str):
     def generate():
         try:
             for line in reader.stream_tail(filename):
-                yield f"data: {line}\n\n"
+                yield f"data: {json.dumps({'line': line})}\n\n"
         except ValueError as error:
-            yield f"data: ERROR: {error}\n\n"
+            yield f"data: {json.dumps({'error': str(error)})}\n\n"
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
