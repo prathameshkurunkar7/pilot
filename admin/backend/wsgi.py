@@ -10,10 +10,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from admin.backend.app import create_app
+from admin.backend.app import _install_idle_watchdog, create_app
 from admin.backend.tasks.manager.worker_registry import task_workers
 
 bench_root = Path(os.environ["BENCH_ADMIN_ROOT"])
 application = create_app(bench_root)
+_install_idle_watchdog(application, bench_root)
 task_workers.start(bench_root)
 task_workers.install_signal_handlers()

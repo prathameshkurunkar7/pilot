@@ -95,7 +95,6 @@ def create_app(bench_root: Path) -> Flask:
     app.config["TRUSTED_PROXY_PEERS"] = _trusted_proxy_peers(config_store)
     app.config["SESSION_COOKIE_SECURE"] = _secure_cookie_setting(config_store)
 
-    _install_idle_watchdog(app, bench_root)
     used_logins = UsedTokens()
 
     def _load_config():
