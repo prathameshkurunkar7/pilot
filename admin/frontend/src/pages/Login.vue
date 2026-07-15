@@ -58,6 +58,7 @@ import LucideLock from '~icons/lucide/lock'
 import LucideEye from '~icons/lucide/eye'
 import LucideEyeOff from '~icons/lucide/eye-off'
 import PilotLogo from '@/components/PilotLogo.vue'
+import { apiErrorMessage } from '../api/client'
 import { authApi } from '../api/auth'
 import { useSession } from '../composables/useSession'
 import { safeRedirect } from '../utils/redirect'
@@ -80,7 +81,7 @@ async function login() {
   try {
     const result = await authApi.login(password.value)
     if (result.authenticated !== true) {
-      errorMessage.value = result.error?.message || 'Login failed'
+      errorMessage.value = apiErrorMessage(result, 'Login failed')
       return
     }
     await loadSession()

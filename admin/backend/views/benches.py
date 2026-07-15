@@ -22,12 +22,15 @@ from pilot.commands.new import NewCommand
 from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import BenchError
 
+from ..api_contract import error_response
+
 benches_bp = Blueprint("benches", __name__)
 
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _ADMIN_DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
 )
+
 
 @benches_bp.before_request
 def guard_bench_management():
@@ -37,11 +40,13 @@ def guard_bench_management():
     try:
         config = BenchTomlStore.for_bench(bench_root).read_raw()
     except Exception:
-        return jsonify({"error": "Bench management is disabled on this server."}), 403
+        return error_response(
+            "bench_management_forbidden", "Bench management is disabled on this server.", 403
+        )
     if not config.get("admin", {}).get("allow_bench_management", True):
-        return jsonify({"error": "Bench management is disabled on this server."}), 403
-
-
+        return error_response(
+            "bench_management_forbidden", "Bench management is disabled on this server.", 403
+        )
 
 
 @benches_bp.route("/")
@@ -95,21 +100,25 @@ def get_all():
 def run_action(name, action_name):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if action_name not in ("start", "stop", "restart"):
-        return jsonify({"ok": False, "error": f"Unknown action '{action_name}'."}), 400
+        return error_response("invalid_bench_action", f"Unknown action '{action_name}'.", 422)
     if not _NAME_RE.match(name):
-        return jsonify({"ok": False, "error": "Invalid bench name."}), 400
+        return error_response("invalid_bench_name", "Invalid bench name.", 422)
 
     target_dir = bench_root.parent / name
     toml_path = target_dir / "bench.toml"
     if not toml_path.exists():
-        return jsonify({"ok": False, "error": f"Bench '{name}' not found."}), 404
+        return error_response("bench_not_found", f"Bench '{name}' not found.", 404)
 
     try:
         target_config = BenchTomlStore(toml_path).read_raw()
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+    except Exception:
+        return error_response("bench_unavailable", "Could not read the bench configuration.", 500)
     if not target_config.get("production", {}).get("enabled"):
-        return jsonify({"ok": False, "error": "Start/stop/restart from here is only supported for production benches."}), 400
+        return error_response(
+            "bench_action_unavailable",
+            "Start, stop, and restart are only supported for production benches.",
+            409,
+        )
 
     root = cli_root()
     try:
@@ -118,9 +127,9 @@ def run_action(name, action_name):
             cwd=root, capture_output=True, text=True, timeout=60,
         )
     except subprocess.TimeoutExpired:
-        return jsonify({"ok": False, "error": f"'{action_name}' timed out."}), 500
+        return error_response("bench_action_failed", "The bench action timed out.", 500)
     if result.returncode != 0:
-        return jsonify({"ok": False, "error": (result.stderr or result.stdout).strip()}), 500
+        return error_response("bench_action_failed", "Could not complete the bench action.", 500)
     return jsonify({"ok": True})
 
 
@@ -128,18 +137,22 @@ def run_action(name, action_name):
 def drop(name):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not _NAME_RE.match(name):
-        return jsonify({"ok": False, "error": "Invalid bench name."}), 400
+        return error_response("invalid_bench_name", "Invalid bench name.", 422)
 
     target_dir = bench_root.parent / name
     toml_path = target_dir / "bench.toml"
     if not toml_path.exists():
-        return jsonify({"ok": False, "error": f"Bench '{name}' not found."}), 404
+        return error_response("bench_not_found", f"Bench '{name}' not found.", 404)
     if target_dir.resolve() == bench_root.resolve():
-        return jsonify({"ok": False, "error": "Can't drop the bench you're currently using."}), 400
+        return error_response("bench_drop_conflict", "The active bench cannot be dropped.", 409)
 
     sites = site_count(target_dir)
     if sites:
-        return jsonify({"ok": False, "error": f"Bench '{name}' has {sites} site(s). Drop them first."}), 400
+        return error_response(
+            "bench_not_empty",
+            f"Bench '{name}' has {sites} site(s). Drop them first.",
+            409,
+        )
 
     root = cli_root()
     try:
@@ -148,9 +161,9 @@ def drop(name):
             cwd=root, capture_output=True, text=True, timeout=180,
         )
     except subprocess.TimeoutExpired:
-        return jsonify({"ok": False, "error": "Drop timed out."}), 500
+        return error_response("bench_drop_failed", "Dropping the bench timed out.", 500)
     if result.returncode != 0:
-        return jsonify({"ok": False, "error": (result.stderr or result.stdout).strip()}), 500
+        return error_response("bench_drop_failed", "Could not drop the bench.", 500)
     return jsonify({"ok": True})
 
 
@@ -162,8 +175,10 @@ def wildcard_domains():
 
     try:
         patterns = DomainRouteProvider.wildcard_domains()
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return error_response(
+            "wildcard_domains_unavailable", "Could not read wildcard domains.", 500
+        )
     return jsonify({"domains": [wildcard_suffix(p) for p in patterns]})
 
 
@@ -172,10 +187,29 @@ def new():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     from pilot.utils import host_owner, normalize_host
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+    if any(
+        value is not None and not isinstance(value, str)
+        for value in (
+            data.get("name"),
+            data.get("process_manager"),
+            data.get("db_type"),
+            data.get("admin_domain"),
+        )
+    ):
+        return error_response("invalid_bench", "Bench fields must be strings.", 422)
+    if "admin_tls" in data and not isinstance(data["admin_tls"], bool):
+        return error_response("invalid_admin_tls", "admin_tls must be a boolean.", 422)
+
     name = (data.get("name") or "").strip()
     if not name or not _NAME_RE.match(name):
-        return jsonify({"error": "Bench name must contain only letters, numbers, '-' and '_'"}), 400
+        return error_response(
+            "invalid_bench_name",
+            "Bench name must contain only letters, numbers, '-' and '_'.",
+            422,
+        )
 
     from pilot.config.production_config import VALID_PROCESS_MANAGERS
 
@@ -183,31 +217,57 @@ def new():
     if process_manager == "supervisord":
         process_manager = "supervisor"
     if process_manager not in VALID_PROCESS_MANAGERS:
-        return jsonify({"error": f"Choose a process manager: {', '.join(VALID_PROCESS_MANAGERS)}."}), 400
+        return error_response(
+            "invalid_process_manager",
+            f"Choose a process manager: {', '.join(VALID_PROCESS_MANAGERS)}.",
+            422,
+        )
 
     db_type = (data.get("db_type") or "mariadb").strip()
     if db_type not in ("mariadb", "postgres", "sqlite"):
-        return jsonify({"error": "Database must be 'mariadb', 'postgres', or 'sqlite'."}), 400
+        return error_response(
+            "invalid_database",
+            "Database must be 'mariadb', 'postgres', or 'sqlite'.",
+            422,
+        )
 
     admin_domain = (data.get("admin_domain") or "").strip()
     if not admin_domain:
-        return jsonify({"error": "Admin domain is required so the bench is reachable in production."}), 400
+        return error_response(
+            "admin_domain_required",
+            "Admin domain is required so the bench is reachable in production.",
+            422,
+        )
     if not _ADMIN_DOMAIN_RE.match(admin_domain):
-        return jsonify({"error": f"'{admin_domain}' is not a valid hostname."}), 400
+        return error_response(
+            "invalid_admin_domain", f"'{admin_domain}' is not a valid hostname.", 422
+        )
 
     new_dir = bench_root.parent / name
     owner = host_owner(new_dir, admin_domain)
     if owner:
-        return jsonify({"error": f"Admin domain '{admin_domain}' is already used by bench '{owner}'."}), 400
+        return error_response(
+            "admin_domain_conflict",
+            f"Admin domain '{admin_domain}' is already used by bench '{owner}'.",
+            409,
+        )
     if normalize_host(admin_domain) == normalize_host(name):
-        return jsonify({"error": "Admin domain must differ from the bench/site name."}), 400
+        return error_response(
+            "invalid_admin_domain",
+            "Admin domain must differ from the bench/site name.",
+            422,
+        )
 
     from pilot.core.domain_controller import DomainRouteProvider
     from pilot.utils import matches_wildcard
 
     patterns = DomainRouteProvider.wildcard_domains()
     if patterns and not matches_wildcard(admin_domain, patterns):
-        return jsonify({"error": f"Admin domain must match one of: {', '.join(patterns)}."}), 400
+        return error_response(
+            "invalid_admin_domain",
+            f"Admin domain must match one of: {', '.join(patterns)}.",
+            422,
+        )
 
     # None (client never sends this) lets NewCommand inherit the sibling
     # production bench's TLS choice instead of forcing HTTP-only.
@@ -217,7 +277,7 @@ def new():
         NewCommand(new_dir, name, process_manager=process_manager,
                    admin_domain=admin_domain, admin_tls=admin_tls, db_type=db_type).run()
     except BenchError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return error_response("invalid_bench", str(exc), 422)
 
     new_toml = BenchTomlStore.for_bench(new_dir).read_raw()
     new_port = new_toml["admin"]["port"]
@@ -249,8 +309,8 @@ def new():
             nginx.generate_config()
             nginx.install_config()
             server_ip = DomainRouteProvider._server_ip()
-        except Exception as exc:
-            return jsonify({"error": f"Failed to bring up the new bench: {exc}"}), 500
+        except Exception:
+            return error_response("bench_start_failed", "Could not start the new bench.", 500)
         return jsonify({"name": name, "port": new_port, "wizard_at_domain": True,
                         "domain": admin_cfg.get("domain", ""),
                         "scheme": "http",
@@ -261,12 +321,25 @@ def new():
         if not k.startswith("WERKZEUG_") and not k.startswith("BENCH_ADMIN_")
     }
     spawn_env["PYTHONPATH"] = str(root)
-    subprocess.Popen(
-        [str(root / ".admin-venv" / "bin" / "python"), "-m", "admin.backend.server",
-         "--bench-root", str(new_dir), "--port", str(new_port), "--timeout", "7200", "--wizard"],
-        cwd=str(root), env=spawn_env,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
-    )
+    try:
+        subprocess.Popen(
+            [
+                str(root / ".admin-venv" / "bin" / "python"),
+                "-m",
+                "admin.backend.server",
+                "--bench-root",
+                str(new_dir),
+                "--port",
+                str(new_port),
+                "--timeout",
+                "7200",
+                "--wizard",
+            ],
+            cwd=str(root), env=spawn_env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+        )
+    except OSError:
+        return error_response("bench_start_failed", "Could not start the new bench.", 500)
     return jsonify({"name": name, "port": new_port, "wizard_at_domain": False,
                     "domain": admin_cfg.get("domain", "")})
 
@@ -281,7 +354,9 @@ def is_ready():
     try:
         port = int(request.args.get("port", ""))
     except ValueError:
-        return jsonify({"ready": False}), 400
+        return error_response("invalid_port", "port must be an integer.", 422)
+    if not 1 <= port <= 65535:
+        return error_response("invalid_port", "port must be between 1 and 65535.", 422)
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=0.5):
             pass

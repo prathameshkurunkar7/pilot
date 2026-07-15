@@ -69,6 +69,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Alert, Button, Combobox, Dialog, ErrorMessage, FormControl, LoadingText, TabButtons } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { appsApi } from '@/api/apps'
 import { gitApi } from '@/api/git'
 import { openTaskDetailPage } from '@/utils/taskRoute'
@@ -131,7 +132,7 @@ async function loadBranchesFor(url) {
       branch.value = d.branches[0] || ''
       fetched.value = true
     } else {
-      error.value = d.error
+      error.value = apiErrorMessage(d, 'Could not load branches.')
     }
   } catch (e) {
     error.value = e.message
@@ -176,7 +177,7 @@ async function resolveApp() {
   try {
     const d = await gitApi.resolve(repo.value.trim(), branch.value.trim())
     if (d.ok) foundName.value = d.name
-    else error.value = d.error || 'Could not find a Frappe app in this repository.'
+    else error.value = apiErrorMessage(d, 'Could not find a Frappe app in this repository.')
   } catch (e) {
     error.value = e.message
   } finally {
@@ -190,7 +191,7 @@ async function submit() {
   error.value = ''
   try {
     const result = await appsApi.add({ name: foundName.value, repo: repo.value.trim(), branch: branch.value.trim() })
-    if (!result.ok) throw new Error(result.error || 'Could not import app.')
+    if (!result.ok) throw new Error(apiErrorMessage(result, 'Could not import app.'))
     open.value = false
     openTaskDetailPage(router, result.task_id)
   } catch (caught) {

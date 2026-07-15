@@ -109,6 +109,7 @@
 import { ref, computed, watch } from 'vue'
 import { Button, Checkbox, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import AppIcon from '@/components/AppIcon.vue'
+import { apiErrorMessage } from '@/api/client'
 import { appsApi } from '@/api/apps'
 import { authApi } from '@/api/auth'
 import { sitesApi } from '@/api/sites'
@@ -257,7 +258,7 @@ async function submit() {
       open.value = false
       emit('started', result.task_id)
     } else {
-      error.value = result.error || 'Could not create site.'
+      error.value = apiErrorMessage(result, 'Could not create site.')
     }
   } catch (caught) {
     error.value = caught.message || 'Could not create site.'

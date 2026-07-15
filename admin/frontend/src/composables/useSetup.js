@@ -1,5 +1,6 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useSetupHandoff } from './useSetupHandoff'
+import { apiErrorMessage } from '../api/client'
 import { setupApi } from '../api/setup'
 import { meetsPasswordRequirements } from '../utils/passwordStrength'
 import { generateRandomPassword } from '../utils/randomPassword'
@@ -333,7 +334,7 @@ export function useSetup() {
 
   async function saveConfig() {
     const result = await setupApi.save(buildPayload())
-    if (!result.ok) throw new Error(result.error || 'Failed to save configuration.')
+    if (!result.ok) throw new Error(apiErrorMessage(result, 'Failed to save configuration.'))
   }
 
   async function startSetup() {
@@ -341,7 +342,7 @@ export function useSetup() {
     try {
       await saveConfig()
       const result = await setupApi.start()
-      if (!result.ok) throw new Error(result.error || 'Failed to start setup.')
+      if (!result.ok) throw new Error(apiErrorMessage(result, 'Failed to start setup.'))
       startStream(result.task_id)
     } catch (error) {
       errorMessage.value = error.message

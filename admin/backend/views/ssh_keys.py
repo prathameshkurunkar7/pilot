@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
+from admin.backend.api_contract import error_response
 from pilot.core.ssh_keys import AuthorizedKeysStore, SSHKey, SSHKeyError
 
 ssh_keys_bp = Blueprint("ssh_keys", __name__)
@@ -18,23 +19,29 @@ def list_keys():
 
 @ssh_keys_bp.route("/", methods=["POST"])
 def add_key():
-    public_key = (request.get_json(silent=True) or {}).get("public_key", "").strip()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+    public_key = str(data.get("public_key", "")).strip()
     if not public_key:
-        return jsonify({"ok": False, "error": "A public key is required."}), 400
+        return error_response("invalid_ssh_key", "A public key is required.", 422)
     try:
         key = AuthorizedKeysStore().add(public_key)
     except SSHKeyError as error:
-        return jsonify({"ok": False, "error": str(error)}), 400
+        return error_response("invalid_ssh_key", str(error), 422)
     return jsonify({"ok": True, "key": _serialize(key)})
 
 
 @ssh_keys_bp.route("/", methods=["DELETE"])
 def remove_key():
-    fingerprint = (request.get_json(silent=True) or {}).get("fingerprint", "").strip()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+    fingerprint = str(data.get("fingerprint", "")).strip()
     if not fingerprint:
-        return jsonify({"ok": False, "error": "A fingerprint is required."}), 400
+        return error_response("invalid_fingerprint", "A fingerprint is required.", 422)
     try:
         AuthorizedKeysStore().remove(fingerprint)
     except SSHKeyError as error:
-        return jsonify({"ok": False, "error": str(error)}), 400
+        return error_response("ssh_key_removal_rejected", str(error), 409)
     return jsonify({"ok": True})

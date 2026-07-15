@@ -10,7 +10,9 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request, send_file
 
 from pilot.secure_files import write_private_text
+from pilot.exceptions import BenchError, TaskConflictError
 
+from admin.backend.api_contract import error_response
 from admin.backend.auth import require_scope
 from admin.backend.uploads import (
     UploadError,
@@ -51,8 +53,8 @@ def index():
     bench_root = current_app.config["BENCH_ROOT"]
     try:
         sites = SiteReader(bench_root).read_all()
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return _internal_error("Could not read sites.")
 
     payload = []
     for s in sites:
@@ -66,10 +68,12 @@ def index():
 @require_scope(site_name)
 def detail(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not _site_exists(bench_root, name):
+        return _site_not_found()
     try:
         site = SiteReader(bench_root).read_one(name)
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return _internal_error("Could not read site.")
 
     # Installable = apps that are cloned but not yet installed on this site
     try:
@@ -100,10 +104,12 @@ def detail(name: str):
 @require_scope(site_name)
 def site_apps(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not _site_exists(bench_root, name):
+        return _site_not_found()
     try:
         site = SiteReader(bench_root).read_one(name)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 404
+    except Exception:
+        return _internal_error("Could not read site apps.")
 
     reader = AppReader(bench_root)
     result = []
@@ -146,25 +152,35 @@ def wildcard_domains():
 
     try:
         patterns = DomainRouteProvider.wildcard_domains()
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _internal_error("Could not read wildcard domains.")
     return jsonify({"domains": [wildcard_suffix(p) for p in patterns]})
 
 
 @sites_bp.route("/create", methods=["POST"])
 def create():
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _malformed_body()
+    fields = _text_fields(data, "name", "db_type")
+    apps_value = data.get("apps", [])
+    if fields is None or not isinstance(apps_value, list) or not all(
+        isinstance(app, str) for app in apps_value
+    ):
+        return _invalid_fields()
 
-    name = (data.get("name") or "").strip()
+    name = fields["name"]
     admin_password = secrets.token_urlsafe(16)
-    db_type = (data.get("db_type") or "").strip()
-    apps = [app.strip() for app in data.get("apps") or [] if isinstance(app, str) and app.strip()]
+    db_type = fields["db_type"]
+    apps = [app.strip() for app in apps_value if app.strip()]
     if db_type and db_type not in ("mariadb", "postgres", "sqlite"):
-        return jsonify({"ok": False, "error": f"Invalid db_type '{db_type}'."})
+        return error_response(
+            "invalid_db_type", "Database type must be mariadb, postgres, or sqlite.", 422
+        )
     err = validate_site_name(name) or _new_site_name_error(bench_root, name)
     if err:
-        return jsonify({"ok": False, "error": err})
+        return _site_name_failure(err)
 
     task_args: dict = {"name": name, "admin_password": admin_password}
     if db_type:
@@ -182,8 +198,8 @@ def create():
                 }
             },
         )
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Could not start new-site: {e}"})
+    except Exception as error:
+        return _task_failure(error)
 
     return jsonify({"ok": True, "task_id": task_id})
 
@@ -197,11 +213,13 @@ def create_from_upload():
         admin_password = secrets.token_urlsafe(16)
     err = validate_site_name(name) or _new_site_name_error(bench_root, name)
     if err:
-        return jsonify({"ok": False, "error": err})
+        return _site_name_failure(err)
 
     db_upload = request.files.get("db_file")
     if not db_upload:
-        return jsonify({"ok": False, "error": "Database backup file is required."})
+        return error_response(
+            "missing_database_backup", "Database backup file is required.", 422
+        )
 
     upload_dir = None
     try:
@@ -218,16 +236,20 @@ def create_from_upload():
             args["private_files"] = str(
                 save_archive_upload(priv_upload, upload_dir, "private files")
             )
-    except (OSError, UploadError) as exc:
+    except UploadError:
         if upload_dir:
             shutil.rmtree(upload_dir, ignore_errors=True)
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return error_response("invalid_upload", "The uploaded backup is invalid.", 422)
+    except OSError:
+        if upload_dir:
+            shutil.rmtree(upload_dir, ignore_errors=True)
+        return _internal_error("Could not store the uploaded backup.")
 
     try:
         task_id = TaskRunner(bench_root).run("new-site-from-backup", args)
-    except Exception as e:
+    except Exception as error:
         shutil.rmtree(upload_dir, ignore_errors=True)
-        return jsonify({"ok": False, "error": str(e)})
+        return _task_failure(error)
     return jsonify({"ok": True, "task_id": task_id})
 
 
@@ -237,8 +259,8 @@ def drop_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         task_id = TaskRunner(bench_root).run("drop-site", {"site": name})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception as error:
+        return _task_failure(error)
     return jsonify({"ok": True, "task_id": task_id})
 
 
@@ -247,8 +269,12 @@ def drop_site(name: str):
 def reinstall_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     if not (bench_root / "sites" / name / "site_config.json").exists():
-        return jsonify({"ok": False, "error": "Site not found."}), 404
-    data = request.get_json(silent=True) or {}
+        return _site_not_found()
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    elif not isinstance(data, dict):
+        return _malformed_body()
     admin_password = data.get("admin_password")
     if not isinstance(admin_password, str) or not admin_password.strip():
         admin_password = secrets.token_urlsafe(16)
@@ -256,8 +282,8 @@ def reinstall_site(name: str):
         task_id = TaskRunner(bench_root).run(
             "reinstall-site", {"site": name, "admin_password": admin_password}
         )
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception as error:
+        return _task_failure(error)
     return jsonify({"ok": True, "task_id": task_id})
 
 
@@ -269,11 +295,11 @@ def force_drop_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     site_path = bench_root / "sites" / name
     if not (site_path / "site_config.json").exists():
-        return jsonify({"ok": False, "error": "Site not found."}), 404
+        return _site_not_found()
     try:
         shutil.rmtree(site_path)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    except Exception:
+        return _internal_error("Could not remove site files.")
     return jsonify({"ok": True})
 
 
@@ -283,8 +309,8 @@ def backup_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         task_id = TaskRunner(bench_root).run("backup-site", {"site": name, "with_files": True})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception as error:
+        return _task_failure(error)
     return jsonify({"ok": True, "task_id": task_id})
 
 
@@ -294,8 +320,8 @@ def clear_cache(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         task_id = TaskRunner(bench_root).run("clear-cache", {"site": name})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception as error:
+        return _task_failure(error)
     return jsonify({"ok": True, "task_id": task_id})
 
 
@@ -305,8 +331,8 @@ def migrate_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         task_id = TaskRunner(bench_root).run("migrate", {"site": name})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception as error:
+        return _task_failure(error)
     return jsonify({"ok": True, "task_id": task_id})
 
 
@@ -314,14 +340,19 @@ def migrate_site(name: str):
 @require_scope(site_name)
 def install_app(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
-    app = (data.get("app") or "").strip()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _malformed_body()
+    fields = _text_fields(data, "app")
+    if fields is None:
+        return _invalid_fields()
+    app = fields["app"]
     if not app:
-        return jsonify({"ok": False, "error": "App name is required."})
+        return error_response("missing_app", "App name is required.", 422)
     try:
         task_id = TaskRunner(bench_root).run("install-app", {"site": name, "app": app})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception as error:
+        return _task_failure(error)
     return jsonify({"ok": True, "task_id": task_id})
 
 
@@ -329,32 +360,40 @@ def install_app(name: str):
 @require_scope(site_name)
 def get_and_install_app(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
-    app = (data.get("app") or "").strip()
-    repo = (data.get("repo") or "").strip()
-    target = (data.get("target") or data.get("branch") or "").strip()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _malformed_body()
+    fields = _text_fields(data, "app", "repo")
+    target_value = data.get("target", data.get("branch", ""))
+    if fields is None or not isinstance(target_value, str):
+        return _invalid_fields()
+    app = fields["app"]
+    repo = fields["repo"]
+    target = target_value.strip()
 
     if app:
         task_args = {"site": name, "app": app, "marketplace_app": app}
     else:
         if not repo:
-            return jsonify({"ok": False, "error": "Repo URL is required."})
+            return error_response("missing_repo", "Repository URL is required.", 422)
         from pilot.core.git_providers import GitProviderError, resolve_app_name_from_repo
 
         try:
             app = resolve_app_name_from_repo(bench_root, repo, target)["name"]
-        except GitProviderError as e:
-            return jsonify({"ok": False, "error": f"Could not determine app name: {e}"})
-        except Exception as e:
-            return jsonify({"ok": False, "error": f"Could not read pyproject.toml: {e}"})
+        except GitProviderError:
+            return error_response(
+                "invalid_repository", "Could not determine the application name.", 422
+            )
+        except Exception:
+            return _internal_error("Could not inspect the application repository.")
         task_args = {"site": name, "app": app, "repo": repo}
         if target:
             task_args["branch"] = target
 
     try:
         task_id = TaskRunner(bench_root).run("get-and-install-app", task_args)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception as error:
+        return _task_failure(error)
     return jsonify({"ok": True, "task_id": task_id})
 
 
@@ -362,14 +401,19 @@ def get_and_install_app(name: str):
 @require_scope(site_name)
 def uninstall_app(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
-    app = (data.get("app") or "").strip()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _malformed_body()
+    fields = _text_fields(data, "app")
+    if fields is None:
+        return _invalid_fields()
+    app = fields["app"]
     if not app:
-        return jsonify({"ok": False, "error": "App name is required."})
+        return error_response("missing_app", "App name is required.", 422)
     try:
         task_id = TaskRunner(bench_root).run("uninstall-app", {"site": name, "app": app})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception as error:
+        return _task_failure(error)
     return jsonify({"ok": True, "task_id": task_id})
 
 
@@ -380,17 +424,22 @@ def force_uninstall_app(name: str):
     import subprocess as _sp
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _malformed_body()
 
     from ..validators import validate_app_name
 
-    app = (data.get("app") or "").strip()
+    fields = _text_fields(data, "app")
+    if fields is None:
+        return _invalid_fields()
+    app = fields["app"]
     err = validate_app_name(app)
     if err:
-        return jsonify({"ok": False, "error": err})
+        return error_response("invalid_app", err, 422)
 
     if not (bench_root / "sites" / name / "site_config.json").exists():
-        return jsonify({"ok": False, "error": "Site not found."}), 404
+        return _site_not_found()
 
     python = str(bench_root / "env" / "bin" / "python")
     env = os.environ.copy()
@@ -417,14 +466,16 @@ def force_uninstall_app(name: str):
             env=env,
         )
         if result.returncode != 0:
-            return jsonify({"ok": False, "error": result.stderr.strip() or "Force remove failed."})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+            return _internal_error("Could not remove the application from the site.")
+    except Exception:
+        return _internal_error("Could not remove the application from the site.")
 
     return jsonify({"ok": True})
 
 
-def _get_site_sid(bench_root: Path, site: str, user: str = "Administrator") -> tuple[str | None, str]:
+def _get_site_sid(
+    bench_root: Path, site: str, user: str = "Administrator"
+) -> str | None:
     import re
 
     # bench binary lives at project root; bench_root is <project>/benches/<name>
@@ -443,8 +494,8 @@ def _get_site_sid(bench_root: Path, site: str, user: str = "Administrator") -> t
     if m := re.search(r"sid=([a-zA-Z0-9]+)", output):
         sid = m.group(1)
         if sid and sid not in (user, "Guest"):
-            return sid, ""
-    return None, f"bench={bench_bin} exit={result.returncode}\n{output[:500]}"
+            return sid
+    return None
 
 
 @sites_bp.route("/<name>/login", methods=["POST"])
@@ -455,11 +506,14 @@ def login_to_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     site_config_path = bench_root / "sites" / name / "site_config.json"
     if not site_config_path.exists():
-        return jsonify({"ok": False, "error": "Site not found."}), 404
+        return _site_not_found()
 
-    sid, debug = _get_site_sid(bench_root, name)
+    try:
+        sid = _get_site_sid(bench_root, name)
+    except Exception:
+        return _internal_error("Could not create a site login session.")
     if not sid:
-        return jsonify({"ok": False, "error": "Could not create login session.", "debug": debug})
+        return _internal_error("Could not create a site login session.")
 
     from pilot.config.toml_store import BenchTomlStore
 
@@ -489,7 +543,7 @@ def enable_ssl(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     config_path = bench_root / "sites" / name / "site_config.json"
     if not config_path.exists():
-        return jsonify({"ok": False, "error": "Site not found."}), 404
+        return _site_not_found()
 
     from pilot.config.toml_store import BenchTomlStore
 
@@ -497,37 +551,48 @@ def enable_ssl(name: str):
 
     store = BenchTomlStore.for_bench(bench_root)
     # Let's Encrypt needs an ACME account email; persist one if the UI supplied it.
-    data = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip()
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    elif not isinstance(data, dict):
+        return _malformed_body()
+    fields = _text_fields(data, "email")
+    if fields is None:
+        return _invalid_fields()
+    email = fields["email"]
     if email:
         if err := validate_email(email):
-            return jsonify({"ok": False, "error": err, "needs_email": True})
+            return error_response(
+                "invalid_email", err, 422, {"needs_email": True}
+            )
         try:
             with store.edit() as config:
                 config.letsencrypt.email = email
-        except Exception as e:
-            return jsonify({"ok": False, "error": f"Failed to save email: {e}"}), 500
+        except Exception:
+            return _internal_error("Could not save the certificate email.")
     else:
         try:
             config = store.read()
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
+        except Exception:
+            return _internal_error("Could not read certificate configuration.")
 
     # No email anywhere — ask the UI to collect one instead of starting a doomed task.
     if not config.letsencrypt.email:
-        return jsonify(
-            {
-                "ok": False,
-                "needs_email": True,
-                "error": "A Let's Encrypt account email is required to issue certificates.",
-            }
+        return error_response(
+            "missing_certificate_email",
+            "A Let's Encrypt account email is required to issue certificates.",
+            422,
+            {"needs_email": True},
         )
 
     import json
 
-    current = json.loads(config_path.read_text())
-    current["ssl"] = True
-    write_private_text(config_path, json.dumps(current, indent=1))
+    try:
+        current = json.loads(config_path.read_text())
+        current["ssl"] = True
+        write_private_text(config_path, json.dumps(current, indent=1))
+    except Exception:
+        return _internal_error("Could not enable SSL in the site configuration.")
 
     try:
         task_id = TaskRunner(bench_root).run(
@@ -540,8 +605,8 @@ def enable_ssl(name: str):
                 }
             },
         )
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception as error:
+        return _task_failure(error)
     return jsonify({"ok": True, "task_id": task_id})
 
 
@@ -566,11 +631,15 @@ def _apply_domains(bench_root: Path, name: str) -> str:
 @require_scope(site_name)
 def list_domains(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not _site_exists(bench_root, name):
+        return _site_not_found()
     try:
         routes = _domain_routes(bench_root)
         return jsonify({"domains": routes.domains(name), "primary": routes.primary(name)})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except BenchError:
+        return _domain_conflict()
+    except Exception:
+        return _internal_error("Could not read site domains.")
 
 
 @sites_bp.route("/<name>/domains/dns-records", methods=["POST"])
@@ -578,13 +647,23 @@ def list_domains(name: str):
 def domain_dns_records(name: str):
     """Step 1 of attaching a domain: validate it, return CNAME/A record options."""
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
+    if not _site_exists(bench_root, name):
+        return _site_not_found()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _malformed_body()
+    fields = _text_fields(data, "domain")
+    if fields is None:
+        return _invalid_fields()
+    domain = fields["domain"]
     if err := validate_site_name(domain):
-        return jsonify({"ok": False, "error": err})
+        return error_response("invalid_domain", err, 422)
     try:
         records = _domain_routes(bench_root).generate_dns_records(name, domain)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except BenchError:
+        return _domain_conflict()
+    except Exception:
+        return _internal_error("Could not generate DNS records.")
     return jsonify({"ok": True, "records": records})
 
 
@@ -592,39 +671,76 @@ def domain_dns_records(name: str):
 @require_scope(site_name)
 def add_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
+    if not _site_exists(bench_root, name):
+        return _site_not_found()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _malformed_body()
+    fields = _text_fields(data, "domain")
+    if fields is None:
+        return _invalid_fields()
+    domain = fields["domain"]
     if err := validate_site_name(domain):
-        return jsonify({"ok": False, "error": err})
+        return error_response("invalid_domain", err, 422)
     try:
         _domain_routes(bench_root).register(name, domain)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
-    return jsonify({"ok": True, "task_id": _apply_domains(bench_root, name)})
+        task_id = _apply_domains(bench_root, name)
+    except BenchError:
+        return _domain_conflict()
+    except Exception:
+        return _internal_error("Could not attach the domain.")
+    return jsonify({"ok": True, "task_id": task_id})
 
 
 @sites_bp.route("/<name>/domains", methods=["DELETE"])
 @require_scope(site_name)
 def remove_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip()
+    if not _site_exists(bench_root, name):
+        return _site_not_found()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _malformed_body()
+    fields = _text_fields(data, "domain")
+    if fields is None:
+        return _invalid_fields()
+    domain = fields["domain"]
+    if err := validate_site_name(domain):
+        return error_response("invalid_domain", err, 422)
     try:
         _domain_routes(bench_root).deregister(name, domain)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
-    return jsonify({"ok": True, "task_id": _apply_domains(bench_root, name)})
+        task_id = _apply_domains(bench_root, name)
+    except BenchError:
+        return _domain_conflict()
+    except Exception:
+        return _internal_error("Could not detach the domain.")
+    return jsonify({"ok": True, "task_id": task_id})
 
 
 @sites_bp.route("/<name>/domains/primary", methods=["POST"])
 @require_scope(site_name)
 def set_primary_domain(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    domain = ((request.get_json(silent=True) or {}).get("domain") or "").strip() or None
+    if not _site_exists(bench_root, name):
+        return _site_not_found()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _malformed_body()
+    fields = _text_fields(data, "domain")
+    if fields is None:
+        return _invalid_fields()
+    domain = fields["domain"] or None
+    if domain and (err := validate_site_name(domain)):
+        return error_response("invalid_domain", err, 422)
     try:
         _domain_routes(bench_root).set_primary(name, domain)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+        task_id = _apply_domains(bench_root, name)
+    except BenchError:
+        return _domain_conflict()
+    except Exception:
+        return _internal_error("Could not change the primary domain.")
     # nginx redirects non-primary hosts to the primary, so regenerate it.
-    return jsonify({"ok": True, "task_id": _apply_domains(bench_root, name)})
+    return jsonify({"ok": True, "task_id": task_id})
 
 
 @sites_bp.route("/<name>/config", methods=["PATCH"])
@@ -633,15 +749,18 @@ def update_config(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     config_path = bench_root / "sites" / name / "site_config.json"
     if not config_path.exists():
-        return jsonify({"ok": False, "error": "site_config.json not found."}), 404
+        return _site_not_found()
 
     data = request.get_json(silent=True)
     if data is None or not isinstance(data, dict):
-        return jsonify({"ok": False, "error": "Invalid JSON body."}), 400
+        return _malformed_body()
 
     import json
 
-    current = json.loads(config_path.read_text())
+    try:
+        current = json.loads(config_path.read_text())
+    except Exception:
+        return _internal_error("Could not read site configuration.")
 
     # The editable keys are whatever the UI sent, minus any protected key it may
     # have included; protected keys are always preserved from the on-disk config.
@@ -649,7 +768,10 @@ def update_config(name: str):
     preserved = {k: v for k, v in current.items() if k in PROTECTED_CONFIG_KEYS}
     merged = {**editable, **preserved}
 
-    write_private_text(config_path, json.dumps(merged, indent=1))
+    try:
+        write_private_text(config_path, json.dumps(merged, indent=1))
+    except Exception:
+        return _internal_error("Could not update site configuration.")
     return jsonify({"ok": True})
 
 
@@ -665,8 +787,8 @@ def list_backups(name: str):
     limit = request.args.get("limit", _DEFAULT_BACKUPS_PAGE_SIZE, type=int)
     try:
         sets = BackupReader(bench_root, name).read_all(limit=limit)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _internal_error("Could not read site backups.")
     return jsonify(
         [
             {
@@ -694,12 +816,12 @@ def download_backup(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     filename = request.args.get("filename", "")
     if not filename or "/" in filename or "\\" in filename or filename.startswith("."):
-        return jsonify({"error": "Invalid filename."}), 400
+        return error_response("invalid_filename", "Backup filename is invalid.", 422)
 
     backups_dir = (bench_root / "sites" / name / "private" / "backups").resolve()
     target = (backups_dir / filename).resolve()
     if backups_dir not in target.parents or not target.is_file():
-        return jsonify({"error": "Backup file not found."}), 404
+        return error_response("backup_not_found", "Backup file not found.", 404)
 
     return send_file(target, as_attachment=True, download_name=filename)
 
@@ -713,18 +835,20 @@ def offsite_backup_urls(name: str, timestamp: str):
     from pilot.integrations.s3.backups import OffsiteBackup
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config = BenchTomlStore.for_bench(bench_root).read()
     try:
+        config = BenchTomlStore.for_bench(bench_root).read()
         offsite_backup = OffsiteBackup.from_config(config.s3, bench_root)
         files = offsite_backup.get_backup(name, timestamp)
         if not files:
-            return jsonify({"error": f"No offsite backup found for {timestamp}"}), 404
+            return error_response(
+                "backup_not_found", "Offsite backup not found.", 404
+            )
         urls = {
             kind: offsite_backup.presigned_url(name, timestamp, filename)
             for kind, filename in files.items()
         }
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _internal_error("Could not create offsite backup URLs.")
 
     return jsonify({"ok": True, "urls": urls})
 
@@ -773,8 +897,8 @@ def get_backup_schedule(name: str):
     try:
         schedule = CronManager(bench_root).get_schedule(name)
         retention = read_retention(bench_root / "sites" / name / "site_config.json")
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        return _internal_error("Could not read the backup schedule.")
     return jsonify({"schedule": schedule, "retention": asdict(retention) if retention else None})
 
 
@@ -786,18 +910,26 @@ def set_backup_schedule(name: str):
     from ..cron_manager import CronManager
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
-    schedule = (data.get("schedule") or "").strip()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _malformed_body()
+    fields = _text_fields(data, "schedule")
+    retention_value = data.get("retention")
+    if fields is None or (
+        retention_value is not None and not isinstance(retention_value, dict)
+    ):
+        return _invalid_fields()
+    schedule = fields["schedule"]
     if err := validate_cron_expression(schedule):
-        return jsonify({"ok": False, "error": err})
-    retention = _retention_from_payload(data.get("retention"))
+        return error_response("invalid_schedule", err, 422)
+    retention = _retention_from_payload(retention_value)
     if isinstance(retention, str):
-        return jsonify({"ok": False, "error": retention})
+        return error_response("invalid_retention", retention, 422)
     try:
         CronManager(bench_root).set_schedule(name, schedule, _backup_cron_command(bench_root, name))
         write_retention(bench_root / "sites" / name / "site_config.json", retention)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception:
+        return _internal_error("Could not update the backup schedule.")
     return jsonify({"ok": True})
 
 
@@ -812,9 +944,63 @@ def delete_backup_schedule(name: str):
     try:
         CronManager(bench_root).remove_schedule(name)
         clear_retention(bench_root / "sites" / name / "site_config.json")
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception:
+        return _internal_error("Could not remove the backup schedule.")
     return jsonify({"ok": True})
+
+
+def _site_exists(bench_root: Path, name: str) -> bool:
+    return (bench_root / "sites" / name / "site_config.json").is_file()
+
+
+def _site_not_found():
+    return error_response("site_not_found", "Site not found.", 404)
+
+
+def _malformed_body():
+    return error_response("malformed_body", "Request body must be a JSON object.", 400)
+
+
+def _invalid_fields():
+    return error_response(
+        "invalid_fields", "One or more request fields are invalid.", 422
+    )
+
+
+def _text_fields(data: dict, *names: str) -> dict[str, str] | None:
+    fields = {}
+    for name in names:
+        value = data.get(name, "")
+        if not isinstance(value, str):
+            return None
+        fields[name] = value.strip()
+    return fields
+
+
+def _internal_error(message: str):
+    return error_response("internal_error", message, 500)
+
+
+def _task_failure(error: Exception):
+    if isinstance(error, TaskConflictError):
+        return error_response(
+            "task_conflict", "A conflicting task is already active.", 409
+        )
+    return _internal_error("Could not start the requested task.")
+
+
+def _domain_conflict():
+    return error_response(
+        "domain_conflict", "The domain conflicts with the current site state.", 409
+    )
+
+
+def _site_name_failure(message: str):
+    if "already" in message or "clashes" in message:
+        return error_response(
+            "site_name_conflict", "The site name is already in use.", 409
+        )
+    return error_response("invalid_site_name", message, 422)
 
 
 def _new_site_name_error(bench_root: Path, name: str) -> str | None:

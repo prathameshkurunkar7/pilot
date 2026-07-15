@@ -60,6 +60,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, ErrorMessage } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
@@ -111,7 +112,7 @@ async function startInstall(site) {
         repo: props.app.repo,
         branch: props.app.branch || '',
       })
-  if (!result.ok) throw new Error(result.error || `Could not install on ${site.name}.`)
+  if (!result.ok) throw new Error(apiErrorMessage(result, `Could not install on ${site.name}.`))
   return result.task_id
 }
 

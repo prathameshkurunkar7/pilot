@@ -141,6 +141,7 @@ import { Alert, Button, Dialog, FormControl, TabButtons } from 'frappe-ui'
 import SQLCodeEditor from '@/components/SQLCodeEditor.vue'
 import SQLSchemaDialog from '@/components/SQLSchemaDialog.vue'
 import SimpleTable from '@/components/SimpleTable.vue'
+import { apiErrorMessage } from '@/api/client'
 import { databaseApi } from '@/api/database'
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -266,7 +267,7 @@ async function executeQuery(raw) {
     const executed = []
     for (const stmt of statements) {
       const data = await databaseApi.execute(selectedSite.value, stmt, readOnly.value)
-      if (data.error) throw new Error(data.error)
+      if (data.error) throw new Error(apiErrorMessage(data, 'Query failed.'))
       executed.push({ ...data, query: stmt })
     }
     results.value = executed

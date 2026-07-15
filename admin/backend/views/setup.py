@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
+from admin.backend.api_contract import error_response
 from admin.backend.auth import allow_during_setup, set_session_cookie
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
@@ -52,11 +53,13 @@ def get_branches():
 @allow_during_setup
 def save_config():
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
 
     error = _validate(data)
     if error:
-        return jsonify({"ok": False, "error": error}), 400
+        return error_response("invalid_setup_configuration", error, 422)
 
     # Preserve any settings the wizard didn't send (e.g. python version, fields
     # not shown in the current step). Incoming data wins on conflicts.
@@ -100,7 +103,9 @@ def validate_mariadb():
     provisioned → bench init will create and secure it → will_install."""
     from pilot.managers.mariadb_manager import MariaDBManager
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
     password = data.get("mariadb_password", "")
     admin_user = data.get("mariadb_admin_user", "root")
     host = data.get("mariadb_host", "")
@@ -108,7 +113,14 @@ def validate_mariadb():
     existing = bool(data.get("mariadb_existing"))
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config = _mariadb_config(bench_root, password, admin_user, host, port, existing)
+    try:
+        config = _mariadb_config(bench_root, password, admin_user, host, port, existing)
+    except (TypeError, ValueError):
+        return error_response(
+            "invalid_database_configuration",
+            "MariaDB connection settings are invalid.",
+            422,
+        )
     manager = MariaDBManager(config)
 
     # existing is a deliberate choice, never inferred from host: just check the login.
@@ -132,11 +144,20 @@ def validate_postgres():
     from pilot.config.postgres_config import PostgresConfig
     from pilot.managers.postgres_manager import PostgresManager
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
     password = data.get("postgres_password", "")
     admin_user = data.get("postgres_admin_user") or "postgres"
     host = data.get("postgres_host") or "localhost"
-    port = int(data.get("postgres_port") or 5432)
+    try:
+        port = int(data.get("postgres_port") or 5432)
+    except (TypeError, ValueError):
+        return error_response(
+            "invalid_database_configuration",
+            "PostgreSQL connection settings are invalid.",
+            422,
+        )
     existing = bool(data.get("postgres_existing"))
 
     config = PostgresConfig(
@@ -234,8 +255,12 @@ def start_setup():
     try:
         config = BenchTomlStore.for_bench(bench_root).read()
         config.validate()
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        return error_response(
+            "invalid_setup_configuration",
+            "Setup configuration is invalid.",
+            422,
+        )
 
     try:
         # Reattach to an in-flight run rather than starting a second one (e.g. the
@@ -248,8 +273,8 @@ def start_setup():
         # mid-run returns to the wizard rather than the half-built dashboard.
         wizard_marker_path(bench_root).touch()
         return jsonify({"ok": True, "task_id": task_id})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+    except Exception:
+        return error_response("setup_start_failed", "Could not start setup.", 500)
 
 
 @setup_bp.route("/finish", methods=["POST"])
@@ -272,10 +297,18 @@ def finish_setup():
     wizard_marker_path(bench_root).unlink(missing_ok=True)
 
     if not current_app.config.get("WIZARD_SERVER"):
-        return jsonify({"ok": False, "error": "Not running as the setup-wizard server"}), 400
+        return error_response(
+            "setup_finish_unavailable",
+            "Setup cannot be finished from this server.",
+            409,
+        )
 
     if not (bench_root / "config" / "Procfile").exists():
-        return jsonify({"ok": False, "error": "Bench is not initialized yet"}), 400
+        return error_response(
+            "setup_not_initialized",
+            "Bench setup has not finished.",
+            409,
+        )
 
     # call_on_close fires after the response body has been written to the
     # socket, so the kill can't race ahead of the response. The tiny timer
@@ -291,9 +324,11 @@ def finish_setup():
 @allow_during_setup
 def start_new_site():
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
     if not data.get("name"):
-        return jsonify({"ok": False, "error": "Site name is required"}), 400
+        return error_response("invalid_site", "Site name is required.", 422)
     admin_password = data.get("admin_password")
     if not isinstance(admin_password, str) or not admin_password.strip():
         import secrets
@@ -304,8 +339,8 @@ def start_new_site():
     try:
         task_id = TaskRunner(bench_root).run("new-site", args)
         return jsonify({"ok": True, "task_id": task_id})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+    except Exception:
+        return error_response("site_creation_failed", "Could not create site.", 500)
 
 
 _PASSWORD_KEYS = ("mariadb_password", "postgres_password")

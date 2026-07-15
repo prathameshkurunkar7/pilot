@@ -3,9 +3,14 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import Flask, g, jsonify, request, send_file
+from flask import Flask, g, request, send_file
 
-from .api_contract import API_V1_PREFIX, error_response, is_api_path
+from .api_contract import (
+    API_V1_PREFIX,
+    error_response,
+    install_api_error_handlers,
+    is_api_path,
+)
 from .auth import (
     AuthPolicy,
     allow_unauthenticated,
@@ -31,7 +36,6 @@ from .views.tasks import task_worker_bp, tasks_bp
 from .views.updates import updates_bp
 from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
-from pilot.exceptions import ConfigError
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -78,7 +82,12 @@ def create_app(bench_root: Path) -> Flask:
 
     def _check_enabled(config: BenchConfig):
         if not config.admin.enabled:
-            return jsonify({"error": "Admin is disabled", "enabled": False}), 503
+            return error_response(
+                "admin_disabled",
+                "Admin is disabled.",
+                503,
+                {"enabled": False},
+            )
         return None
 
     def _is_authenticated(config: BenchConfig) -> bool:
@@ -86,17 +95,24 @@ def create_app(bench_root: Path) -> Flask:
 
     def _check_password(config: BenchConfig):
         if not config.admin.password:
-            return jsonify(
-                {"error": "No admin password configured in bench.toml", "enabled": False}
-            ), 503
+            return error_response(
+                "session_unavailable",
+                "No admin password is configured.",
+                503,
+                {"enabled": False},
+            )
         if not _is_authenticated(config):
-            return jsonify({"error": "Authentication required"}), 401
+            return error_response(
+                "authentication_required",
+                "Authentication is required.",
+                401,
+            )
         from .auth import authorization_error
 
         view = app.view_functions.get(request.endpoint) if request.endpoint else None
         error = authorization_error(g.jwt_claims, view, request.view_args or {})
         if error:
-            return jsonify({"error": error}), 403
+            return error_response("forbidden", error, 403)
         return None
 
     @app.before_request
@@ -113,10 +129,15 @@ def create_app(bench_root: Path) -> Flask:
         is_setup = policy == AuthPolicy.SETUP_CONDITIONAL
         try:
             config = _load_config()
-        except Exception as exc:
+        except Exception:
             if is_setup and not config_store.exists():
                 return None
-            return jsonify({"error": str(exc), "enabled": False}), 503
+            return error_response(
+                "configuration_unavailable",
+                "Bench configuration is unavailable.",
+                503,
+                {"enabled": False},
+            )
         if is_setup and not config.admin.password:
             return None
         return _check_enabled(config) or _check_password(config)
@@ -138,8 +159,7 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(ssh_keys_bp, url_prefix=f"{API_V1_PREFIX}/ssh-keys")
     app.register_blueprint(stats_bp, url_prefix=API_V1_PREFIX)
 
-    app.register_error_handler(ConfigError, _handle_config_error)
-    app.register_error_handler(FileNotFoundError, _handle_file_not_found)
+    install_api_error_handlers(app)
 
     @app.errorhandler(405)
     def _method_not_allowed(error):
@@ -195,10 +215,3 @@ def _secure_cookie_setting(config_store: BenchTomlStore) -> bool:
     except Exception:
         return False
 
-
-def _handle_config_error(error: ConfigError):
-    return jsonify({"error": str(error)}), 500
-
-
-def _handle_file_not_found(error: FileNotFoundError):
-    return jsonify({"error": str(error)}), 404

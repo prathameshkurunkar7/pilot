@@ -87,6 +87,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Button, Dropdown, LoadingText, ErrorMessage, AxisChart } from 'frappe-ui'
 import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
 import ChartCard from '@/components/ChartCard.vue'
+import { apiErrorMessage } from '@/api/client'
 import { monitorApi } from '@/api/monitor'
 
 const WINDOWS = [
@@ -221,7 +222,7 @@ async function seedLiveHistory() {
   if (isHistorical.value || liveHistory.value.length) return
   try {
     const d = await monitorApi.history('1h')
-    if (d.error) throw new Error(d.error)
+    if (d.error) throw new Error(apiErrorMessage(d, 'Failed to load analytics.'))
     const serverNow = d.now ?? Date.now()
     timeOffset.value = serverNow - Date.now()
     if (d.system?.points?.length) {
@@ -239,7 +240,7 @@ async function loadHistory(window) {
   historyError.value = ''
   try {
     const d = await monitorApi.history(window)
-    if (d.error) throw new Error(d.error)
+    if (d.error) throw new Error(apiErrorMessage(d, 'Failed to load analytics.'))
     historyNow.value = d.now ?? Date.now()
     system.value = d.system
     application.value = d.application

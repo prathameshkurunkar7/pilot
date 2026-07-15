@@ -42,6 +42,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, ErrorMessage, LoadingText } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import MarketplaceAppCard from '@/components/MarketplaceAppCard.vue'
 import { useSite } from '@/composables/useSite'
 import { useAppRegistry } from '@/composables/useAppRegistry'
@@ -105,7 +106,7 @@ async function confirmUninstall() {
       showUninstall.value = false
       openTaskDetailPage(router, result.task_id)
     } else {
-      uninstallError.value = result?.error || 'Uninstall failed.'
+      uninstallError.value = apiErrorMessage(result, 'Uninstall failed.')
     }
   } catch (e) {
     uninstallError.value = e.message || 'Uninstall failed.'

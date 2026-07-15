@@ -7,6 +7,13 @@ export function apiUrl(path = '', origin = '') {
   return `${origin}${API_V1_PREFIX}${suffix}`
 }
 
+export function apiErrorMessage(payload, fallback = 'Request failed.') {
+  const error = payload?.error
+  if (typeof error?.message === 'string' && error.message) return error.message
+  if (typeof error === 'string' && error) return error
+  return fallback
+}
+
 export const request = ky.create({
   prefix: API_V1_PREFIX,
   throwHttpErrors: false,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 
+from admin.backend.api_contract import error_response
 from ..readers.log_reader import LogReader
 
 logs_bp = Blueprint("logs", __name__)
@@ -14,8 +15,8 @@ def index():
     bench_root = current_app.config["BENCH_ROOT"]
     try:
         log_files = LogReader(bench_root).list_logs()
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response("logs_unavailable", "Could not read logs.", 500)
 
     return jsonify([
         {
@@ -45,11 +46,11 @@ def viewer(filename: str):
         lines = reader.read_tail(filename, lines_param)
         if search:
             search_lower = search.lower()
-            lines = [l for l in lines if search_lower in l.lower()]
-    except ValueError as error:
-        return jsonify({"error": str(error)}), 400
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+            lines = [line for line in lines if search_lower in line.lower()]
+    except ValueError:
+        return error_response("invalid_log", "Invalid log filename.", 422)
+    except Exception:
+        return error_response("log_unavailable", "Could not read the log.", 500)
 
     return jsonify({
         "filename": filename,
@@ -65,11 +66,11 @@ def download_log(filename: str):
     try:
         reader = LogReader(bench_root)
         log_path = reader.file_path(filename)
-    except ValueError as error:
-        return jsonify({"error": str(error)}), 400
+    except ValueError:
+        return error_response("invalid_log", "Invalid log filename.", 422)
 
     if not log_path.exists():
-        return jsonify({"error": f"Log file not found: {filename}"}), 404
+        return error_response("log_not_found", "Log file was not found.", 404)
 
     return Response(
         log_path.read_bytes(),

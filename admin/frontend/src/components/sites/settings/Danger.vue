@@ -82,6 +82,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, ErrorMessage, TextInput } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
@@ -101,7 +102,7 @@ async function confirmMigrate() {
     if (data.ok) {
       showMigrate.value = false
       openTaskDetailPage(router, data.task_id)
-    } else migrateError.value = data.error
+    } else migrateError.value = apiErrorMessage(data, 'Failed to migrate site.')
   } catch (e) {
     migrateError.value = e.message || 'Failed to migrate site.'
   } finally {
@@ -145,7 +146,7 @@ async function confirmReset() {
     if (data.ok) {
       showReset.value = false
       openTaskDetailPage(router, data.task_id)
-    } else resetError.value = data.error
+    } else resetError.value = apiErrorMessage(data, 'Failed to reset site.')
   } catch (e) {
     resetError.value = e.message || 'Failed to reset site.'
   } finally {
@@ -166,7 +167,7 @@ async function confirmDrop() {
       showDrop.value = false
       openTaskDetailPage(router, data.task_id)
     } else {
-      dropError.value = data.error || 'Failed to drop site.'
+      dropError.value = apiErrorMessage(data, 'Failed to drop site.')
       dropping.value = false
     }
   } catch (e) {

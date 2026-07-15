@@ -59,6 +59,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { Button, Dialog, ErrorMessage, FormControl, ListView, ListRowItem, toast } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { sshKeysApi } from '@/api/sshKeys'
 
 // Fixed widths keep the long fingerprint from forcing horizontal scroll.
@@ -122,7 +123,7 @@ async function add() {
       toast.success('Key added')
       await load()
     } else {
-      error.value = result.error || 'Could not add key.'
+      error.value = apiErrorMessage(result, 'Could not add key.')
     }
   } catch (e) {
     error.value = e.message || 'Could not add key.'
@@ -145,7 +146,7 @@ async function confirmRemove() {
       showRemove.value = false
       await load()
     } else {
-      toast.error(result.error || 'Could not remove key.')
+      toast.error(apiErrorMessage(result, 'Could not remove key.'))
     }
   } catch (e) {
     toast.error(e.message || 'Could not remove key.')

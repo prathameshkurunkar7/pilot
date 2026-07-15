@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { Button, Dialog, ErrorMessage, FormControl, LoadingIndicator, Select } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { authApi } from '@/api/auth'
 import { benchesApi } from '@/api/benches'
 
@@ -185,7 +186,7 @@ async function createBench() {
   try {
     const data = await benchesApi.create({ name: benchName, process_manager: processManager.value, admin_domain: domain })
     if (data.error) {
-      error.value = data.error
+      error.value = apiErrorMessage(data, 'Could not create bench.')
       creating.value = false
       return
     }

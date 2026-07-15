@@ -81,6 +81,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, ErrorMessage, ListFooter, ListView, ListRowItem, LoadingText } from 'frappe-ui'
 import BackupConfigDialog from '@/components/sites/BackupConfigDialog.vue'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { tasksApi } from '@/api/tasks'
 import { useSite } from '@/composables/useSite'
@@ -127,7 +128,7 @@ async function backupNow() {
   try {
     const result = await sitesApi.backups.create(props.siteName)
     if (result.ok) openTaskDetailPage(router, result.task_id)
-    else error.value = result.error || 'Backup failed.'
+    else error.value = apiErrorMessage(result, 'Backup failed.')
   } catch (e) {
     error.value = e.message || 'Backup failed.'
   } finally {
@@ -194,7 +195,7 @@ async function downloadFile(set, kind) {
   try {
     const result = await sitesApi.backups.offsiteUrls(props.siteName, set.timestamp)
     if (result.error) {
-      error.value = result.error
+      error.value = apiErrorMessage(result, 'Could not load offsite backup.')
       return
     }
     const url = result.urls[OFFSITE_KIND_KEYS[kind]]
@@ -222,7 +223,7 @@ async function confirmDelete() {
     if (data.task_id) {
       showDelete.value = false
       openTaskDetailPage(router, data.task_id)
-    } else deleteError.value = data.error?.message || 'Delete failed.'
+    } else deleteError.value = apiErrorMessage(data, 'Delete failed.')
   } catch (e) {
     deleteError.value = e.message || 'Delete failed.'
   } finally {

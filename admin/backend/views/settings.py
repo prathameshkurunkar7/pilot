@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
+from admin.backend.api_contract import error_response
 from admin.backend.client_ip import client_ip
 
 from pilot.config.bench_config import BenchConfig
@@ -403,8 +404,8 @@ def get_settings():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         config = BenchTomlStore.for_bench(bench_root).read()
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response("settings_unavailable", "Could not read settings.", 500)
     return jsonify(_build_settings_response(config))
 
 
@@ -427,8 +428,8 @@ def audit_log():
             status=request.args.get("status") or None,
             limit=limit,
         )
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response("audit_unavailable", "Could not read audit events.", 500)
     return jsonify(entries)
 
 
@@ -443,7 +444,9 @@ def my_ip():
 @settings_bp.route("/", methods=["PATCH"])
 def update_settings():
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
     store = BenchTomlStore.for_bench(bench_root)
     try:
         with store.edit() as config:
@@ -464,16 +467,20 @@ def update_settings():
                 except S3IntegrationError as error:
                     raise _SettingsUpdateRejected(str(error)) from error
     except _SettingsUpdateRejected as error:
-        return jsonify({"ok": False, "error": str(error)}), 400
-    except Exception as error:
-        return jsonify({"ok": False, "error": f"Failed to write config: {error}"}), 500
+        return error_response("invalid_settings", str(error), 422)
+    except Exception:
+        return error_response("settings_update_failed", "Could not update settings.", 500)
 
     restarted, restart_error = False, None
     if _needs_restart(old_restart, _restart_trigger_values(config)):
         try:
             _regenerate_configs(bench_root, config)
-        except Exception as error:
-            return jsonify({"ok": False, "error": f"Failed to regenerate configs: {error}"}), 500
+        except Exception:
+            return error_response(
+                "configuration_generation_failed",
+                "Could not regenerate service configuration.",
+                500,
+            )
         restarted, restart_error = _do_restart(bench_root, config)
 
     # Firewall rules only affect nginx: regenerate + reload the vhosts (no

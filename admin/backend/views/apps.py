@@ -6,6 +6,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
+from ..api_contract import error_response
 from ..readers.app_reader import AppReader
 from ..validators import validate_app_name, validate_repo_url
 from admin.backend.tasks.manager.task_runner import TaskRunner
@@ -18,8 +19,8 @@ def index():
     bench_root = current_app.config["BENCH_ROOT"]
     try:
         apps = AppReader(bench_root).read_all()
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response("apps_unavailable", "Could not read installed apps.", 500)
     return jsonify([asdict(a) for a in apps])
 
 
@@ -34,14 +35,21 @@ def marketplace():
         bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
         apps = Marketplace(bench).read_all_apps()
         return jsonify([a.to_dict() for a in apps])
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response("marketplace_unavailable", "Could not read marketplace apps.", 500)
 
 
 @apps_bp.route("/add", methods=["POST"])
 def add():
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+    if any(
+        value is not None and not isinstance(value, str)
+        for value in (data.get("name"), data.get("repo"), data.get("branch"))
+    ):
+        return error_response("invalid_app", "App fields must be strings.", 422)
 
     name = (data.get("name") or "").strip()
     repo = (data.get("repo") or "").strip()
@@ -50,20 +58,20 @@ def add():
     if repo:
         err = validate_repo_url(repo)
         if err:
-            return jsonify({"ok": False, "error": err})
+            return error_response("invalid_app", err, 422)
         task_args = {"name": name or repo, "repo": repo, "branch": branch}
     else:
         err = validate_app_name(name)
         if err:
-            return jsonify({"ok": False, "error": err})
+            return error_response("invalid_app", err, 422)
         if (bench_root / "apps" / name / ".git").exists():
-            return jsonify({"ok": False, "error": f"'{name}' is already installed."})
+            return error_response("app_already_installed", f"'{name}' is already installed.", 409)
         task_args = {"name": name, "marketplace_app": name}
 
     try:
         task_id = TaskRunner(bench_root).run("get-app", task_args)
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Could not start get-app: {e}"})
+    except Exception:
+        return error_response("app_install_failed", "Could not start app installation.", 500)
 
     return jsonify({"ok": True, "task_id": task_id})
 
@@ -71,27 +79,33 @@ def add():
 @apps_bp.route("/get-and-install", methods=["POST"])
 def get_and_install():
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+    if data.get("name") is not None and not isinstance(data["name"], str):
+        return error_response("invalid_app", "App name must be a string.", 422)
 
     name = (data.get("name") or "").strip()
-    sites = data.get("sites") or []
+    sites = data.get("sites", [])
 
     err = validate_app_name(name)
     if err:
-        return jsonify({"ok": False, "error": err})
+        return error_response("invalid_app", err, 422)
 
     if not isinstance(sites, list):
-        return jsonify({"ok": False, "error": "sites must be a list."})
+        return error_response("invalid_sites", "sites must be a list.", 422)
+    if any(not isinstance(site, str) for site in sites):
+        return error_response("invalid_sites", "Every site must be a string.", 422)
     sites = list(dict.fromkeys(sites))  # de-dupe, preserve order: a repeated site would install twice
 
     if (bench_root / "apps" / name / ".git").exists():
-        return jsonify({"ok": False, "error": f"'{name}' is already installed."})
+        return error_response("app_already_installed", f"'{name}' is already installed.", 409)
 
     try:
         task_args = {"name": name, "marketplace_app": name, "sites": sites}
         task_id = TaskRunner(bench_root).run("get-and-install-app", task_args)
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Could not start get-and-install: {e}"})
+    except Exception:
+        return error_response("app_install_failed", "Could not start app installation.", 500)
 
     return jsonify({"ok": True, "task_id": task_id})
 
@@ -101,12 +115,12 @@ def remove(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
 
     if not (bench_root / "apps" / name).exists():
-        return jsonify({"ok": False, "error": f"App '{name}' not found in bench."})
+        return error_response("app_not_found", f"App '{name}' not found in bench.", 404)
 
     try:
         task_id = TaskRunner(bench_root).run("remove-app", {"name": name})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    except Exception:
+        return error_response("app_removal_failed", "Could not start app removal.", 500)
 
     return jsonify({"ok": True, "task_id": task_id})
 
@@ -114,16 +128,20 @@ def remove(name: str):
 @apps_bp.route("/<name>/set-upstream", methods=["POST"])
 def set_upstream(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+    if data.get("repo") is not None and not isinstance(data["repo"], str):
+        return error_response("invalid_repository", "Repository URL must be a string.", 422)
     repo = (data.get("repo") or "").strip()
 
     err = validate_repo_url(repo)
     if err:
-        return jsonify({"ok": False, "error": err})
+        return error_response("invalid_repository", err, 422)
 
     app_path = bench_root / "apps" / name
     if not (app_path / ".git").exists():
-        return jsonify({"ok": False, "error": f"App '{name}' not found"})
+        return error_response("app_not_found", f"App '{name}' not found.", 404)
 
     result = subprocess.run(
         ["git", "-C", str(app_path), "remote", "set-url", "origin", repo],
@@ -131,7 +149,7 @@ def set_upstream(name: str):
         text=True,
     )
     if result.returncode != 0:
-        return jsonify({"ok": False, "error": result.stderr.strip() or "Failed to update remote URL"})
+        return error_response("upstream_update_failed", "Could not update the app upstream.", 500)
 
     return jsonify({"ok": True})
 
@@ -139,7 +157,8 @@ def set_upstream(name: str):
 @apps_bp.route("/fetch", methods=["POST"])
 def fetch_updates():
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    task_id = TaskRunner(bench_root).run("fetch-all-app-updates", {})
+    try:
+        task_id = TaskRunner(bench_root).run("fetch-all-app-updates", {})
+    except Exception:
+        return error_response("app_fetch_failed", "Could not start fetching app updates.", 500)
     return jsonify({"task_id": task_id})
-
-

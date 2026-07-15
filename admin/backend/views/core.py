@@ -37,10 +37,14 @@ def bootstrap():
     config_store = BenchTomlStore.for_bench(bench_root)
     try:
         config = config_store.read()
-    except Exception as error:
+    except Exception:
         if not config_store.exists():
             return jsonify(_setup_bootstrap(bench_root))
-        return error_response("configuration_unavailable", str(error), 503)
+        return error_response(
+            "configuration_unavailable",
+            "Bench configuration is unavailable.",
+            503,
+        )
 
     initialized = (bench_root / "env" / "bin" / "python").exists()
     if not initialized or not config.admin.password:
@@ -71,10 +75,14 @@ def get_session():
     config_store = _config_store()
     try:
         config = config_store.read()
-    except Exception as error:
+    except Exception:
         if not config_store.exists():
             return jsonify({"authenticated": False})
-        return error_response("configuration_unavailable", str(error), 503)
+        return error_response(
+            "configuration_unavailable",
+            "Bench configuration is unavailable.",
+            503,
+        )
     authenticated = authenticate_request(config)
     response = {"authenticated": authenticated}
     if authenticated:
@@ -89,8 +97,12 @@ def create_session():
     config_store = _config_store()
     try:
         config = config_store.read()
-    except Exception as error:
-        return error_response("configuration_unavailable", str(error), 503)
+    except Exception:
+        return error_response(
+            "configuration_unavailable",
+            "Bench configuration is unavailable.",
+            503,
+        )
     if not config.admin.password:
         return error_response(
             "session_unavailable",

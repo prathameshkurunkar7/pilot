@@ -7,6 +7,7 @@ from flask import Blueprint, current_app, jsonify
 
 from pilot.config.toml_store import BenchTomlStore
 
+from ..api_contract import error_response
 from ..readers.process_reader import ProcessReader
 
 processes_bp = Blueprint("processes", __name__)
@@ -50,8 +51,8 @@ def index():
     bench_root = current_app.config["BENCH_ROOT"]
     try:
         processes = ProcessReader(bench_root).read_all()
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response("processes_unavailable", "Could not read process status.", 500)
 
     conf = _supervisor_conf(bench_root)
     return jsonify({
@@ -77,16 +78,20 @@ def restart():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     conf = _supervisor_conf(bench_root)
     if conf is None:
-        return jsonify({"ok": False, "error": "Restart is only supported in production mode."})
+        return error_response(
+            "process_control_unavailable",
+            "Restart is only supported in production mode.",
+            409,
+        )
 
     bench = _bench_name(bench_root)
     programs = _non_admin_programs(conf, bench)
     if not programs:
-        return jsonify({"ok": False, "error": "No running processes found."})
+        return error_response("no_running_processes", "No running processes were found.", 409)
 
     result = _supervisorctl(conf, "restart", *programs)
     if result.returncode != 0:
-        return jsonify({"ok": False, "error": result.stderr or result.stdout})
+        return error_response("process_restart_failed", "Could not restart processes.", 500)
     return jsonify({"ok": True})
 
 
@@ -95,16 +100,20 @@ def stop():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     conf = _supervisor_conf(bench_root)
     if conf is None:
-        return jsonify({"ok": False, "error": "Stop is only supported in production mode."})
+        return error_response(
+            "process_control_unavailable",
+            "Stop is only supported in production mode.",
+            409,
+        )
 
     bench = _bench_name(bench_root)
     programs = _non_admin_programs(conf, bench)
     if not programs:
-        return jsonify({"ok": False, "error": "No processes to stop."})
+        return error_response("no_running_processes", "No processes are available to stop.", 409)
 
     result = _supervisorctl(conf, "stop", *programs)
     if result.returncode != 0:
-        return jsonify({"ok": False, "error": result.stderr or result.stdout})
+        return error_response("process_stop_failed", "Could not stop processes.", 500)
     return jsonify({"ok": True})
 
 
@@ -113,10 +122,14 @@ def start():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     conf = _supervisor_conf(bench_root)
     if conf is None:
-        return jsonify({"ok": False, "error": "Start is only supported in production mode."})
+        return error_response(
+            "process_control_unavailable",
+            "Start is only supported in production mode.",
+            409,
+        )
 
     bench = _bench_name(bench_root)
     result = _supervisorctl(conf, "start", f"{bench}:*")
     if result.returncode != 0:
-        return jsonify({"ok": False, "error": result.stderr or result.stdout})
+        return error_response("process_start_failed", "Could not start processes.", 500)
     return jsonify({"ok": True})

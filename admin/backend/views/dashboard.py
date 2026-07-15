@@ -4,6 +4,7 @@ from dataclasses import asdict
 
 from flask import Blueprint, current_app, jsonify
 
+from admin.backend.api_contract import error_response
 from admin.backend.tasks.manager.task_reader import TaskReader
 
 from ..readers.app_reader import AppReader
@@ -23,8 +24,8 @@ def index():
         sites = SiteReader(bench_root).read_all()
         processes = ProcessReader(bench_root).read_all()
         recent_tasks = TaskReader(bench_root).list_tasks(limit=5)
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response("dashboard_unavailable", "Could not load dashboard.", 500)
 
     return jsonify(
         {

@@ -145,6 +145,7 @@ import NewSiteDialog from '@/components/NewSiteDialog.vue'
 import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useSites } from '@/composables/useSites'
+import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 import { openTaskDetailPage } from '@/utils/taskRoute'
 
@@ -237,7 +238,7 @@ async function backupNow(site) {
   try {
     const result = await sitesApi.backups.create(site.name)
     if (result.ok) openTaskDetailPage(router, result.task_id)
-    else toast.error(result.error || 'Could not start backup')
+    else toast.error(apiErrorMessage(result, 'Could not start backup'))
   } catch (caught) {
     toast.error(caught.message || 'Could not start backup')
   }

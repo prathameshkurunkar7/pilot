@@ -260,7 +260,7 @@ def test_api_benches_new_rejects_invalid_name(tmp_path: Path) -> None:
 
     resp = client.post("/api/v1/benches/new", json={"name": "bad name!", "process_manager": "systemd", "admin_domain": "x-admin.example.com"})
 
-    assert resp.status_code == 400
+    assert resp.status_code == 422
     assert not (benches_dir / "bad name!").exists()
 
 
@@ -270,8 +270,8 @@ def test_api_benches_new_requires_process_manager(tmp_path: Path) -> None:
 
     resp = client.post("/api/v1/benches/new", json={"name": "fresh", "admin_domain": "fresh-admin.example.com"})
 
-    assert resp.status_code == 400
-    assert "process manager" in resp.get_json()["error"].lower()
+    assert resp.status_code == 422
+    assert "process manager" in resp.get_json()["error"]["message"].lower()
 
 
 def test_api_benches_new_requires_admin_domain(tmp_path: Path) -> None:
@@ -280,8 +280,8 @@ def test_api_benches_new_requires_admin_domain(tmp_path: Path) -> None:
 
     resp = client.post("/api/v1/benches/new", json={"name": "fresh", "process_manager": "systemd"})
 
-    assert resp.status_code == 400
-    assert "domain" in resp.get_json()["error"].lower()
+    assert resp.status_code == 422
+    assert "domain" in resp.get_json()["error"]["message"].lower()
 
 
 def test_api_benches_new_rejects_duplicate_admin_domain(tmp_path: Path) -> None:
@@ -295,8 +295,8 @@ def test_api_benches_new_rejects_duplicate_admin_domain(tmp_path: Path) -> None:
 
     resp = client.post("/api/v1/benches/new", json=_new_payload("fresh", admin_domain="shared-admin.example.com"))
 
-    assert resp.status_code == 400
-    assert "already used by bench 'other'" in resp.get_json()["error"]
+    assert resp.status_code == 409
+    assert "already used by bench 'other'" in resp.get_json()["error"]["message"]
 
 
 def test_api_benches_new_rejects_duplicate_name(tmp_path: Path) -> None:
@@ -306,8 +306,8 @@ def test_api_benches_new_rejects_duplicate_name(tmp_path: Path) -> None:
     with patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]):
         resp = client.post("/api/v1/benches/new", json=_new_payload("current"))
 
-    assert resp.status_code == 400
-    assert "already exists" in resp.get_json()["error"]
+    assert resp.status_code == 422
+    assert "already exists" in resp.get_json()["error"]["message"]
 
 
 # ── GET /api/v1/benches/ready ───────────────────────────────────────────────────
@@ -337,7 +337,7 @@ def test_api_benches_ready_false_on_invalid_port(tmp_path: Path) -> None:
 
     resp = client.get("/api/v1/benches/ready?port=not-a-number")
 
-    assert resp.status_code == 400
+    assert resp.status_code == 422
 
 
 @contextmanager
@@ -440,8 +440,8 @@ def test_api_benches_control_rejects_unknown_action(tmp_path: Path) -> None:
 
     resp = client.post("/api/v1/benches/prod-bench/actions/wiggle")
 
-    assert resp.status_code == 400
-    assert resp.get_json()["ok"] is False
+    assert resp.status_code == 422
+    assert "error" in resp.get_json()
 
 
 def test_api_benches_control_rejects_unknown_bench(tmp_path: Path) -> None:
@@ -450,7 +450,7 @@ def test_api_benches_control_rejects_unknown_bench(tmp_path: Path) -> None:
     resp = client.post("/api/v1/benches/does-not-exist/actions/start")
 
     assert resp.status_code == 404
-    assert resp.get_json()["ok"] is False
+    assert "error" in resp.get_json()
 
 
 def test_api_benches_control_rejects_dev_bench(tmp_path: Path) -> None:
@@ -460,8 +460,8 @@ def test_api_benches_control_rejects_dev_bench(tmp_path: Path) -> None:
 
     resp = client.post("/api/v1/benches/dev-bench/actions/start")
 
-    assert resp.status_code == 400
-    assert "production" in resp.get_json()["error"]
+    assert resp.status_code == 409
+    assert "production" in resp.get_json()["error"]["message"]
 
 
 def test_api_benches_control_runs_pilot_and_reports_success(tmp_path: Path) -> None:
@@ -492,7 +492,7 @@ def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
         resp = client.post("/api/v1/benches/prod-bench/actions/stop")
 
     assert resp.status_code == 500
-    assert resp.get_json() == {"ok": False, "error": "boom"}
+    assert resp.get_json()["error"]["code"] == "bench_action_failed"
 
 
 # ── DELETE /api/v1/benches/<name> (drop) ────────────────────────────────────────
@@ -504,8 +504,8 @@ def test_api_benches_drop_rejects_current_bench(tmp_path: Path) -> None:
 
     resp = client.delete("/api/v1/benches/current")
 
-    assert resp.status_code == 400
-    assert "currently using" in resp.get_json()["error"]
+    assert resp.status_code == 409
+    assert "cannot be dropped" in resp.get_json()["error"]["message"]
 
 
 def test_api_benches_drop_rejects_bench_with_sites(tmp_path: Path) -> None:
@@ -519,8 +519,8 @@ def test_api_benches_drop_rejects_bench_with_sites(tmp_path: Path) -> None:
     with patch("admin.backend.views.benches.subprocess.run") as mock_run:
         resp = client.delete("/api/v1/benches/prod-bench")
 
-    assert resp.status_code == 400
-    assert "site" in resp.get_json()["error"].lower()
+    assert resp.status_code == 409
+    assert "site" in resp.get_json()["error"]["message"].lower()
     mock_run.assert_not_called()
 
 

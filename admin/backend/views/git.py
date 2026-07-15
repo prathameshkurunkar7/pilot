@@ -4,6 +4,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
+from ..api_contract import error_response
 from pilot.core.git_providers import (
     TOKEN_HELP_URLS,
     GitAuthError,
@@ -50,20 +51,44 @@ def get_integration():
 
 @git_bp.route("/integration", methods=["POST"])
 def save_integration():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+    if any(
+        value is not None and not isinstance(value, str)
+        for value in (
+            data.get("provider"),
+            data.get("token"),
+            data.get("username"),
+            data.get("expires_at"),
+        )
+    ):
+        return error_response(
+            "invalid_git_integration", "Git integration fields must be strings.", 422
+        )
+
     provider_name = (data.get("provider") or "github").strip().lower()
     token = (data.get("token") or "").strip()
     username = (data.get("username") or "").strip()
     expires_at = (data.get("expires_at") or "").strip() or None
+    if provider_name not in TOKEN_HELP_URLS:
+        return error_response("invalid_git_provider", "Choose a supported git provider.", 422)
     if not token:
-        return jsonify({"ok": False, "error": "A personal access token is required."})
+        return error_response("token_required", "A personal access token is required.", 422)
     try:
         provider = provider_for_name(provider_name, token)
         account = provider.validate()
     except GitAuthError:
-        return jsonify({"ok": False, "error": "That token was rejected. Check it has the required scopes and hasn't expired."})
-    except GitProviderError as e:
-        return jsonify({"ok": False, "error": str(e)})
+        return error_response(
+            "invalid_git_token",
+            "That token was rejected. Check its scopes and expiration.",
+            401,
+            {"token_invalid": True},
+        )
+    except GitProviderError:
+        return error_response(
+            "git_provider_unavailable", "Could not connect to the git provider.", 500
+        )
     record = _store().save(provider_name, token, username=username or account.get("login", ""), expires_at=expires_at)
     return jsonify({"ok": True, "account": account, "status": _status(record)})
 
@@ -79,18 +104,20 @@ def list_repos():
     store = _store()
     record = store.load()
     if not record or not record.get("token"):
-        return jsonify({"ok": False, "error": "No git provider connected."})
+        return error_response("git_auth_required", "No git provider is connected.", 401)
     try:
         provider = provider_for_name(record["provider"], record["token"])
         repos = provider.list_repos()
     except GitAuthError:
-        # Phase 4 self-healing: flag the token so the UI can show a re-auth panel
-        # without breaking existing (SSH/embedded) deployments.
         store.mark_invalid()
-        return jsonify({"ok": False, "token_invalid": True,
-                        "error": "Your access token has expired or been revoked."})
-    except GitProviderError as e:
-        return jsonify({"ok": False, "error": str(e)})
+        return error_response(
+            "invalid_git_token",
+            "Your access token has expired or been revoked.",
+            401,
+            {"token_invalid": True},
+        )
+    except GitProviderError:
+        return error_response("git_provider_unavailable", "Could not list repositories.", 500)
     store.mark_valid()
     return jsonify({"ok": True, "repos": repos})
 
@@ -99,7 +126,7 @@ def list_repos():
 def list_branches():
     repo_url = request.args.get("repo", "").strip()
     if not repo_url:
-        return jsonify({"ok": False, "error": "repo parameter is required."})
+        return error_response("repository_required", "repo parameter is required.", 422)
 
     store = _store()
     record = store.load()
@@ -107,15 +134,25 @@ def list_branches():
 
     try:
         owner, name = parse_github_owner_repo(repo_url)
-        full_name = f"{owner}/{name}"
-        provider = provider_for_repo(repo_url, token) or provider_for_name("github", token)
+    except GitProviderError:
+        return error_response("invalid_repository", "Enter a valid repository URL.", 422)
+
+    full_name = f"{owner}/{name}"
+    provider = provider_for_repo(repo_url, token) or provider_for_name("github", token)
+    try:
         branches = provider.list_branches(full_name)
     except GitAuthError:
         store.mark_invalid()
-        return jsonify({"ok": False, "token_invalid": True,
-                        "error": "Your access token has expired or been revoked."})
-    except GitProviderError as e:
-        return jsonify({"ok": False, "error": str(e)})
+        return error_response(
+            "invalid_git_token",
+            "Your access token has expired or been revoked.",
+            401,
+            {"token_invalid": True},
+        )
+    except GitProviderError:
+        return error_response(
+            "git_provider_unavailable", "Could not list repository branches.", 500
+        )
 
     try:
         default_branch = provider.get_default_branch(full_name)
@@ -133,11 +170,26 @@ def resolve_app():
     repo_url = request.args.get("repo", "").strip()
     branch = request.args.get("branch", "").strip()
     if not repo_url:
-        return jsonify({"ok": False, "error": "repo parameter is required."})
+        return error_response("repository_required", "repo parameter is required.", 422)
+    if provider_for_repo(repo_url) is None:
+        return error_response("invalid_repository", "Enter a supported repository URL.", 422)
     try:
         resolved = resolve_app_name_from_repo(bench_root, repo_url, branch)
-    except GitProviderError as e:
-        return jsonify({"ok": False, "error": str(e)})
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Could not read pyproject.toml: {e}"})
+    except GitAuthError:
+        return error_response(
+            "invalid_git_token",
+            "Your access token has expired or been revoked.",
+            401,
+            {"token_invalid": True},
+        )
+    except GitProviderError:
+        return error_response(
+            "invalid_app_repository",
+            "Could not resolve a Frappe app from this repository.",
+            422,
+        )
+    except Exception:
+        return error_response(
+            "repository_unavailable", "Could not resolve the app repository.", 500
+        )
     return jsonify({"ok": True, **resolved})

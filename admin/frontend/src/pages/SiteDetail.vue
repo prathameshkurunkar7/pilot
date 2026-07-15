@@ -73,6 +73,7 @@ import SiteApps from '@/components/sites/Apps.vue'
 import SiteBackups from '@/components/sites/Backups.vue'
 import SiteConfig from '@/components/sites/Config.vue'
 import SiteSettings from '@/components/sites/Settings.vue'
+import { apiErrorMessage } from '@/api/client'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useSite } from '@/composables/useSite'
 import { useBench } from '@/composables/useBench'
@@ -143,7 +144,7 @@ async function backupNow() {
   try {
     const result = await backup()
     if (result.ok) openTaskDetailPage(router, result.task_id)
-    else toast.error(result.error || 'Could not start backup')
+    else toast.error(apiErrorMessage(result, 'Could not start backup'))
   } catch (caught) {
     toast.error(caught.message || 'Could not start backup')
   }

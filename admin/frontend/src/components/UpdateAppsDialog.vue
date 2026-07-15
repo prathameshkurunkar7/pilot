@@ -55,6 +55,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Checkbox, Dialog, ErrorMessage, LoadingText } from 'frappe-ui'
+import { apiErrorMessage } from '@/api/client'
 import { tasksApi } from '@/api/tasks'
 import AppIcon from '@/components/AppIcon.vue'
 import { useAppRegistry } from '@/composables/useAppRegistry'
@@ -104,7 +105,7 @@ async function runUpdate() {
       open.value = false
       openTaskDetailPage(router, res.task_id)
     } else {
-      error.value = res.error?.message || 'Failed to start update.'
+      error.value = apiErrorMessage(res, 'Failed to start update.')
     }
   } catch (e) {
     error.value = e.message || 'Failed to start update.'

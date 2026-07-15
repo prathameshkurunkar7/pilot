@@ -9,6 +9,7 @@ from pathlib import Path
 import psutil
 from flask import Blueprint, current_app, jsonify, request
 
+from admin.backend.api_contract import error_response
 from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 
@@ -109,8 +110,12 @@ def get_monitor_status():
             _log_file_info("System Log", mon.system_log_path),
             _log_file_info("Application Log", log_path),
         ])
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response(
+            "monitor_status_unavailable",
+            "Could not read monitor status.",
+            500,
+        )
 
 
 @stats_bp.route("/monitor-history")
@@ -121,8 +126,12 @@ def get_monitor_history():
     window = request.args.get("window", "1h")
     try:
         return jsonify(MonitorHistoryReader(bench_root, window).read())
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response(
+            "monitor_history_unavailable",
+            "Could not read monitor history.",
+            500,
+        )
 
 
 @stats_bp.route("/system-info")

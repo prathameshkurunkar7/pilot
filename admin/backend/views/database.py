@@ -4,6 +4,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
+from admin.backend.api_contract import error_response
 from ..readers.bench_reader import BenchReader
 from ..readers.database_reader import DatabaseReader
 
@@ -28,8 +29,8 @@ def binlogs():
     try:
         reader = _get_database_reader(bench_root)
         binary_logs = reader.list_binary_logs()
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response("binlogs_unavailable", "Could not read binary logs.", 500)
 
     return jsonify([{"log_name": bl.log_name, "file_size": bl.file_size} for bl in binary_logs])
 
@@ -46,8 +47,8 @@ def binlog_detail(log_name: str):
     try:
         reader = _get_database_reader(bench_root)
         events = reader.read_binary_log_events(log_name, limit=limit, offset=offset)
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response("binlog_unavailable", "Could not read the binary log.", 500)
 
     return jsonify(
         {
@@ -75,8 +76,12 @@ def processlist():
     try:
         reader = _get_database_reader(bench_root)
         rows = reader.read_processlist()
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response(
+            "database_processes_unavailable",
+            "Could not read database processes.",
+            500,
+        )
     return jsonify(
         [
             {
@@ -101,7 +106,11 @@ def kill_process(process_id: int):
     try:
         _get_mariadb_manager(bench_root).kill_process(process_id)
     except Exception:
-        return jsonify({"ok": False, "error": f"Process with process ID {process_id} has finished"}), 500
+        return error_response(
+            "database_process_not_active",
+            f"Database process {process_id} is no longer active.",
+            409,
+        )
     return jsonify({"ok": True})
 
 
@@ -117,8 +126,12 @@ def slow_queries():
     try:
         reader = _get_database_reader(bench_root)
         queries = reader.read_slow_queries(limit=limit)
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
+    except Exception:
+        return error_response(
+            "slow_queries_unavailable",
+            "Could not read slow queries.",
+            500,
+        )
 
     return jsonify(
         [
@@ -166,27 +179,29 @@ def playground_schema():
     bench_root: Path = current_app.config["BENCH_ROOT"]
     site = request.args.get("site", "")
     if not site:
-        return jsonify({"error": "site is required"}), 400
+        return error_response("invalid_site", "Site is required.", 422)
     try:
         from pilot.core.database import make_site_database
         return jsonify(make_site_database(bench_root, site).get_schema())
-    except FileNotFoundError as exc:
-        return jsonify({"error": str(exc)}), 404
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    except FileNotFoundError:
+        return error_response("site_not_found", "Site was not found.", 404)
+    except Exception:
+        return error_response("schema_unavailable", "Could not read database schema.", 500)
 
 
 @database_bp.route("/playground/execute", methods=["POST"])
 def playground_execute():
     bench_root: Path = current_app.config["BENCH_ROOT"]
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
     site = data.get("site", "")
     query = (data.get("query") or "").strip()
     read_only = bool(data.get("read_only", True))
     if not site:
-        return jsonify({"error": "site is required"}), 400
+        return error_response("invalid_site", "Site is required.", 422)
     if not query:
-        return jsonify({"error": "query is required"}), 400
+        return error_response("invalid_query", "Query is required.", 422)
     try:
         from pilot.core.database import make_site_database
         db = make_site_database(bench_root, site)
@@ -199,9 +214,9 @@ def playground_execute():
             "truncated": result.truncated,
             "affected_rows": result.affected_rows,
         })
-    except FileNotFoundError as exc:
-        return jsonify({"error": str(exc)}), 404
-    except RuntimeError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    except FileNotFoundError:
+        return error_response("site_not_found", "Site was not found.", 404)
+    except RuntimeError:
+        return error_response("query_rejected", "Query could not be executed.", 422)
+    except Exception:
+        return error_response("query_failed", "Could not execute query.", 500)

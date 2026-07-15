@@ -52,6 +52,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge, Button, ErrorMessage, LoadingText } from 'frappe-ui'
 import UpdatesAvailableButton from '@/components/UpdatesAvailableButton.vue'
+import { apiErrorMessage } from '@/api/client'
 import { tasksApi } from '@/api/tasks'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useTaskDetail } from '@/composables/useTaskDetail'
@@ -95,7 +96,7 @@ async function cancelTask() {
     const response = await tasksApi.cancel(taskId)
     if (!response.ok) {
       const result = await response.json()
-      actionError.value = result.error?.message || 'Failed to cancel task'
+      actionError.value = apiErrorMessage(result, 'Failed to cancel task')
       return
     }
     load()

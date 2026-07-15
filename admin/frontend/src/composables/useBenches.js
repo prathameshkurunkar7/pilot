@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { apiErrorMessage } from '@/api/client'
 import { benchesApi } from '@/api/benches'
 
 export function useBenches() {
@@ -20,7 +21,7 @@ export function useBenches() {
     error.value = ''
     try {
       const result = await action()
-      if (!result.ok) { error.value = result.error; return false }
+      if (!result.ok) { error.value = apiErrorMessage(result); return false }
       await load()
       return true
     } catch (e) {
