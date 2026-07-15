@@ -1,4 +1,6 @@
 import sys
+from contextlib import contextmanager
+from typing import Iterator
 
 from pilot.context import CliContext
 from pilot.exceptions import BenchError
@@ -54,19 +56,17 @@ def _is_frappe_passthrough(args: list[str], own_commands: frozenset[str] | None 
     return False
 
 
-def _run_frappe(context: CliContext, frappe_args: list[str]) -> None:
-    from pilot import loader
-    from pilot.commands.frappe_cmd import FrappeCommand
-
+@contextmanager
+def _error_boundary(context: CliContext) -> Iterator[None]:
     try:
-        FrappeCommand(loader.load_bench(context)).run_raw(["frappe", *frappe_args])
-    except BenchError as e:
-        print(str(e), file=sys.stderr)
+        yield
+    except BenchError as error:
+        print(str(error), file=sys.stderr)
         sys.exit(1)
-    except Exception as e:
+    except Exception as error:
         if context.verbose:
             raise
-        print(str(e), file=sys.stderr)
+        print(str(error), file=sys.stderr)
         sys.exit(1)
 
 
@@ -81,9 +81,46 @@ def _build_context(bench_name: str | None, verbose: bool, assume_yes: bool) -> C
     )
 
 
-def main() -> None:
+def _frappe_args(remaining: list[str]) -> list[str] | None:
+    """The Frappe argv when this invocation is a passthrough, else None."""
+    if remaining and remaining[0] == "frappe":
+        return remaining[1:]
+    if _is_frappe_passthrough(remaining):
+        return remaining
+    return None
+
+
+def _run_frappe(context: CliContext, frappe_args: list[str]) -> None:
+    from pilot import loader
+    from pilot.commands.frappe_cmd import FrappeCommand
+
+    with _error_boundary(context):
+        FrappeCommand(loader.load_bench(context)).run_raw(["frappe", *frappe_args])
+
+
+def _run_native(context: CliContext, remaining: list[str]) -> None:
+    import time
+
     from pilot import registry
 
+    parser = registry.build_parser()
+    args = parser.parse_args(remaining)
+    started = time.monotonic()
+    with _error_boundary(context):
+        if context.all_benches:
+            registry.dispatch_all(args, parser, context)
+        else:
+            registry.dispatch(args, parser, context)
+    _report_elapsed(time.monotonic() - started)
+
+
+def _report_elapsed(elapsed: float) -> None:
+    if elapsed >= 2:
+        minutes, seconds = divmod(int(elapsed), 60)
+        print(f"\nDone in {minutes}m {seconds}s" if minutes else f"\nDone in {seconds}s")
+
+
+def main() -> None:
     sys.stdout.reconfigure(line_buffering=True)
     args_list = sys.argv[1:]
     bench_name, remaining = _strip_bench_flag(args_list)
@@ -93,34 +130,8 @@ def main() -> None:
         assume_yes="--yes" in args_list or "-y" in args_list,
     )
 
-    if _is_frappe_passthrough(args_list):
-        _run_frappe(context, remaining)
-        return
-
-    if remaining and remaining[0] == "frappe":
-        _run_frappe(context, remaining[1:])
-        return
-
-    parser = registry.build_parser()
-    args = parser.parse_args(remaining)
-
-    import time
-
-    _t0 = time.monotonic()
-    try:
-        if context.all_benches:
-            registry.dispatch_all(args, parser, context)
-        else:
-            registry.dispatch(args, parser, context)
-    except BenchError as e:
-        print(str(e), file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        if context.verbose:
-            raise
-        print(str(e), file=sys.stderr)
-        sys.exit(1)
-    elapsed = time.monotonic() - _t0
-    if elapsed >= 2:
-        mins, secs = divmod(int(elapsed), 60)
-        print(f"\nDone in {mins}m {secs}s" if mins else f"\nDone in {secs}s")
+    frappe_args = _frappe_args(remaining)
+    if frappe_args is not None:
+        _run_frappe(context, frappe_args)
+    else:
+        _run_native(context, remaining)
