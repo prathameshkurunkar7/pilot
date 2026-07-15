@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pilot.internal.toml import ConfigDict, TomlDataclassCodec
+from pilot.internal.toml import ConfigDict, Toml, TomlDataclassCodec
 from pilot.config.bench_config import BenchConfig
 
 
-def _bench_config_from_dict(data: ConfigDict) -> BenchConfig:
-    return BenchConfig._from_dict(data)
+def _bench_config_from_dict(data: ConfigDict, *, strict: bool = False) -> BenchConfig:
+    return BenchConfig._from_dict(data, strict=strict)
 
 
 def _bench_config_to_dict(config: BenchConfig) -> ConfigDict:
@@ -152,8 +152,8 @@ BENCH_TOML_CODEC = TomlDataclassCodec(
 )
 
 
-def load_config(path: Path, *, validate: bool = True) -> BenchConfig:
-    config = BENCH_TOML_CODEC.loads(path.read_text(encoding="utf-8"))
+def load_config(path: Path, *, validate: bool = True, strict: bool = False) -> BenchConfig:
+    config = _bench_config_from_dict(Toml.loads(path.read_text(encoding="utf-8")), strict=strict)
     if validate:
         config.validate()
     return config

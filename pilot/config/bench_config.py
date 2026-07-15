@@ -1,4 +1,5 @@
 import re
+import sys
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import List
 from pilot.config.admin_config import AdminConfig
 from pilot.config.app_config import AppConfig
 from pilot.config.central_config import CentralConfig
+from pilot.config.config_schema import unknown_config_paths
 from pilot.config.firewall_config import FirewallConfig, FirewallRule
 from pilot.config.gunicorn_config import GunicornConfig
 from pilot.config.letsencrypt_config import LetsEncryptConfig
@@ -69,7 +71,8 @@ class BenchConfig:
         return config
 
     @classmethod
-    def _from_dict(cls, data: dict) -> "BenchConfig":
+    def _from_dict(cls, data: dict, *, strict: bool = False) -> "BenchConfig":
+        cls._report_unknown_fields(data, strict=strict)
         bench_data = data.get("bench", {})
         apps = [
             AppConfig(
@@ -91,7 +94,7 @@ class BenchConfig:
         admin = cls._parse_admin(data.get("admin", {}))
         central = cls._parse_central(data.get("central", {}))
         firewall = cls._parse_firewall(data.get("firewall"))
-        s3 = S3Config(**data.get("s3", {}))
+        s3 = S3Config(**cls._known_fields(S3Config, data.get("s3", {})))
         return cls(
             name=bench_data.get("name", ""),
             python_version=bench_data.get("python", ""),
@@ -124,6 +127,18 @@ class BenchConfig:
         declares, so a config written by an older bench-cli still loads."""
         known = {f.name for f in fields(dataclass_type)}
         return {k: v for k, v in data.items() if k in known}
+
+    @staticmethod
+    def _report_unknown_fields(data: dict, *, strict: bool) -> None:
+        """Surface bench.toml keys no dataclass declares. Default: warn once and
+        continue so older/foreign configs still load; strict: raise ConfigError."""
+        paths = unknown_config_paths(data)
+        if not paths:
+            return
+        listing = ", ".join(paths)
+        if strict:
+            raise ConfigError(f"bench.toml has unrecognized fields: {listing}")
+        print(f"warning: ignoring unrecognized bench.toml fields: {listing}", file=sys.stderr)
 
     @staticmethod
     def _parse_redis(data: dict) -> RedisConfig:
