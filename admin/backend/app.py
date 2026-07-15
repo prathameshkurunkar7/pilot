@@ -91,13 +91,14 @@ def _install_idle_watchdog(app: Flask) -> None:
 
 def create_app(bench_root: Path) -> Flask:
     app = Flask(__name__, static_folder=str(_STATIC_DIR), static_url_path="/static")
+    config_store = BenchTomlStore.for_bench(bench_root)
     app.config["BENCH_ROOT"] = bench_root
     app.config["MAX_CONTENT_LENGTH"] = MAX_RESTORE_UPLOAD_BYTES
     app.config["TEMPLATES_AUTO_RELOAD"] = False
+    app.config["TRUSTED_PROXY_PEERS"] = _trusted_proxy_peers(config_store)
 
     _install_idle_watchdog(app)
     used_logins = UsedTokens()
-    config_store = BenchTomlStore.for_bench(bench_root)
 
     def _load_config():
         return config_store.read()
@@ -273,6 +274,19 @@ def create_app(bench_root: Path) -> Flask:
         return send_file(str(dist / "index.html"))
 
     return app
+
+
+def _trusted_proxy_peers(config_store: BenchTomlStore) -> tuple[str, ...]:
+    """Immediate peers allowed to supply nginx's forwarded client headers."""
+    try:
+        production_enabled = config_store.read().production.enabled
+    except Exception:
+        production_enabled = False
+    if not production_enabled:
+        return ()
+    # Production nginx reaches the admin over loopback or a Unix socket. An
+    # empty REMOTE_ADDR is how the latter is represented by the WSGI server.
+    return ("127.0.0.1", "::1", "")
 
 
 def _handle_config_error(error: ConfigError):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -215,6 +216,38 @@ def test_login_rate_limited_after_limit(tmp_path: Path) -> None:
     for _ in range(5):
         assert client.post("/api/login", json={"password": "wrong"}).status_code == 401
     assert client.post("/api/login", json={"password": "wrong"}).status_code == 429
+
+
+def test_login_rate_limit_ignores_spoofed_forwarded_ips(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    for index in range(5):
+        response = client.post(
+            "/api/login",
+            json={"password": "wrong"},
+            headers={"X-Real-IP": f"203.0.113.{index + 1}"},
+        )
+        assert response.status_code == 401
+
+    response = client.post(
+        "/api/login",
+        json={"password": "wrong"},
+        headers={"X-Real-IP": "203.0.113.99"},
+    )
+    assert response.status_code == 429
+
+
+def test_forwarded_headers_are_trusted_only_behind_production_nginx() -> None:
+    from admin.backend.app import _trusted_proxy_peers
+
+    development = SimpleNamespace(
+        read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=False))
+    )
+    production = SimpleNamespace(
+        read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=True))
+    )
+
+    assert _trusted_proxy_peers(development) == ()
+    assert _trusted_proxy_peers(production) == ("127.0.0.1", "::1", "")
 
 
 def test_setup_endpoint_requires_auth_once_password_set(tmp_path: Path) -> None:

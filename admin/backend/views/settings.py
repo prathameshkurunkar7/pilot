@@ -5,6 +5,8 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
+from admin.backend.client_ip import client_ip
+
 from pilot.config.bench_config import BenchConfig
 from pilot.config.firewall_config import FirewallRule
 from pilot.config.s3_config import S3Config
@@ -428,10 +430,9 @@ def audit_log():
 @settings_bp.route("/my-ip")
 def my_ip():
     """The requesting client's IP, so the UI can tell the operator which address to
-    allow-list before blocking by default. nginx passes the real client address
-    (IPv4 or IPv6) as X-Real-IP."""
-    ip = request.headers.get("X-Real-IP") or request.remote_addr or ""
-    return jsonify({"ip": ip})
+    allow-list before blocking by default. Forwarded addresses are accepted only
+    from the configured local nginx peer."""
+    return jsonify({"ip": client_ip(default="")})
 
 
 @settings_bp.route("/", methods=["PATCH"])

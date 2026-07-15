@@ -4,7 +4,9 @@ import functools
 import threading
 import time
 
-from flask import jsonify, request
+from flask import jsonify
+
+from .client_ip import client_ip
 
 
 class SlidingWindow:
@@ -46,8 +48,7 @@ class UsedTokens:
 
 
 def _client_ip() -> str:
-    """Client IP from X-Real-IP (nginx) or direct peer."""
-    return request.headers.get("X-Real-IP") or request.remote_addr or "unknown"
+    return client_ip()
 
 
 def rate_limit(attempts: int, seconds: int, user_ip: bool = True):

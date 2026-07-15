@@ -56,11 +56,25 @@ def test_patcher_leaves_firewall_untouched_when_absent() -> None:
     assert config.firewall.enabled is True
 
 
-def test_my_ip_route_reads_x_real_ip() -> None:
+def test_my_ip_route_ignores_x_real_ip_from_untrusted_peer() -> None:
     from admin.backend.views.settings import settings_bp
     from flask import Flask
 
     app = Flask(__name__)
+    app.config["TRUSTED_PROXY_PEERS"] = ()
+    app.register_blueprint(settings_bp, url_prefix="/api/settings")
+    client = app.test_client()
+
+    resp = client.get("/api/settings/my-ip", headers={"X-Real-IP": "203.0.113.9"})
+    assert resp.get_json() == {"ip": "127.0.0.1"}
+
+
+def test_my_ip_route_reads_x_real_ip_from_trusted_peer() -> None:
+    from admin.backend.views.settings import settings_bp
+    from flask import Flask
+
+    app = Flask(__name__)
+    app.config["TRUSTED_PROXY_PEERS"] = ("127.0.0.1",)
     app.register_blueprint(settings_bp, url_prefix="/api/settings")
     client = app.test_client()
 
