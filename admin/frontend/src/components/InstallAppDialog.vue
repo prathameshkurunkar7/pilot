@@ -7,8 +7,9 @@
           <span v-if="presetInstalled" class="block mt-1 text-ink-gray-5">Already installed on this site.</span>
         </p>
 
-        <div v-else class="gap-2 grid px-2 max-h-96 overflow-y-auto">
-          <button type="button" class="flex items-center gap-3 p-3 border rounded-lg text-left transition-colors"
+        <div v-else class="gap-2 grid max-h-96 overflow-y-auto">
+          <button type="button"
+            class="flex items-center gap-3 p-3 border rounded-lg text-left transition duration-150 ease-[var(--ease-out)] active:scale-[0.98]"
             :class="rowClass('all')" :disabled="!installableSites.length" @click="selection = 'all'">
             <span class="place-items-center grid bg-surface-gray-2 rounded-md size-8 shrink-0">
               <span class="lucide-layout-grid size-4 text-ink-gray-6" />
@@ -22,7 +23,7 @@
           </button>
 
           <button v-for="s in sites" :key="s.name" type="button"
-            class="flex items-center gap-3 p-3 border rounded-lg min-w-0 text-left transition-colors"
+            class="flex items-center gap-3 p-3 border rounded-lg min-w-0 text-left transition duration-150 ease-[var(--ease-out)] active:scale-[0.98]"
             :class="isInstalled(s) ? 'border-outline-gray-2 opacity-60 cursor-not-allowed' : rowClass(s.name)"
             :disabled="isInstalled(s)" @click="selection = s.name">
             <span class="place-items-center grid bg-surface-gray-2 rounded-md size-8 shrink-0">
@@ -98,7 +99,7 @@ function siteVersion(site) {
 
 function rowClass(value) {
   return selection.value === value
-    ? 'border-outline-gray-4 ring-1 ring-outline-gray-4 bg-surface-gray-1'
+    ? 'border-outline-gray-4 bg-surface-gray-1'
     : 'border-outline-gray-2 hover:bg-surface-gray-1'
 }
 

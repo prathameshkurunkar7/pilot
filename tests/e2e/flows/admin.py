@@ -52,9 +52,8 @@ def install_custom_app(page: Page, base_url: str, site_name: str, repo: str, bra
     InstallAppDialog.vue), so this drives both in turn.
     """
     page.goto(f"{base_url}/marketplace?site={site_name}")
-    # "Add from GitHub" only renders once a custom app already exists on the
-    # bench; the always-present entry point for the first one is this link.
-    page.get_by_role("button", name="Building your own? Install from GitHub").click()
+    # The marketplace filter bar always shows an "Import app" entry point.
+    page.get_by_role("button", name="Import app").click()
 
     dialog = page.get_by_role("dialog")
     dialog.get_by_label("Repository URL").fill(repo)
@@ -67,10 +66,10 @@ def install_custom_app(page: Page, base_url: str, site_name: str, repo: str, bra
     # (same as the wizard's Select), so it must be page-scoped, not dialog-scoped.
     page.get_by_role("option", name=branch, exact=True).click()
 
-    # Selecting a branch resolves the app name in the background; "Add App"
+    # Selecting a branch resolves the app name in the background; "Import app"
     # only enables once that succeeds. Capture the resolved name (it may differ
     # from the repo URL) so the marketplace card can be found afterwards.
-    add_button = dialog.get_by_role("button", name="Add App")
+    add_button = dialog.get_by_role("button", name="Import app")
     expect(add_button).to_be_enabled(timeout=30_000)
     # A leading icon sits before this text node, so its content is " Found
     # <name>" (not anchored at the start) - match unanchored and split instead.

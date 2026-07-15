@@ -1,5 +1,5 @@
 <template>
-  <div ref="el" class="bg-surface-gray-3 overflow-auto font-mono text-ink-gray-8 text-sm hover-scrollbar"
+  <div ref="el" class="bg-surface-gray-3 overflow-auto font-mono text-ink-gray-8 text-sm"
     :class="[wrap ? 'whitespace-pre-wrap' : 'whitespace-pre', rounded ? 'rounded-sm sm:rounded-lg' : '', fill ? 'flex-1 h-0' : 'max-h-[50vh]', divided ? '' : 'px-2.5 py-2']">
     <p v-if="!lines.length" class="px-2.5 py-2.5 text-ink-gray-4">{{ emptyText }}</p>
     <div v-for="(line, index) in lines" :key="index" class="flex gap-3"

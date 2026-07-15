@@ -1,48 +1,52 @@
 <template>
-  <Dialog v-model="open" title="Add app from GitHub" size="lg">
+  <Dialog v-model="open" title="Import app from GitHub" size="lg">
     <template #default>
       <div class="space-y-4">
-        <TabButtons v-model="tab" :options="tabOptions" type="underline" size="md" />
+        <div class="border-b border-outline-gray-1">
+          <TabButtons v-model="tab" :options="tabOptions" type="underline" size="md" class="[&>div]:!border-b-0" />
+        </div>
 
-        <template v-if="tab === 'public'">
-          <div class="flex items-end gap-2">
-            <FormControl label="Repository URL" type="text" v-model="repo" class="flex-1"
-              placeholder="https://github.com/frappe/crm" />
-            <Combobox v-if="fetched" label="Branch" v-model="branch" :options="branchOptions"
-              placeholder="Search branches…" class="w-40 shrink-0" />
-            <Button v-else variant="subtle" class="shrink-0" :loading="fetching" :disabled="!repo.trim()"
-              @click="fetchBranches">
-              Fetch branches
-            </Button>
-          </div>
-        </template>
-
-        <template v-else>
-          <p v-if="!gitStatus" class="text-ink-gray-5 text-sm">Loading…</p>
-          <Alert v-else-if="!gitConnected" theme="yellow" title="No GitHub account connected" :dismissible="false">
-            <template #description>
-              <p class="text-ink-gray-6 text-p-sm">
-                Connect a personal access token from Settings → GitHub to browse your repositories.
-              </p>
-            </template>
-          </Alert>
-          <template v-else>
-            <div class="flex items-center gap-2 bg-surface-gray-1 px-3 py-2 border rounded-lg border-outline-gray-2">
-              <span class="text-ink-gray-7 text-p-sm">
-                Connected as <span class="font-medium text-ink-gray-9">{{ gitStatus.username }}</span>
-              </span>
-            </div>
-            <div v-if="reposLoading" class="flex justify-center items-center h-32">
-              <LoadingText />
-            </div>
-            <div v-else class="flex items-end gap-2">
-              <Combobox label="Repository" v-model="repo" :options="repoOptions" class="flex-1"
-                placeholder="Search repositories…" emptyText="No repositories found." />
-              <Combobox v-if="fetched" label="Branch" v-model="branch" :options="branchOptions" :loading="fetching"
+        <div class="min-h-32">
+          <template v-if="tab === 'public'">
+            <div class="flex items-end gap-2">
+              <FormControl label="Repository URL" type="text" v-model="repo" class="flex-1"
+                placeholder="https://github.com/frappe/crm" />
+              <Combobox v-if="fetched" label="Branch" v-model="branch" :options="branchOptions"
                 placeholder="Search branches…" class="w-40 shrink-0" />
+              <Button v-else variant="subtle" class="shrink-0" :loading="fetching" :disabled="!repo.trim()"
+                @click="fetchBranches">
+                Fetch branches
+              </Button>
             </div>
           </template>
-        </template>
+
+          <template v-else>
+            <p v-if="!gitStatus" class="text-ink-gray-5 text-sm">Loading…</p>
+            <Alert v-else-if="!gitConnected" theme="yellow" title="No GitHub account connected" :dismissible="false">
+              <template #description>
+                <p class="text-ink-gray-6 text-p-sm">
+                  Connect a personal access token from Settings → GitHub to browse your repositories.
+                </p>
+              </template>
+            </Alert>
+            <template v-else>
+              <div class="flex items-center gap-2 bg-surface-gray-1 px-3 py-2 border rounded-lg border-outline-gray-2">
+                <span class="text-ink-gray-7 text-p-sm">
+                  Connected as <span class="font-medium text-ink-gray-9">{{ gitStatus.username }}</span>
+                </span>
+              </div>
+              <div v-if="reposLoading" class="flex justify-center items-center h-32">
+                <LoadingText />
+              </div>
+              <div v-else class="flex items-end gap-2 mt-2">
+                <Combobox label="Repository" v-model="repo" :options="repoOptions" class="flex-1"
+                  placeholder="Search repositories…" emptyText="No repositories found." />
+                <Combobox v-if="fetched" label="Branch" v-model="branch" :options="branchOptions" :loading="fetching"
+                  placeholder="Search branches…" class="w-40 shrink-0" />
+              </div>
+            </template>
+          </template>
+        </div>
 
         <p v-if="resolving" class="text-ink-gray-5 text-sm">Checking repository…</p>
         <p v-else-if="foundName" class="flex items-center gap-1.5 text-ink-green-6 text-sm">
@@ -54,7 +58,7 @@
 
         <div class="flex justify-end gap-2">
           <Button variant="subtle" @click="open = false">Cancel</Button>
-          <Button variant="solid" :disabled="!canSubmit" :loading="adding" @click="submit">Add App</Button>
+          <Button variant="solid" :disabled="!canSubmit" :loading="adding" @click="submit">Import app</Button>
         </div>
       </div>
     </template>
@@ -186,11 +190,11 @@ async function submit() {
   error.value = ''
   try {
     const result = await appsApi.add({ name: foundName.value, repo: repo.value.trim(), branch: branch.value.trim() })
-    if (!result.ok) throw new Error(result.error || 'Could not add app.')
+    if (!result.ok) throw new Error(result.error || 'Could not import app.')
     open.value = false
     openTaskDetailPage(router, result.task_id)
   } catch (caught) {
-    error.value = caught.message || 'Could not add app.'
+    error.value = caught.message || 'Could not import app.'
   } finally {
     adding.value = false
   }
