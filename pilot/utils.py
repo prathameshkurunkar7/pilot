@@ -1,4 +1,6 @@
+import os
 import shutil
+import signal
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
@@ -176,27 +178,69 @@ def _secure_python_command(argv: list[str]) -> tuple[list[str], Path | None]:
     return [argv[0], str(secure_exec), str(payload_path)], payload_path
 
 
+def redact_text(text: str, secrets: list[str] | None) -> str:
+    if not text or not secrets:
+        return text
+    for secret in sorted(filter(None, secrets), key=len, reverse=True):
+        text = text.replace(secret, "[redacted]")
+    return text
+
+
 def run_command(
     argv: list[str],
     cwd: Path | None = None,
     env: dict | None = None,
     stream_output: bool = False,
+    timeout: float | None = None,
+    redactions: list[str] | None = None,
 ) -> subprocess.CompletedProcess:
     process_argv, payload_path = _secure_python_command(argv)
+    process = _start_process(process_argv, cwd, env, stream_output)
     try:
-        result = subprocess.run(
-            process_argv,
-            cwd=cwd,
-            env=env,
-            capture_output=not stream_output,
-        )
+        stdout, stderr = _wait_for_process(process, argv, timeout)
     finally:
         if payload_path:
             payload_path.unlink(missing_ok=True)
-    if result.returncode != 0:
-        stderr = result.stderr.decode() if not stream_output and result.stderr else ""
-        raise CommandError(
-            f"Command {argv[0]!r} failed with exit code {result.returncode}.\n{stderr}".strip(),
-            returncode=result.returncode,
-        )
-    return result
+    _raise_on_failure(argv, process, stderr, stream_output, redactions)
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+
+
+def _start_process(argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool) -> subprocess.Popen:
+    return subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=env,
+        stdout=None if stream_output else subprocess.PIPE,
+        stderr=None if stream_output else subprocess.PIPE,
+        start_new_session=True,
+    )
+
+
+def _wait_for_process(process: subprocess.Popen, argv: list[str], timeout: float | None):
+    try:
+        return process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _terminate_process_group(process)
+        raise CommandError(f"Command {argv[0]!r} timed out after {timeout}s and was terminated.", returncode=-1)
+    except KeyboardInterrupt:
+        _terminate_process_group(process)
+        raise
+
+
+def _terminate_process_group(process: subprocess.Popen) -> None:
+    # The child leads its own session, so killing its pgid reaches descendants too.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+
+
+def _raise_on_failure(argv, process, stderr, stream_output, redactions) -> None:
+    if process.returncode == 0:
+        return
+    stderr_text = redact_text(stderr.decode(), redactions) if not stream_output and stderr else ""
+    raise CommandError(
+        f"Command {argv[0]!r} failed with exit code {process.returncode}.\n{stderr_text}".strip(),
+        returncode=process.returncode,
+    )

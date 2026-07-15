@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import stat
-import subprocess
 import sys
 from pathlib import Path
 
@@ -20,15 +19,25 @@ def test_run_command_hides_password_flags_from_process_argv(
     password = "process-secret-password"
     captured = {}
 
-    def run(argv, **kwargs):
+    class _FakeProcess:
+        pid = 12345
+        returncode = 0
+
+        def communicate(self, timeout=None):
+            return b"", b""
+
+        def wait(self):
+            return 0
+
+    def fake_start(argv, cwd, env, stream_output):
         payload_path = Path(argv[2])
         captured["argv"] = argv
         captured["payload_path"] = payload_path
         captured["payload"] = json.loads(payload_path.read_text())
         captured["mode"] = stat.S_IMODE(payload_path.stat().st_mode)
-        return subprocess.CompletedProcess(argv, 0)
+        return _FakeProcess()
 
-    monkeypatch.setattr("pilot.utils.subprocess.run", run)
+    monkeypatch.setattr("pilot.utils._start_process", fake_start)
 
     run_command(
         [
