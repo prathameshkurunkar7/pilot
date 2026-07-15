@@ -236,6 +236,75 @@ def test_stopped_intent_survives_start_and_resumes_queued_work(
     assert store.read_status(task_id) == TaskStatus.SUCCESS
 
 
+def test_competing_worker_threads_execute_task_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = TaskStore(tmp_path)
+    task_id = "20260715-120000-111111"
+    enqueue(store, task_id, 1)
+    starts = 0
+    starts_lock = threading.Lock()
+    completed = threading.Event()
+
+    class Process:
+        pid = 4321
+
+        def wait(self, timeout: float | None = None) -> int:
+            store.transition(task_id, TaskStatus.RUNNING, TaskStatus.SUCCESS)
+            completed.set()
+            return 0
+
+    def start_process(*args, **kwargs):
+        nonlocal starts
+        with starts_lock:
+            starts += 1
+        return Process()
+
+    monkeypatch.setattr(worker_module.subprocess, "Popen", start_process)
+    workers = [TaskWorker(tmp_path), TaskWorker(tmp_path)]
+
+    for worker in workers:
+        worker.start()
+    assert completed.wait(2)
+    for worker in workers:
+        worker.request_drain()
+        worker.join(2)
+
+    assert starts == 1
+    assert store.read_status(task_id) == TaskStatus.SUCCESS
+
+
+def test_enqueue_after_idle_scan_is_woken_without_lost_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = TaskStore(tmp_path)
+    task_id = "20260715-120000-111111"
+    completed = threading.Event()
+
+    class Process:
+        pid = 4321
+
+        def wait(self, timeout: float | None = None) -> int:
+            store.transition(task_id, TaskStatus.RUNNING, TaskStatus.SUCCESS)
+            completed.set()
+            return 0
+
+    monkeypatch.setattr(worker_module.subprocess, "Popen", lambda *args, **kwargs: Process())
+    worker = TaskWorker(tmp_path)
+    worker.start()
+    wait_for_status(WorkerStore(tmp_path), WorkerStatus.IDLE)
+
+    enqueue(store, task_id, 1)
+    worker.wake()
+    assert completed.wait(2)
+    worker.request_drain()
+    worker.join(2)
+
+    assert store.read_status(task_id) == TaskStatus.SUCCESS
+
+
 def wait_for_status(store: WorkerStore, expected: WorkerStatus) -> None:
     for _ in range(100):
         state = store.read_state()
