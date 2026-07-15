@@ -11,5 +11,9 @@ import os
 from pathlib import Path
 
 from admin.backend.app import create_app
+from admin.backend.tasks.manager.worker_registry import task_workers
 
-application = create_app(Path(os.environ["BENCH_ADMIN_ROOT"]))
+bench_root = Path(os.environ["BENCH_ADMIN_ROOT"])
+application = create_app(bench_root)
+task_workers.start(bench_root)
+task_workers.install_signal_handlers()

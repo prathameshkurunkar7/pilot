@@ -172,16 +172,8 @@ def main() -> None:
     current_status = store.read_status(task_id)
     if current_status in TERMINAL_TASK_STATUSES:
         return
-    if current_status == TaskStatus.QUEUED:
-        started_at = datetime.now(timezone.utc).isoformat()
-        if not store.transition(
-            task_id,
-            TaskStatus.QUEUED,
-            TaskStatus.RUNNING,
-            {"started_at": started_at},
-        ):
-            return
-        meta["started_at"] = started_at
+    if current_status != TaskStatus.RUNNING:
+        return
     callbacks_path = task_dir / "callbacks.json"
     callbacks = {}
     if callbacks_path.exists():

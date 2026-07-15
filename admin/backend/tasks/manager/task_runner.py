@@ -5,7 +5,6 @@ import json
 import os
 import secrets
 import signal
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +20,7 @@ from admin.backend.tasks.manager.task_state import (
     TaskStatus,
 )
 from admin.backend.tasks.manager.task_store import TaskStore
+from admin.backend.tasks.manager.worker_registry import task_workers
 from pilot.exceptions import TaskNotRunningError
 
 TASK_RETENTION_LIMIT = 100
@@ -104,7 +104,7 @@ class TaskRunner:
         if callback_payload:
             private_files["callbacks.json"] = json.dumps(callback_payload, indent=2)
         if idempotency_key is None:
-            task_dir = self._store.create_queued(meta, private_files)
+            self._store.create_queued(meta, private_files)
         else:
             idempotency_digest = self._idempotency_digest(idempotency_key)
             request_fingerprint = self._request_fingerprint(command, args)
@@ -116,22 +116,7 @@ class TaskRunner:
             )
             if not creation.created:
                 return creation.task_id
-            task_dir = creation.task_dir
-        secret_path = task_dir / "secrets.json"
-
-        process_kwargs = {
-            "start_new_session": True,
-            "stdin": subprocess.DEVNULL,
-            "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL,
-        }
-        if secret_args:
-            process_kwargs["env"] = {**os.environ, "BENCH_TASK_SECRETS_FILE": str(secret_path)}
-        process = subprocess.Popen(
-            [sys.executable, "-m", "admin.backend.tasks.manager.wrapper", str(task_dir)],
-            **process_kwargs,
-        )
-        self._store.write_pid(task_id, process.pid)
+        task_workers.wake(self._bench_root)
         self._store.purge_terminal(TASK_RETENTION_LIMIT)
         return task_id
 

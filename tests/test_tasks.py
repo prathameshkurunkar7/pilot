@@ -5,7 +5,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -548,10 +548,7 @@ def test_task_retention_limit(tmp_path: Path) -> None:
     oldest_dir = tasks_dir / oldest_id
     assert oldest_dir.exists()
 
-    mock_proc = MagicMock()
-    mock_proc.pid = 99999
-
-    with patch("admin.backend.tasks.manager.task_runner.subprocess.Popen", return_value=mock_proc):
+    with patch("admin.backend.tasks.manager.task_runner.task_workers.wake", return_value=True):
         runner.run("build", {})
 
     # The oldest completed task directory should have been removed.

@@ -5,7 +5,6 @@ import json
 import os
 import signal
 import stat
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -60,29 +59,17 @@ def test_run_persists_task_before_starting_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     task_dir = tmp_path / "tasks" / TASK_ID
-    process = SimpleNamespace(pid=4321)
 
-    def start_process(argv: list[str], **kwargs):
+    def wake_worker(bench_root: Path):
+        assert bench_root == tmp_path
         assert (task_dir / "meta.json").exists()
         assert (task_dir / "status").read_text() == "queued"
         assert (task_dir / "callbacks.json").exists()
         assert not (task_dir / "pid").exists()
-        assert argv == [
-            sys.executable,
-            "-m",
-            "admin.backend.tasks.manager.wrapper",
-            str(task_dir),
-        ]
-        assert kwargs == {
-            "start_new_session": True,
-            "stdin": subprocess.DEVNULL,
-            "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL,
-        }
-        return process
+        return True
 
     monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: TASK_ID))
-    monkeypatch.setattr(task_runner_module.subprocess, "Popen", start_process)
+    monkeypatch.setattr(task_runner_module.task_workers, "wake", wake_worker)
     monkeypatch.setitem(callback_module._OPERATIONS, "test-success", successful_callback)
 
     task_id = TaskRunner(tmp_path).run(
@@ -119,13 +106,13 @@ def test_run_persists_task_before_starting_wrapper(
     assert meta["finished_at"] is None
     assert meta["exit_code"] is None
     assert meta["failure"] is None
-    assert (task_dir / "pid").read_text() == "4321"
+    assert not (task_dir / "pid").exists()
     assert json.loads((task_dir / "callbacks.json").read_text()) == {
         "on_success": {"operation": "test-success", "args": {"marker": "success"}}
     }
     assert stat.S_IMODE((tmp_path / "tasks").stat().st_mode) == 0o700
     assert stat.S_IMODE(task_dir.stat().st_mode) == 0o700
-    for name in ("meta.json", "status", "callbacks.json", "pid"):
+    for name in ("meta.json", "status", "callbacks.json"):
         assert stat.S_IMODE((task_dir / name).stat().st_mode) == 0o600
 
 
@@ -148,12 +135,12 @@ def test_run_reuses_active_task_for_same_idempotency_key(
     task_ids = iter([TASK_ID, "20260715-120001-bbccdd"])
     started = []
 
-    def start_process(*args, **kwargs):
-        started.append(args)
-        return SimpleNamespace(pid=4321)
+    def wake_worker(bench_root: Path):
+        started.append(bench_root)
+        return True
 
     monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
-    monkeypatch.setattr(task_runner_module.subprocess, "Popen", start_process)
+    monkeypatch.setattr(task_runner_module.task_workers, "wake", wake_worker)
     runner = TaskRunner(tmp_path)
 
     first = runner.run("build", {}, idempotency_key="client-request-key")
@@ -172,11 +159,7 @@ def test_run_rejects_idempotency_key_reuse_for_different_request(
 ) -> None:
     task_ids = iter([TASK_ID, "20260715-120001-bbccdd"])
     monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
-    monkeypatch.setattr(
-        task_runner_module.subprocess,
-        "Popen",
-        lambda *args, **kwargs: SimpleNamespace(pid=4321),
-    )
+    monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
     runner = TaskRunner(tmp_path)
     runner.run("build", {}, idempotency_key="client-request-key")
 
@@ -207,16 +190,10 @@ def test_run_hands_secret_to_job_without_persisting_it_publicly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     task_dir = tmp_path / "tasks" / TASK_ID
-    process = SimpleNamespace(pid=4321)
     password = "unique-admin-password"
-    captured = {}
-
-    def start_process(argv: list[str], **kwargs):
-        captured.update(kwargs)
-        return process
 
     monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: TASK_ID))
-    monkeypatch.setattr(task_runner_module.subprocess, "Popen", start_process)
+    monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
 
     TaskRunner(tmp_path).run(
         "new-site",
@@ -232,7 +209,6 @@ def test_run_hands_secret_to_job_without_persisting_it_publicly(
     assert meta["args"]["admin_password"] == "[redacted]"
     assert json.loads(secret_path.read_text()) == {"admin_password": password}
     assert stat.S_IMODE(secret_path.stat().st_mode) == 0o600
-    assert captured["env"]["BENCH_TASK_SECRETS_FILE"] == str(secret_path)
 
 
 def test_base_task_loads_secret_arguments_from_handoff_file(
@@ -421,7 +397,7 @@ def test_wrapper_loads_config_redactions_and_removes_secret_handoff(
     task_dir = tmp_path / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
     (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
-    (task_dir / "status").write_text("queued")
+    (task_dir / "status").write_text("running")
     (task_dir / "secrets.json").write_text(
         json.dumps({"admin_password": "task-password"})
     )
@@ -450,6 +426,26 @@ def test_wrapper_loads_config_redactions_and_removes_secret_handoff(
     assert not (task_dir / "secrets.json").exists()
 
 
+def test_wrapper_does_not_claim_queued_task(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_dir = tmp_path / "tasks" / TASK_ID
+    task_dir.mkdir(parents=True)
+    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
+    (task_dir / "status").write_text("queued")
+    monkeypatch.setattr(
+        wrapper_module,
+        "run_with_syslog_output",
+        lambda *args: pytest.fail("queued task was executed"),
+    )
+    monkeypatch.setattr(sys, "argv", ["wrapper", str(task_dir)])
+
+    wrapper_module.main()
+
+    assert (task_dir / "status").read_text() == "queued"
+
+
 @pytest.mark.parametrize(
     ("exit_code", "status", "marker", "other_marker"),
     [
@@ -468,7 +464,7 @@ def test_wrapper_runs_matching_callback_and_finalizes_task(
     task_dir = tmp_path / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
     (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
-    (task_dir / "status").write_text("queued")
+    (task_dir / "status").write_text("running")
     (task_dir / "callbacks.json").write_text(
         json.dumps(
             {
@@ -533,7 +529,7 @@ def test_wrapper_deletes_legacy_pickle_without_loading_it(
     task_dir = tmp_path / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
     (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
-    (task_dir / "status").write_text("queued")
+    (task_dir / "status").write_text("running")
     legacy_path = task_dir / "on_success.bin"
     legacy_path.write_bytes(b"not-even-a-valid-pickle")
     monkeypatch.setattr(wrapper_module, "run_with_syslog_output", lambda *args: 0)

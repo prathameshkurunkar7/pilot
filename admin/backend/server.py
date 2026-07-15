@@ -56,6 +56,12 @@ def main() -> None:
     if args.dev and not os.environ.get("WERKZEUG_RUN_MAIN"):
         _start_vite_watch()
 
+    if not args.dev or os.environ.get("WERKZEUG_RUN_MAIN"):
+        from admin.backend.tasks.manager.worker_registry import task_workers
+
+        task_workers.start(bench_root)
+        task_workers.install_signal_handlers()
+
     # "::" makes Werkzeug bind a dual-stack socket, so the admin is reachable
     # over both IPv4 and IPv6 in dev (where there is no nginx in front).
     app.run(host="::", port=args.port, threaded=True, use_reloader=args.dev)
