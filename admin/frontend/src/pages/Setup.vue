@@ -32,11 +32,18 @@
         <!-- Database -->
         <div v-show="currentStep === 'database'" class="flex flex-col gap-4">
           <Select label="Database engine" v-model="dbType" :options="dbTypeOptions" />
-          <TextInput v-show="showRootUsername" label="Root username" v-model="dbUser"
+          <Switch v-model="useExternalDb" label="Connect to an existing database server"
+            description="Leave off to let pilot set up and manage its own user owned database server if not already present." />
+          <div v-show="useExternalDb" class="flex gap-4">
+            <TextInput class="flex-1" label="Host" v-model="dbHost" placeholder="db.example.com" />
+            <TextInput class="w-28" label="Port" v-model="dbPort" :placeholder="dbPortPlaceholder" />
+          </div>
+          <TextInput v-show="showRootUsername" :label="useExternalDb ? 'Username' : 'Root username'" v-model="dbUser"
             :placeholder="rootUserPlaceholder" />
           <div>
-            <Password label="Root user password" v-model="dbPassword" placeholder="password" autocomplete="off"
-              data-lpignore="true" data-1p-ignore data-bwignore @keydown.enter="goToNextStep" />
+            <Password :label="useExternalDb ? 'Password' : 'Root user password'" v-model="dbPassword"
+              placeholder="password" autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore
+              @keydown.enter="goToNextStep" />
             <p v-show="rootPasswordDescription" class="mt-1.5 text-ink-gray-6 text-p-sm">{{ rootPasswordDescription }}
             </p>
           </div>
@@ -129,6 +136,7 @@
 import {
   Button,
   Select,
+  Switch,
   TextInput,
   FormLabel,
   Password,
@@ -156,6 +164,10 @@ const {
   dbType,
   dbUser,
   dbPassword,
+  useExternalDb,
+  dbHost,
+  dbPort,
+  dbPortPlaceholder,
   appRepo,
   appBranch,
   showRootUsername,

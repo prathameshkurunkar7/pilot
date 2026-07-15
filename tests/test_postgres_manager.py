@@ -15,6 +15,17 @@ def _mgr(**kwargs) -> PostgresManager:
     return PostgresManager(PostgresConfig(**kwargs))
 
 
+# ── external ─────────────────────────────────────────────────────────────────
+
+
+def test_external_defaults_to_false() -> None:
+    assert PostgresConfig().external is False
+
+
+def test_external_is_not_inferred_from_host() -> None:
+    assert PostgresConfig(host="db.example.com").external is False
+
+
 # ── install ───────────────────────────────────────────────────────────────────
 
 

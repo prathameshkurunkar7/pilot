@@ -154,19 +154,30 @@ class InitCommand(Command):
 
         pkg = get_package_manager()
 
-        # A bench runs exactly one engine; install/provision only that one. Every
-        # bench for this OS user shares the same MariaDB/PostgreSQL server, so
-        # provision() just reuses whatever a prior bench already brought up.
+        # A bench runs exactly one engine; install/provision (or verify, if external) only that one.
         if self.bench.config.db_type == "postgres":
-            self._postgres_manager().provision()
+            self._provision_or_verify(self._postgres_manager(), "PostgreSQL")
         elif self.bench.config.db_type == "sqlite":
             pass
         else:
-            self._mariadb_manager().provision()
+            self._provision_or_verify(self._mariadb_manager(), "MariaDB")
 
         RedisManager(self.bench.config.redis, self.bench).install()
         self._install_build_headers(pkg)
         PythonEnvManager(self.bench).ensure_python()
+
+    def _provision_or_verify(self, manager, label: str) -> None:
+        if not manager.config.external:
+            manager.provision()
+            return
+        if not manager.check_credentials():
+            from pilot.exceptions import BenchError
+
+            raise BenchError(
+                f"Could not connect to external {label} server at "
+                f"{manager.config.host}:{manager.config.port} as '{manager.config.admin_user}'. "
+                "Check the host, port, username, and password."
+            )
 
     def _install_build_headers(self, pkg) -> None:
         # frappe imports mysqlclient in its __init__.py for every engine, so the

@@ -25,6 +25,41 @@ def test_validate_requires_mariadb_password() -> None:
     assert error and "mariadb_password" in error
 
 
+def test_validate_requires_host_for_external_mariadb() -> None:
+    data = {"admin_password": "x", "db_type": "mariadb", "mariadb_password": "pw", "mariadb_external": True}
+    error = _validate(data)
+    assert error and "mariadb_host" in error
+
+
+def test_validate_requires_admin_user_for_external_mariadb() -> None:
+    data = {
+        "admin_password": "x",
+        "db_type": "mariadb",
+        "mariadb_password": "pw",
+        "mariadb_external": True,
+        "mariadb_host": "db.example.com",
+    }
+    error = _validate(data)
+    assert error and "mariadb_admin_user" in error
+
+
+def test_validate_accepts_complete_external_mariadb() -> None:
+    data = {
+        "admin_password": "x",
+        "db_type": "mariadb",
+        "mariadb_password": "pw",
+        "mariadb_external": True,
+        "mariadb_host": "db.example.com",
+        "mariadb_admin_user": "admin",
+    }
+    assert _validate(data) is None
+
+
+def test_validate_ignores_host_when_not_marked_external() -> None:
+    data = {"admin_password": "x", "db_type": "mariadb", "mariadb_password": "pw", "mariadb_host": "db.example.com"}
+    assert _validate(data) is None
+
+
 # ── _read_defaults ────────────────────────────────────────────────────────────
 
 

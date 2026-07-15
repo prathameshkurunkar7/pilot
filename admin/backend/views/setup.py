@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import typing
 from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
-from pilot.config.bench_toml_builder import FRAMEWORK_BRANCHES, BenchTomlBuilder, current_port_offset
+from pilot.config.bench_toml_builder import (
+    FRAMEWORK_BRANCHES,
+    BenchTomlBuilder,
+    current_port_offset,
+)
 from pilot.config.toml_store import BenchTomlStore
+
+if typing.TYPE_CHECKING:
+    from pilot.managers.mariadb_manager import MariaDBManager
+    from pilot.managers.postgres_manager import PostgresManager
 
 setup_bp = Blueprint("setup", __name__)
 
@@ -56,7 +65,9 @@ def save_config():
             pass
 
     settings = {**existing, **data, "admin_enabled": True}
-    store.write_flat(_current_name(bench_root), settings, port_offset=current_port_offset(toml_path))
+    store.write_flat(
+        _current_name(bench_root), settings, port_offset=current_port_offset(toml_path)
+    )
 
     resp = jsonify({"ok": True})
     # Setting the password closes the open setup phase; hand back a session so the
@@ -69,8 +80,13 @@ def save_config():
 def _issue_setup_session(resp, toml_path: Path) -> None:
     from pilot.commands.generate_session import ensure_jwt_secret, issue_token
 
-    resp.set_cookie("sid", issue_token(ensure_jwt_secret(toml_path)),
-                    max_age=24 * 3600, httponly=True, samesite="Lax")
+    resp.set_cookie(
+        "sid",
+        issue_token(ensure_jwt_secret(toml_path)),
+        max_age=24 * 3600,
+        httponly=True,
+        samesite="Lax",
+    )
 
 
 @setup_bp.route("/validate-mariadb", methods=["POST"])
@@ -83,10 +99,17 @@ def validate_mariadb():
     data = request.get_json(silent=True) or {}
     password = data.get("mariadb_password", "")
     admin_user = data.get("mariadb_admin_user", "root")
+    host = data.get("mariadb_host", "")
+    port = data.get("mariadb_port")
+    external = bool(data.get("mariadb_external"))
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config = _mariadb_config(bench_root, password, admin_user)
+    config = _mariadb_config(bench_root, password, admin_user, host, port, external)
     manager = MariaDBManager(config)
+
+    # external is a deliberate choice, never inferred from host: just check the login.
+    if config.external:
+        return jsonify({"state": "valid" if manager.check_credentials(password) else "invalid"})
 
     if _is_fresh_install(manager):
         return jsonify({"state": "will_install"})
@@ -107,8 +130,18 @@ def validate_postgres():
     data = request.get_json(silent=True) or {}
     password = data.get("postgres_password", "")
     admin_user = data.get("postgres_admin_user") or "postgres"
+    host = data.get("postgres_host") or "localhost"
+    port = int(data.get("postgres_port") or 5432)
+    external = bool(data.get("postgres_external"))
 
-    manager = PostgresManager(PostgresConfig(root_password=password, admin_user=admin_user))
+    config = PostgresConfig(
+        host=host, port=port, root_password=password, admin_user=admin_user, external=external
+    )
+    manager = PostgresManager(config)
+
+    if config.external:
+        return jsonify({"state": "valid" if manager.check_credentials(password) else "invalid"})
+
     if _is_fresh_install(manager):
         return jsonify({"state": "will_install"})
     if manager.check_credentials(password):
@@ -116,7 +149,7 @@ def validate_postgres():
     return jsonify({"state": "invalid"})
 
 
-def _is_fresh_install(manager) -> bool:
+def _is_fresh_install(manager: PostgresManager | MariaDBManager) -> bool:
     """True when init will install/provision + secure the server itself
     (rather than connecting to an already-configured one). is_provisioned()
     checks for the manager's own systemd --user unit — the single source of
@@ -126,11 +159,24 @@ def _is_fresh_install(manager) -> bool:
     return not manager.is_provisioned()
 
 
-def _mariadb_config(bench_root: Path, password: str, admin_user: str = "root"):
+def _mariadb_config(
+    bench_root: Path,
+    password: str,
+    admin_user: str = "root",
+    host: str = "",
+    port=None,
+    external: bool = False,
+):
     """Build a MariaDBConfig from the bench's toml with the entered credentials applied."""
     from pilot.config.mariadb_config import MariaDBConfig
 
-    config = MariaDBConfig(root_password=password, admin_user=admin_user)
+    config = MariaDBConfig(
+        root_password=password,
+        admin_user=admin_user,
+        host=host or "localhost",
+        port=int(port or 3306),
+        external=external,
+    )
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():
         try:
@@ -152,6 +198,13 @@ def _validate(data: dict) -> str | None:
         return "mariadb_password is required"
     if db_type == "postgres" and not data.get("postgres_password"):
         return "postgres_password is required"
+    if data.get(f"{db_type}_external"):
+        if not data.get(f"{db_type}_host"):
+            return f"{db_type}_host is required when connecting to an external database server"
+        if not data.get(f"{db_type}_admin_user"):
+            return (
+                f"{db_type}_admin_user is required when connecting to an external database server"
+            )
     return None
 
 
@@ -221,7 +274,9 @@ def finish_setup():
     # socket, so the kill can't race ahead of the response. The tiny timer
     # just lets the handler thread finish tearing down the connection.
     response = jsonify({"ok": True})
-    response.call_on_close(lambda: threading.Timer(0.1, lambda: os.kill(os.getpid(), signal.SIGTERM)).start())
+    response.call_on_close(
+        lambda: threading.Timer(0.1, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+    )
     return response
 
 
@@ -302,8 +357,11 @@ def _running_setup_task(bench_root: Path):
     """The wizard's setup task if it's currently running, else None. The single
     live task is the whole resume signal: a reload reattaches to it."""
     return next(
-        (t for t in TaskReader(bench_root).list_tasks()
-         if t.command == "wizard-setup" and t.status == "running"),
+        (
+            t
+            for t in TaskReader(bench_root).list_tasks()
+            if t.command == "wizard-setup" and t.status == "running"
+        ),
         None,
     )
 
