@@ -34,6 +34,16 @@ sites_bp = Blueprint("sites", __name__)
 # Confidential / system-managed site_config keys. These are never sent to the
 # admin UI and cannot be edited through it — they are preserved as-is on disk.
 PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl", "domains", "host_name", "pilot_endpoint", "pilot_auth_token", "backup_retention"})
+_SENSITIVE_CONFIG_KEY_PARTS = (
+    "_key",
+    "access_key",
+    "api_key",
+    "credential",
+    "password",
+    "private_key",
+    "secret",
+    "token",
+)
 
 
 @sites_bp.route("/")
@@ -837,5 +847,10 @@ def _new_site_name_error(bench_root: Path, name: str) -> str | None:
 
 
 def _public_config(config: dict) -> dict:
-    """Drop confidential / system-managed keys before exposing site_config."""
-    return {k: copy.deepcopy(v) for k, v in config.items() if k not in PROTECTED_CONFIG_KEYS}
+    """Hide system fields and secret-like keys while preserving custom config."""
+    return {
+        key: copy.deepcopy(value)
+        for key, value in config.items()
+        if key not in PROTECTED_CONFIG_KEYS
+        and not any(part in key.lower() for part in _SENSITIVE_CONFIG_KEY_PARTS)
+    }
