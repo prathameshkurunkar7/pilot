@@ -97,7 +97,7 @@ def _log_file_info(description: str, path: Path) -> dict:
     return {"description": description, "path": str(path), "last_modified": last_modified}
 
 
-@stats_bp.route("/monitor-status")
+@stats_bp.get("/monitor/status")
 def get_monitor_status():
     from pilot.config.monitor_config import MonitorConfig
     from pilot.config.toml_store import BenchTomlStore
@@ -118,7 +118,7 @@ def get_monitor_status():
         )
 
 
-@stats_bp.route("/monitor-history")
+@stats_bp.get("/monitor/history")
 def get_monitor_history():
     from ..readers.monitor_reader import MonitorHistoryReader
 
@@ -134,7 +134,7 @@ def get_monitor_history():
         )
 
 
-@stats_bp.route("/system-info")
+@stats_bp.get("/system")
 def system_info():
     from pilot.platform import kernel_version, os_version
     from ..readers.runtime_reader import RuntimeVersionReader
@@ -156,7 +156,7 @@ def system_info():
     )
 
 
-@stats_bp.route("/stats")
+@stats_bp.get("/metrics")
 def stats():
     bench_root = current_app.config["BENCH_ROOT"]
     config = BenchTomlStore.for_bench(bench_root).read()

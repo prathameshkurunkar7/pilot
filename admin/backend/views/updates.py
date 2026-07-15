@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify
 
 from pilot.loader import cli_root
 
@@ -111,13 +111,26 @@ def _log_subject(path: Path, ref: str) -> str:
     return r.stdout.strip()
 
 
-@updates_bp.route("/updates/cli")
+@updates_bp.get("/cli-updates")
 def get_cli_update():
-    root = cli_root()
-    do_fetch = request.args.get("fetch") == "1"
+    try:
+        return jsonify(_cli_update(fetch=False))
+    except Exception:
+        return error_response("cli_update_unavailable", "Could not read CLI update status.", 500)
 
+
+@updates_bp.post("/cli-update-checks")
+def check_cli_update():
+    try:
+        return jsonify(_cli_update(fetch=True))
+    except Exception:
+        return error_response("cli_update_check_failed", "Could not check for a CLI update.", 500)
+
+
+def _cli_update(*, fetch: bool) -> dict:
+    root = cli_root()
     branch = _current_branch(root)
-    if do_fetch:
+    if fetch:
         _git_fetch(root, branch)
 
     remote_ref = f"origin/{branch}"
@@ -128,11 +141,11 @@ def get_cli_update():
     fetch_head = root / ".git" / "FETCH_HEAD"
     last_fetched = fetch_head.stat().st_mtime if fetch_head.exists() else None
 
-    return jsonify({
+    return {
         "branch": branch,
         "commits_behind": behind,
         "update_available": behind > 0,
         "local_commit": local_commit,
         "remote_commit": remote_commit,
         "last_fetched": last_fetched,
-    })
+    }
