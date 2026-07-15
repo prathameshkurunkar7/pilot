@@ -295,6 +295,7 @@ def test_kill_signals_task_pid_and_marks_it_killed(
 ) -> None:
     task_dir = tmp_path / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
+    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
     (task_dir / "status").write_text("running")
     (task_dir / "pid").write_text("4321")
     signals = []
@@ -305,6 +306,7 @@ def test_kill_signals_task_pid_and_marks_it_killed(
 
     assert signals == [(4321, signal.SIGTERM)]
     assert (task_dir / "status").read_text() == "killed"
+    assert json.loads((task_dir / "meta.json").read_text())["finished_at"] is not None
 
 
 def test_kill_marks_task_killed_when_pid_is_stale(
@@ -313,6 +315,7 @@ def test_kill_marks_task_killed_when_pid_is_stale(
 ) -> None:
     task_dir = tmp_path / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
+    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
     (task_dir / "status").write_text("running")
     (task_dir / "pid").write_text("4321")
 
@@ -329,6 +332,7 @@ def test_kill_marks_task_killed_when_pid_is_stale(
 def test_kill_cancels_queued_task_without_pid(tmp_path: Path) -> None:
     task_dir = tmp_path / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
+    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
     (task_dir / "status").write_text("queued")
 
     TaskRunner(tmp_path).kill(TASK_ID)
@@ -342,6 +346,7 @@ def test_kill_does_not_signal_reused_non_leader_pid(
 ) -> None:
     task_dir = tmp_path / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
+    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
     (task_dir / "status").write_text("running")
     (task_dir / "pid").write_text("4321")
     signals = []

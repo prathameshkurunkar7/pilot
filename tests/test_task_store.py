@@ -189,3 +189,42 @@ def test_terminal_task_does_not_block_idempotent_retry(tmp_path: Path) -> None:
 
     assert retry.created is True
     assert retry.task_id == retry_id
+
+
+def test_retention_deletes_only_oldest_terminal_tasks(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    queued_id = "20260715-120000-111111"
+    running_id = "20260715-120000-222222"
+    enqueue_metadata = {**metadata(), "task_id": queued_id}
+    store.create_queued(enqueue_metadata)
+    store.create_queued({**metadata(), "task_id": running_id})
+    store.transition(running_id, TaskStatus.QUEUED, TaskStatus.RUNNING)
+
+    terminal_records = [
+        ("20260715-120000-ffffff", "success", "2026-07-15T12:00:01+00:00"),
+        ("20260715-120000-000000", "failed", "2026-07-15T12:00:03+00:00"),
+        ("20260715-120000-aaaaaa", "killed", "2026-07-15T12:00:02+00:00"),
+    ]
+    for task_id, status, finished_at in terminal_records:
+        task_dir = store.task_dir(task_id)
+        task_dir.mkdir()
+        record = {**metadata(), "task_id": task_id, "finished_at": finished_at}
+        (task_dir / "meta.json").write_text(json.dumps(record))
+        (task_dir / "status").write_text(status)
+
+    unknown = store.tasks_root / "unknown-record"
+    unknown.mkdir()
+    (unknown / "meta.json").write_text("{}")
+    (unknown / "status").write_text("future-state")
+    missing_status = store.tasks_root / "missing-status"
+    missing_status.mkdir()
+    (missing_status / "meta.json").write_text("{}")
+
+    deleted = store.purge_terminal(1)
+
+    assert deleted == ["20260715-120000-ffffff", "20260715-120000-aaaaaa"]
+    assert store.task_dir("20260715-120000-000000").exists()
+    assert store.task_dir(queued_id).exists()
+    assert store.task_dir(running_id).exists()
+    assert unknown.exists()
+    assert missing_status.exists()

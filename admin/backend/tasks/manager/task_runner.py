@@ -18,7 +18,6 @@ from admin.backend.tasks.manager.task_args import (
     task_secret_args,
 )
 from admin.backend.tasks.manager.task_state import (
-    TERMINAL_TASK_STATUSES,
     TaskStatus,
 )
 from admin.backend.tasks.manager.task_store import TaskStore
@@ -133,7 +132,7 @@ class TaskRunner:
             **process_kwargs,
         )
         self._store.write_pid(task_id, process.pid)
-        self._purge_old_tasks()
+        self._store.purge_terminal(TASK_RETENTION_LIMIT)
         return task_id
 
     def kill(self, task_id: str) -> None:
@@ -143,7 +142,12 @@ class TaskRunner:
                 f"Task is not active: {task_id} (status={status.value})"
             )
 
-        if not self._store.transition(task_id, status, TaskStatus.KILLED):
+        if not self._store.transition(
+            task_id,
+            status,
+            TaskStatus.KILLED,
+            {"finished_at": datetime.now(timezone.utc).isoformat()},
+        ):
             current = self._store.read_status(task_id)
             raise TaskNotRunningError(
                 f"Task is not active: {task_id} (status={current.value})"
@@ -276,27 +280,3 @@ class TaskRunner:
             separators=(",", ":"),
         )
         return hashlib.sha256(request.encode()).hexdigest()
-
-    def _purge_old_tasks(self) -> None:
-        tasks_dir = self._bench_root / "tasks"
-        if not tasks_dir.exists():
-            return
-
-        completed = [
-            entry
-            for entry in tasks_dir.iterdir()
-            if entry.is_dir()
-            and (entry / "status").exists()
-            and (entry / "status").read_text().strip()
-            in {status.value for status in TERMINAL_TASK_STATUSES}
-        ]
-
-        if len(completed) <= TASK_RETENTION_LIMIT:
-            return
-
-        completed.sort(key=lambda entry: entry.name)
-        to_delete = completed[: len(completed) - TASK_RETENTION_LIMIT]
-        for entry in to_delete:
-            import shutil
-
-            shutil.rmtree(entry)

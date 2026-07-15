@@ -7,11 +7,13 @@ import tempfile
 from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterator
 
 from admin.backend.tasks.manager.task_state import (
     ACTIVE_TASK_STATUSES,
+    TERMINAL_TASK_STATUSES,
     TaskStatus,
     parse_task_status,
     validate_task_transition,
@@ -131,6 +133,16 @@ class TaskStore:
                 self._validate_private_name(name)
                 (task_dir / name).unlink(missing_ok=True)
 
+    def purge_terminal(self, limit: int) -> list[str]:
+        if limit < 0:
+            raise ValueError("Task retention limit must not be negative")
+        with self.locked():
+            terminal = self._terminal_tasks_locked()
+            to_delete = terminal[: max(0, len(terminal) - limit)]
+            for _, task_id in to_delete:
+                shutil.rmtree(self.task_dir(task_id))
+            return [task_id for _, task_id in to_delete]
+
     def task_dir(self, task_id: str) -> Path:
         if not task_id or task_id in {".", ".."} or Path(task_id).name != task_id:
             raise TaskNotFoundError(f"Invalid task ID: {task_id!r}")
@@ -191,6 +203,34 @@ class TaskStore:
             if metadata.get("idempotency_digest") == idempotency_digest:
                 return task_id
         return None
+
+    def _terminal_tasks_locked(self) -> list[tuple[tuple[float, str], str]]:
+        terminal = []
+        for task_dir in self.tasks_root.iterdir():
+            if task_dir.is_symlink() or not task_dir.is_dir():
+                continue
+            task_id = task_dir.name
+            try:
+                if self.read_status(task_id) not in TERMINAL_TASK_STATUSES:
+                    continue
+                metadata = self.read_metadata(task_id)
+                terminal.append((self._completion_key(metadata, task_id), task_id))
+            except (OSError, ValueError, TaskNotFoundError):
+                continue
+        terminal.sort()
+        return terminal
+
+    @staticmethod
+    def _completion_key(metadata: dict, task_id: str) -> tuple[float, str]:
+        for field in ("finished_at", "queued_at", "started_at"):
+            value = metadata.get(field)
+            if not isinstance(value, str):
+                continue
+            try:
+                return (datetime.fromisoformat(value).timestamp(), task_id)
+            except ValueError:
+                continue
+        return (float("inf"), task_id)
 
     def _write_metadata(self, task_id: str, metadata: Mapping[str, object]) -> None:
         replace_private_text_locked(
