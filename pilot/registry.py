@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import importlib
 import pkgutil
 
@@ -14,16 +15,11 @@ GROUP_HELP = {
     "remove": "Teardown commands.",
 }
 
-_commands_cache: list[type[Command]] | None = None
 
-
+@functools.cache
 def _discover() -> list[type[Command]]:
     """Import every module under pilot.commands and collect Command subclasses
-    that define a `name`. Result is memoised for the process lifetime."""
-    global _commands_cache
-    if _commands_cache is not None:
-        return _commands_cache
-
+    that define a `name`. Cached for the process lifetime."""
     import pilot.commands as pkg
 
     for mod in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + "."):
@@ -38,8 +34,7 @@ def _discover() -> list[type[Command]]:
             collect(sub)
 
     collect(Command)
-    _commands_cache = sorted(found.values(), key=lambda c: (c.group or "", c.name))
-    return _commands_cache
+    return sorted(found.values(), key=lambda c: (c.group or "", c.name))
 
 
 def command_names() -> frozenset[str]:
