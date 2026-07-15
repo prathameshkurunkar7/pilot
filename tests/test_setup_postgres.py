@@ -25,37 +25,37 @@ def test_validate_requires_mariadb_password() -> None:
     assert error and "mariadb_password" in error
 
 
-def test_validate_requires_host_for_external_mariadb() -> None:
-    data = {"admin_password": "x", "db_type": "mariadb", "mariadb_password": "pw", "mariadb_external": True}
+def test_validate_requires_host_for_existing_mariadb() -> None:
+    data = {"admin_password": "x", "db_type": "mariadb", "mariadb_password": "pw", "mariadb_existing": True}
     error = _validate(data)
     assert error and "mariadb_host" in error
 
 
-def test_validate_requires_admin_user_for_external_mariadb() -> None:
+def test_validate_requires_admin_user_for_existing_mariadb() -> None:
     data = {
         "admin_password": "x",
         "db_type": "mariadb",
         "mariadb_password": "pw",
-        "mariadb_external": True,
+        "mariadb_existing": True,
         "mariadb_host": "db.example.com",
     }
     error = _validate(data)
     assert error and "mariadb_admin_user" in error
 
 
-def test_validate_accepts_complete_external_mariadb() -> None:
+def test_validate_accepts_complete_existing_mariadb() -> None:
     data = {
         "admin_password": "x",
         "db_type": "mariadb",
         "mariadb_password": "pw",
-        "mariadb_external": True,
+        "mariadb_existing": True,
         "mariadb_host": "db.example.com",
         "mariadb_admin_user": "admin",
     }
     assert _validate(data) is None
 
 
-def test_validate_ignores_host_when_not_marked_external() -> None:
+def test_validate_ignores_host_when_not_marked_existing() -> None:
     data = {"admin_password": "x", "db_type": "mariadb", "mariadb_password": "pw", "mariadb_host": "db.example.com"}
     assert _validate(data) is None
 

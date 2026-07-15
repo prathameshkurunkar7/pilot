@@ -1,4 +1,4 @@
-"""InitCommand._provision_or_verify: external database handling."""
+"""InitCommand._provision_or_verify: existing database handling."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -15,7 +15,7 @@ def _command() -> InitCommand:
 
 def test_provisions_a_pilot_owned_server() -> None:
     manager = MagicMock()
-    manager.config.external = False
+    manager.config.existing = False
 
     _command()._provision_or_verify(manager, "MariaDB")
 
@@ -23,9 +23,9 @@ def test_provisions_a_pilot_owned_server() -> None:
     manager.check_credentials.assert_not_called()
 
 
-def test_verifies_credentials_for_an_external_server_without_provisioning() -> None:
+def test_verifies_credentials_for_an_existing_server_without_provisioning() -> None:
     manager = MagicMock()
-    manager.config.external = True
+    manager.config.existing = True
     manager.check_credentials.return_value = True
 
     _command()._provision_or_verify(manager, "MariaDB")
@@ -34,9 +34,9 @@ def test_verifies_credentials_for_an_external_server_without_provisioning() -> N
     manager.check_credentials.assert_called_once()
 
 
-def test_raises_when_external_credentials_are_wrong() -> None:
+def test_raises_when_existing_credentials_are_wrong() -> None:
     manager = MagicMock()
-    manager.config.external = True
+    manager.config.existing = True
     manager.config.host = "db.example.com"
     manager.config.port = 3306
     manager.config.admin_user = "admin"

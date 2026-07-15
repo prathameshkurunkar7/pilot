@@ -154,7 +154,7 @@ class InitCommand(Command):
 
         pkg = get_package_manager()
 
-        # A bench runs exactly one engine; install/provision (or verify, if external) only that one.
+        # A bench runs exactly one engine; install/provision (or verify, if existing) only that one.
         if self.bench.config.db_type == "postgres":
             self._provision_or_verify(self._postgres_manager(), "PostgreSQL")
         elif self.bench.config.db_type == "sqlite":
@@ -167,14 +167,14 @@ class InitCommand(Command):
         PythonEnvManager(self.bench).ensure_python()
 
     def _provision_or_verify(self, manager, label: str) -> None:
-        if not manager.config.external:
+        if not manager.config.existing:
             manager.provision()
             return
         if not manager.check_credentials():
             from pilot.exceptions import BenchError
 
             raise BenchError(
-                f"Could not connect to external {label} server at "
+                f"Could not connect to existing {label} server at "
                 f"{manager.config.host}:{manager.config.port} as '{manager.config.admin_user}'. "
                 "Check the host, port, username, and password."
             )

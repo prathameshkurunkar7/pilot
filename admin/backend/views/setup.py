@@ -101,14 +101,14 @@ def validate_mariadb():
     admin_user = data.get("mariadb_admin_user", "root")
     host = data.get("mariadb_host", "")
     port = data.get("mariadb_port")
-    external = bool(data.get("mariadb_external"))
+    existing = bool(data.get("mariadb_existing"))
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config = _mariadb_config(bench_root, password, admin_user, host, port, external)
+    config = _mariadb_config(bench_root, password, admin_user, host, port, existing)
     manager = MariaDBManager(config)
 
-    # external is a deliberate choice, never inferred from host: just check the login.
-    if config.external:
+    # existing is a deliberate choice, never inferred from host: just check the login.
+    if config.existing:
         return jsonify({"state": "valid" if manager.check_credentials(password) else "invalid"})
 
     if _is_fresh_install(manager):
@@ -132,14 +132,14 @@ def validate_postgres():
     admin_user = data.get("postgres_admin_user") or "postgres"
     host = data.get("postgres_host") or "localhost"
     port = int(data.get("postgres_port") or 5432)
-    external = bool(data.get("postgres_external"))
+    existing = bool(data.get("postgres_existing"))
 
     config = PostgresConfig(
-        host=host, port=port, root_password=password, admin_user=admin_user, external=external
+        host=host, port=port, root_password=password, admin_user=admin_user, existing=existing
     )
     manager = PostgresManager(config)
 
-    if config.external:
+    if config.existing:
         return jsonify({"state": "valid" if manager.check_credentials(password) else "invalid"})
 
     if _is_fresh_install(manager):
@@ -165,7 +165,7 @@ def _mariadb_config(
     admin_user: str = "root",
     host: str = "",
     port=None,
-    external: bool = False,
+    existing: bool = False,
 ):
     """Build a MariaDBConfig from the bench's toml with the entered credentials applied."""
     from pilot.config.mariadb_config import MariaDBConfig
@@ -175,7 +175,7 @@ def _mariadb_config(
         admin_user=admin_user,
         host=host or "localhost",
         port=int(port or 3306),
-        external=external,
+        existing=existing,
     )
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():
@@ -198,12 +198,12 @@ def _validate(data: dict) -> str | None:
         return "mariadb_password is required"
     if db_type == "postgres" and not data.get("postgres_password"):
         return "postgres_password is required"
-    if data.get(f"{db_type}_external"):
+    if data.get(f"{db_type}_existing"):
         if not data.get(f"{db_type}_host"):
-            return f"{db_type}_host is required when connecting to an external database server"
+            return f"{db_type}_host is required when connecting to an existing database server"
         if not data.get(f"{db_type}_admin_user"):
             return (
-                f"{db_type}_admin_user is required when connecting to an external database server"
+                f"{db_type}_admin_user is required when connecting to an existing database server"
             )
     return None
 

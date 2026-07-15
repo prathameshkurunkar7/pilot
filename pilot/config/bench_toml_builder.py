@@ -24,7 +24,7 @@ FLAT_KEYS = {
     "mariadb_admin_user": "mariadb.admin_user",
     "mariadb_socket_path": "mariadb.socket_path",
     "mariadb_host": "mariadb.host",
-    "mariadb_external": "mariadb.external",
+    "mariadb_existing": "mariadb.existing",
     # mariadb.port and postgres.port are deliberately NOT offset-managed
     # (not in _PORT_FIELDS): every bench for a given OS user shares the same
     # single MariaDB/PostgreSQL server, so their ports must stay identical
@@ -37,7 +37,7 @@ FLAT_KEYS = {
     "postgres_admin_user": "postgres.admin_user",
     "postgres_port": "postgres.port",
     "postgres_host": "postgres.host",
-    "postgres_external": "postgres.external",
+    "postgres_existing": "postgres.existing",
     "admin_enabled": "admin.enabled",
     "admin_password": "admin.password",
     "admin_domain": "admin.domain",

@@ -48,16 +48,19 @@ export function useSetup() {
   const appBranch = ref('develop')
 
   // Off by default: pilot spawns and owns its own MariaDB/PostgreSQL server.
-  const _useExternalDb = ref(false)
+  const _useExistingDb = ref(false)
   const dbHost = ref('')
   const dbPort = ref('')
-  // Clears the password/host/port on toggle; loadConfig bypasses this via _useExternalDb.
-  const useExternalDb = computed({
-    get: () => _useExternalDb.value,
+  // Clears the password on toggle; loadConfig bypasses this via _useExistingDb.
+  const useExistingDb = computed({
+    get: () => _useExistingDb.value,
     set: (value) => {
-      _useExternalDb.value = value
+      _useExistingDb.value = value
       dbPassword.value = ''
-      if (!value) {
+      if (value) {
+        dbHost.value = dbHost.value || '127.0.0.1'
+        dbPort.value = dbPort.value || dbPortPlaceholder.value
+      } else {
         dbHost.value = ''
         dbPort.value = ''
       }
@@ -69,11 +72,11 @@ export function useSetup() {
   // no per-bench deployment mode to choose, just whether that shared server
   // still needs to be installed and secured, or already exists.
   const dbWillInstall = computed(
-    () => !useExternalDb.value && (dbType.value === 'postgres' ? postgresWillInstall.value : mariadbWillInstall.value),
+    () => !useExistingDb.value && (dbType.value === 'postgres' ? postgresWillInstall.value : mariadbWillInstall.value),
   )
   const isAdminPasswordValid = computed(() => meetsPasswordRequirements(adminPassword.value))
 
-  const showRootUsername = computed(() => useExternalDb.value || !dbWillInstall.value)
+  const showRootUsername = computed(() => useExistingDb.value || !dbWillInstall.value)
   const rootUserPlaceholder = computed(() => (dbType.value === 'mariadb' ? 'root' : 'postgres'))
   const dbPortPlaceholder = computed(() => (dbType.value === 'mariadb' ? '3306' : '5432'))
   // The username the API receives: what the user typed, or the engine default
@@ -83,10 +86,10 @@ export function useSetup() {
   )
   const rootPasswordDescription = computed(() => {
     const engine = dbType.value === 'mariadb' ? 'MariaDB' : 'PostgreSQL'
-    if (useExternalDb.value) return `Credentials for the existing ${engine} server.`
-    return dbWillInstall.value
-      ? `${engine} will be installed and its ${dbType.value === 'mariadb' ? 'root' : 'superuser'} password set to this value.`
-      : undefined
+    if (useExistingDb.value) return `Credentials for the existing ${engine} server at ${dbHost.value || 'the given host'}.`
+    if (dbWillInstall.value)
+      return `${engine} will be installed and its ${dbType.value === 'mariadb' ? 'root' : 'superuser'} password set to this value.`
+    return `Using the ${engine} server pilot already manages for this user — enter its existing password.`
   })
 
   const branchOptions = computed(() => {
@@ -143,18 +146,18 @@ export function useSetup() {
       if (config.db_type === 'postgres') {
         if (config.postgres_admin_user) dbUser.value = config.postgres_admin_user
         if (config.postgres_password) dbPassword.value = config.postgres_password
-        if (config.postgres_external) {
-          _useExternalDb.value = true
-          dbHost.value = config.postgres_host || ''
-          dbPort.value = config.postgres_port ? String(config.postgres_port) : ''
+        if (config.postgres_existing) {
+          _useExistingDb.value = true
+          dbHost.value = config.postgres_host || '127.0.0.1'
+          dbPort.value = config.postgres_port ? String(config.postgres_port) : '5432'
         }
       } else {
         if (config.mariadb_admin_user) dbUser.value = config.mariadb_admin_user
         if (config.mariadb_password) dbPassword.value = config.mariadb_password
-        if (config.mariadb_external) {
-          _useExternalDb.value = true
-          dbHost.value = config.mariadb_host || ''
-          dbPort.value = config.mariadb_port ? String(config.mariadb_port) : ''
+        if (config.mariadb_existing) {
+          _useExistingDb.value = true
+          dbHost.value = config.mariadb_host || '127.0.0.1'
+          dbPort.value = config.mariadb_port ? String(config.mariadb_port) : '3306'
         }
       }
 
@@ -224,15 +227,15 @@ export function useSetup() {
 
   async function validateMariadbStep() {
     if (!dbPassword.value) return 'MariaDB password is required'
-    if (useExternalDb.value && !dbHost.value) return 'Host is required for an external database'
+    if (useExistingDb.value && !dbHost.value) return 'Host is required for an existing database'
     isSubmitting.value = true
     try {
       const { state } = await setupApi.validateMariadb({
         mariadb_password: dbPassword.value,
         mariadb_admin_user: resolvedDbUser.value,
-        mariadb_external: useExternalDb.value,
-        mariadb_host: useExternalDb.value ? dbHost.value : '',
-        mariadb_port: useExternalDb.value ? Number(dbPort.value) || 3306 : undefined,
+        mariadb_existing: useExistingDb.value,
+        mariadb_host: useExistingDb.value ? dbHost.value : '',
+        mariadb_port: useExistingDb.value ? Number(dbPort.value) || 3306 : undefined,
       })
       mariadbWillInstall.value = state === 'will_install'
       if (state === 'invalid') return 'Incorrect MariaDB credentials.'
@@ -245,15 +248,15 @@ export function useSetup() {
 
   async function validatePostgresStep() {
     if (!dbPassword.value) return 'PostgreSQL password is required'
-    if (useExternalDb.value && !dbHost.value) return 'Host is required for an external database'
+    if (useExistingDb.value && !dbHost.value) return 'Host is required for an existing database'
     isSubmitting.value = true
     try {
       const { state } = await setupApi.validatePostgres({
         postgres_password: dbPassword.value,
         postgres_admin_user: resolvedDbUser.value,
-        postgres_external: useExternalDb.value,
-        postgres_host: useExternalDb.value ? dbHost.value : '',
-        postgres_port: useExternalDb.value ? Number(dbPort.value) || 5432 : undefined,
+        postgres_existing: useExistingDb.value,
+        postgres_host: useExistingDb.value ? dbHost.value : '',
+        postgres_port: useExistingDb.value ? Number(dbPort.value) || 5432 : undefined,
       })
       postgresWillInstall.value = state === 'will_install'
       if (state === 'invalid') return 'Incorrect PostgreSQL credentials.'
@@ -291,7 +294,7 @@ export function useSetup() {
     currentStep.value = stepSequence.value.at(-1)
   }
 
-  // Port is only sent in external mode, so a locally customized port isn't clobbered on save.
+  // Port is only sent in existing mode, so a locally customized port isn't clobbered on save.
   function buildPayload() {
     const base = {
       admin_password: adminPassword.value,
@@ -299,17 +302,17 @@ export function useSetup() {
       app_repo: appRepo.value,
       app_branch: appBranch.value,
     }
-    const external = useExternalDb.value
+    const existing = useExistingDb.value
     // 'localhost', not '', when off — an empty host breaks check_credentials'
     // TCP fallback on systems where the local socket isn't detected.
-    const host = external ? dbHost.value : 'localhost'
-    const port = external ? Number(dbPort.value) || undefined : undefined
+    const host = existing ? dbHost.value : 'localhost'
+    const port = existing ? Number(dbPort.value) || undefined : undefined
     if (dbType.value === 'postgres') {
       return {
         ...base,
         postgres_password: dbPassword.value,
         postgres_admin_user: resolvedDbUser.value,
-        postgres_external: external,
+        postgres_existing: existing,
         postgres_host: host,
         ...(port ? { postgres_port: port } : {}),
         mariadb_password: '',
@@ -320,7 +323,7 @@ export function useSetup() {
       ...base,
       mariadb_password: dbPassword.value,
       mariadb_admin_user: resolvedDbUser.value,
-      mariadb_external: external,
+      mariadb_existing: existing,
       mariadb_host: host,
       ...(port ? { mariadb_port: port } : {}),
       postgres_password: '',
@@ -380,7 +383,7 @@ export function useSetup() {
     dbType,
     dbUser,
     dbPassword,
-    useExternalDb,
+    useExistingDb,
     dbHost,
     dbPort,
     dbPortPlaceholder,

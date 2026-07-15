@@ -27,15 +27,15 @@ def test_socket_path_honors_explicit_value() -> None:
     assert MariaDBManager(MariaDBConfig(socket_path="/tmp/custom.sock")).socket_path() == "/tmp/custom.sock"
 
 
-# ── external ─────────────────────────────────────────────────────────────────
+# ── existing ─────────────────────────────────────────────────────────────────
 
 
-def test_external_defaults_to_false() -> None:
-    assert MariaDBConfig().external is False
+def test_existing_defaults_to_false() -> None:
+    assert MariaDBConfig().existing is False
 
 
-def test_external_is_not_inferred_from_host() -> None:
-    assert MariaDBConfig(host="db.example.com").external is False
+def test_existing_is_not_inferred_from_host() -> None:
+    assert MariaDBConfig(host="db.example.com").existing is False
 
 
 # ── install ──────────────────────────────────────────────────────────────────

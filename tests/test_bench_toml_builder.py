@@ -88,20 +88,20 @@ def test_current_port_offset_zero_when_file_invalid(tmp_path: Path) -> None:
     assert current_port_offset(toml_path) == 0
 
 
-# ── external database settings ───────────────────────────────────────────────
+# ── existing database settings ───────────────────────────────────────────────
 
 
-def test_mariadb_host_and_external_round_trip(tmp_path: Path) -> None:
-    settings = {"mariadb_external": True, "mariadb_host": "db.example.com", "mariadb_admin_user": "admin"}
+def test_mariadb_host_and_existing_round_trip(tmp_path: Path) -> None:
+    settings = {"mariadb_existing": True, "mariadb_host": "db.example.com", "mariadb_admin_user": "admin"}
     toml_path = tmp_path / "bench.toml"
     toml_path.write_text(BenchTomlBuilder("my-bench", settings).render())
 
     read_back = BenchTomlBuilder.read_settings(toml_path)
-    assert read_back["mariadb_external"] is True
+    assert read_back["mariadb_existing"] is True
     assert read_back["mariadb_host"] == "db.example.com"
 
 
-def test_external_defaults_to_false_when_unset(tmp_path: Path) -> None:
+def test_existing_defaults_to_false_when_unset(tmp_path: Path) -> None:
     data = _render(tmp_path)
-    assert data["mariadb"]["external"] is False
-    assert data["postgres"]["external"] is False
+    assert data["mariadb"]["existing"] is False
+    assert data["postgres"]["existing"] is False

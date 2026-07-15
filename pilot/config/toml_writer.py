@@ -37,7 +37,7 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f'root_password = "{m.root_password}"')
     parts.append(f'admin_user = "{m.admin_user}"')
     parts.append(f'socket_path = "{m.socket_path}"')
-    parts.append(f"external = {'true' if m.external else 'false'}")
+    parts.append(f"existing = {'true' if m.existing else 'false'}")
     parts.append("")
 
     pg = config.postgres
@@ -46,7 +46,7 @@ def bench_config_to_toml(config: BenchConfig) -> str:
     parts.append(f"port = {pg.port}")
     parts.append(f'root_password = "{pg.root_password}"')
     parts.append(f'admin_user = "{pg.admin_user}"')
-    parts.append(f"external = {'true' if pg.external else 'false'}")
+    parts.append(f"existing = {'true' if pg.existing else 'false'}")
     parts.append("")
 
     r = config.redis

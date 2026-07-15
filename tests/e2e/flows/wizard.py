@@ -58,7 +58,7 @@ def complete_dev_wizard(
     if page.get_by_label("Root username").is_visible():
         page.get_by_label("Root username").fill(postgres_admin_user if db_type == "postgres" else "root")
     page.get_by_label("Root user password").fill(postgres_password if db_type == "postgres" else mariadb_password)
-    page.get_by_role("button", name="Next").click()
+    page.get_by_role("button", name="Verify credentials").click()
     # A wrong password surfaces inline and keeps us on this step.
     expect(page.get_by_text("Incorrect MariaDB credentials.")).to_be_hidden()
     expect(page.get_by_text("Incorrect PostgreSQL credentials.")).to_be_hidden()
