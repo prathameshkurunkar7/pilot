@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import secrets
+import shutil
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
@@ -10,13 +11,22 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 
 from admin.backend.auth import require_scope
 from admin.backend.tasks.callbacks import new_site_failure_callback, ssl_setup_failure_callback
+from admin.backend.uploads import (
+    UploadError,
+    create_upload_directory,
+    save_archive_upload,
+    save_database_upload,
+)
 from ..validators import validate_cron_expression, validate_site_name
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
 from ..readers.app_reader import AppReader
 from ..readers.site_reader import SiteReader
 
-site_name = lambda kw: kw["name"]
+
+def site_name(kwargs: dict) -> str:
+    return kwargs["name"]
+
 
 sites_bp = Blueprint("sites", __name__)
 
@@ -175,29 +185,30 @@ def create_from_upload():
     if not db_upload:
         return jsonify({"ok": False, "error": "Database backup file is required."})
 
-    upload_dir = bench_root / "tmp" / "uploads" / secrets.token_hex(8)
-    upload_dir.mkdir(parents=True)
+    upload_dir = None
+    try:
+        upload_dir = create_upload_directory(bench_root)
+        db_path = save_database_upload(db_upload, upload_dir)
+        args = {"name": name, "admin_password": admin_password, "db_file": str(db_path)}
 
-    db_path = upload_dir / db_upload.filename
-    db_upload.save(str(db_path))
+        pub_upload = request.files.get("public_files")
+        if pub_upload:
+            args["public_files"] = str(save_archive_upload(pub_upload, upload_dir, "public files"))
 
-    args = {"name": name, "admin_password": admin_password, "db_file": str(db_path)}
-
-    pub_upload = request.files.get("public_files")
-    if pub_upload:
-        pub_path = upload_dir / pub_upload.filename
-        pub_upload.save(str(pub_path))
-        args["public_files"] = str(pub_path)
-
-    priv_upload = request.files.get("private_files")
-    if priv_upload:
-        priv_path = upload_dir / priv_upload.filename
-        priv_upload.save(str(priv_path))
-        args["private_files"] = str(priv_path)
+        priv_upload = request.files.get("private_files")
+        if priv_upload:
+            args["private_files"] = str(
+                save_archive_upload(priv_upload, upload_dir, "private files")
+            )
+    except (OSError, UploadError) as exc:
+        if upload_dir:
+            shutil.rmtree(upload_dir, ignore_errors=True)
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
     try:
         task_id = TaskRunner(bench_root).run("new-site-from-backup", args)
     except Exception as e:
+        shutil.rmtree(upload_dir, ignore_errors=True)
         return jsonify({"ok": False, "error": str(e)})
     return jsonify({"ok": True, "task_id": task_id})
 

@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+import io
+import gzip
+import tarfile
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+from werkzeug.datastructures import FileStorage
+
+from admin.backend.uploads import (
+    UploadError,
+    create_upload_directory,
+    save_archive_upload,
+    save_database_upload,
+)
+from pilot.config.bench_toml_builder import BenchTomlBuilder
+
+
+def _tar_bytes() -> bytes:
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode="w") as archive:
+        content = b"asset"
+        member = tarfile.TarInfo("files/asset.txt")
+        member.size = len(content)
+        archive.addfile(member, io.BytesIO(content))
+    return stream.getvalue()
+
+
+def _upload(content: bytes, filename: str) -> FileStorage:
+    return FileStorage(stream=io.BytesIO(content), filename=filename)
+
+
+def _client(bench_root: Path):
+    from admin.backend.app import create_app
+    from pilot.commands.generate_session import ensure_jwt_secret, issue_token
+
+    bench_root.mkdir(parents=True)
+    (bench_root / "bench.toml").write_text(
+        BenchTomlBuilder(
+            bench_root.name,
+            {"admin_enabled": True, "admin_password": "secret"},
+        ).render()
+    )
+    secret = ensure_jwt_secret(bench_root / "bench.toml")
+    app = create_app(bench_root)
+    app.config["TESTING"] = True
+    client = app.test_client()
+    client.set_cookie("sid", issue_token(secret))
+    return client
+
+
+def test_database_upload_uses_generated_contained_name(tmp_path: Path) -> None:
+    directory = create_upload_directory(tmp_path)
+
+    path = save_database_upload(
+        _upload(b"-- backup\nCREATE TABLE tab (id int);", "../../outside.sql"), directory
+    )
+
+    assert path.parent == directory
+    assert path.name != "outside.sql"
+    assert path.suffix == ".sql"
+    assert path.read_bytes().startswith(b"-- backup")
+    assert not (tmp_path.parent / "outside.sql").exists()
+
+
+def test_database_upload_accepts_gzipped_sql(tmp_path: Path) -> None:
+    directory = create_upload_directory(tmp_path)
+
+    path = save_database_upload(
+        _upload(gzip.compress(b"-- backup\nCREATE TABLE tab (id int);"), "backup.sql.gz"),
+        directory,
+    )
+
+    assert path.name.endswith(".sql.gz")
+
+
+def test_upload_directory_must_resolve_inside_bench(tmp_path: Path) -> None:
+    outside = tmp_path.parent / "outside-uploads"
+    outside.mkdir()
+    (tmp_path / "tmp").mkdir()
+    (tmp_path / "tmp" / "uploads").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(UploadError, match="outside the bench"):
+        create_upload_directory(tmp_path)
+
+
+def test_database_upload_rejects_oversized_file(tmp_path: Path) -> None:
+    directory = create_upload_directory(tmp_path)
+
+    with pytest.raises(UploadError, match="exceeds"):
+        save_database_upload(_upload(b"-- too large", "backup.sql"), directory, max_bytes=4)
+
+    assert not any(directory.iterdir())
+
+
+@pytest.mark.parametrize(
+    ("content", "filename"),
+    [
+        (b"not sql", "backup.sql"),
+        (b"PK\x03\x04not-a-database", "backup.sql.gz"),
+    ],
+)
+def test_database_upload_rejects_wrong_content(
+    tmp_path: Path, content: bytes, filename: str
+) -> None:
+    directory = create_upload_directory(tmp_path)
+
+    with pytest.raises(UploadError, match="database backup"):
+        save_database_upload(_upload(content, filename), directory)
+
+
+def test_archive_upload_requires_tar_content(tmp_path: Path) -> None:
+    directory = create_upload_directory(tmp_path)
+
+    with pytest.raises(UploadError, match="tar archive"):
+        save_archive_upload(_upload(b"PK\x03\x04zip", "public.tar"), directory, "public files")
+
+
+def test_archive_upload_accepts_tar_and_generates_name(tmp_path: Path) -> None:
+    directory = create_upload_directory(tmp_path)
+
+    path = save_archive_upload(_upload(_tar_bytes(), "../../public.tar"), directory, "public files")
+
+    assert path.parent == directory
+    assert path.name != "public.tar"
+    assert path.suffix == ".tar"
+
+
+def test_create_from_upload_passes_only_generated_paths_to_task(tmp_path: Path) -> None:
+    bench_root = tmp_path / "bench"
+    client = _client(bench_root)
+
+    with patch("admin.backend.views.sites.TaskRunner.run", return_value="task-1") as run:
+        response = client.post(
+            "/api/sites/create-from-upload",
+            data={
+                "name": "new.localhost",
+                "db_file": (
+                    io.BytesIO(b"-- backup\nCREATE TABLE tab (id int);"),
+                    "../../backup.sql",
+                ),
+                "public_files": (io.BytesIO(_tar_bytes()), "../../public.tar"),
+            },
+        )
+
+    assert response.status_code == 200
+    args = run.call_args.args[1]
+    upload_root = (bench_root / "tmp" / "uploads").resolve()
+    for key in ("db_file", "public_files"):
+        path = Path(args[key])
+        assert path.resolve().is_relative_to(upload_root)
+        assert ".." not in path.parts
+    assert Path(args["db_file"]).name != "backup.sql"
+    assert Path(args["public_files"]).name != "public.tar"

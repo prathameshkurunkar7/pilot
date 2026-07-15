@@ -10,6 +10,7 @@ from pathlib import Path
 from flask import Flask, g, jsonify, request, send_file
 
 from .rate_limit import rate_limit, UsedTokens
+from .uploads import MAX_RESTORE_UPLOAD_BYTES
 from .views.apps import apps_bp
 from .views.benches import benches_bp
 from .views.dashboard import dashboard_bp
@@ -91,6 +92,7 @@ def _install_idle_watchdog(app: Flask) -> None:
 def create_app(bench_root: Path) -> Flask:
     app = Flask(__name__, static_folder=str(_STATIC_DIR), static_url_path="/static")
     app.config["BENCH_ROOT"] = bench_root
+    app.config["MAX_CONTENT_LENGTH"] = MAX_RESTORE_UPLOAD_BYTES
     app.config["TEMPLATES_AUTO_RELOAD"] = False
 
     _install_idle_watchdog(app)
