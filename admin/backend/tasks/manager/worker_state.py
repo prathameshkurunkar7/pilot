@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
 
-from pilot.internal.atomic_file import atomic_write_private_text
+from typing import Iterator
+
+from pilot.internal.atomic_file import (
+    atomic_write_private_text,
+    exclusive_file_lock,
+    replace_private_text_locked,
+)
 from pilot.secure_files import make_private_directory, open_private
 from admin.backend.tasks.manager.worker_lock import WorkerLock
 
@@ -16,6 +23,11 @@ class WorkerStatus(StrEnum):
     IDLE = "idle"
     RUNNING = "running"
     DRAINING = "draining"
+    STOPPED = "stopped"
+
+
+class WorkerIntent(StrEnum):
+    RUNNING = "running"
     STOPPED = "stopped"
 
 
@@ -33,6 +45,7 @@ class WorkerStore:
         self.lock_path = self.tasks_root / "worker.lock"
         self.pid_path = self.tasks_root / "worker.pid"
         self.state_path = self.tasks_root / "worker-state.json"
+        self.intent_path = self.tasks_root / "worker-control.json"
 
     def ensure_layout(self) -> None:
         make_private_directory(self.tasks_root, parents=True)
@@ -52,6 +65,24 @@ class WorkerStore:
             return None
         value = self.pid_path.read_text(encoding="utf-8").strip()
         return int(value) if value else None
+
+    def write_intent(self, intent: WorkerIntent) -> None:
+        self.ensure_layout()
+        with exclusive_file_lock(self.intent_path):
+            replace_private_text_locked(
+                self.intent_path,
+                json.dumps({"desired": intent.value}, indent=2),
+            )
+
+    def read_intent(self) -> WorkerIntent:
+        with self.locked_intent() as intent:
+            return intent
+
+    @contextmanager
+    def locked_intent(self) -> Iterator[WorkerIntent]:
+        self.ensure_layout()
+        with exclusive_file_lock(self.intent_path):
+            yield self._read_intent_locked()
 
     def write_state(
         self,
@@ -85,3 +116,9 @@ class WorkerStore:
             current_task_id=payload.get("current_task_id"),
             updated_at=datetime.fromisoformat(payload["updated_at"]),
         )
+
+    def _read_intent_locked(self) -> WorkerIntent:
+        if not self.intent_path.exists():
+            return WorkerIntent.RUNNING
+        payload = json.loads(self.intent_path.read_text(encoding="utf-8"))
+        return WorkerIntent(payload["desired"])
