@@ -42,11 +42,14 @@ def wait_for_task(
         res = request.get(f"{base_url}/api/v1/tasks/{task_id}")
         if res.ok:
             data = res.json()
-            status = data["task"]["status"]
+            status = data["status"]
             if status == "success":
                 return
             if status == "failed":
-                tail = "\n".join((data.get("output") or [])[-30:])
+                output = request.get(
+                    f"{base_url}/api/v1/tasks/{task_id}/output/content"
+                )
+                tail = "\n".join(output.text().splitlines()[-30:]) if output.ok else ""
                 raise RuntimeError(f"Task {task_id} failed:\n{tail}")
         time.sleep(2)
     raise TimeoutError(f"Task {task_id} did not finish within {timeout}s")

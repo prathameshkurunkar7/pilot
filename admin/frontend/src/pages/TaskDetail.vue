@@ -92,9 +92,13 @@ function updateStatus(event) {
 async function cancelTask() {
   actionError.value = ''
   try {
-    const result = await tasksApi.cancel(taskId)
-    if (!result.ok) actionError.value = result.error || 'Failed to cancel task'
-    else load()
+    const response = await tasksApi.cancel(taskId)
+    if (!response.ok) {
+      const result = await response.json()
+      actionError.value = result.error?.message || 'Failed to cancel task'
+      return
+    }
+    load()
   } catch (caught) {
     actionError.value = caught.message || 'Failed to cancel task'
   }

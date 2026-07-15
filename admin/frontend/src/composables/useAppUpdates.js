@@ -18,11 +18,13 @@ export function useAppUpdates() {
       const { task_id } = await appsApi.fetchUpdates()
       while (true) {
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
-        const { task, output } = await tasksApi.detail(task_id)
+        const task = await tasksApi.detail(task_id)
 
         if (isTaskActive(task)) continue
-        if (task.status === 'success' && output?.length) {
-          updates.value = JSON.parse(output[output.length - 1])
+        if (task.status === 'success') {
+          const output = await tasksApi.output(task_id)
+          const lastLine = output.trimEnd().split(/\r?\n/).at(-1)
+          if (lastLine) updates.value = JSON.parse(lastLine)
         }
         break
       }

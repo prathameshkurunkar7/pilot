@@ -253,6 +253,19 @@ def test_read_output_returns_all_lines_when_fewer_than_limit(tmp_path: Path) -> 
     assert result == ["alpha", "beta", "gamma"]
 
 
+def test_iter_output_streams_display_text_without_syslog_envelopes(tmp_path: Path) -> None:
+    task_id = "20260521-143022-aabbcc"
+    task_dir = _make_task_dir(tmp_path / "tasks", task_id)
+    envelope = "<14>1 2026-07-15T12:00:00Z host build 1 - - "
+    (task_dir / "output.log").write_text(
+        f"{envelope}started\n{envelope}[50%]\r{envelope}[70%]\n"
+    )
+
+    output = "".join(TaskReader(tmp_path).iter_output(task_id))
+
+    assert output == "started\n[70%]\n"
+
+
 def test_stream_output_yields_structured_events(tmp_path: Path) -> None:
     task_id = "20260521-143022-aabbcc"
     task_dir = _make_task_dir(tmp_path / "tasks", task_id)

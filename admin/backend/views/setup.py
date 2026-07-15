@@ -3,11 +3,10 @@ from __future__ import annotations
 import typing
 from pathlib import Path
 
-from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
+from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.auth import allow_during_setup, set_session_cookie
 from admin.backend.tasks.manager.task_reader import TaskReader
-from admin.backend.tasks.manager.events import sse_message
 from admin.backend.tasks.manager.task_runner import TaskRunner
 from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES
 from pilot.config.bench_toml_builder import (
@@ -307,19 +306,6 @@ def start_new_site():
         return jsonify({"ok": True, "task_id": task_id})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
-
-
-@setup_bp.route("/stream/<task_id>")
-@allow_during_setup
-def stream_task(task_id: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    reader = TaskReader(bench_root)
-
-    def generate():
-        for event in reader.stream_output(task_id):
-            yield sse_message(event)
-
-    return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
 
 _PASSWORD_KEYS = ("mariadb_password", "postgres_password")

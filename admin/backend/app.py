@@ -27,7 +27,7 @@ from .views.setup import setup_bp
 from .views.sites import sites_bp
 from .views.ssh_keys import ssh_keys_bp
 from .views.stats import stats_bp
-from .views.tasks import tasks_bp
+from .views.tasks import task_worker_bp, tasks_bp
 from .views.updates import updates_bp
 from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
@@ -131,6 +131,7 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(logs_bp, url_prefix=f"{API_V1_PREFIX}/logs")
     app.register_blueprint(database_bp, url_prefix=f"{API_V1_PREFIX}/database")
     app.register_blueprint(tasks_bp, url_prefix=f"{API_V1_PREFIX}/tasks")
+    app.register_blueprint(task_worker_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(settings_bp, url_prefix=f"{API_V1_PREFIX}/settings")
     app.register_blueprint(updates_bp, url_prefix=f"{API_V1_PREFIX}/updates")
     app.register_blueprint(git_bp, url_prefix=f"{API_V1_PREFIX}/git")

@@ -99,6 +99,20 @@ class TaskReader:
             return all_lines
         return all_lines[-lines:]
 
+    def iter_output(self, task_id: str) -> Generator[str, None, None]:
+        task = self.read_task(task_id)
+        if not task.output_path.exists():
+            return
+        with open(task.output_path, "r", errors="replace", newline="") as output:
+            pending = ""
+            while chunk := output.read(8192):
+                lines = (pending + chunk).split("\n")
+                pending = lines.pop()
+                for line in lines:
+                    yield _display_line(line) + "\n"
+            if pending:
+                yield _display_line(pending)
+
     def stream_output(self, task_id: str) -> Generator[TaskStreamEvent, None, None]:
         task = self.read_task(task_id)
         output_path = task.output_path

@@ -71,21 +71,21 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 100
+    assert len(routes) == 102
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 100
+    assert len({(method, path) for method, path, _, _ in routes}) == 102
     assert Counter(method for method, _, _, _ in routes) == {
-        "DELETE": 7,
+        "DELETE": 8,
         "GET": 50,
         "PATCH": 2,
-        "POST": 41,
+        "POST": 42,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
-        "authenticated": 54,
+        "authenticated": 57,
         "authenticated+bench-management": 6,
         "authenticated+site-scope": 26,
         "open": 5,
-        "setup-conditional": 9,
+        "setup-conditional": 8,
     }
     assert Counter(areas) == {
         "apps": 7,
@@ -100,12 +100,40 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "monitor-status": 1,
         "processes": 4,
         "settings": 4,
-        "setup": 9,
+        "setup": 8,
         "sites": 30,
         "ssh-keys": 3,
         "stats": 1,
         "session": 3,
         "system-info": 1,
+        "task-worker": 3,
         "tasks": 7,
         "updates": 2,
+    }
+
+    route_keys = {(method, path) for method, path, _, _ in routes}
+    assert {
+        ("GET", "/api/v1/tasks"),
+        ("POST", "/api/v1/tasks"),
+        ("GET", "/api/v1/tasks/<task_id>"),
+        ("DELETE", "/api/v1/tasks/<task_id>"),
+        ("POST", "/api/v1/tasks/<task_id>/actions/retry"),
+        ("GET", "/api/v1/tasks/<task_id>/events"),
+        ("GET", "/api/v1/tasks/<task_id>/output/content"),
+        ("GET", "/api/v1/task-worker"),
+        ("POST", "/api/v1/task-worker/actions/start"),
+        ("POST", "/api/v1/task-worker/actions/stop"),
+    } <= route_keys
+    assert not {
+        path
+        for _, path, _, _ in routes
+        if path in {
+            "/api/v1/tasks/",
+            "/api/v1/tasks/run",
+            "/api/v1/tasks/<task_id>/kill",
+            "/api/v1/tasks/<task_id>/rerun",
+            "/api/v1/tasks/<task_id>/stream",
+            "/api/v1/tasks/<task_id>/output/download",
+            "/api/v1/setup/stream/<task_id>",
+        }
     }

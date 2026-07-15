@@ -219,10 +219,10 @@ async function confirmDelete() {
   try {
     const filenames = deleteTarget.value.files.map((f) => f.filename)
     const data = await tasksApi.run('delete-backup', { site: props.siteName, filenames })
-    if (data.ok) {
+    if (data.task_id) {
       showDelete.value = false
       openTaskDetailPage(router, data.task_id)
-    } else deleteError.value = data.error || 'Delete failed.'
+    } else deleteError.value = data.error?.message || 'Delete failed.'
   } catch (e) {
     deleteError.value = e.message || 'Delete failed.'
   } finally {

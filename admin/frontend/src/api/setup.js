@@ -9,5 +9,5 @@ export const setupApi = {
   save: (json) => request.post('setup/save', { json }).json(),
   start: () => request.post('setup/start').json(),
   finish: () => request.post('setup/finish').json(),
-  streamUrl: (taskId) => apiUrl(`setup/stream/${taskId}`),
+  streamUrl: (taskId) => apiUrl(`tasks/${taskId}/events`),
 }

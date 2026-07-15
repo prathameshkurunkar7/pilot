@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { tasksApi } from '@/api/tasks'
+import { isTaskActive } from '@/utils/taskFormat'
 
 export function useTaskDetail(taskId) {
   const task = ref(null)
@@ -11,9 +12,12 @@ export function useTaskDetail(taskId) {
     loading.value = true
     error.value = ''
     try {
-      const data = await tasksApi.detail(taskId)
-      task.value = data.task
-      rawLines.value = data.output
+      task.value = await tasksApi.detail(taskId)
+      rawLines.value = []
+      if (!isTaskActive(task.value)) {
+        const output = await tasksApi.output(taskId)
+        if (output) rawLines.value = output.replace(/\r?\n$/, '').split(/\r?\n/)
+      }
     } catch (caught) {
       error.value = caught.message || 'Failed to load task'
     } finally {

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from flask import (
     Blueprint,
     Response,
@@ -7,59 +9,138 @@ from flask import (
     jsonify,
     request,
     stream_with_context,
+    url_for,
 )
 
-from admin.backend.tasks.manager.task_args import task_requires_secrets
+from admin.backend.api_contract import error_response
+from admin.backend.tasks.manager.activity import TaskActivityReader
 from admin.backend.tasks.manager.events import sse_message
+from admin.backend.tasks.manager.task_args import task_requires_secrets
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
+from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES, TaskStatus
+from admin.backend.tasks.manager.worker_registry import task_workers
+from admin.backend.tasks.manager.worker_state import WorkerIntent, WorkerStore
 from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
 
 tasks_bp = Blueprint("tasks", __name__)
+task_worker_bp = Blueprint("task_worker", __name__)
 
 
-def _task_dict(t):
-    return t.as_dict()
-
-
-@tasks_bp.route("/")
-def index():
-    bench_root = current_app.config["BENCH_ROOT"]
+@tasks_bp.get("")
+def list_tasks():
+    reader = _reader()
     status_filter = request.args.get("status", "")
-
-    try:
-        task_list = TaskReader(bench_root).list_tasks()
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
-
+    wanted_status = None
     if status_filter and status_filter != "all":
-        task_list = [t for t in task_list if t.status == status_filter]
-
-    return jsonify([_task_dict(t) for t in task_list])
-
-
-@tasks_bp.route("/<task_id>")
-def task_detail(task_id: str):
-    bench_root = current_app.config["BENCH_ROOT"]
+        try:
+            wanted_status = TaskStatus(status_filter)
+        except ValueError:
+            return error_response(
+                "invalid_task_status",
+                f"Unknown task status: {status_filter!r}.",
+                422,
+            )
     try:
-        reader = TaskReader(bench_root)
-        task = reader.read_task(task_id)
-        output = reader.read_output(task_id)
+        tasks = reader.list_tasks()
+    except Exception:
+        return error_response("task_list_unavailable", "Could not read tasks.", 500)
+    if wanted_status is not None:
+        tasks = [task for task in tasks if task.status == wanted_status]
+    return jsonify([task.as_dict() for task in tasks])
+
+
+@tasks_bp.post("")
+def create_task():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+    command = data.get("command")
+    if not isinstance(command, str) or not command.strip():
+        return error_response(
+            "invalid_task",
+            "The command field must be a non-empty string.",
+            422,
+        )
+    args = {key: value for key, value in data.items() if key != "command"}
+    try:
+        task_id = TaskRunner(_bench_root()).run(
+            command.strip(),
+            args,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        return _accepted_task(task_id)
+    except TaskConflictError as error:
+        return error_response("task_conflict", str(error), 409)
+    except ValueError as error:
+        return error_response("invalid_task", str(error), 422)
+    except Exception:
+        return error_response("task_creation_failed", "Could not create task.", 500)
+
+
+@tasks_bp.get("/<task_id>")
+def get_task(task_id: str):
+    try:
+        return jsonify(_reader().read_task(task_id).as_dict())
     except TaskNotFoundError as error:
-        return jsonify({"error": str(error)}), 404
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
-
-    return jsonify({"task": _task_dict(task), "output": output})
+        return error_response("task_not_found", str(error), 404)
+    except Exception:
+        return error_response("task_unavailable", "Could not read task.", 500)
 
 
-@tasks_bp.route("/<task_id>/stream")
-def stream_task_output(task_id: str):
-    bench_root = current_app.config["BENCH_ROOT"]
-    reader = TaskReader(bench_root)
+@tasks_bp.delete("/<task_id>")
+def cancel_task(task_id: str):
+    try:
+        TaskRunner(_bench_root()).kill(task_id)
+    except TaskNotFoundError as error:
+        return error_response("task_not_found", str(error), 404)
+    except TaskNotRunningError as error:
+        return error_response("task_not_active", str(error), 409)
+    except Exception:
+        return error_response("task_cancellation_failed", "Could not cancel task.", 500)
+    return current_app.response_class(status=204)
+
+
+@tasks_bp.post("/<task_id>/actions/retry")
+def retry_task(task_id: str):
+    try:
+        task = _reader().read_task(task_id)
+    except TaskNotFoundError as error:
+        return error_response("task_not_found", str(error), 404)
+    except Exception:
+        return error_response("task_unavailable", "Could not read task.", 500)
+    if task_requires_secrets(task.command):
+        return error_response(
+            "fresh_credentials_required",
+            "This task requires fresh credentials and cannot be retried.",
+            409,
+        )
+    if task.status in ACTIVE_TASK_STATUSES:
+        return error_response(
+            "task_not_finished",
+            "An active task cannot be retried.",
+            409,
+        )
+    try:
+        return _accepted_task(TaskRunner(_bench_root()).run(task.command, task.args))
+    except ValueError as error:
+        return error_response("invalid_task", str(error), 422)
+    except Exception:
+        return error_response("task_creation_failed", "Could not retry task.", 500)
+
+
+@tasks_bp.get("/<task_id>/events")
+def task_events(task_id: str):
+    reader = _reader()
+    try:
+        reader.read_task(task_id)
+    except TaskNotFoundError as error:
+        return error_response("task_not_found", str(error), 404)
+    except Exception:
+        return error_response("task_unavailable", "Could not read task.", 500)
 
     try:
-        skip = int(request.headers.get("Last-Event-ID", 0))
+        skip = max(0, int(request.headers.get("Last-Event-ID", 0)))
     except ValueError:
         skip = 0
 
@@ -70,9 +151,8 @@ def stream_task_output(task_id: str):
                 yield sse_message(event)
                 continue
             event_id += 1
-            if event_id <= skip:
-                continue
-            yield sse_message(event, event_id)
+            if event_id > skip:
+                yield sse_message(event, event_id)
 
     return Response(
         stream_with_context(generate()),
@@ -81,80 +161,74 @@ def stream_task_output(task_id: str):
     )
 
 
-@tasks_bp.route("/run", methods=["POST"])
-def run_task():
-    bench_root = current_app.config["BENCH_ROOT"]
-    data = request.get_json(silent=True) or {}
-    command = (data.pop("command", "") or "").strip()
-    args = data
-
+@tasks_bp.get("/<task_id>/output/content")
+def task_output(task_id: str):
+    reader = _reader()
     try:
-        task_id = TaskRunner(bench_root).run(
-            command,
-            args,
-            idempotency_key=request.headers.get("Idempotency-Key"),
-        )
-    except TaskConflictError as error:
-        return jsonify({"ok": False, "error": str(error)}), 409
-    except ValueError as error:
-        return jsonify({"ok": False, "error": str(error)}), 400
-    except Exception as error:
-        return jsonify({"ok": False, "error": str(error)}), 500
-
-    return jsonify({"ok": True, "task_id": task_id})
-
-
-@tasks_bp.route("/<task_id>/kill", methods=["POST"])
-def kill_task(task_id: str):
-    bench_root = current_app.config["BENCH_ROOT"]
-    try:
-        TaskRunner(bench_root).kill(task_id)
-    except (TaskNotFoundError, TaskNotRunningError) as error:
-        return jsonify({"ok": False, "error": str(error)}), 400
-    except Exception as error:
-        return jsonify({"ok": False, "error": str(error)}), 500
-
-    return jsonify({"ok": True})
-
-
-@tasks_bp.route("/<task_id>/rerun", methods=["POST"])
-def rerun_task(task_id: str):
-    bench_root = current_app.config["BENCH_ROOT"]
-    try:
-        task = TaskReader(bench_root).read_task(task_id)
+        task = reader.read_task(task_id)
     except TaskNotFoundError as error:
-        return jsonify({"ok": False, "error": str(error)}), 404
-    except Exception as error:
-        return jsonify({"ok": False, "error": str(error)}), 500
-
-    try:
-        if task_requires_secrets(task.command):
-            return jsonify({"ok": False, "error": "This task requires fresh credentials and cannot be rerun."}), 400
-        new_task_id = TaskRunner(bench_root).run(task.command, task.args)
-    except ValueError as error:
-        return jsonify({"ok": False, "error": str(error)}), 400
-    except Exception as error:
-        return jsonify({"ok": False, "error": str(error)}), 500
-
-    return jsonify({"ok": True, "task_id": new_task_id})
-
-
-@tasks_bp.route("/<task_id>/output/download")
-def download_task_output(task_id: str):
-    bench_root = current_app.config["BENCH_ROOT"]
-    try:
-        task = TaskReader(bench_root).read_task(task_id)
-    except TaskNotFoundError as error:
-        return jsonify({"error": str(error)}), 404
-    except Exception as error:
-        return jsonify({"error": str(error)}), 500
-
-    output_path = task.output_path
-    if not output_path.exists():
-        return jsonify({"error": "No output file found"}), 404
-
+        return error_response("task_not_found", str(error), 404)
+    except Exception:
+        return error_response("task_unavailable", "Could not read task.", 500)
+    if not task.output_path.exists():
+        return error_response("task_output_not_found", "Task output is not available.", 404)
     return Response(
-        output_path.read_bytes(),
+        stream_with_context(reader.iter_output(task_id)),
         mimetype="text/plain",
-        headers={"Content-Disposition": f'attachment; filename="{task_id}_output.log"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{task_id}_output.log"'
+        },
     )
+
+
+@task_worker_bp.get("/task-worker")
+def get_task_worker():
+    return jsonify(_worker_resource())
+
+
+@task_worker_bp.post("/task-worker/actions/start")
+def start_task_worker():
+    bench_root = _bench_root()
+    WorkerStore(bench_root).write_intent(WorkerIntent.RUNNING)
+    task_workers.wake(bench_root)
+    return _accepted_worker()
+
+
+@task_worker_bp.post("/task-worker/actions/stop")
+def stop_task_worker():
+    bench_root = _bench_root()
+    WorkerStore(bench_root).write_intent(WorkerIntent.STOPPED)
+    task_workers.wake(bench_root)
+    return _accepted_worker()
+
+
+def _accepted_task(task_id: str):
+    task = _reader().read_task(task_id)
+    response = jsonify(task.as_dict())
+    response.status_code = 202
+    response.headers["Location"] = url_for("tasks.get_task", task_id=task_id)
+    return response
+
+
+def _accepted_worker():
+    response = jsonify(_worker_resource())
+    response.status_code = 202
+    response.headers["Location"] = url_for("task_worker.get_task_worker")
+    return response
+
+
+def _worker_resource() -> dict:
+    activity = TaskActivityReader(_bench_root()).read()
+    return {
+        **activity.public_dict(),
+        "queued_tasks": activity.queued_tasks,
+        "running_tasks": activity.running_tasks,
+    }
+
+
+def _reader() -> TaskReader:
+    return TaskReader(_bench_root())
+
+
+def _bench_root() -> Path:
+    return Path(current_app.config["BENCH_ROOT"])

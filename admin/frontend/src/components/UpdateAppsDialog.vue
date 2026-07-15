@@ -100,11 +100,11 @@ async function runUpdate() {
       apps: [...selected.value],
       skip_failing_patches: skipFailingPatches.value,
     })
-    if (res.ok) {
+    if (res.task_id) {
       open.value = false
       openTaskDetailPage(router, res.task_id)
     } else {
-      error.value = res.error || 'Failed to start update.'
+      error.value = res.error?.message || 'Failed to start update.'
     }
   } catch (e) {
     error.value = e.message || 'Failed to start update.'

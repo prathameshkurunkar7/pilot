@@ -479,7 +479,7 @@ def test_non_bench_token_cannot_access_bench_route(
     client = _client(tmp_path)
     token = issue_token("k3y", scope=scope, site=site)
 
-    response = client.get("/api/v1/tasks/", headers={"Authorization": f"Bearer {token}"})
+    response = client.get("/api/v1/tasks", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 403
 
