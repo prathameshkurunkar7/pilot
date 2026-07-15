@@ -17,7 +17,7 @@ import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from admin.backend.tasks.callbacks import run_callback
+from admin.backend.tasks.callbacks import run_callback, trigger_for_task_status
 from admin.backend.tasks.manager.task_state import (
     TERMINAL_TASK_STATUSES,
     TaskStatus,
@@ -232,8 +232,8 @@ def _run_task() -> None:
     finally:
         store.remove_private_files(task_id, "secrets.json")
 
-    cancelled = _cancel_requested or store.read_status(task_id) == TaskStatus.KILLED
-    trigger = "on_cancel" if cancelled else "on_success" if exit_code == 0 else "on_failure"
+    status = _finalize_task(store, task_id, exit_code)
+    trigger = trigger_for_task_status(status)
     selected = callbacks.get(trigger)
     if selected:
         callback_handler(selected, task_dir / "output.log", meta=meta, redactions=redactions)
@@ -245,23 +245,21 @@ def _run_task() -> None:
         "on_failure.bin",
     )
 
-    if cancelled:
-        return
 
-    status = TaskStatus.SUCCESS if exit_code == 0 else TaskStatus.FAILED
-    failure = None
-    if status == TaskStatus.FAILED:
-        failure = {"code": "command_failed"}
-    store.transition(
-        task_id,
-        TaskStatus.RUNNING,
-        status,
-        {
+
+def _finalize_task(store: TaskStore, task_id: str, exit_code: int) -> TaskStatus:
+    if _cancel_requested:
+        target = TaskStatus.KILLED
+        updates = {"finished_at": datetime.now(timezone.utc).isoformat()}
+    else:
+        target = TaskStatus.SUCCESS if exit_code == 0 else TaskStatus.FAILED
+        updates = {
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "exit_code": exit_code,
-            "failure": failure,
-        },
-    )
+            "failure": None if exit_code == 0 else {"code": "command_failed"},
+        }
+    store.transition(task_id, TaskStatus.RUNNING, target, updates)
+    return store.read_status(task_id)
 
 
 if __name__ == "__main__":

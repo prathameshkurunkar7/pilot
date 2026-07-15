@@ -14,6 +14,7 @@ class DropSiteTask(BaseTask):
         self.name = args.name
 
     def run(self) -> None:
+        self._require_production_privileges()
         self._step("drop", f"Drop site {self.name}")
         DropSiteCommand(self.bench, self.name).run()
         self._step("done")

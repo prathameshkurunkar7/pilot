@@ -4,13 +4,15 @@ import hashlib
 import json
 import secrets
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
-from admin.backend.tasks.callbacks import run_stored_callback, validate_callback
+from admin.backend.tasks.callbacks import validate_callback
 from admin.backend.tasks.manager.task_args import (
-    redact_task_args,
+    fingerprint_task_args,
+    public_task_args,
     reject_url_credentials,
     task_secret_args,
 )
@@ -63,6 +65,12 @@ class TaskCallbacks(TypedDict, total=False):
     on_cancel: TaskCallback | None
 
 
+@dataclass(frozen=True)
+class TaskSubmission:
+    task_id: str
+    created: bool
+
+
 class TaskRunner:
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
@@ -75,7 +83,24 @@ class TaskRunner:
         args: dict,
         callbacks: TaskCallbacks | None = None,
         idempotency_key: str | None = None,
+        resource_key: str | None = None,
     ) -> str:
+        return self.submit(
+            command,
+            args,
+            callbacks=callbacks,
+            idempotency_key=idempotency_key,
+            resource_key=resource_key,
+        ).task_id
+
+    def submit(
+        self,
+        command: str,
+        args: dict,
+        callbacks: TaskCallbacks | None = None,
+        idempotency_key: str | None = None,
+        resource_key: str | None = None,
+    ) -> TaskSubmission:
         callback_payload = {}
         for trigger, spec in (callbacks or {}).items():
             if trigger not in ("on_success", "on_failure", "on_cancel"):
@@ -90,7 +115,7 @@ class TaskRunner:
         meta = {
             "task_id": task_id,
             "command": command,
-            "args": redact_task_args(args),
+            "args": public_task_args(command, args),
             "command_argv": command_argv,
             "queued_at": queued_at,
             "started_at": None,
@@ -105,7 +130,12 @@ class TaskRunner:
         if callback_payload:
             private_files["callbacks.json"] = json.dumps(callback_payload, indent=2)
         if idempotency_key is None:
-            self._store.create_queued(meta, private_files)
+            self._store.create_queued(
+                meta,
+                private_files,
+                resource_key=resource_key,
+            )
+            submission = TaskSubmission(task_id, True)
         else:
             idempotency_digest = self._idempotency_digest(idempotency_key)
             request_fingerprint = self._request_fingerprint(command, args)
@@ -114,12 +144,23 @@ class TaskRunner:
                 private_files,
                 idempotency_digest,
                 request_fingerprint,
+                resource_key=resource_key,
             )
             if not creation.created:
-                return creation.task_id
-        task_workers.wake(self._bench_root)
-        self._store.purge_terminal(TASK_RETENTION_LIMIT)
-        return task_id
+                return TaskSubmission(creation.task_id, False)
+            submission = TaskSubmission(creation.task_id, True)
+        self._run_post_submission_housekeeping()
+        return submission
+
+    def _run_post_submission_housekeeping(self) -> None:
+        for operation in (
+            lambda: task_workers.wake(self._bench_root),
+            lambda: self._store.purge_terminal(TASK_RETENTION_LIMIT),
+        ):
+            try:
+                operation()
+            except Exception:
+                pass
 
     def kill(self, task_id: str) -> None:
         status = self._store.read_status(task_id)
@@ -139,11 +180,11 @@ class TaskRunner:
                 raise TaskNotRunningError(
                     f"Task is not active: {task_id} (status={current.value})"
                 )
+            self._store.remove_private_files(task_id, "secrets.json")
             try:
-                run_stored_callback(self._store.task_dir(task_id), "on_cancel")
+                task_workers.wake(self._bench_root)
             except Exception:
                 pass
-            self._store.remove_private_files(task_id, "secrets.json", "callbacks.json")
             return
         self._processes.cancel(task_id)
 
@@ -258,7 +299,7 @@ class TaskRunner:
     @staticmethod
     def _request_fingerprint(command: str, args: dict) -> str:
         request = json.dumps(
-            {"command": command, "args": redact_task_args(args)},
+            {"command": command, "args": fingerprint_task_args(command, args)},
             sort_keys=True,
             separators=(",", ":"),
         )

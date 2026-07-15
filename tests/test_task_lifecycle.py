@@ -153,6 +153,53 @@ def test_run_reuses_active_task_for_same_idempotency_key(
     assert "idempotency_digest" in metadata_text
 
 
+def test_submit_reports_new_and_replayed_tasks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_ids = iter([TASK_ID, "20260715-120001-bbccdd"])
+    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
+    monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
+    runner = TaskRunner(tmp_path)
+
+    first = runner.submit("build", {}, idempotency_key="client-request-key")
+    replay = runner.submit("build", {}, idempotency_key="client-request-key")
+
+    assert first.task_id == replay.task_id == TASK_ID
+    assert first.created is True
+    assert replay.created is False
+
+
+def test_submit_returns_published_task_when_housekeeping_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    housekeeping = []
+
+    def fail_wake(bench_root: Path) -> None:
+        housekeeping.append(("wake", bench_root))
+        raise RuntimeError("wake failed")
+
+    def fail_purge(limit: int) -> None:
+        housekeeping.append(("purge", limit))
+        raise OSError("purge failed")
+
+    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: TASK_ID))
+    monkeypatch.setattr(task_runner_module.task_workers, "wake", fail_wake)
+    runner = TaskRunner(tmp_path)
+    monkeypatch.setattr(runner._store, "purge_terminal", fail_purge)
+
+    submission = runner.submit("build", {})
+
+    assert submission.task_id == TASK_ID
+    assert submission.created is True
+    assert (tmp_path / "tasks" / TASK_ID / "meta.json").exists()
+    assert housekeeping == [
+        ("wake", tmp_path),
+        ("purge", task_runner_module.TASK_RETENTION_LIMIT),
+    ]
+
+
 def test_run_rejects_idempotency_key_reuse_for_different_request(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -209,6 +256,107 @@ def test_run_hands_secret_to_job_without_persisting_it_publicly(
     assert meta["args"]["admin_password"] == "[redacted]"
     assert json.loads(secret_path.read_text()) == {"admin_password": password}
     assert stat.S_IMODE(secret_path.stat().st_mode) == 0o600
+
+
+def test_restore_task_hides_upload_paths_from_public_args(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    upload_dir = tmp_path / "tmp" / "uploads" / "request"
+    upload_dir.mkdir(parents=True)
+    database = upload_dir / "database.sql.gz"
+    public_files = upload_dir / "public.tar"
+    private_files = upload_dir / "private.tar"
+    for path in (database, public_files, private_files):
+        path.write_bytes(path.name.encode())
+    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: TASK_ID))
+    monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
+
+    TaskRunner(tmp_path).run(
+        "new-site-from-backup",
+        {
+            "name": "example.test",
+            "admin_password": "secret",
+            "db_file": str(database),
+            "public_files": str(public_files),
+            "private_files": str(private_files),
+        },
+    )
+
+    public_args = json.loads(
+        (tmp_path / "tasks" / TASK_ID / "meta.json").read_text()
+    )["args"]
+    assert public_args == {
+        "name": "example.test",
+        "admin_password": "[redacted]",
+    }
+
+
+def test_restore_idempotency_fingerprints_upload_contents(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_ids = iter([TASK_ID, "20260715-120001-bbccdd"])
+    first_upload = tmp_path / "tmp" / "uploads" / "first" / "database.sql.gz"
+    second_upload = tmp_path / "tmp" / "uploads" / "second" / "database.sql.gz"
+    first_upload.parent.mkdir(parents=True)
+    second_upload.parent.mkdir(parents=True)
+    first_upload.write_bytes(b"same database backup")
+    second_upload.write_bytes(b"same database backup")
+    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
+    monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
+    runner = TaskRunner(tmp_path)
+
+    first = runner.submit(
+        "new-site-from-backup",
+        {
+            "name": "example.test",
+            "admin_password": "secret",
+            "db_file": str(first_upload),
+        },
+        idempotency_key="restore-request",
+    )
+    replay = runner.submit(
+        "new-site-from-backup",
+        {
+            "name": "example.test",
+            "admin_password": "secret",
+            "db_file": str(second_upload),
+        },
+        idempotency_key="restore-request",
+    )
+
+    assert first.created is True
+    assert replay.created is False
+    assert replay.task_id == first.task_id
+
+
+def test_restore_idempotency_rejects_different_upload_contents(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_ids = iter([TASK_ID, "20260715-120001-bbccdd"])
+    first_upload = tmp_path / "first.sql.gz"
+    second_upload = tmp_path / "second.sql.gz"
+    first_upload.write_bytes(b"first backup")
+    second_upload.write_bytes(b"second backup")
+    monkeypatch.setattr(TaskRunner, "_generate_task_id", staticmethod(lambda: next(task_ids)))
+    monkeypatch.setattr(task_runner_module.task_workers, "wake", lambda bench_root: True)
+    runner = TaskRunner(tmp_path)
+    common_args = {"name": "example.test", "admin_password": "secret"}
+
+    runner.run(
+        "new-site-from-backup",
+        {**common_args, "db_file": str(first_upload)},
+        idempotency_key="restore-request",
+    )
+
+    with pytest.raises(TaskConflictError, match="another active task"):
+        runner.run(
+            "new-site-from-backup",
+            {**common_args, "db_file": str(second_upload)},
+            idempotency_key="restore-request",
+        )
 
 
 def test_base_task_loads_secret_arguments_from_handoff_file(
@@ -469,6 +617,41 @@ def test_wrapper_runs_only_cancel_callback_after_cancellation(
     assert not (task_dir / "callbacks.json").exists()
     assert (tmp_path / "success.marker").exists()
     assert not (tmp_path / "failure.marker").exists()
+
+
+def test_wrapper_terminal_state_wins_before_callback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_dir = tmp_path / "tasks" / TASK_ID
+    task_dir.mkdir(parents=True)
+    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
+    (task_dir / "status").write_text("running")
+    (task_dir / "callbacks.json").write_text(
+        json.dumps(
+            {"on_success": {"operation": "test-late-cancel", "args": {}}}
+        )
+    )
+    observed = []
+
+    def attempt_late_cancel(meta: dict, args: dict) -> None:
+        observed.append((task_dir / "status").read_text())
+        with pytest.raises(TaskNotRunningError, match="status=success"):
+            TaskRunner(tmp_path).kill(TASK_ID)
+
+    monkeypatch.setitem(
+        callback_module._OPERATIONS,
+        "test-late-cancel",
+        attempt_late_cancel,
+    )
+    monkeypatch.setattr(wrapper_module, "run_with_syslog_output", lambda *args: 0)
+    monkeypatch.setattr(sys, "argv", ["wrapper", str(task_dir)])
+
+    wrapper_module.main()
+
+    assert observed == ["success"]
+    assert (task_dir / "status").read_text() == "success"
+    assert not (task_dir / "callbacks.json").exists()
 
 
 def test_callback_failure_is_logged_and_callback_is_removed(

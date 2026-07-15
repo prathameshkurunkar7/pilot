@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import socket
 import threading
 from contextlib import contextmanager
@@ -744,24 +745,38 @@ def test_api_benches_drop_does_not_prompt_for_system_privileges(tmp_path: Path) 
     assert resp.get_json()["error"]["code"] == "privileged_operation_unavailable"
     drop.assert_not_called()
 
-# ── POST /api/v1/sites/create — engine is bench-level, not per-site ──────────────
+# ── POST /api/v1/sites — engine is bench-level, not per-site ────────────────────
 
 
 def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:
     # The engine is fixed per bench, so site creation never passes a db_type.
-    client = _client(tmp_path / "benches" / "current")
-    captured: dict = {}
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
 
-    def fake_run(self, command, args, callbacks=None):
-        captured["args"] = args
-        return "task_123"
+    with (
+        patch("admin.backend.views.sites._new_site_name_error", return_value=None),
+        patch(
+            "admin.backend.tasks.manager.task_runner.task_workers.wake",
+            return_value=False,
+        ),
+    ):
+        response = client.post(
+            "/api/v1/sites",
+            json={"name": "s.localhost", "db_type": "sqlite"},
+        )
 
-    with patch("admin.backend.views.sites._new_site_name_error", return_value=None), \
-         patch("admin.backend.views.sites.TaskRunner.run", new=fake_run):
-        resp = client.post("/api/v1/sites/create", json={"name": "s.localhost"})
-
-    assert resp.get_json()["ok"] is True
-    assert "db_type" not in captured["args"]
+    body = response.get_json()
+    assert response.status_code == 202
+    assert response.headers["Location"] == f"/api/v1/tasks/{body['task_id']}"
+    assert body["command"] == "new-site"
+    assert "db_type" not in body["args"]
+    callbacks = json.loads(
+        (bench_root / "tasks" / body["task_id"] / "callbacks.json").read_text()
+    )
+    assert callbacks["on_cancel"] == callbacks["on_failure"] == {
+        "operation": "remove-failed-site",
+        "args": {"site": "s.localhost"},
+    }
 
 
 def test_reinstall_site_generates_new_admin_password(tmp_path: Path) -> None:

@@ -58,6 +58,15 @@ def normalize_host(host: str) -> str:
     return h
 
 
+def hosts_line_contains(
+    line: str,
+    hostname: str,
+    address: str = "127.0.0.1",
+) -> bool:
+    tokens = line.split("#", 1)[0].split()
+    return bool(tokens) and tokens[0] == address and hostname in tokens[1:]
+
+
 def wildcard_suffix(pattern: str) -> str:
     """The fixed part of a wildcard domain pattern, e.g. '*.example.com' -> '.example.com',
     '*-box1.example.com' -> '-box1.example.com'."""
@@ -206,9 +215,13 @@ def run_command(
 
 
 def _start_process(argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool) -> subprocess.Popen:
-    launch_id = os.environ.get("BENCH_TASK_LAUNCH_ID")
-    if env is not None and launch_id:
-        env = {**env, "BENCH_TASK_LAUNCH_ID": launch_id}
+    inherited = {
+        key: os.environ[key]
+        for key in ("BENCH_TASK_LAUNCH_ID", "PILOT_NONINTERACTIVE_PRIVILEGES")
+        if key in os.environ
+    }
+    if env is not None and inherited:
+        env = {**env, **inherited}
     return subprocess.Popen(
         argv,
         cwd=cwd,

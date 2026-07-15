@@ -57,6 +57,7 @@ def test_stream_output_still_returns_completed_process() -> None:
 
 def test_explicit_child_environment_keeps_task_launch_identity(monkeypatch) -> None:
     monkeypatch.setenv("BENCH_TASK_LAUNCH_ID", "task-launch")
+    monkeypatch.setenv("PILOT_NONINTERACTIVE_PRIVILEGES", "1")
     process = MagicMock()
 
     with patch("pilot.utils.subprocess.Popen", return_value=process) as popen:
@@ -65,3 +66,4 @@ def test_explicit_child_environment_keeps_task_launch_identity(monkeypatch) -> N
         assert _start_process(["true"], None, {"PATH": "/bin"}, False) is process
 
     assert popen.call_args.kwargs["env"]["BENCH_TASK_LAUNCH_ID"] == "task-launch"
+    assert popen.call_args.kwargs["env"]["PILOT_NONINTERACTIVE_PRIVILEGES"] == "1"

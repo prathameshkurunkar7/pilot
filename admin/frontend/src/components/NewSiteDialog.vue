@@ -32,34 +32,6 @@
           </div>
         </div>
 
-        <!-- DB type -->
-        <div v-if="benchDbType" class="space-y-1.5">
-          <span class="text-ink-gray-7 text-p-sm-medium">Database</span>
-          <div class="gap-2 grid grid-cols-2">
-            <!-- Benche's default production DB -->
-            <button type="button" class="flex items-center gap-3 p-3 border rounded-lg text-left transition-all" :class="dbType !== 'sqlite'
-              ? 'border-outline-gray-4 bg-surface-gray-1 ring-1 ring-outline-gray-4'
-              : 'border-outline-gray-2 hover:bg-surface-gray-1'"
-              @click="dbType = benchDbType !== 'sqlite' ? benchDbType : 'mariadb'">
-              <div>
-                <span class="block font-medium text-ink-gray-9 text-sm">
-                  {{ benchDbType === 'postgres' ? 'PostgreSQL' : 'MariaDB' }}
-                </span>
-                <span class="text-ink-gray-5 text-xs">Recommended</span>
-              </div>
-            </button>
-            <!-- SQite experimental -->
-            <button type="button" class="flex items-center gap-3 p-3 border rounded-lg text-left transition-all" :class="dbType === 'sqlite'
-              ? 'border-outline-gray-4 bg-surface-gray-1 ring-1 ring-outline-gray-4'
-              : 'border-outline-gray-2 hover:bg-surface-gray-1'" @click="dbType = 'sqlite'">
-              <div>
-                <span class="block font-medium text-ink-gray-9 text-sm">SQLite</span>
-                <span class="text-ink-gray-5 text-xs">Experimental</span>
-              </div>
-            </button>
-          </div>
-        </div>
-
         <!-- Choose apps -->
         <div v-if="!loading && combinedApps.length">
           <div class="flex justify-between items-center mb-2">
@@ -111,7 +83,6 @@ import { Button, Checkbox, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import AppIcon from '@/components/AppIcon.vue'
 import { apiErrorMessage } from '@/api/client'
 import { appsApi } from '@/api/apps'
-import { authApi } from '@/api/auth'
 import { sitesApi } from '@/api/sites'
 import { useAppRegistry } from '@/composables/useAppRegistry'
 import { isFrappeApp } from '@/composables/useMarketplace'
@@ -133,9 +104,6 @@ const selectedSuffix = ref('')
 const loading = ref(false)
 const creating = ref(false)
 const error = ref('')
-
-const benchDbType = ref('')
-const dbType = ref('mariadb')
 
 const selectedApps = ref([])
 const appSearch = ref('')
@@ -188,12 +156,10 @@ async function reset() {
   newSiteName.value = ''
   sitePrefix.value = ''
   error.value = ''
-  benchDbType.value = ''
-  dbType.value = ''
   selectedApps.value = []
   appSearch.value = ''
   loading.value = true
-  await Promise.all([loadWildcardDomains(), loadBenchDbType(), loadRegistry(), loadBenchApps()])
+  await Promise.all([loadWildcardDomains(), loadRegistry(), loadBenchApps()])
   loading.value = false
 }
 
@@ -221,16 +187,6 @@ async function loadWildcardDomains() {
   }
 }
 
-async function loadBenchDbType() {
-  try {
-    const { db_type } = await authApi.bootstrap()
-    benchDbType.value = db_type || 'mariadb'
-    dbType.value = benchDbType.value
-  } catch {
-    benchDbType.value = ''
-  }
-}
-
 function validate(name) {
   if (!name) return 'Site name is required.'
   if (!/^[a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/.test(name))
@@ -251,10 +207,9 @@ async function submit() {
   try {
     const result = await sitesApi.create({
       name,
-      db_type: dbType.value,
       apps: selectedApps.value,
     })
-    if (result.ok) {
+    if (result.task_id) {
       open.value = false
       emit('started', result.task_id)
     } else {

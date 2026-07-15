@@ -34,13 +34,16 @@ class SiteReader:
 
     def read_all(self) -> list[SiteInfo]:
         sites_path = self._bench_root / "sites"
-        if not sites_path.is_dir():
+        if sites_path.is_symlink() or not sites_path.is_dir():
             return []
         provisioning = self._provisioning_site_names()
         return [
             self._read_site(d.name, provisioning)
             for d in sorted(sites_path.iterdir())
-            if d.is_dir() and (d / "site_config.json").exists()
+            if not d.is_symlink()
+            and d.is_dir()
+            and not (d / "site_config.json").is_symlink()
+            and (d / "site_config.json").is_file()
         ]
 
     def read_one(self, site_name: str) -> SiteInfo:
@@ -68,8 +71,15 @@ class SiteReader:
         return names
 
     def _read_site(self, site_name: str, provisioning: set[str]) -> SiteInfo:
-        site_config_path = self._bench_root / "sites" / site_name / "site_config.json"
-        exists = site_config_path.exists()
+        raw_sites_path = self._bench_root / "sites"
+        if raw_sites_path.is_symlink():
+            raise ValueError("Sites path must stay within the bench.")
+        sites_path = raw_sites_path.resolve()
+        site_path = sites_path / site_name
+        if site_path.is_symlink() or site_path.resolve(strict=False).parent != sites_path:
+            raise ValueError("Site path must stay within the bench.")
+        site_config_path = site_path / "site_config.json"
+        exists = not site_config_path.is_symlink() and site_config_path.is_file()
         site_config: dict = {}
 
         if exists:

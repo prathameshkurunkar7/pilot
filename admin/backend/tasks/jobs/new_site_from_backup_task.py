@@ -25,6 +25,7 @@ class NewSiteFromBackupTask(BaseTask):
         self.private_files = args.private_files
 
     def run(self) -> None:
+        self._require_production_privileges()
         self._step("restore", f"Restore site {self.name} from backup")
         NewSiteFromBackupCommand(
             self.bench,

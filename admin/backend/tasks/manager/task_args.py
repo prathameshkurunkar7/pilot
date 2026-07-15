@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 _REDACTED = "[redacted]"
@@ -7,6 +9,11 @@ _SECRET_ARGS = {
     "new-site": frozenset({"admin_password"}),
     "new-site-from-backup": frozenset({"admin_password"}),
     "reinstall-site": frozenset({"admin_password"}),
+}
+_PRIVATE_ARGS = {
+    "new-site-from-backup": frozenset(
+        {"db_file", "public_files", "private_files"}
+    ),
 }
 _SENSITIVE_KEY_PARTS = ("password", "secret", "token", "credential", "private_key")
 
@@ -17,6 +24,23 @@ def task_secret_args(command: str, args: dict) -> dict:
 
 def task_requires_secrets(command: str) -> bool:
     return bool(_SECRET_ARGS.get(command))
+
+
+def public_task_args(command: str, args: dict) -> dict:
+    private_args = _PRIVATE_ARGS.get(command, ())
+    return redact_task_args(
+        {key: value for key, value in args.items() if key not in private_args}
+    )
+
+
+def fingerprint_task_args(command: str, args: dict) -> dict:
+    fingerprint_args = redact_task_args(args)
+    if command != "new-site-from-backup":
+        return fingerprint_args
+    for key in _PRIVATE_ARGS[command]:
+        if path := args.get(key):
+            fingerprint_args[key] = {"sha256": _file_digest(path)}
+    return fingerprint_args
 
 
 def redact_task_args(args: dict) -> dict:
@@ -68,3 +92,11 @@ def _has_url_credentials(value: str) -> bool:
         return parsed.scheme in ("http", "https") and parsed.username is not None
     except ValueError:
         return False
+
+
+def _file_digest(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

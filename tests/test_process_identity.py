@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -41,6 +42,40 @@ def test_process_identity_round_trips_owned_group(owned_process) -> None:
 
     assert inspector.inspect(identity, argv) == ProcessOwnership.OWNED
     assert type(identity).from_dict(identity.to_dict()) == identity
+
+
+def test_capture_waits_for_child_exec(monkeypatch: pytest.MonkeyPatch) -> None:
+    inspector = ProcessInspector()
+    argv = [sys.executable, "-c", "pass"]
+    expected_hash = inspector._argv_hash(argv)
+    snapshots = iter(
+        [
+            SimpleNamespace(
+                state="R",
+                pgid=123,
+                sid=123,
+                start_ticks=1,
+                uid=os.getuid(),
+                argv_hash="pre-exec-command",
+            ),
+            SimpleNamespace(
+                state="R",
+                pgid=123,
+                sid=123,
+                start_ticks=1,
+                uid=os.getuid(),
+                argv_hash=expected_hash,
+            ),
+        ]
+    )
+    monkeypatch.setattr(inspector, "_read_process", lambda pid: next(snapshots))
+    monkeypatch.setattr(inspector, "_has_launch_id", lambda pid, launch_id: True)
+    monkeypatch.setattr(inspector, "_read_boot_id", lambda: "boot")
+    monkeypatch.setattr("admin.backend.tasks.manager.process_identity.time.sleep", lambda _: None)
+
+    identity = inspector.capture(123, argv, "launch")
+
+    assert identity.argv_hash == expected_hash
 
 
 @pytest.mark.parametrize(

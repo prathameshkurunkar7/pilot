@@ -124,7 +124,8 @@ def _database_sample(path: Path, suffix: str) -> bytes:
         if suffix == ".sql.gz":
             with gzip.open(path, "rb") as stream:
                 return stream.read(8192)
-        return path.read_bytes()[:8192]
+        with path.open("rb") as stream:
+            return stream.read(8192)
     except (OSError, EOFError) as exc:
         raise UploadError("File is not a supported database backup.") from exc
 

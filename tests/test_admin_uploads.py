@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 from werkzeug.datastructures import FileStorage
 
+from admin.backend.tasks.manager.task_runner import TaskSubmission
 from admin.backend.uploads import (
     UploadError,
     create_upload_directory,
@@ -90,6 +91,18 @@ def test_database_upload_accepts_gzipped_sql(tmp_path: Path) -> None:
     assert path.name.endswith(".sql.gz")
 
 
+def test_plain_database_validation_uses_bounded_read(tmp_path: Path) -> None:
+    directory = create_upload_directory(tmp_path)
+
+    with patch.object(Path, "read_bytes", side_effect=AssertionError("unbounded read")):
+        path = save_database_upload(
+            _upload(b"-- backup\nCREATE TABLE tab (id int);", "backup.sql"),
+            directory,
+        )
+
+    assert path.is_file()
+
+
 def test_upload_directory_must_resolve_inside_bench(tmp_path: Path) -> None:
     outside = tmp_path.parent / "outside-uploads"
     outside.mkdir()
@@ -154,13 +167,22 @@ def test_archive_upload_rejects_unsafe_members(tmp_path: Path) -> None:
     assert not any(directory.iterdir())
 
 
-def test_create_from_upload_passes_only_generated_paths_to_task(tmp_path: Path) -> None:
+def test_site_restore_passes_only_generated_paths_to_task(tmp_path: Path) -> None:
     bench_root = tmp_path / "bench"
     client = _client(bench_root)
 
-    with patch("admin.backend.views.sites.TaskRunner.run", return_value="task-1") as run:
+    with (
+        patch(
+            "admin.backend.views.sites.TaskRunner.submit",
+            return_value=TaskSubmission("task-1", True),
+        ) as submit,
+        patch(
+            "admin.backend.views.sites.accepted_task_response",
+            return_value=({"task_id": "task-1"}, 202),
+        ),
+    ):
         response = client.post(
-            "/api/v1/sites/create-from-upload",
+            "/api/v1/site-restores",
             data={
                 "name": "new.localhost",
                 "admin_password": "site-secret",
@@ -172,8 +194,8 @@ def test_create_from_upload_passes_only_generated_paths_to_task(tmp_path: Path) 
             },
         )
 
-    assert response.status_code == 200
-    args = run.call_args.args[1]
+    assert response.status_code == 202
+    args = submit.call_args.args[1]
     upload_root = (bench_root / "tmp" / "uploads").resolve()
     for key in ("db_file", "public_files"):
         path = Path(args[key])
@@ -182,20 +204,82 @@ def test_create_from_upload_passes_only_generated_paths_to_task(tmp_path: Path) 
     assert Path(args["db_file"]).name != "backup.sql"
     assert Path(args["public_files"]).name != "public.tar"
     assert args["admin_password"] == "site-secret"
+    assert submit.call_args.kwargs["resource_key"] == "site:new.localhost"
+    assert set(submit.call_args.kwargs["callbacks"]) == {
+        "on_success",
+        "on_failure",
+        "on_cancel",
+    }
 
 
-def test_create_from_upload_generates_admin_password_when_omitted(tmp_path: Path) -> None:
+def test_site_restore_generates_admin_password_when_omitted(tmp_path: Path) -> None:
     client = _client(tmp_path / "bench")
 
-    with patch("admin.backend.views.sites.TaskRunner.run", return_value="task-1") as run:
+    with (
+        patch(
+            "admin.backend.views.sites.TaskRunner.submit",
+            return_value=TaskSubmission("task-1", True),
+        ) as submit,
+        patch(
+            "admin.backend.views.sites.accepted_task_response",
+            return_value=({"task_id": "task-1"}, 202),
+        ),
+    ):
         response = client.post(
-            "/api/v1/sites/create-from-upload",
+            "/api/v1/site-restores",
             data={
                 "name": "new.localhost",
                 "db_file": (io.BytesIO(b"-- backup\nCREATE TABLE tab (id int);"), "backup.sql"),
             },
         )
 
-    assert response.get_json() == {"ok": True, "task_id": "task-1"}
-    password = run.call_args.args[1]["admin_password"]
+    assert response.status_code == 202
+    assert response.get_json() == {"task_id": "task-1"}
+    password = submit.call_args.args[1]["admin_password"]
     assert password and password != "admin"
+
+
+def test_site_restore_replay_removes_duplicate_upload_directory(
+    tmp_path: Path,
+) -> None:
+    bench_root = tmp_path / "bench"
+    client = _client(bench_root)
+    request_data = {
+        "name": "new.localhost",
+        "db_file": (
+            io.BytesIO(b"-- backup\nCREATE TABLE tab (id int);"),
+            "backup.sql",
+        ),
+    }
+
+    with patch(
+        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        return_value=False,
+    ):
+        first = client.post(
+            "/api/v1/site-restores",
+            data=request_data,
+            headers={"Idempotency-Key": "restore-request"},
+        )
+        replay = client.post(
+            "/api/v1/site-restores",
+            data={
+                "name": "new.localhost",
+                "db_file": (
+                    io.BytesIO(b"-- backup\nCREATE TABLE tab (id int);"),
+                    "another.sql",
+                ),
+            },
+            headers={"Idempotency-Key": "restore-request"},
+        )
+
+    assert first.status_code == replay.status_code == 202
+    first_body = first.get_json()
+    assert first_body["task_id"] == replay.get_json()["task_id"]
+    assert first.headers["Location"] == f"/api/v1/tasks/{first_body['task_id']}"
+    assert first_body["args"] == {
+        "name": "new.localhost",
+        "admin_password": "[redacted]",
+    }
+    upload_directories = list((bench_root / "tmp" / "uploads").iterdir())
+    assert len(upload_directories) == 1

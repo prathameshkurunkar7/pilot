@@ -21,6 +21,7 @@ class NewSiteTask(BaseTask):
         self.apps = args.apps
 
     def run(self) -> None:
+        self._require_production_privileges()
         self._fetch_missing_apps()
         self._step("create", f"Create site {self.name}")
         NewSiteCommand(self.bench, self.name, self.apps, self.admin_password, db_type=self.db_type).run()

@@ -163,7 +163,7 @@ async function confirmDrop() {
   dropError.value = ''
   try {
     const data = await sitesApi.drop(props.siteName)
-    if (data.ok) {
+    if (data.task_id) {
       showDrop.value = false
       openTaskDetailPage(router, data.task_id)
     } else {

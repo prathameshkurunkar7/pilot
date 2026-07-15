@@ -109,9 +109,11 @@ class RenameSiteCommand(Command):
         if not self.bench.config.production.process_manager == "none":
             return
         hosts_path = Path("/etc/hosts")
+        from pilot.utils import hosts_line_contains
+
         entry = f"127.0.0.1 {self.new_name}"
         for line in hosts_path.read_text().splitlines():
-            if entry in line.split("#", 1)[0].split():
+            if hosts_line_contains(line, self.new_name):
                 return
         try:
             subprocess.run(

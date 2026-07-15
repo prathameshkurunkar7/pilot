@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from admin.backend.tasks.callbacks import run_stored_callback
+from admin.backend.tasks.callbacks import run_stored_callback, trigger_for_task_status
 from admin.backend.tasks.manager.process_identity import (
     ProcessIdentity,
     ProcessInspector,
@@ -20,6 +20,7 @@ from admin.backend.tasks.manager.process_identity import (
 from admin.backend.tasks.manager.task_state import TERMINAL_TASK_STATUSES, TaskStatus
 from admin.backend.tasks.manager.task_store import TaskStore
 from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
+from pilot.platform import NONINTERACTIVE_PRIVILEGES_ENV
 
 _READY_FD_ENV = "BENCH_TASK_READY_FD"
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
@@ -119,9 +120,16 @@ class TaskProcess:
             if status == TaskStatus.RUNNING:
                 self._interrupt(task_id)
             elif status != TaskStatus.QUEUED:
-                self._store.remove_private_files(task_id, "process.json")
+                self._run_stored_callback_for_status(task_id)
+                self._store.remove_private_files(
+                    task_id,
+                    "process.json",
+                    "secrets.json",
+                    "callbacks.json",
+                )
             else:
                 return task_id
+        self._recover_terminal_callbacks()
         return None
 
     def cancel(self, task_id: str, grace_seconds: float | None = None) -> None:
@@ -168,6 +176,7 @@ class TaskProcess:
             **os.environ,
             _READY_FD_ENV: str(read_fd),
             _LAUNCH_ID_ENV: launch_id,
+            NONINTERACTIVE_PRIVILEGES_ENV: "1",
         }
         secret_path = task_dir / "secrets.json"
         if secret_path.exists():
@@ -198,12 +207,10 @@ class TaskProcess:
                 "failure": {"code": "task_interrupted"},
             },
         )
-        self._run_stored_callback(task_id, "on_failure")
         self._store.remove_private_files(
             task_id,
             "process.json",
             "secrets.json",
-            "callbacks.json",
         )
 
     def _wait_for_exit(self, record: TaskProcessRecord, grace_seconds: float) -> None:
@@ -211,7 +218,6 @@ class TaskProcess:
         while time.monotonic() < deadline:
             ownership = self._inspector.inspect(record.identity, record.argv)
             if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
-                self._run_stored_callback(record.task_id, "on_cancel")
                 self._clear_process(record.task_id)
                 return
             if ownership == ProcessOwnership.UNKNOWN:
@@ -220,7 +226,6 @@ class TaskProcess:
 
         outcome = self._signal(record, signal.SIGKILL)
         if outcome in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
-            self._run_stored_callback(record.task_id, "on_cancel")
             self._clear_process(record.task_id)
             return
         if outcome == ProcessOwnership.UNKNOWN:
@@ -230,7 +235,6 @@ class TaskProcess:
         while time.monotonic() < deadline:
             ownership = self._inspector.inspect(record.identity, record.argv)
             if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
-                self._run_stored_callback(record.task_id, "on_cancel")
                 self._clear_process(record.task_id)
                 return
             if ownership == ProcessOwnership.UNKNOWN:
@@ -242,6 +246,23 @@ class TaskProcess:
             run_stored_callback(self._store.task_dir(task_id), trigger)
         except Exception:
             pass
+
+    def _run_stored_callback_for_status(self, task_id: str) -> None:
+        try:
+            status = self._store.read_status(task_id)
+            trigger = trigger_for_task_status(status)
+        except (KeyError, OSError, ValueError, TaskNotFoundError):
+            return
+        self._run_stored_callback(task_id, trigger)
+
+    def _recover_terminal_callbacks(self) -> None:
+        for task_id in self._store.terminal_task_ids_with_callbacks():
+            self._run_stored_callback_for_status(task_id)
+            self._store.remove_private_files(
+                task_id,
+                "secrets.json",
+                "callbacks.json",
+            )
 
     def _signal(
         self,
@@ -298,5 +319,4 @@ class TaskProcess:
             task_id,
             "process.json",
             "secrets.json",
-            "callbacks.json",
         )

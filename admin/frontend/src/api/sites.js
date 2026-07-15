@@ -1,18 +1,17 @@
 import { apiUrl, request } from './client'
 
 export const sitesApi = {
-  list: () => request.get('sites/').json(),
+  list: () => request.get('sites').json(),
   detail: (name) => request.get(`sites/${encodeURIComponent(name)}`).json(),
-  create: (payload) => request.post('sites/create', { json: payload }).json(),
-  createFromUpload: (formData) => request.post('sites/create-from-upload', { body: formData }).json(),
+  create: (payload) => request.post('sites', { json: payload }).json(),
+  restore: (formData) => request.post('site-restores', { body: formData }).json(),
   login: (name) => request.post(`sites/${encodeURIComponent(name)}/login`).json(),
   config: (name, config) => request.patch(`sites/${encodeURIComponent(name)}/config`, { json: config }).json(),
   enableSsl: (name, email) => request.post(`sites/${encodeURIComponent(name)}/enable-ssl`, { json: email ? { email } : {} }).json(),
   clearCache: (name) => request.post(`sites/${encodeURIComponent(name)}/clear-cache`).json(),
   migrate: (name) => request.post(`sites/${encodeURIComponent(name)}/migrate`).json(),
   reinstall: (name) => request.post(`sites/${encodeURIComponent(name)}/reinstall`).json(),
-  drop: (name) => request.post(`sites/${encodeURIComponent(name)}/drop`).json(),
-  forceDrop: (name) => request.post(`sites/${encodeURIComponent(name)}/force-drop`).json(),
+  drop: (name) => request.delete(`sites/${encodeURIComponent(name)}`).json(),
 
   apps: {
     list: (name) => request.get(`sites/${encodeURIComponent(name)}/apps`).json(),

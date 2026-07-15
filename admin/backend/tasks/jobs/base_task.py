@@ -8,6 +8,8 @@ from pathlib import Path
 
 from pilot.config.toml_store import BenchTomlStore
 from pilot.core.bench import Bench
+from pilot.exceptions import BenchError
+from pilot.platform import has_passwordless_sudo
 
 
 def _apply_task_secrets(args: argparse.Namespace) -> None:
@@ -33,6 +35,12 @@ class BaseTask:
     def _step_failed(self) -> None:
         if self._current_step:
             print(f"STEP-FAILED {self._current_step},{time.time():.3f}", flush=True)
+
+    def _require_production_privileges(self) -> None:
+        if self.bench.config.production.enabled and not has_passwordless_sudo():
+            raise BenchError(
+                "Production site operations require non-interactive system privileges."
+            )
 
     @classmethod
     def _parser(cls) -> argparse.ArgumentParser:

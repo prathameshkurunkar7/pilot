@@ -191,6 +191,108 @@ def test_terminal_task_does_not_block_idempotent_retry(tmp_path: Path) -> None:
     assert retry.task_id == retry_id
 
 
+def test_active_resource_rejects_another_task(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued(metadata(), resource_key="site:example.test")
+
+    with pytest.raises(TaskConflictError, match="already using resource"):
+        store.create_queued(
+            {**metadata(), "task_id": "20260715-120001-bbccdd"},
+            resource_key="site:example.test",
+        )
+
+    assert store.read_metadata(TASK_ID)["resource_key"] == "site:example.test"
+
+
+def test_idempotent_replay_precedes_resource_conflict(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_idempotent_queued(
+        metadata(),
+        {},
+        idempotency_digest="key-digest",
+        request_fingerprint="request-digest",
+        resource_key="site:example.test",
+    )
+
+    replay = store.create_idempotent_queued(
+        {**metadata(), "task_id": "20260715-120001-bbccdd"},
+        {},
+        idempotency_digest="key-digest",
+        request_fingerprint="request-digest",
+        resource_key="site:example.test",
+    )
+
+    assert replay.created is False
+    assert replay.task_id == TASK_ID
+
+
+def test_active_resource_rejects_different_idempotent_task(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_idempotent_queued(
+        metadata(),
+        {},
+        idempotency_digest="first-key",
+        request_fingerprint="request-digest",
+        resource_key="site:example.test",
+    )
+
+    with pytest.raises(TaskConflictError, match="already using resource"):
+        store.create_idempotent_queued(
+            {**metadata(), "task_id": "20260715-120001-bbccdd"},
+            {},
+            idempotency_digest="second-key",
+            request_fingerprint="request-digest",
+            resource_key="site:example.test",
+        )
+
+
+def test_terminal_task_releases_resource(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued(metadata(), resource_key="site:example.test")
+    store.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.KILLED)
+    retry_id = "20260715-120001-bbccdd"
+
+    store.create_queued(
+        {**metadata(), "task_id": retry_id},
+        resource_key="site:example.test",
+    )
+
+    assert store.read_metadata(retry_id)["resource_key"] == "site:example.test"
+
+
+@pytest.mark.parametrize("pending_file", ["callbacks.json", "process.json"])
+def test_terminal_task_holds_resource_while_cleanup_is_pending(
+    tmp_path: Path,
+    pending_file: str,
+) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued(
+        metadata(),
+        {pending_file: "{}"},
+        resource_key="site:example.test",
+    )
+    store.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.KILLED)
+    retry_metadata = {**metadata(), "task_id": "20260715-120001-bbccdd"}
+
+    with pytest.raises(TaskConflictError, match="already using resource"):
+        store.create_queued(
+            retry_metadata,
+            resource_key="site:example.test",
+        )
+
+    store.remove_private_files(TASK_ID, pending_file)
+    store.create_queued(retry_metadata, resource_key="site:example.test")
+
+
+def test_retention_preserves_task_with_pending_callback(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    store.create_queued(metadata(), {"callbacks.json": "{}"})
+    store.transition(TASK_ID, TaskStatus.QUEUED, TaskStatus.KILLED)
+
+    assert store.purge_terminal(0) == []
+    assert store.task_dir(TASK_ID).exists()
+
+
 def test_retention_deletes_only_oldest_terminal_tasks(tmp_path: Path) -> None:
     store = TaskStore(tmp_path)
     queued_id = "20260715-120000-111111"

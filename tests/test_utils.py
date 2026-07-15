@@ -9,7 +9,21 @@ from pathlib import Path
 import pytest
 
 from pilot.internal.toml import Toml
-from pilot.utils import host_owner, normalize_host, run_command
+from pilot.utils import hosts_line_contains, host_owner, normalize_host, run_command
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("127.0.0.1 site.localhost", True),
+        ("127.0.0.1 other.localhost site.localhost # local", True),
+        ("127.0.0.1 site.localhost.example", False),
+        ("# 127.0.0.1 site.localhost", False),
+        ("::1 site.localhost", False),
+    ],
+)
+def test_hosts_line_contains_exact_hostname_token(line: str, expected: bool) -> None:
+    assert hosts_line_contains(line, "site.localhost") is expected
 
 
 def test_run_command_hides_password_flags_from_process_argv(

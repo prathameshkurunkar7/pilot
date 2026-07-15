@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import copy
+import re
 import secrets
 import shutil
 import subprocess
-from dataclasses import asdict
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
-from pilot.secure_files import write_private_text
 from pilot.exceptions import (
     BenchError,
     ConfigError,
@@ -17,9 +16,11 @@ from pilot.exceptions import (
     DomainProviderError,
     TaskConflictError,
 )
+from pilot.secure_files import write_private_text
 
 from admin.backend.api_contract import error_response
 from admin.backend.auth import require_scope
+from admin.backend.tasks.task_response import accepted_task_response
 from admin.backend.uploads import (
     UploadError,
     create_upload_directory,
@@ -30,7 +31,7 @@ from ..validators import validate_cron_expression, validate_site_name
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
 from ..readers.app_reader import AppReader
-from ..readers.site_reader import SiteReader
+from ..readers.site_reader import SiteInfo, SiteReader
 
 
 def site_name(kwargs: dict) -> str:
@@ -38,10 +39,28 @@ def site_name(kwargs: dict) -> str:
 
 
 sites_bp = Blueprint("sites", __name__)
+site_restores_bp = Blueprint("site-restores", __name__)
 
 # Confidential / system-managed site_config keys. These are never sent to the
 # admin UI and cannot be edited through it — they are preserved as-is on disk.
-PROTECTED_CONFIG_KEYS = frozenset({"db_name", "db_password", "db_socket", "db_type", "db_user", "installed_apps", "ssl", "domains", "host_name", "pilot_endpoint", "pilot_auth_token", "backup_retention"})
+PROTECTED_CONFIG_KEYS = frozenset(
+    {
+        "backup_retention",
+        "db_host",
+        "db_name",
+        "db_password",
+        "db_port",
+        "db_socket",
+        "db_type",
+        "db_user",
+        "domains",
+        "host_name",
+        "installed_apps",
+        "pilot_auth_token",
+        "pilot_endpoint",
+        "ssl",
+    }
+)
 _SENSITIVE_CONFIG_KEY_PARTS = (
     "_key",
     "access_key",
@@ -54,8 +73,8 @@ _SENSITIVE_CONFIG_KEY_PARTS = (
 )
 
 
-@sites_bp.route("/")
-def index():
+@sites_bp.get("")
+def list_sites():
     bench_root = current_app.config["BENCH_ROOT"]
     try:
         sites = SiteReader(bench_root).read_all()
@@ -63,10 +82,8 @@ def index():
         return _internal_error("Could not read sites.")
 
     payload = []
-    for s in sites:
-        d = asdict(s)
-        d["site_config"] = _public_config(s.site_config)
-        payload.append(d)
+    for site in sites:
+        payload.append(_site_resource(site))
     return jsonify(payload)
 
 
@@ -100,10 +117,16 @@ def detail(name: str):
         nginx_enabled = False
         admin_tls = False
 
-    site_dict = asdict(site)
-    site_dict["site_config"] = _public_config(site.site_config)
-    site_dict["ssl"] = bool(site.site_config.get("ssl"))
-    return jsonify({"site": site_dict, "installable_apps": installable, "http_port": http_port, "nginx_enabled": nginx_enabled, "admin_tls": admin_tls})
+    return jsonify(
+        {
+            **_site_resource(site),
+            "ssl": bool(site.site_config.get("ssl")),
+            "installable_apps": installable,
+            "http_port": http_port,
+            "nginx_enabled": nginx_enabled,
+            "admin_tls": admin_tls,
+        }
+    )
 
 
 @sites_bp.route("/<name>/apps")
@@ -163,13 +186,13 @@ def wildcard_domains():
     return jsonify({"domains": [wildcard_suffix(p) for p in patterns]})
 
 
-@sites_bp.route("/create", methods=["POST"])
-def create():
+@sites_bp.post("")
+def create_site():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return _malformed_body()
-    fields = _text_fields(data, "name", "db_type")
+    fields = _text_fields(data, "name")
     apps_value = data.get("apps", [])
     if fields is None or not isinstance(apps_value, list) or not all(
         isinstance(app, str) for app in apps_value
@@ -178,40 +201,37 @@ def create():
 
     name = fields["name"]
     admin_password = secrets.token_urlsafe(16)
-    db_type = fields["db_type"]
     apps = [app.strip() for app in apps_value if app.strip()]
-    if db_type and db_type not in ("mariadb", "postgres", "sqlite"):
-        return error_response(
-            "invalid_db_type", "Database type must be mariadb, postgres, or sqlite.", 422
-        )
     err = validate_site_name(name) or _new_site_name_error(bench_root, name)
     if err:
         return _site_name_failure(err)
 
     task_args: dict = {"name": name, "admin_password": admin_password}
-    if db_type:
-        task_args["db_type"] = db_type
     if apps:
         task_args["apps"] = apps
+    cleanup_callback = {
+        "operation": "remove-failed-site",
+        "args": {"site": name},
+    }
     try:
         task_id = TaskRunner(bench_root).run(
             "new-site",
             task_args,
             callbacks={
-                "on_failure": {
-                    "operation": "remove-failed-site",
-                    "args": {"site": name},
-                }
+                "on_failure": cleanup_callback,
+                "on_cancel": cleanup_callback,
             },
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
         return _task_failure(error)
 
-    return jsonify({"ok": True, "task_id": task_id})
+    return accepted_task_response(bench_root, task_id)
 
 
-@sites_bp.route("/create-from-upload", methods=["POST"])
-def create_from_upload():
+@site_restores_bp.post("/site-restores")
+def create_site_restore():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     name = (request.form.get("name") or "").strip()
     admin_password = request.form.get("admin_password")
@@ -252,22 +272,62 @@ def create_from_upload():
         return _internal_error("Could not store the uploaded backup.")
 
     try:
-        task_id = TaskRunner(bench_root).run("new-site-from-backup", args)
+        submission = TaskRunner(bench_root).submit(
+            "new-site-from-backup",
+            args,
+            callbacks={
+                "on_success": {
+                    "operation": "cleanup-site-restore",
+                    "args": {
+                        "upload_dir": str(upload_dir),
+                        "site": name,
+                        "remove_site": False,
+                    },
+                },
+                "on_failure": {
+                    "operation": "cleanup-site-restore",
+                    "args": {
+                        "upload_dir": str(upload_dir),
+                        "site": name,
+                        "remove_site": True,
+                    },
+                },
+                "on_cancel": {
+                    "operation": "cleanup-site-restore",
+                    "args": {
+                        "upload_dir": str(upload_dir),
+                        "site": name,
+                        "remove_site": True,
+                    },
+                },
+            },
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            resource_key=f"site:{name.lower()}",
+        )
     except Exception as error:
         shutil.rmtree(upload_dir, ignore_errors=True)
         return _task_failure(error)
-    return jsonify({"ok": True, "task_id": task_id})
+    if not submission.created:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+    return accepted_task_response(bench_root, submission.task_id)
 
 
-@sites_bp.route("/<name>/drop", methods=["POST"])
+@sites_bp.delete("/<name>")
 @require_scope(site_name)
 def drop_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not _site_exists(bench_root, name):
+        return _site_not_found()
     try:
-        task_id = TaskRunner(bench_root).run("drop-site", {"site": name})
+        task_id = TaskRunner(bench_root).run(
+            "drop-site",
+            {"site": name},
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            resource_key=f"site:{name.lower()}",
+        )
     except Exception as error:
         return _task_failure(error)
-    return jsonify({"ok": True, "task_id": task_id})
+    return accepted_task_response(bench_root, task_id)
 
 
 @sites_bp.route("/<name>/reinstall", methods=["POST"])
@@ -291,22 +351,6 @@ def reinstall_site(name: str):
     except Exception as error:
         return _task_failure(error)
     return jsonify({"ok": True, "task_id": task_id})
-
-
-@sites_bp.route("/<name>/force-drop", methods=["POST"])
-@require_scope(site_name)
-def force_drop_site(name: str):
-    import shutil
-
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    site_path = bench_root / "sites" / name
-    if not (site_path / "site_config.json").exists():
-        return _site_not_found()
-    try:
-        shutil.rmtree(site_path)
-    except Exception:
-        return _internal_error("Could not remove site files.")
-    return jsonify({"ok": True})
 
 
 @sites_bp.route("/<name>/backup", methods=["POST"])
@@ -753,8 +797,8 @@ def set_primary_domain(name: str):
 @require_scope(site_name)
 def update_config(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config_path = bench_root / "sites" / name / "site_config.json"
-    if not config_path.exists():
+    config_path = _site_config_path(bench_root, name)
+    if config_path is None:
         return _site_not_found()
 
     data = request.get_json(silent=True)
@@ -768,11 +812,9 @@ def update_config(name: str):
     except Exception:
         return _internal_error("Could not read site configuration.")
 
-    # The editable keys are whatever the UI sent, minus any protected key it may
-    # have included; protected keys are always preserved from the on-disk config.
-    editable = {k: v for k, v in data.items() if k not in PROTECTED_CONFIG_KEYS}
-    preserved = {k: v for k, v in current.items() if k in PROTECTED_CONFIG_KEYS}
-    merged = {**editable, **preserved}
+    # The UI sends the complete visible config. Hidden keys are blocklisted and
+    # preserved from disk, including nested custom keys unknown to Pilot.
+    merged = _merge_public_config(current, data)
 
     try:
         write_private_text(config_path, json.dumps(merged, indent=1))
@@ -956,7 +998,36 @@ def delete_backup_schedule(name: str):
 
 
 def _site_exists(bench_root: Path, name: str) -> bool:
-    return (bench_root / "sites" / name / "site_config.json").is_file()
+    return _site_config_path(bench_root, name) is not None
+
+
+def _site_config_path(bench_root: Path, name: str) -> Path | None:
+    if validate_site_name(name):
+        return None
+    raw_sites_path = bench_root / "sites"
+    if raw_sites_path.is_symlink():
+        return None
+    sites_path = raw_sites_path.resolve()
+    site_path = sites_path / name
+    if site_path.is_symlink() or site_path.resolve(strict=False).parent != sites_path:
+        return None
+    config_path = site_path / "site_config.json"
+    if config_path.is_symlink() or not config_path.is_file():
+        return None
+    return config_path
+
+
+def _site_resource(site: SiteInfo) -> dict:
+    return {
+        "name": site.name,
+        "exists": site.exists,
+        "installed_apps": [
+            app for app in site.installed_apps if isinstance(app, str)
+        ],
+        "site_config": _public_config(site.site_config),
+        "broken": site.broken,
+        "provisioning": site.provisioning,
+    }
 
 
 def _site_not_found():
@@ -992,6 +1063,8 @@ def _task_failure(error: Exception):
         return error_response(
             "task_conflict", "A conflicting task is already active.", 409
         )
+    if isinstance(error, ValueError):
+        return error_response("invalid_task", str(error), 422)
     return _internal_error("Could not start the requested task.")
 
 
@@ -1029,7 +1102,11 @@ def _new_site_name_error(bench_root: Path, name: str) -> str | None:
     from pilot.config.toml_store import BenchTomlStore
     from pilot.utils import host_owner, normalize_host
 
-    if (bench_root / "sites" / name / "site_config.json").exists():
+    sites_path = bench_root / "sites"
+    if sites_path.is_symlink():
+        return "Sites directory must not be a symbolic link."
+    site_path = sites_path / name
+    if site_path.is_symlink() or (site_path / "site_config.json").exists():
         return f"Site '{name}' already exists."
 
     owner = host_owner(bench_root, name)
@@ -1055,8 +1132,65 @@ def _new_site_name_error(bench_root: Path, name: str) -> str | None:
 def _public_config(config: dict) -> dict:
     """Hide system fields and secret-like keys while preserving custom config."""
     return {
-        key: copy.deepcopy(value)
+        key: _public_config_value(value)
         for key, value in config.items()
-        if key not in PROTECTED_CONFIG_KEYS
-        and not any(part in key.lower() for part in _SENSITIVE_CONFIG_KEY_PARTS)
+        if _is_public_config_key(key)
     }
+
+
+def _public_config_value(value):
+    if isinstance(value, dict):
+        return _public_config(value)
+    if isinstance(value, list):
+        return [_public_config_value(item) for item in value]
+    return copy.deepcopy(value)
+
+
+def _merge_public_config(current: dict, submitted: dict) -> dict:
+    merged = {
+        key: copy.deepcopy(value)
+        for key, value in current.items()
+        if not _is_public_config_key(key)
+    }
+    for key, submitted_value in submitted.items():
+        if not _is_public_config_key(key):
+            continue
+        current_value = current.get(key)
+        merged[key] = _merge_public_value(current_value, submitted_value)
+    return merged
+
+
+def _merge_public_value(current, submitted):
+    if isinstance(current, dict) and isinstance(submitted, dict):
+        return _merge_public_config(current, submitted)
+    if isinstance(current, list) and isinstance(submitted, list):
+        return [
+            _merge_public_value(
+                current[index] if index < len(current) else None,
+                value,
+            )
+            for index, value in enumerate(submitted)
+        ]
+    return copy.deepcopy(submitted)
+
+
+def _is_public_config_key(key: str) -> bool:
+    normalized = re.sub(
+        r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])",
+        "_",
+        key,
+    ).lower().replace("-", "_")
+    compact = normalized.replace("_", "")
+    compact_secret_parts = (
+        "accesskey",
+        "apikey",
+        "encryptionkey",
+        "privatekey",
+        "secretkey",
+    )
+    return (
+        normalized not in PROTECTED_CONFIG_KEYS
+        and normalized != "key"
+        and not any(part in compact for part in compact_secret_parts)
+        and not any(part in normalized for part in _SENSITIVE_CONFIG_KEY_PARTS)
+    )

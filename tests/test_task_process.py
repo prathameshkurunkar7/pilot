@@ -105,6 +105,7 @@ def test_start_persists_identity_before_releasing_gate(
     assert captured["kwargs"]["start_new_session"] is True
     assert captured["kwargs"]["env"]["BENCH_TASK_SECRETS_FILE"].endswith("secrets.json")
     assert captured["kwargs"]["env"]["BENCH_TASK_LAUNCH_ID"] == captured["launch_id"]
+    assert captured["kwargs"]["env"]["PILOT_NONINTERACTIVE_PRIVILEGES"] == "1"
 
 
 def test_identity_persistence_failure_aborts_before_task_side_effect(

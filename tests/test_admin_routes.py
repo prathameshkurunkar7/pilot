@@ -16,7 +16,6 @@ SITE_SCOPED_ENDPOINTS = {
     "sites.download_backup",
     "sites.drop_site",
     "sites.enable_ssl",
-    "sites.force_drop_site",
     "sites.force_uninstall_app",
     "sites.get_and_install_app",
     "sites.get_backup_schedule",
@@ -71,20 +70,20 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 104
+    assert len(routes) == 103
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 104
+    assert len({(method, path) for method, path, _, _ in routes}) == 103
     assert Counter(method for method, _, _, _ in routes) == {
-        "DELETE": 8,
+        "DELETE": 9,
         "GET": 50,
         "PATCH": 2,
-        "POST": 43,
+        "POST": 41,
         "PUT": 1,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
         "authenticated": 57,
         "authenticated+bench-management": 9,
-        "authenticated+site-scope": 26,
+        "authenticated+site-scope": 25,
         "open": 5,
         "setup-conditional": 7,
     }
@@ -103,7 +102,8 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "processes": 4,
         "settings": 4,
         "setup": 7,
-        "sites": 30,
+        "site-restores": 1,
+        "sites": 28,
         "ssh-keys": 3,
         "stats": 1,
         "session": 3,
@@ -124,6 +124,13 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("POST", "/api/v1/benches/<name>/actions/restart"),
         ("GET", "/api/v1/benches/domain-options"),
         ("POST", "/api/v1/bench-readiness-checks"),
+    } <= route_keys
+    assert {
+        ("GET", "/api/v1/sites"),
+        ("POST", "/api/v1/sites"),
+        ("GET", "/api/v1/sites/<name>"),
+        ("DELETE", "/api/v1/sites/<name>"),
+        ("POST", "/api/v1/site-restores"),
     } <= route_keys
     assert {
         ("GET", "/api/v1/tasks"),
@@ -169,5 +176,10 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             "/api/v1/benches/wildcard-domains",
             "/api/v1/benches/ready",
             "/api/v1/benches/<name>/actions/<action_name>",
+            "/api/v1/sites/",
+            "/api/v1/sites/create",
+            "/api/v1/sites/create-from-upload",
+            "/api/v1/sites/<name>/drop",
+            "/api/v1/sites/<name>/force-drop",
         }
     }

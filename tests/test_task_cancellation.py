@@ -16,7 +16,7 @@ from admin.backend.tasks.manager.task_runner import TaskRunner
 from admin.backend.tasks.manager.task_state import TaskStatus
 from admin.backend.tasks.manager.task_store import TaskStore
 from admin.backend.tasks import callbacks as callback_module
-from pilot.exceptions import TaskNotRunningError
+from pilot.exceptions import TaskConflictError, TaskNotRunningError
 
 TASK_ID = "20260715-120000-aabbcc"
 
@@ -93,6 +93,7 @@ def test_cancel_terminates_only_the_verified_task_group(tmp_path: Path) -> None:
     try:
         TaskProcess(tmp_path).cancel(TASK_ID, grace_seconds=0.1)
         task.wait(timeout=5)
+        TaskProcess(tmp_path).reconcile()
 
         assert store.read_status(TASK_ID) == TaskStatus.KILLED
         assert store.read_process(TASK_ID) is None
@@ -132,13 +133,28 @@ def test_cancel_queued_task_runs_cancel_callback(
                 '{"on_cancel":{"operation":"test-cancel","args":{}}}'
             ),
         },
+        resource_key="site:new.localhost",
     )
     monkeypatch.setitem(callback_module._OPERATIONS, "test-cancel", mark_cancelled)
 
     TaskRunner(tmp_path).kill(TASK_ID)
 
+    assert not marker.exists()
+    assert (store.task_dir(TASK_ID) / "callbacks.json").exists()
+    with pytest.raises(TaskConflictError, match="already using resource"):
+        store.create_queued(
+            {
+                **store.read_metadata(TASK_ID),
+                "task_id": "20260715-120001-bbccdd",
+            },
+            resource_key="site:new.localhost",
+        )
+
+    TaskProcess(tmp_path).reconcile()
+
     assert marker.read_text() == TASK_ID
     assert store.read_status(TASK_ID) == TaskStatus.KILLED
+    assert not (store.task_dir(TASK_ID) / "callbacks.json").exists()
 
 
 def test_cancel_force_kills_a_term_resistant_task_group(tmp_path: Path) -> None:

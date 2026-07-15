@@ -14,18 +14,23 @@ from typing import Callable
 from playwright.sync_api import APIRequestContext, Page, expect
 
 
-def run_task_action(page: Page, url_fragment: str, action: Callable[[], None]) -> str:
+def run_task_action(
+    page: Page,
+    url_fragment: str,
+    action: Callable[[], None],
+    method: str = "POST",
+) -> str:
     """Run a UI action that kicks off a background task and return its task_id.
 
     Pass the URL fragment the action POSTs to (e.g. 'create', 'install-app',
     'drop') so we wait for the right response.
     """
     with page.expect_response(
-        lambda r: url_fragment in r.url and r.request.method == "POST"
+        lambda r: url_fragment in r.url and r.request.method == method
     ) as response_info:
         action()
     body = response_info.value.json()
-    if not body.get("ok") or not body.get("task_id"):
+    if not body.get("task_id"):
         raise RuntimeError(f'Action "{url_fragment}" did not start a task: {body}')
     return body["task_id"]
 

@@ -46,3 +46,10 @@ def test_noninteractive_privileges_are_isolated_to_the_current_thread(monkeypatc
     thread.join(timeout=1)
 
     assert command_from_thread == ["sudo", "-n", "true"]
+
+
+def test_task_environment_forces_noninteractive_privileges(monkeypatch) -> None:
+    monkeypatch.setattr(platform, "is_root", lambda: False)
+    monkeypatch.setenv(platform.NONINTERACTIVE_PRIVILEGES_ENV, "1")
+
+    assert platform._privileged(["true"]) == ["sudo", "-n", "true"]

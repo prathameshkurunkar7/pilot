@@ -10,6 +10,7 @@ from typing import Iterator
 
 # sbin/bin dirs a minimal PATH often omits (e.g. /usr/sbin for mariadbd/nginx).
 _EXTRA_BIN_DIRS = ("/usr/local/sbin", "/usr/sbin", "/sbin", "/usr/local/bin", "/usr/bin", "/bin")
+NONINTERACTIVE_PRIVILEGES_ENV = "PILOT_NONINTERACTIVE_PRIVILEGES"
 _NONINTERACTIVE_PRIVILEGES: ContextVar[bool] = ContextVar(
     "noninteractive_privileges",
     default=False,
@@ -107,7 +108,11 @@ def _privileged(command: list[str]) -> list[str]:
     """Prefix a command with sudo unless we are already root."""
     if is_root():
         return command
-    sudo = ["sudo", "-n"] if _NONINTERACTIVE_PRIVILEGES.get() else ["sudo"]
+    noninteractive = (
+        _NONINTERACTIVE_PRIVILEGES.get()
+        or os.environ.get(NONINTERACTIVE_PRIVILEGES_ENV) == "1"
+    )
+    sudo = ["sudo", "-n"] if noninteractive else ["sudo"]
     return [*sudo, *command]
 
 

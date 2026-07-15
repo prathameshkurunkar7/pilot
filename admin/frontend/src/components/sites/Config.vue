@@ -114,9 +114,6 @@ const rows = computed(() => {
     value: isPassword(key) ? '•••••••' : (typeof val === 'string' ? val : JSON.stringify(val)),
     readonly: false,
   }))
-  if (site.value?.db_name) {
-    entries.unshift({ name: '__db_name', key: 'db_name', value: site.value.db_name, readonly: true })
-  }
   return entries
 })
 

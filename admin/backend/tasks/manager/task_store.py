@@ -40,10 +40,15 @@ class TaskStore:
         self,
         metadata: Mapping[str, object],
         private_files: Mapping[str, str] | None = None,
+        resource_key: str | None = None,
     ) -> Path:
         make_private_directory(self.tasks_root, parents=True)
         with exclusive_file_lock(self._lock_target):
-            return self._create_queued_locked(metadata, private_files or {})
+            self._reject_active_resource_locked(resource_key)
+            return self._create_queued_locked(
+                self._with_resource_key(metadata, resource_key),
+                private_files or {},
+            )
 
     def create_idempotent_queued(
         self,
@@ -51,6 +56,7 @@ class TaskStore:
         private_files: Mapping[str, str],
         idempotency_digest: str,
         request_fingerprint: str,
+        resource_key: str | None = None,
     ) -> TaskCreation:
         make_private_directory(self.tasks_root, parents=True)
         with exclusive_file_lock(self._lock_target):
@@ -63,9 +69,11 @@ class TaskStore:
                     )
                 return TaskCreation(existing, self.task_dir(existing), False)
 
+            self._reject_active_resource_locked(resource_key)
             stored_metadata = dict(metadata)
             stored_metadata["idempotency_digest"] = idempotency_digest
             stored_metadata["request_fingerprint"] = request_fingerprint
+            stored_metadata = self._with_resource_key(stored_metadata, resource_key)
             task_dir = self._create_queued_locked(stored_metadata, private_files)
             return TaskCreation(str(metadata["task_id"]), task_dir, True)
 
@@ -115,6 +123,23 @@ class TaskStore:
                 if not task_dir.is_symlink() and task_dir.is_dir()
                 if (task_dir / "process.json").exists()
             )
+
+    def terminal_task_ids_with_callbacks(self) -> list[str]:
+        with self.locked():
+            task_ids = []
+            for task_dir in self.tasks_root.iterdir():
+                if task_dir.is_symlink() or not task_dir.is_dir():
+                    continue
+                if not (task_dir / "callbacks.json").exists():
+                    continue
+                if (task_dir / "process.json").exists():
+                    continue
+                try:
+                    if self.read_status(task_dir.name) in TERMINAL_TASK_STATUSES:
+                        task_ids.append(task_dir.name)
+                except (OSError, ValueError, TaskNotFoundError):
+                    continue
+            return sorted(task_ids)
 
     def update_metadata(self, task_id: str, updates: Mapping[str, object]) -> dict:
         with self.locked():
@@ -219,19 +244,63 @@ class TaskStore:
         return self._publish_task(task_dir, stored_metadata, private_files)
 
     def _active_idempotent_task_locked(self, idempotency_digest: str) -> str | None:
+        return self._active_task_with_metadata_locked(
+            "idempotency_digest",
+            idempotency_digest,
+            include_cleanup_pending=False,
+        )
+
+    def _reject_active_resource_locked(self, resource_key: str | None) -> None:
+        if resource_key is None:
+            return
+        existing = self._active_task_with_metadata_locked(
+            "resource_key",
+            resource_key,
+            include_cleanup_pending=True,
+        )
+        if existing is not None:
+            raise TaskConflictError(
+                f"Another active task is already using resource {resource_key!r}"
+            )
+
+    def _active_task_with_metadata_locked(
+        self,
+        key: str,
+        value: str,
+        *,
+        include_cleanup_pending: bool,
+    ) -> str | None:
         for task_dir in self.tasks_root.iterdir():
-            if not task_dir.is_dir():
+            if task_dir.is_symlink() or not task_dir.is_dir():
                 continue
             task_id = task_dir.name
             try:
-                if self.read_status(task_id) not in ACTIVE_TASK_STATUSES:
+                status = self.read_status(task_id)
+                if status not in ACTIVE_TASK_STATUSES and not (
+                    include_cleanup_pending and self._cleanup_pending(task_dir)
+                ):
                     continue
                 metadata = self.read_metadata(task_id)
             except (OSError, ValueError, TaskNotFoundError):
                 continue
-            if metadata.get("idempotency_digest") == idempotency_digest:
+            if metadata.get(key) == value:
                 return task_id
         return None
+
+    @staticmethod
+    def _cleanup_pending(task_dir: Path) -> bool:
+        return (task_dir / "callbacks.json").exists() or (
+            task_dir / "process.json"
+        ).exists()
+
+    @staticmethod
+    def _with_resource_key(
+        metadata: Mapping[str, object], resource_key: str | None
+    ) -> dict[str, object]:
+        stored_metadata = dict(metadata)
+        if resource_key is not None:
+            stored_metadata["resource_key"] = resource_key
+        return stored_metadata
 
     def _terminal_tasks_locked(self) -> list[tuple[tuple[float, str], str]]:
         terminal = []
@@ -242,7 +311,7 @@ class TaskStore:
             try:
                 if self.read_status(task_id) not in TERMINAL_TASK_STATUSES:
                     continue
-                if (task_dir / "process.json").exists():
+                if self._cleanup_pending(task_dir):
                     continue
                 metadata = self.read_metadata(task_id)
                 terminal.append((self._completion_key(metadata, task_id), task_id))

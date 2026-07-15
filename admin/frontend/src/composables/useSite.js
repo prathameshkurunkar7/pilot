@@ -32,7 +32,7 @@ export function useSite(name) {
     store.error.value = ''
     try {
       const data = await sitesApi.detail(name)
-      store.site.value = data.site
+      store.site.value = data
       store.installable.value = data.installable_apps || []
       store.nginxEnabled.value = data.nginx_enabled ?? false
       store.adminTls.value = data.admin_tls ?? false
@@ -47,7 +47,7 @@ export function useSite(name) {
   async function reload() {
     try {
       const data = await sitesApi.detail(name)
-      store.site.value = data.site
+      store.site.value = data
       store.installable.value = data.installable_apps || []
       store.nginxEnabled.value = data.nginx_enabled ?? false
       store.adminTls.value = data.admin_tls ?? false
@@ -128,10 +128,6 @@ export function useSite(name) {
     return sitesApi.apps.forceUninstall(name, app)
   }
 
-  async function forceDrop() {
-    return sitesApi.forceDrop(name)
-  }
-
   async function saveConfig(config) {
     return sitesApi.config(name, config)
   }
@@ -184,7 +180,6 @@ export function useSite(name) {
     installApp,
     uninstallApp,
     forceUninstallApp,
-    forceDrop,
     saveConfig,
   }
 }

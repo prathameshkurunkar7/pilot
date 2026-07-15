@@ -29,7 +29,7 @@ from .views.logs import logs_bp
 from .views.processes import processes_bp
 from .views.settings import settings_bp
 from .views.setup import setup_bp
-from .views.sites import sites_bp
+from .views.sites import site_restores_bp, sites_bp
 from .views.ssh_keys import ssh_keys_bp
 from .views.stats import stats_bp
 from .views.tasks import task_worker_bp, tasks_bp
@@ -149,6 +149,7 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(benches_bp, url_prefix=f"{API_V1_PREFIX}/benches")
     app.register_blueprint(bench_readiness_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(sites_bp, url_prefix=f"{API_V1_PREFIX}/sites")
+    app.register_blueprint(site_restores_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(processes_bp, url_prefix=f"{API_V1_PREFIX}/processes")
     app.register_blueprint(logs_bp, url_prefix=f"{API_V1_PREFIX}/logs")
     app.register_blueprint(database_bp, url_prefix=f"{API_V1_PREFIX}/database")
