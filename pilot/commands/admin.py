@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from pilot.archive import extract_tar_archive
 from pilot.commands.base import Command
 from pilot.exceptions import BenchError
 
@@ -21,15 +22,15 @@ def _cli_root() -> Path:
 
 def download_admin_frontend(cli_root: Path) -> bool:
     """Download and extract the pre-built admin frontend. Returns True on success."""
-    import tarfile
     import tempfile
     import urllib.error
     import urllib.request
 
     static_dir = cli_root / "admin" / "backend" / "static"
-    tmp = Path(tempfile.mktemp(suffix=".tar.gz"))
+    with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp_file:
+        tmp = Path(tmp_file.name)
 
-    print(f"Downloading admin frontend from GitHub release...", flush=True)
+    print("Downloading admin frontend from GitHub release...", flush=True)
     try:
         urllib.request.urlretrieve(_ADMIN_RELEASE_URL, tmp)
     except urllib.error.URLError as e:
@@ -39,8 +40,7 @@ def download_admin_frontend(cli_root: Path) -> bool:
 
     try:
         static_dir.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(tmp) as tar:
-            tar.extractall(path=static_dir)
+        extract_tar_archive(tmp, static_dir)
         print("  Admin frontend downloaded successfully.", flush=True)
         return True
     except Exception as e:

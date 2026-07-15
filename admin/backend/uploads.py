@@ -3,10 +3,11 @@ from __future__ import annotations
 import gzip
 import os
 import secrets
-import tarfile
 from pathlib import Path
 
 from werkzeug.datastructures import FileStorage
+
+from pilot.archive import UnsafeArchiveError, validate_tar_archive
 
 MAX_DATABASE_UPLOAD_BYTES = 4 * 1024**3
 MAX_ARCHIVE_UPLOAD_BYTES = 8 * 1024**3
@@ -69,9 +70,11 @@ def save_archive_upload(
 ) -> Path:
     suffix = _archive_suffix(upload.filename or "", label)
     path = _save(upload, directory, suffix, max_bytes)
-    if not tarfile.is_tarfile(path):
+    try:
+        validate_tar_archive(path)
+    except UnsafeArchiveError as exc:
         path.unlink(missing_ok=True)
-        raise UploadError(f"{label.capitalize()} must be a tar archive.")
+        raise UploadError(f"{label.capitalize()} must be a safe tar archive: {exc}") from exc
     return path
 
 

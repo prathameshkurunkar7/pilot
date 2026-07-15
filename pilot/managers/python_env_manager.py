@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.archive import extract_tar_archive
 from pilot.exceptions import BenchError
 from pilot.platform import is_macos, which
 from pilot.utils import get_yarn_bin, git_has_local_changes, run_command
@@ -254,12 +255,12 @@ class PythonEnvManager:
 
     @staticmethod
     def _download_and_extract(url: str, dest_dir: Path) -> bool:
-        import tarfile as tf
         import tempfile
         import urllib.error
         import urllib.request
 
-        tmp_path = Path(tempfile.mktemp(suffix=".tar.gz"))
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp_file:
+            tmp_path = Path(tmp_file.name)
         try:
             urllib.request.urlretrieve(url, tmp_path)
         except urllib.error.URLError:
@@ -268,8 +269,7 @@ class PythonEnvManager:
 
         try:
             dest_dir.mkdir(parents=True, exist_ok=True)
-            with tf.open(tmp_path) as tar:
-                tar.extractall(path=dest_dir)
+            extract_tar_archive(tmp_path, dest_dir)
             return True
         except Exception:
             return False
@@ -365,4 +365,3 @@ class PythonEnvManager:
             return uv
 
         raise BenchError("uv was installed but cannot be found. Add ~/.local/bin to your PATH and re-run.")
-

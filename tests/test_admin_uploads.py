@@ -28,6 +28,16 @@ def _tar_bytes() -> bytes:
     return stream.getvalue()
 
 
+def _unsafe_tar_bytes() -> bytes:
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode="w") as archive:
+        content = b"escape"
+        member = tarfile.TarInfo("../../escape.txt")
+        member.size = len(content)
+        archive.addfile(member, io.BytesIO(content))
+    return stream.getvalue()
+
+
 def _upload(content: bytes, filename: str) -> FileStorage:
     return FileStorage(stream=io.BytesIO(content), filename=filename)
 
@@ -126,6 +136,15 @@ def test_archive_upload_accepts_tar_and_generates_name(tmp_path: Path) -> None:
     assert path.parent == directory
     assert path.name != "public.tar"
     assert path.suffix == ".tar"
+
+
+def test_archive_upload_rejects_unsafe_members(tmp_path: Path) -> None:
+    directory = create_upload_directory(tmp_path)
+
+    with pytest.raises(UploadError, match="unsafe path"):
+        save_archive_upload(_upload(_unsafe_tar_bytes(), "public.tar"), directory, "public files")
+
+    assert not any(directory.iterdir())
 
 
 def test_create_from_upload_passes_only_generated_paths_to_task(tmp_path: Path) -> None:
