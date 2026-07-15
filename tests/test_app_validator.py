@@ -180,7 +180,7 @@ def _modules_for(app: App, relpath: str, source: str) -> set[str]:
     full = app.path / relpath
     full.parent.mkdir(parents=True, exist_ok=True)
     full.write_text(source)
-    return ImportCheck()._file_imported_modules(app, full)
+    return {module for module, _lineno in ImportCheck()._file_imported_modules(app, full)}
 
 
 def test_import_check_skips_stdlib_imports(tmp_path: Path) -> None:
@@ -247,6 +247,21 @@ def test_import_check_skips_type_checking_only_imports(tmp_path: Path) -> None:
     )
     # `typing` itself is stdlib, filtered out at the _imported_modules level.
     assert ImportCheck()._imported_modules(app) == ["required_dependency"]
+
+
+def test_import_check_error_reports_source_location(tmp_path: Path) -> None:
+    _make_fake_frappe(tmp_path)
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        f'[project]\nname = "myapp"\nversion = "0.0.1"\ndependencies = ["frappe"]\n\n{_SETUPTOOLS_BUILD}',
+        {
+            "myapp/hooks.py": "app_name = 'myapp'\n",
+            "myapp/deep/nested.py": "\n\nimport definitely_missing_package_xyz\n",
+        },
+    )
+    with pytest.raises(AppValidationError, match=r"imported at: .*deep/nested\.py:3"):
+        ImportCheck().run(app)
 
 
 def test_import_check_skips_test_files(tmp_path: Path) -> None:

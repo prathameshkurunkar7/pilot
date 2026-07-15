@@ -33,17 +33,43 @@ class ImportCheck:
     def _check_imports(self, app: "App") -> None:
         # Stat-based resolution first (fast, no code runs); anything it can't
         # find goes through find_spec in the tmp env for an authoritative error.
+        locations = self._imported_module_locations(app)
         resolver = ModuleResolver(self.tmp_env.path)
-        unresolved = resolver.unresolved(self._imported_modules(app))
-        if unresolved:
+        unresolved = resolver.unresolved(locations)
+        if not unresolved:
+            return
+        try:
             self.tmp_env.resolve_modules(unresolved)
+        except AppValidationError as exc:
+            raise AppValidationError(self._with_locations(str(exc), locations)) from exc
+
+    @staticmethod
+    def _with_locations(message: str, locations: dict[str, list[str]]) -> str:
+        """Append the file:line each unresolved module was imported from, so
+        the error points at the exact source instead of just a bare name."""
+        annotated = []
+        for line in message.splitlines():
+            module = line.split(":", 1)[0]
+            where = locations.get(module)
+            annotated.append(f"{line}\n   imported at: {', '.join(where)}" if where else line)
+        return "\n".join(annotated)
 
     def _imported_modules(self, app: "App") -> list[str]:
-        modules: set[str] = set()
+        return sorted(self._imported_module_locations(app))
+
+    def _imported_module_locations(self, app: "App") -> dict[str, list[str]]:
+        locations: dict[str, list[str]] = {}
         for path in python_files(app):
-            if not self._is_test_file(path):
-                modules.update(self._file_imported_modules(app, path))
-        return sorted(m for m in modules if m.split(".")[0] not in sys.stdlib_module_names)
+            if self._is_test_file(path):
+                continue
+            for module, lineno in self._file_imported_modules(app, path):
+                if module.split(".")[0] in sys.stdlib_module_names:
+                    continue
+                where = f"{path.relative_to(app.path)}:{lineno}"
+                locations.setdefault(module, [])
+                if where not in locations[module]:
+                    locations[module].append(where)
+        return locations
 
     @staticmethod
     def _is_test_file(path: Path) -> bool:
@@ -51,19 +77,19 @@ class ImportCheck:
         # a plain pip install never provides, so they'd always fail to resolve.
         return path.name.startswith("test_") or path.name == "conftest.py"
 
-    def _file_imported_modules(self, app: "App", path: Path) -> set[str]:
+    def _file_imported_modules(self, app: "App", path: Path) -> list[tuple[str, int]]:
         try:
             tree = ast.parse(path.read_text(), filename=str(path))
         except OSError:
             # We ideally should never hit SyntaxError here because we already validated syntax.
-            return set()
+            return []
 
-        modules = set()
+        modules = []
         for node in self._runtime_imports(tree.body):
             if isinstance(node, ast.Import):
-                modules.update(alias.name for alias in node.names)
+                modules.extend((alias.name, node.lineno) for alias in node.names)
             else:
-                modules.add(self._resolve_module(app, path, node))
+                modules.append((self._resolve_module(app, path, node), node.lineno))
         return modules
 
     def _runtime_imports(
