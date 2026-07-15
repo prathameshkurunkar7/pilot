@@ -55,7 +55,7 @@ def test_known_and_legacy_keys_not_flagged() -> None:
     assert unknown_config_paths(data) == []
 
 
-def test_default_decode_warns_to_stderr_and_still_loads(capsys: pytest.CaptureFixture) -> None:
+def test_default_decode_silently_ignores_unknown_and_still_loads(capsys: pytest.CaptureFixture) -> None:
     data = copy.deepcopy(MINIMAL)
     data["mariadb"]["unknown_key"] = "x"
     data["bench"]["typo"] = 1
@@ -63,9 +63,7 @@ def test_default_decode_warns_to_stderr_and_still_loads(capsys: pytest.CaptureFi
     config = BenchConfig._from_dict(data)
 
     assert config.name == "test-bench"
-    err = capsys.readouterr().err
-    assert "mariadb.unknown_key" in err
-    assert "bench.typo" in err
+    assert capsys.readouterr().err == ""
 
 
 def test_strict_decode_raises_with_offending_path() -> None:

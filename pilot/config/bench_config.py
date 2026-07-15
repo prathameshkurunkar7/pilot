@@ -1,5 +1,4 @@
 import re
-import sys
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -130,15 +129,13 @@ class BenchConfig:
 
     @staticmethod
     def _report_unknown_fields(data: dict, *, strict: bool) -> None:
-        """Surface bench.toml keys no dataclass declares. Default: warn once and
-        continue so older/foreign configs still load; strict: raise ConfigError."""
-        paths = unknown_config_paths(data)
-        if not paths:
+        """Unknown keys are ignored so older/foreign configs still load; strict
+        (opt-in, for validation) raises ConfigError naming them."""
+        if not strict:
             return
-        listing = ", ".join(paths)
-        if strict:
-            raise ConfigError(f"bench.toml has unrecognized fields: {listing}")
-        print(f"warning: ignoring unrecognized bench.toml fields: {listing}", file=sys.stderr)
+        paths = unknown_config_paths(data)
+        if paths:
+            raise ConfigError(f"bench.toml has unrecognized fields: {', '.join(paths)}")
 
     @staticmethod
     def _parse_redis(data: dict) -> RedisConfig:
