@@ -19,7 +19,7 @@ from .auth import (
 )
 from .rate_limit import UsedTokens
 from .uploads import MAX_RESTORE_UPLOAD_BYTES
-from .views.apps import apps_bp
+from .views.apps import apps_bp, marketplace_bp
 from .views.benches import bench_readiness_bp, benches_bp
 from .views.core import core_bp
 from .views.dashboard import dashboard_bp
@@ -149,6 +149,7 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(setup_bp, url_prefix=f"{API_V1_PREFIX}/setup")
     app.register_blueprint(dashboard_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(apps_bp, url_prefix=f"{API_V1_PREFIX}/apps")
+    app.register_blueprint(marketplace_bp, url_prefix=f"{API_V1_PREFIX}/marketplace")
     app.register_blueprint(benches_bp, url_prefix=f"{API_V1_PREFIX}/benches")
     app.register_blueprint(bench_readiness_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(sites_bp, url_prefix=f"{API_V1_PREFIX}/sites")
@@ -160,7 +161,7 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(tasks_bp, url_prefix=f"{API_V1_PREFIX}/tasks")
     app.register_blueprint(task_worker_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(settings_bp, url_prefix=f"{API_V1_PREFIX}/settings")
-    app.register_blueprint(updates_bp, url_prefix=f"{API_V1_PREFIX}/updates")
+    app.register_blueprint(updates_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(git_bp, url_prefix=f"{API_V1_PREFIX}/git")
     app.register_blueprint(ssh_keys_bp, url_prefix=f"{API_V1_PREFIX}/ssh-keys")
     app.register_blueprint(stats_bp, url_prefix=API_V1_PREFIX)

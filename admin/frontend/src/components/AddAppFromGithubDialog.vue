@@ -191,7 +191,7 @@ async function submit() {
   error.value = ''
   try {
     const result = await appsApi.add({ name: foundName.value, repo: repo.value.trim(), branch: branch.value.trim() })
-    if (!result.ok) throw new Error(apiErrorMessage(result, 'Could not import app.'))
+    if (!result.task_id) throw new Error(apiErrorMessage(result, 'Could not import app.'))
     open.value = false
     openTaskDetailPage(router, result.task_id)
   } catch (caught) {

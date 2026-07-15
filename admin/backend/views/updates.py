@@ -7,13 +7,29 @@ from flask import Blueprint, current_app, jsonify, request
 
 from pilot.loader import cli_root
 
+from ..api_contract import error_response
+
 updates_bp = Blueprint("updates", __name__)
 
 
-@updates_bp.route("/")
-def get_updates():
+@updates_bp.get("/app-updates")
+def get_app_updates():
+    try:
+        return jsonify({"apps": _app_updates(fetch=False)})
+    except Exception:
+        return error_response("app_updates_unavailable", "Could not read app updates.", 500)
+
+
+@updates_bp.post("/app-update-checks")
+def check_app_updates():
+    try:
+        return jsonify({"apps": _app_updates(fetch=True)})
+    except Exception:
+        return error_response("app_update_check_failed", "Could not check for app updates.", 500)
+
+
+def _app_updates(*, fetch: bool) -> list[dict]:
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    do_fetch = request.args.get("fetch") == "1"
 
     from pilot.config.toml_store import BenchTomlStore
     from pilot.core.bench import Bench
@@ -25,11 +41,10 @@ def get_updates():
     for app in bench.apps():
         if not app.is_cloned:
             continue
-        if do_fetch:
+        if fetch:
             _git_fetch(app.path, app.config.branch)
         apps_info.append(_app_info(app))
-
-    return jsonify({"apps": apps_info})
+    return apps_info
 
 
 def _git_fetch(path: Path, branch: str) -> None:
@@ -96,7 +111,7 @@ def _log_subject(path: Path, ref: str) -> str:
     return r.stdout.strip()
 
 
-@updates_bp.route("/cli")
+@updates_bp.route("/updates/cli")
 def get_cli_update():
     root = cli_root()
     do_fetch = request.args.get("fetch") == "1"

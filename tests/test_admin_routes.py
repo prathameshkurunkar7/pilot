@@ -71,25 +71,27 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 105
+    assert len(routes) == 106
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 105
+    assert len({(method, path) for method, path, _, _ in routes}) == 106
     assert Counter(method for method, _, _, _ in routes) == {
-        "DELETE": 10,
-        "GET": 54,
-        "PATCH": 3,
-        "POST": 36,
+        "DELETE": 11,
+        "GET": 55,
+        "PATCH": 4,
+        "POST": 34,
         "PUT": 2,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
-        "authenticated": 57,
+        "authenticated": 58,
         "authenticated+bench-management": 9,
         "authenticated+site-scope": 26,
         "open": 6,
         "setup-conditional": 7,
     }
     assert Counter(areas) == {
-        "apps": 7,
+        "apps": 6,
+        "app-update-checks": 1,
+        "app-updates": 1,
         "bench-readiness-checks": 1,
         "benches": 8,
         "dashboard": 1,
@@ -98,6 +100,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "bootstrap": 1,
         "health": 1,
         "logs": 4,
+        "marketplace": 1,
         "monitor-history": 1,
         "monitor-status": 1,
         "processes": 4,
@@ -112,7 +115,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "system-info": 1,
         "task-worker": 3,
         "tasks": 7,
-        "updates": 2,
+        "updates": 1,
     }
 
     route_keys = {(method, path) for method, path, _, _ in routes}
@@ -126,6 +129,16 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("POST", "/api/v1/benches/<name>/actions/restart"),
         ("GET", "/api/v1/benches/domain-options"),
         ("POST", "/api/v1/bench-readiness-checks"),
+    } <= route_keys
+    assert {
+        ("GET", "/api/v1/apps"),
+        ("POST", "/api/v1/apps"),
+        ("GET", "/api/v1/apps/<name>"),
+        ("PATCH", "/api/v1/apps/<name>"),
+        ("DELETE", "/api/v1/apps/<name>"),
+        ("GET", "/api/v1/marketplace/apps"),
+        ("GET", "/api/v1/app-updates"),
+        ("POST", "/api/v1/app-update-checks"),
     } <= route_keys
     assert {
         ("GET", "/api/v1/sites"),
@@ -220,5 +233,12 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             "/api/v1/sites/<name>/backup",
             "/api/v1/sites/<name>/backups/download",
             "/api/v1/sites/<name>/backups/<timestamp>/offsite-urls",
+            "/api/v1/apps/",
+            "/api/v1/apps/marketplace",
+            "/api/v1/apps/add",
+            "/api/v1/apps/get-and-install",
+            "/api/v1/apps/<name>/remove",
+            "/api/v1/apps/<name>/set-upstream",
+            "/api/v1/updates/",
         }
     }
