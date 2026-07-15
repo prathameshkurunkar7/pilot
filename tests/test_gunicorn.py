@@ -409,6 +409,15 @@ def test_process_definitions_excludes_workers_and_socketio_in_companion_mode(tmp
     assert "worker_long_1" not in names
 
 
+def test_production_definitions_do_not_add_a_separate_task_worker(
+    tmp_path: Path,
+) -> None:
+    names = {definition.name for definition in ProcessManager(make_bench(tmp_path))._prod_process_definitions()}
+
+    assert "task_worker" not in names
+    assert "task-worker" not in names
+
+
 def test_supervisor_web_program_has_long_stopwaitsecs_in_companion_mode(tmp_path: Path) -> None:
     from pilot.managers.process_managers.supervisor import SupervisorProcessManager, SupervisorRenderer
 
