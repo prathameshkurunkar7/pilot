@@ -17,6 +17,7 @@ from admin.backend.tasks.manager.activity import TaskActivityReader
 from admin.backend.views.setup import wizard_marker_path
 from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
+from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.platform import native_process_manager
 
 core_bp = Blueprint("core", __name__)
@@ -51,10 +52,13 @@ def bootstrap():
         return jsonify(_setup_bootstrap(bench_root))
     marker = wizard_marker_path(bench_root)
     if marker.exists():
-        if _setup_complete(bench_root, config):
-            marker.unlink(missing_ok=True)
-        else:
-            return jsonify(_setup_bootstrap(bench_root))
+        with exclusive_file_lock(marker):
+            if marker.exists():
+                handoff_task_id = marker.read_text(encoding="utf-8").strip()
+                if not handoff_task_id and _setup_complete(bench_root, config):
+                    marker.unlink(missing_ok=True)
+                else:
+                    return jsonify(_setup_bootstrap(bench_root))
     return jsonify(
         {
             "mode": "admin",

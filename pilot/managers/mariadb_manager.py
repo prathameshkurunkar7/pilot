@@ -12,6 +12,7 @@ from pilot.utils import run_command
 # One MariaDB server per bench user, shared by every bench they own — rootless,
 # running as a single systemd --user unit. Fixed locations, no per-bench units.
 _STATE_DIR = Path.home() / ".local" / "share" / "pilot" / "mariadb"
+_CLIENT_TIMEOUT = 5
 
 
 class MariaDBManager(UserOwnedDBManager):
@@ -123,7 +124,15 @@ class MariaDBManager(UserOwnedDBManager):
         if not is_macos():
             cmd.append(f"--socket={self.socket_path()}")
         cmd += ["-u", self.config.admin_user, "--batch", "--skip-column-names", "-e", "SELECT 1"]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=_CLIENT_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            return False
         return result.returncode == 0
 
     def check_credentials(self, password: str | None = None) -> bool:
@@ -131,16 +140,30 @@ class MariaDBManager(UserOwnedDBManager):
         configured root password). Uses the ``mariadb`` client, not pymysql, so
         the zero-dep CLI works during init; password goes via MYSQL_PWD, not argv."""
         pw = self.config.root_password if password is None else password
-        cmd = ["mariadb", "-u", self.config.admin_user, "--batch", "--skip-column-names"]
+        cmd = [
+            "mariadb",
+            f"--connect-timeout={_CLIENT_TIMEOUT}",
+            "-u",
+            self.config.admin_user,
+            "--batch",
+            "--skip-column-names",
+        ]
         socket_path = self._detect_socket()
         if socket_path:
             cmd.append(f"--socket={socket_path}")
         else:
             cmd += ["-h", self.config.host, "-P", str(self.config.port)]
         cmd += ["-e", "SELECT 1"]
-        result = subprocess.run(
-            cmd, env={**os.environ, "MYSQL_PWD": pw}, capture_output=True, text=True
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                env={**os.environ, "MYSQL_PWD": pw},
+                capture_output=True,
+                text=True,
+                timeout=_CLIENT_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            return False
         return result.returncode == 0
 
     def secure_installation(self) -> None:

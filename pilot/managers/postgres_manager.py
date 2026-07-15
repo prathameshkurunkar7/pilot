@@ -15,6 +15,7 @@ from pilot.utils import run_command
 # rootless, running as a single systemd --user unit. Fixed locations, no
 # per-bench units.
 _STATE_DIR = Path.home() / ".local" / "share" / "pilot" / "postgres"
+_CLIENT_TIMEOUT = 5
 
 
 class PostgresManager(UserOwnedDBManager):
@@ -67,7 +68,15 @@ class PostgresManager(UserOwnedDBManager):
         ]
         if not is_macos():
             cmd[1:1] = ["-h", str(self.socket_dir())]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=_CLIENT_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            return False
         if result.returncode != 0:
             return False
         output = result.stdout.strip()
@@ -165,24 +174,32 @@ class PostgresManager(UserOwnedDBManager):
         psql = self._psql()
         if not psql:
             return False
-        result = subprocess.run(
-            [
-                psql,
-                "-h",
-                self.config.host,
-                "-p",
-                str(self.config.port),
-                "-U",
-                self.config.admin_user,
-                "-d",
-                "postgres",
-                "-tAc",
-                "SELECT 1",
-            ],
-            env={**os.environ, "PGPASSWORD": pw},
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    psql,
+                    "-h",
+                    self.config.host,
+                    "-p",
+                    str(self.config.port),
+                    "-U",
+                    self.config.admin_user,
+                    "-d",
+                    "postgres",
+                    "-tAc",
+                    "SELECT 1",
+                ],
+                env={
+                    **os.environ,
+                    "PGPASSWORD": pw,
+                    "PGCONNECT_TIMEOUT": str(_CLIENT_TIMEOUT),
+                },
+                capture_output=True,
+                text=True,
+                timeout=_CLIENT_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            return False
         return result.returncode == 0
 
     def _ensure_role_sql(self) -> str:

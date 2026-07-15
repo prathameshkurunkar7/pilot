@@ -34,8 +34,12 @@ export function useSetup() {
   const mariadbWillInstall = ref(false)
   const postgresWillInstall = ref(false)
   const availableBranches = ref([])
+  const adminPasswordConfigured = ref(false)
+  const mariadbPasswordConfigured = ref(false)
+  const postgresPasswordConfigured = ref(false)
 
   const terminal = ref(null)
+  const setupTaskId = ref('')
   const streamUrl = ref('')
   const streamStatus = ref('Starting…')
   const showStreamDetails = ref(false)
@@ -75,7 +79,12 @@ export function useSetup() {
   const dbWillInstall = computed(
     () => !useExistingDb.value && (dbType.value === 'postgres' ? postgresWillInstall.value : mariadbWillInstall.value),
   )
-  const isAdminPasswordValid = computed(() => meetsPasswordRequirements(adminPassword.value))
+  const isAdminPasswordValid = computed(
+    () => adminPasswordConfigured.value || meetsPasswordRequirements(adminPassword.value),
+  )
+  const dbPasswordConfigured = computed(() =>
+    dbType.value === 'postgres' ? postgresPasswordConfigured.value : mariadbPasswordConfigured.value,
+  )
 
   const showRootUsername = computed(() => useExistingDb.value || !dbWillInstall.value)
   const rootUserPlaceholder = computed(() => (dbType.value === 'mariadb' ? 'root' : 'postgres'))
@@ -118,8 +127,12 @@ export function useSetup() {
 
   // A fresh install gets a generated password; an existing server keeps its own.
   watch(
-    dbWillInstall,
-    (willInstall) => {
+    [dbWillInstall, dbPasswordConfigured],
+    ([willInstall, passwordConfigured]) => {
+      if (passwordConfigured) {
+        dbPassword.value = ''
+        return
+      }
       if (!willInstall) dbPassword.value = ''
       else if (!dbPassword.value) dbPassword.value = generateRandomPassword()
     },
@@ -132,6 +145,9 @@ export function useSetup() {
       const config = await setupApi.config()
       benchName.value = config.bench_name || ''
       isLinux.value = config.is_linux !== false
+      adminPasswordConfigured.value = config.admin_password_configured === true
+      mariadbPasswordConfigured.value = config.mariadb_password_configured === true
+      postgresPasswordConfigured.value = config.postgres_password_configured === true
       // Bench arrived with production already chosen (the admin UI's "New Bench"
       // flow) — the wizard's task will bring up production itself, so the 'done'
       // step shouldn't tell the user to run `bench setup production` by hand.
@@ -140,13 +156,11 @@ export function useSetup() {
       const processManager = config.production_process_manager
       isProductionHandoff.value = Boolean(processManager) && processManager !== 'none'
 
-      if (config.admin_password) adminPassword.value = config.admin_password
       if (config.db_type) dbType.value = config.db_type
       if (config.app_repo) appRepo.value = config.app_repo
       if (config.app_branch) appBranch.value = config.app_branch
       if (config.db_type === 'postgres') {
         if (config.postgres_admin_user) dbUser.value = config.postgres_admin_user
-        if (config.postgres_password) dbPassword.value = config.postgres_password
         if (config.postgres_existing) {
           _useExistingDb.value = true
           dbHost.value = config.postgres_host || '127.0.0.1'
@@ -154,7 +168,6 @@ export function useSetup() {
         }
       } else {
         if (config.mariadb_admin_user) dbUser.value = config.mariadb_admin_user
-        if (config.mariadb_password) dbPassword.value = config.mariadb_password
         if (config.mariadb_existing) {
           _useExistingDb.value = true
           dbHost.value = config.mariadb_host || '127.0.0.1'
@@ -181,13 +194,14 @@ export function useSetup() {
 
   async function detectMariadbInstallState() {
     try {
-      const { state } = await setupApi.validateMariadb({ mariadb_password: '' })
+      const { state } = await setupApi.validateDatabase({ engine: 'mariadb', password: '' })
       mariadbWillInstall.value = state === 'will_install'
     } catch {}
   }
 
   // Stream
   function startStream(taskId) {
+    setupTaskId.value = taskId
     streamStatus.value = 'Starting…'
     streamUrl.value = setupApi.streamUrl(taskId)
     currentStep.value = 'running'
@@ -220,56 +234,43 @@ export function useSetup() {
 
   // Validation
   function validatePasswordStep() {
-    if (!adminPassword.value) return 'Admin password is required'
+    if (!adminPassword.value && !adminPasswordConfigured.value) return 'Admin password is required'
+    if (!adminPassword.value) return null
     if (!meetsPasswordRequirements(adminPassword.value))
       return 'Password does not meet all requirements'
     return null
   }
 
-  async function validateMariadbStep() {
-    if (!dbPassword.value) return 'MariaDB password is required'
+  async function validateDatabaseStep() {
+    const databaseName = dbType.value === 'postgres' ? 'PostgreSQL' : 'MariaDB'
+    if (!dbPassword.value && !dbPasswordConfigured.value) return `${databaseName} password is required`
+    if (!dbPassword.value) return null
     if (useExistingDb.value && !dbHost.value) return 'Host is required for an existing database'
     isSubmitting.value = true
     try {
-      const { state } = await setupApi.validateMariadb({
-        mariadb_password: dbPassword.value,
-        mariadb_admin_user: resolvedDbUser.value,
-        mariadb_existing: useExistingDb.value,
-        mariadb_host: useExistingDb.value ? dbHost.value : '',
-        mariadb_port: useExistingDb.value ? Number(dbPort.value) || 3306 : undefined,
+      const result = await setupApi.validateDatabase({
+        engine: dbType.value,
+        password: dbPassword.value,
+        admin_user: resolvedDbUser.value,
+        existing: useExistingDb.value,
+        host: useExistingDb.value ? dbHost.value : '',
+        port: useExistingDb.value ? Number(dbPort.value) || Number(dbPortPlaceholder.value) : undefined,
       })
-      mariadbWillInstall.value = state === 'will_install'
-      if (state === 'invalid') return 'Incorrect MariaDB credentials.'
-    } catch {
+      if (result.error) {
+        return apiErrorMessage(result, `Could not validate the ${databaseName} configuration.`)
+      }
+      if (dbType.value === 'postgres') postgresWillInstall.value = result.state === 'will_install'
+      else mariadbWillInstall.value = result.state === 'will_install'
+      if (result.state === 'invalid') return `Incorrect ${databaseName} credentials.`
+      if (!['valid', 'will_install'].includes(result.state)) {
+        return `Could not validate the ${databaseName} configuration.`
+      }
+    } catch (error) {
+      return error.message || `Could not validate the ${databaseName} configuration.`
     } finally {
       isSubmitting.value = false
     }
     return null
-  }
-
-  async function validatePostgresStep() {
-    if (!dbPassword.value) return 'PostgreSQL password is required'
-    if (useExistingDb.value && !dbHost.value) return 'Host is required for an existing database'
-    isSubmitting.value = true
-    try {
-      const { state } = await setupApi.validatePostgres({
-        postgres_password: dbPassword.value,
-        postgres_admin_user: resolvedDbUser.value,
-        postgres_existing: useExistingDb.value,
-        postgres_host: useExistingDb.value ? dbHost.value : '',
-        postgres_port: useExistingDb.value ? Number(dbPort.value) || 5432 : undefined,
-      })
-      postgresWillInstall.value = state === 'will_install'
-      if (state === 'invalid') return 'Incorrect PostgreSQL credentials.'
-    } catch {
-    } finally {
-      isSubmitting.value = false
-    }
-    return null
-  }
-
-  function validateDatabaseStep() {
-    return dbType.value === 'postgres' ? validatePostgresStep() : validateMariadbStep()
   }
 
   // Navigation
@@ -298,10 +299,10 @@ export function useSetup() {
   // Port is only sent in existing mode, so a locally customized port isn't clobbered on save.
   function buildPayload() {
     const base = {
-      admin_password: adminPassword.value,
       db_type: dbType.value,
       app_repo: appRepo.value,
       app_branch: appBranch.value,
+      ...(adminPassword.value ? { admin_password: adminPassword.value } : {}),
     }
     const existing = useExistingDb.value
     // 'localhost', not '', when off — an empty host breaks check_credentials'
@@ -311,30 +312,28 @@ export function useSetup() {
     if (dbType.value === 'postgres') {
       return {
         ...base,
-        postgres_password: dbPassword.value,
+        ...(dbPassword.value ? { postgres_password: dbPassword.value } : {}),
         postgres_admin_user: resolvedDbUser.value,
         postgres_existing: existing,
         postgres_host: host,
         ...(port ? { postgres_port: port } : {}),
-        mariadb_password: '',
         mariadb_admin_user: 'root',
       }
     }
     return {
       ...base,
-      mariadb_password: dbPassword.value,
+      ...(dbPassword.value ? { mariadb_password: dbPassword.value } : {}),
       mariadb_admin_user: resolvedDbUser.value,
       mariadb_existing: existing,
       mariadb_host: host,
       ...(port ? { mariadb_port: port } : {}),
-      postgres_password: '',
       postgres_admin_user: 'postgres',
     }
   }
 
   async function saveConfig() {
     const result = await setupApi.save(buildPayload())
-    if (!result.ok) throw new Error(apiErrorMessage(result, 'Failed to save configuration.'))
+    if (result.error) throw new Error(apiErrorMessage(result, 'Failed to save configuration.'))
   }
 
   async function startSetup() {
@@ -342,7 +341,8 @@ export function useSetup() {
     try {
       await saveConfig()
       const result = await setupApi.start()
-      if (!result.ok) throw new Error(apiErrorMessage(result, 'Failed to start setup.'))
+      if (result.error) throw new Error(apiErrorMessage(result, 'Failed to start setup.'))
+      if (!result.task_id) throw new Error('Setup did not return a task to follow.')
       startStream(result.task_id)
     } catch (error) {
       errorMessage.value = error.message
@@ -352,9 +352,13 @@ export function useSetup() {
   }
 
   async function shutdownWizardAndReload() {
-    try {
-      await setupApi.finish()
-    } catch {}
+    while (setupTaskId.value) {
+      try {
+        const response = await setupApi.finish(setupTaskId.value)
+        if (response.ok) break
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 3000))
+    }
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, 3000))
       try {

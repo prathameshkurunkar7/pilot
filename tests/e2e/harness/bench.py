@@ -53,7 +53,7 @@ class Bench:
         self.name = name
         self._extra_env = env or {}
         # `bench new` no longer pre-generates an admin password (it's set in the
-        # wizard's first step and persisted to bench.toml by /api/v1/setup/save).
+        # wizard's first step and persisted by PUT /api/v1/setup/configuration).
         # So the harness chooses it, the wizard enters it, and login reuses it.
         # A bare token_urlsafe() isn't guaranteed to satisfy the wizard's password
         # policy (upper + lower + digit + symbol) — fixed affixes guarantee it.

@@ -71,21 +71,22 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 102
+    assert len(routes) == 101
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 102
+    assert len({(method, path) for method, path, _, _ in routes}) == 101
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 8,
         "GET": 50,
         "PATCH": 2,
-        "POST": 42,
+        "POST": 40,
+        "PUT": 1,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
         "authenticated": 57,
         "authenticated+bench-management": 6,
         "authenticated+site-scope": 26,
         "open": 5,
-        "setup-conditional": 8,
+        "setup-conditional": 7,
     }
     assert Counter(areas) == {
         "apps": 7,
@@ -100,7 +101,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "monitor-status": 1,
         "processes": 4,
         "settings": 4,
-        "setup": 8,
+        "setup": 7,
         "sites": 30,
         "ssh-keys": 3,
         "stats": 1,
@@ -124,6 +125,15 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("POST", "/api/v1/task-worker/actions/start"),
         ("POST", "/api/v1/task-worker/actions/stop"),
     } <= route_keys
+    assert {
+        ("GET", "/api/v1/setup/configuration"),
+        ("PUT", "/api/v1/setup/configuration"),
+        ("GET", "/api/v1/setup/framework-branches"),
+        ("POST", "/api/v1/setup/database-validations"),
+        ("POST", "/api/v1/setup/actions/start"),
+        ("POST", "/api/v1/setup/actions/finish"),
+        ("POST", "/api/v1/setup/new-site"),
+    } <= route_keys
     assert not {
         path
         for _, path, _, _ in routes
@@ -135,5 +145,12 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             "/api/v1/tasks/<task_id>/stream",
             "/api/v1/tasks/<task_id>/output/download",
             "/api/v1/setup/stream/<task_id>",
+            "/api/v1/setup/config",
+            "/api/v1/setup/framework_branches",
+            "/api/v1/setup/save",
+            "/api/v1/setup/validate-mariadb",
+            "/api/v1/setup/validate-postgres",
+            "/api/v1/setup/start",
+            "/api/v1/setup/finish",
         }
     }

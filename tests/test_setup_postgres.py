@@ -69,6 +69,9 @@ def test_read_defaults_omits_password_fallbacks_for_fresh_bench(tmp_path: Path) 
     result = _read_defaults(tmp_path)
     assert "mariadb_password" not in result
     assert "postgres_password" not in result
+    assert result["admin_password_configured"] is False
+    assert result["mariadb_password_configured"] is False
+    assert result["postgres_password_configured"] is False
 
 
 def test_read_defaults_never_leaks_a_real_saved_password(tmp_path: Path) -> None:
@@ -82,3 +85,5 @@ def test_read_defaults_never_leaks_a_real_saved_password(tmp_path: Path) -> None
     result = _read_defaults(tmp_path)
     assert "mariadb_password" not in result
     assert "postgres_password" not in result
+    assert result["mariadb_password_configured"] is True
+    assert result["postgres_password_configured"] is True

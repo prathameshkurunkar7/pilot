@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import signal
+import threading
 from pathlib import Path
 
 import pytest
@@ -71,3 +72,37 @@ def test_signal_handler_requests_drain_before_previous_handler(
     handlers[signal.SIGTERM](signal.SIGTERM, None)
 
     assert events == ["drain", ("previous", signal.SIGTERM)]
+
+
+def test_signal_handler_preserves_default_process_termination(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events = []
+    handlers = {}
+    registry = WorkerRegistry()
+    monkeypatch.setattr(registry, "request_drain", lambda: events.append("drain"))
+    monkeypatch.setattr(signal, "getsignal", lambda signum: signal.SIG_DFL)
+    monkeypatch.setattr(
+        signal,
+        "signal",
+        lambda signum, handler: handlers.__setitem__(signum, handler),
+    )
+    monkeypatch.setattr(registry_module.os, "getpid", lambda: 4321)
+    killed = threading.Event()
+
+    def kill(pid, signum):
+        events.append(("kill", pid, signum))
+        killed.set()
+
+    monkeypatch.setattr(
+        registry_module.os,
+        "kill",
+        kill,
+    )
+
+    registry.install_signal_handlers()
+    handlers[signal.SIGTERM](signal.SIGTERM, None)
+
+    assert killed.wait(1)
+    assert events == ["drain", ("kill", 4321, signal.SIGTERM)]
+    assert handlers[signal.SIGTERM] == signal.SIG_DFL

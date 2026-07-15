@@ -267,8 +267,8 @@ def test_setup_session_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path
     app = create_app(tmp_path)
     app.config.update(TESTING=True, SESSION_COOKIE_SECURE=True)
 
-    response = app.test_client().post(
-        "/api/v1/setup/save",
+    response = app.test_client().put(
+        "/api/v1/setup/configuration",
         json={"admin_password": "secret", "mariadb_password": "db-secret"},
     )
 
@@ -397,9 +397,10 @@ def test_forwarded_headers_are_trusted_only_behind_production_nginx() -> None:
 
 def test_setup_endpoint_requires_auth_once_password_set(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    assert client.post("/api/v1/setup/validate-mariadb", json={}).status_code == 401
+    path = "/api/v1/setup/database-validations"
+    assert client.post(path, json={"engine": "mariadb"}).status_code == 401
     client.set_cookie("sid", issue_token("k3y"))
-    assert client.post("/api/v1/setup/validate-mariadb", json={}).status_code != 401
+    assert client.post(path, json={"engine": "mariadb"}).status_code != 401
 
 
 def test_setup_endpoint_open_before_password_set(tmp_path: Path) -> None:
@@ -407,7 +408,11 @@ def test_setup_endpoint_open_before_password_set(tmp_path: Path) -> None:
 
     app = create_app(tmp_path)  # no bench.toml → first-time setup
     app.config["TESTING"] = True
-    assert app.test_client().post("/api/v1/setup/validate-mariadb", json={}).status_code != 401
+    response = app.test_client().post(
+        "/api/v1/setup/database-validations",
+        json={"engine": "mariadb"},
+    )
+    assert response.status_code != 401
 
 
 def test_setup_endpoint_fails_closed_when_config_is_corrupt(tmp_path: Path) -> None:
@@ -417,7 +422,10 @@ def test_setup_endpoint_fails_closed_when_config_is_corrupt(tmp_path: Path) -> N
     app = create_app(tmp_path)
     app.config["TESTING"] = True
 
-    response = app.test_client().post("/api/v1/setup/validate-mariadb", json={})
+    response = app.test_client().post(
+        "/api/v1/setup/database-validations",
+        json={"engine": "mariadb"},
+    )
 
     assert response.status_code == 503
 

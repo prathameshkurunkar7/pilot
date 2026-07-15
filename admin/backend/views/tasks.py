@@ -21,6 +21,7 @@ from admin.backend.tasks.manager.task_runner import TaskRunner
 from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES, TaskStatus
 from admin.backend.tasks.manager.worker_registry import task_workers
 from admin.backend.tasks.manager.worker_state import WorkerIntent, WorkerStore
+from admin.backend.tasks.task_response import accepted_task_response
 from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
 
 tasks_bp = Blueprint("tasks", __name__)
@@ -69,7 +70,7 @@ def create_task():
             args,
             idempotency_key=request.headers.get("Idempotency-Key"),
         )
-        return _accepted_task(task_id)
+        return accepted_task_response(_bench_root(), task_id)
     except TaskConflictError as error:
         return error_response("task_conflict", str(error), 409)
     except ValueError as error:
@@ -122,7 +123,11 @@ def retry_task(task_id: str):
             409,
         )
     try:
-        return _accepted_task(TaskRunner(_bench_root()).run(task.command, task.args))
+        bench_root = _bench_root()
+        return accepted_task_response(
+            bench_root,
+            TaskRunner(bench_root).run(task.command, task.args),
+        )
     except ValueError as error:
         return error_response("invalid_task", str(error), 422)
     except Exception:
@@ -200,14 +205,6 @@ def stop_task_worker():
     WorkerStore(bench_root).write_intent(WorkerIntent.STOPPED)
     task_workers.wake(bench_root)
     return _accepted_worker()
-
-
-def _accepted_task(task_id: str):
-    task = _reader().read_task(task_id)
-    return accepted_response(
-        task.as_dict(),
-        url_for("tasks.get_task", task_id=task_id),
-    )
 
 
 def _accepted_worker():

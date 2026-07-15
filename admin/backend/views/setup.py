@@ -3,19 +3,23 @@ from __future__ import annotations
 import typing
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
-from admin.backend.api_contract import error_response
+from admin.backend.api_contract import error_response, no_content_response
 from admin.backend.auth import allow_during_setup, set_session_cookie
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.task_runner import TaskRunner
-from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES
+from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES, TaskStatus
+from admin.backend.tasks.task_response import accepted_task_response
+from admin.backend.validators import validate_branch_name, validate_repo_url
 from pilot.config.bench_toml_builder import (
     FRAMEWORK_BRANCHES,
     BenchTomlBuilder,
     current_port_offset,
 )
 from pilot.config.toml_store import BenchTomlStore
+from pilot.exceptions import TaskConflictError, TaskNotFoundError
+from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 
 if typing.TYPE_CHECKING:
     from pilot.managers.mariadb_manager import MariaDBManager
@@ -36,50 +40,76 @@ def wizard_marker_path(bench_root: Path) -> Path:
     return bench_root / ".wizard-active"
 
 
-@setup_bp.route("/config")
+@setup_bp.get("/configuration")
 @allow_during_setup
-def get_config():
+def get_configuration():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     return jsonify(_read_defaults(bench_root))
 
 
-@setup_bp.route("/branches")
+@setup_bp.get("/framework-branches")
 @allow_during_setup
-def get_branches():
+def get_framework_branches():
     return jsonify({"branches": FRAMEWORK_BRANCHES})
 
 
-@setup_bp.route("/save", methods=["POST"])
+@setup_bp.put("/configuration")
 @allow_during_setup
-def save_config():
+def update_configuration():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return error_response("malformed_request", "Expected a JSON object.", 400)
 
-    error = _validate(data)
+    with exclusive_file_lock(bench_root / ".setup-configuration"):
+        return _update_configuration(bench_root, data)
+
+
+def _update_configuration(bench_root: Path, data: dict):
+    store = BenchTomlStore.for_bench(bench_root)
+    current = {}
+    if store.exists():
+        try:
+            current = store.read_flat()
+        except Exception:
+            return error_response(
+                "configuration_unavailable",
+                "Setup configuration is unavailable.",
+                503,
+            )
+    if current.get("admin_password") and g.jwt_claims is None:
+        return error_response(
+            "authentication_required",
+            "Authentication is required.",
+            401,
+        )
+
+    settings = {**current, **data, "admin_enabled": True}
+    error = _validate(settings)
     if error:
         return error_response("invalid_setup_configuration", error, 422)
 
-    # Preserve any settings the wizard didn't send (e.g. python version, fields
-    # not shown in the current step). Incoming data wins on conflicts.
     toml_path = bench_root / "bench.toml"
-    store = BenchTomlStore(toml_path)
-    existing: dict = {}
-    if toml_path.exists():
-        try:
-            existing = store.read_flat()
-        except Exception:
-            pass
+    try:
+        store.write_flat(
+            current.get("bench_name") or bench_root.name,
+            {**data, "admin_enabled": True},
+            port_offset=current_port_offset(toml_path),
+        )
+    except (TypeError, ValueError):
+        return error_response(
+            "invalid_setup_configuration",
+            "Setup configuration contains invalid fields.",
+            422,
+        )
+    except Exception:
+        return error_response(
+            "configuration_update_failed",
+            "Could not update setup configuration.",
+            500,
+        )
 
-    settings = {**existing, **data, "admin_enabled": True}
-    store.write_flat(
-        _current_name(bench_root), settings, port_offset=current_port_offset(toml_path)
-    )
-
-    resp = jsonify({"ok": True})
-    # Setting the password closes the open setup phase; hand back a session so the
-    # next request (e.g. /start) authenticates instead of 401ing.
+    resp = jsonify(_read_defaults(bench_root))
     if settings.get("admin_password"):
         _issue_setup_session(resp, toml_path)
     return resp
@@ -95,84 +125,89 @@ def _issue_setup_session(resp, toml_path: Path) -> None:
     )
 
 
-@setup_bp.route("/validate-mariadb", methods=["POST"])
+@setup_bp.post("/database-validations")
 @allow_during_setup
-def validate_mariadb():
-    """Tell the wizard whether the entered credentials will work against the
-    single MariaDB server every bench for this OS user shares. Not yet
-    provisioned → bench init will create and secure it → will_install."""
-    from pilot.managers.mariadb_manager import MariaDBManager
-
+def validate_database():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return error_response("malformed_request", "Expected a JSON object.", 400)
-    password = data.get("mariadb_password", "")
-    admin_user = data.get("mariadb_admin_user", "root")
-    host = data.get("mariadb_host", "")
-    port = data.get("mariadb_port")
-    existing = bool(data.get("mariadb_existing"))
-
-    bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        config = _mariadb_config(bench_root, password, admin_user, host, port, existing)
-    except (TypeError, ValueError):
+        engine, manager, password, existing = _database_validation(
+            bench_root=Path(current_app.config["BENCH_ROOT"]),
+            data=data,
+        )
+        state = _database_validation_state(manager, password, existing)
+    except ValueError as error:
         return error_response(
             "invalid_database_configuration",
-            "MariaDB connection settings are invalid.",
+            str(error),
             422,
         )
-    manager = MariaDBManager(config)
-
-    # existing is a deliberate choice, never inferred from host: just check the login.
-    if config.existing:
-        return jsonify({"state": "valid" if manager.check_credentials(password) else "invalid"})
-
-    if _is_fresh_install(manager):
-        return jsonify({"state": "will_install"})
-
-    if manager.check_credentials(password):
-        return jsonify({"state": "valid"})
-
-    return jsonify({"state": "invalid"})
+    except Exception:
+        return error_response(
+            "database_validation_failed",
+            "Could not validate the database configuration.",
+            500,
+        )
+    return jsonify({"engine": engine, "state": state})
 
 
-@setup_bp.route("/validate-postgres", methods=["POST"])
-@allow_during_setup
-def validate_postgres():
-    """Tell the wizard whether the entered PostgreSQL credentials will work
-    against the single PostgreSQL server every bench for this OS user shares."""
+def _database_validation(bench_root: Path, data: dict):
+    engine = data.get("engine")
+    if engine not in ("mariadb", "postgres"):
+        raise ValueError("engine must be 'mariadb' or 'postgres'.")
+
+    for field in ("password", "admin_user", "host"):
+        if field in data and not isinstance(data[field], str):
+            raise ValueError(f"{field} must be a string.")
+    if "existing" in data and not isinstance(data["existing"], bool):
+        raise ValueError("existing must be a boolean.")
+
+    default_port = 3306 if engine == "mariadb" else 5432
+    port = data.get("port", default_port)
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError("port must be an integer between 1 and 65535.")
+
+    password = data.get("password", "")
+    default_admin_user = "root" if engine == "mariadb" else "postgres"
+    admin_user = (data.get("admin_user") or default_admin_user).strip()
+    host = (data.get("host") or "localhost").strip()
+    existing = data.get("existing", False)
+    if existing and (not host or not admin_user):
+        raise ValueError("host and admin_user are required for an existing server.")
+
+    if engine == "mariadb":
+        from pilot.managers.mariadb_manager import MariaDBManager
+
+        config = _mariadb_config(
+            bench_root,
+            password,
+            admin_user,
+            host,
+            port,
+            existing,
+        )
+        return engine, MariaDBManager(config), password, existing
+
     from pilot.config.postgres_config import PostgresConfig
     from pilot.managers.postgres_manager import PostgresManager
 
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
-    password = data.get("postgres_password", "")
-    admin_user = data.get("postgres_admin_user") or "postgres"
-    host = data.get("postgres_host") or "localhost"
-    try:
-        port = int(data.get("postgres_port") or 5432)
-    except (TypeError, ValueError):
-        return error_response(
-            "invalid_database_configuration",
-            "PostgreSQL connection settings are invalid.",
-            422,
-        )
-    existing = bool(data.get("postgres_existing"))
-
     config = PostgresConfig(
-        host=host, port=port, root_password=password, admin_user=admin_user, existing=existing
+        host=host,
+        port=port,
+        root_password=password,
+        admin_user=admin_user,
+        existing=existing,
     )
-    manager = PostgresManager(config)
+    return engine, PostgresManager(config), password, existing
 
-    if config.existing:
-        return jsonify({"state": "valid" if manager.check_credentials(password) else "invalid"})
 
+def _database_validation_state(manager, password: str, existing: bool) -> str:
+    if existing:
+        return "valid" if manager.check_credentials(password) else "invalid"
     if _is_fresh_install(manager):
-        return jsonify({"state": "will_install"})
-    if manager.check_credentials(password):
-        return jsonify({"state": "valid"})
-    return jsonify({"state": "invalid"})
+        return "will_install"
+    return "valid" if manager.check_credentials(password) else "invalid"
 
 
 def _is_fresh_install(manager: PostgresManager | MariaDBManager) -> bool:
@@ -214,12 +249,38 @@ def _mariadb_config(
 
 
 def _validate(data: dict) -> str | None:
+    text_fields = (
+        "admin_password",
+        "app_branch",
+        "app_repo",
+        "db_type",
+        "mariadb_admin_user",
+        "mariadb_host",
+        "mariadb_password",
+        "postgres_admin_user",
+        "postgres_host",
+        "postgres_password",
+    )
+    for field in text_fields:
+        if field in data and not isinstance(data[field], str):
+            return f"{field} must be a string"
+    for field in ("mariadb_existing", "postgres_existing"):
+        if field in data and not isinstance(data[field], bool):
+            return f"{field} must be a boolean"
+    for field in ("mariadb_port", "postgres_port"):
+        value = data.get(field)
+        if value is not None and (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or not 1 <= value <= 65535
+        ):
+            return f"{field} must be an integer between 1 and 65535"
+
     if not data.get("admin_password"):
         return "admin_password is required"
-    # Each server-based engine needs its superuser password: frappe connects over
-    # TCP, where a blank password fails password auth and would only surface at
-    # first site creation. init sets this password on a fresh install.
     db_type = data.get("db_type", "mariadb")
+    if db_type not in ("mariadb", "postgres"):
+        return "db_type must be 'mariadb' or 'postgres'"
     if db_type == "mariadb" and not data.get("mariadb_password"):
         return "mariadb_password is required"
     if db_type == "postgres" and not data.get("postgres_password"):
@@ -231,27 +292,24 @@ def _validate(data: dict) -> str | None:
             return (
                 f"{db_type}_admin_user is required when connecting to an existing database server"
             )
+    if "app_repo" in data and (error := validate_repo_url(data["app_repo"])):
+        return error
+    if "app_branch" in data and (error := validate_branch_name(data["app_branch"])):
+        return error
     return None
 
 
-@setup_bp.route("/start", methods=["POST"])
+@setup_bp.post("/actions/start")
 @allow_during_setup
 def start_setup():
-    """Run the wizard as one task that initializes the bench — see WizardSetupTask.
-
-    A single task means the wizard follows one continuous output stream and, on a
-    reload, simply reattaches to the one running task. Production is a separate
-    step the user runs from the terminal afterwards (`bench setup production`).
-    """
     bench_root = Path(current_app.config["BENCH_ROOT"])
-
-    # No passwordless-sudo preflight needed: bench init runs rootless (a
-    # per-bench-user systemd --user MariaDB/PostgreSQL server — see
-    # MariaDBManager/PostgresManager), except on Alpine, which commonly
-    # already runs as root.
-
-    # Pre-flight validation so config errors surface in the wizard instead of
-    # failing deep inside the task.
+    idempotency_key = request.headers.get("Idempotency-Key")
+    if not idempotency_key:
+        return error_response(
+            "idempotency_key_required",
+            "Idempotency-Key is required.",
+            422,
+        )
     try:
         config = BenchTomlStore.for_bench(bench_root).read()
         config.validate()
@@ -262,61 +320,92 @@ def start_setup():
             422,
         )
 
+    marker = wizard_marker_path(bench_root)
     try:
-        # Reattach to an in-flight run rather than starting a second one (e.g. the
-        # page reloaded and re-posted on resume).
-        existing = _running_setup_task(bench_root)
-        if existing:
-            return jsonify({"ok": True, "task_id": existing.task_id})
-        task_id = TaskRunner(bench_root).run("wizard-setup", {})
-        # Mark the wizard as owning this bench until setup finishes, so a reload
-        # mid-run returns to the wizard rather than the half-built dashboard.
-        wizard_marker_path(bench_root).touch()
-        return jsonify({"ok": True, "task_id": task_id})
+        with exclusive_file_lock(marker):
+            existing = _setup_handoff_task(bench_root)
+            if existing:
+                replace_private_text_locked(marker, existing.task_id)
+                return accepted_task_response(bench_root, existing.task_id)
+            replace_private_text_locked(marker, "")
+            task_id = TaskRunner(bench_root).run(
+                "wizard-setup",
+                {},
+                idempotency_key=idempotency_key,
+            )
+            replace_private_text_locked(marker, task_id)
+            return accepted_task_response(bench_root, task_id)
+    except TaskConflictError as error:
+        _clear_wizard_marker_if_idle(bench_root)
+        return error_response("task_conflict", str(error), 409)
+    except ValueError as error:
+        _clear_wizard_marker_if_idle(bench_root)
+        return error_response("invalid_setup_task", str(error), 422)
     except Exception:
+        _clear_wizard_marker_if_idle(bench_root)
         return error_response("setup_start_failed", "Could not start setup.", 500)
 
 
-@setup_bp.route("/finish", methods=["POST"])
+@setup_bp.post("/actions/finish")
 @allow_during_setup
 def finish_setup():
-    """Shut down the standalone wizard server so the user can run `bench start`.
-
-    Only the wizard server (started with --wizard) may be shut down this way —
-    the procfile-managed admin process must never exit, since the dev-mode
-    runner stops the whole bench when any one process dies.
-    """
     import os
     import signal
     import threading
 
-    # Setup is over: drop the wizard marker regardless of how this admin is run,
-    # so the dashboard takes over (the procfile admin returns 400 below but must
-    # still clear the marker).
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    wizard_marker_path(bench_root).unlink(missing_ok=True)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("malformed_request", "Expected a JSON object.", 400)
+    task_id = data.get("task_id")
+    if not isinstance(task_id, str) or not task_id:
+        return error_response("invalid_task", "task_id is required.", 422)
 
-    if not current_app.config.get("WIZARD_SERVER"):
+    try:
+        task = TaskReader(bench_root).read_task(task_id)
+    except TaskNotFoundError as error:
+        return error_response("task_not_found", str(error), 404)
+    except Exception:
+        return error_response("task_unavailable", "Could not read setup task.", 500)
+
+    if task.command != "wizard-setup":
+        return error_response("setup_task_required", "Task is not a setup task.", 409)
+    if task.status != TaskStatus.SUCCESS:
         return error_response(
-            "setup_finish_unavailable",
-            "Setup cannot be finished from this server.",
+            "setup_not_complete",
+            "Setup task has not completed successfully.",
             409,
         )
-
-    if not (bench_root / "config" / "Procfile").exists():
-        return error_response(
-            "setup_not_initialized",
-            "Bench setup has not finished.",
-            409,
+    marker = wizard_marker_path(bench_root)
+    with exclusive_file_lock(marker):
+        handoff = _setup_handoff_task(bench_root)
+        if handoff is None or handoff.task_id != task_id:
+            return error_response(
+                "setup_task_mismatch",
+                "Task is not the current setup attempt.",
+                409,
+            )
+        if _running_setup_task(bench_root):
+            return error_response(
+                "setup_active",
+                "Another setup task is still active.",
+                409,
+            )
+        if not (bench_root / "config" / "Procfile").exists():
+            return error_response(
+                "setup_not_initialized",
+                "Bench setup has not finished.",
+                409,
+            )
+        marker.unlink(missing_ok=True)
+    response = no_content_response()
+    if current_app.config.get("WIZARD_SERVER"):
+        response.call_on_close(
+            lambda: threading.Timer(
+                0.1,
+                lambda: os.kill(os.getpid(), signal.SIGTERM),
+            ).start()
         )
-
-    # call_on_close fires after the response body has been written to the
-    # socket, so the kill can't race ahead of the response. The tiny timer
-    # just lets the handler thread finish tearing down the connection.
-    response = jsonify({"ok": True})
-    response.call_on_close(
-        lambda: threading.Timer(0.1, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
-    )
     return response
 
 
@@ -343,7 +432,7 @@ def start_new_site():
         return error_response("site_creation_failed", "Could not create site.", 500)
 
 
-_PASSWORD_KEYS = ("mariadb_password", "postgres_password")
+_PASSWORD_KEYS = ("admin_password", "mariadb_password", "postgres_password")
 
 
 def _read_defaults(bench_root: Path) -> dict:
@@ -351,7 +440,11 @@ def _read_defaults(bench_root: Path) -> dict:
 
     # This is a read endpoint the wizard polls before login — it must never echo
     # a DB password back, default or real, whether or not bench.toml has one set.
-    defaults = {k: v for k, v in BenchTomlBuilder.DEFAULTS.items() if k not in _PASSWORD_KEYS}
+    defaults = {
+        key: value
+        for key, value in BenchTomlBuilder.DEFAULTS.items()
+        if key not in _PASSWORD_KEYS
+    }
 
     result = {
         "bench_name": bench_root.name,
@@ -364,6 +457,7 @@ def _read_defaults(bench_root: Path) -> dict:
         try:
             settings = BenchTomlStore(toml_path).read_flat()
             for key in _PASSWORD_KEYS:
+                result[f"{key}_configured"] = bool(settings.get(key))
                 settings.pop(key, None)
             result.update(settings)
             if not result.get("bench_name"):
@@ -371,10 +465,11 @@ def _read_defaults(bench_root: Path) -> dict:
         except Exception:
             pass
 
-    result.pop("admin_password", None)
+    for key in _PASSWORD_KEYS:
+        result.setdefault(f"{key}_configured", False)
 
     try:
-        task = _running_setup_task(bench_root)
+        task = _setup_handoff_task(bench_root)
         result["running_setup_task_id"] = task.task_id if task else None
     except Exception:
         result["running_setup_task_id"] = None
@@ -383,23 +478,50 @@ def _read_defaults(bench_root: Path) -> dict:
 
 
 def _running_setup_task(bench_root: Path):
-    """The wizard's setup task if it's queued or running, else None. The single
-    live task is the whole resume signal: a reload reattaches to it."""
     return next(
         (
             t
-            for t in TaskReader(bench_root).list_tasks()
+            for t in TaskReader(bench_root).list_tasks(limit=None)
             if t.command == "wizard-setup" and t.status in ACTIVE_TASK_STATUSES
         ),
         None,
     )
 
 
-def _current_name(bench_root: Path) -> str:
-    toml_path = bench_root / "bench.toml"
-    if not toml_path.exists():
-        return bench_root.name
+def _setup_handoff_task(bench_root: Path):
+    marker = wizard_marker_path(bench_root)
+    if not marker.exists():
+        return _running_setup_task(bench_root)
+
+    task_id = marker.read_text(encoding="utf-8").strip()
+    if task_id:
+        try:
+            task = TaskReader(bench_root).read_task(task_id)
+        except TaskNotFoundError:
+            return _running_setup_task(bench_root)
+        if task.command == "wizard-setup" and task.status in {
+            *ACTIVE_TASK_STATUSES,
+            TaskStatus.SUCCESS,
+        }:
+            return task
+        return None
+
+    return next(
+        (
+            task
+            for task in TaskReader(bench_root).list_tasks(limit=None)
+            if task.command == "wizard-setup"
+            and task.status in {*ACTIVE_TASK_STATUSES, TaskStatus.SUCCESS}
+        ),
+        None,
+    )
+
+
+def _clear_wizard_marker_if_idle(bench_root: Path) -> None:
+    marker = wizard_marker_path(bench_root)
     try:
-        return BenchTomlStore(toml_path).read_flat().get("bench_name") or bench_root.name
+        with exclusive_file_lock(marker):
+            if _running_setup_task(bench_root) is None:
+                marker.unlink(missing_ok=True)
     except Exception:
-        return bench_root.name
+        pass

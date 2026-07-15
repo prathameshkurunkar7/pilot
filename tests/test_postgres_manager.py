@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -105,13 +106,16 @@ def test_check_credentials_uses_pgpassword_and_tcp() -> None:
     m = _mgr(root_password="pw", host="h", port=5440, admin_user="pg")
     captured: dict = {}
 
-    def fake_run(cmd, env=None, capture_output=None, text=None):
+    def fake_run(cmd, env=None, capture_output=None, text=None, timeout=None):
         captured["cmd"], captured["env"] = cmd, env
+        captured["timeout"] = timeout
         return MagicMock(returncode=0)
 
     with patch(f"{MODULE}.which", return_value="/usr/bin/psql"), patch(f"{MODULE}.subprocess.run", side_effect=fake_run):
         assert m.check_credentials() is True
     assert captured["env"]["PGPASSWORD"] == "pw"
+    assert captured["env"]["PGCONNECT_TIMEOUT"] == "5"
+    assert captured["timeout"] == 5
     cmd = captured["cmd"]
     assert cmd[cmd.index("-U") + 1] == "pg"
     assert cmd[cmd.index("-p") + 1] == "5440"
@@ -120,6 +124,14 @@ def test_check_credentials_uses_pgpassword_and_tcp() -> None:
 
 def test_check_credentials_false_without_psql() -> None:
     with patch(f"{MODULE}.which", return_value=None), patch(f"{MODULE}.is_macos", return_value=False):
+        assert _mgr(root_password="pw").check_credentials() is False
+
+
+def test_check_credentials_times_out() -> None:
+    with patch(f"{MODULE}.which", return_value="/usr/bin/psql"), patch(
+        f"{MODULE}.subprocess.run",
+        side_effect=subprocess.TimeoutExpired("psql", 5),
+    ):
         assert _mgr(root_password="pw").check_credentials() is False
 
 

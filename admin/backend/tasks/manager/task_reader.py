@@ -58,7 +58,7 @@ class TaskReader:
         self._bench_root = bench_root
         self._queue = TaskQueue(bench_root)
 
-    def list_tasks(self, limit: int = 50) -> list[TaskInfo]:
+    def list_tasks(self, limit: int | None = 50) -> list[TaskInfo]:
         tasks_dir = self._bench_root / "tasks"
         if not tasks_dir.exists():
             return []
@@ -73,7 +73,7 @@ class TaskReader:
                     continue
 
         tasks.sort(key=lambda task: task.queued_at, reverse=True)
-        return tasks[:limit]
+        return tasks if limit is None else tasks[:limit]
 
     def read_task(self, task_id: str) -> TaskInfo:
         if not _TASK_ID_PATTERN.match(task_id):

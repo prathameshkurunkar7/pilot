@@ -233,7 +233,16 @@ def test_check_credentials_false_on_error() -> None:
         assert manager.check_credentials("wrong") is False
 
 
-# ── /api/v1/setup/validate-mariadb endpoint ──────────────────────────────────────
+def test_check_credentials_times_out() -> None:
+    manager = _manager()
+    with patch(
+        f"{MODULE}.subprocess.run",
+        side_effect=subprocess.TimeoutExpired("mariadb", 5),
+    ):
+        assert manager.check_credentials("wrong") is False
+
+
+# ── /api/v1/setup/database-validations endpoint
 
 
 def _client(tmp_path):
@@ -245,20 +254,23 @@ def _client(tmp_path):
 
 
 def _post_validate(client, password: str):
-    return client.post("/api/v1/setup/validate-mariadb", json={"mariadb_password": password})
+    return client.post(
+        "/api/v1/setup/database-validations",
+        json={"engine": "mariadb", "password": password},
+    )
 
 
 def test_validate_endpoint_will_install_when_not_installed(tmp_path) -> None:
     with patch(f"{MODULE}.MariaDBManager.is_installed", return_value=False):
         resp = _post_validate(_client(tmp_path), "anything")
-    assert resp.get_json() == {"state": "will_install"}
+    assert resp.get_json() == {"engine": "mariadb", "state": "will_install"}
 
 
 def test_validate_endpoint_will_install_when_not_provisioned(tmp_path) -> None:
     with patch(f"{MODULE}.MariaDBManager.is_installed", return_value=True), \
          patch(f"{MODULE}.MariaDBManager.is_provisioned", return_value=False):
         resp = _post_validate(_client(tmp_path), "anything")
-    assert resp.get_json() == {"state": "will_install"}
+    assert resp.get_json() == {"engine": "mariadb", "state": "will_install"}
 
 
 def test_validate_endpoint_valid(tmp_path) -> None:
@@ -266,7 +278,7 @@ def test_validate_endpoint_valid(tmp_path) -> None:
          patch(f"{MODULE}.MariaDBManager.is_provisioned", return_value=True), \
          patch(f"{MODULE}.MariaDBManager.check_credentials", return_value=True):
         resp = _post_validate(_client(tmp_path), "correct")
-    assert resp.get_json() == {"state": "valid"}
+    assert resp.get_json() == {"engine": "mariadb", "state": "valid"}
 
 
 def test_validate_endpoint_invalid(tmp_path) -> None:
@@ -274,7 +286,7 @@ def test_validate_endpoint_invalid(tmp_path) -> None:
          patch(f"{MODULE}.MariaDBManager.is_provisioned", return_value=True), \
          patch(f"{MODULE}.MariaDBManager.check_credentials", return_value=False):
         resp = _post_validate(_client(tmp_path), "wrong")
-    assert resp.get_json() == {"state": "invalid"}
+    assert resp.get_json() == {"engine": "mariadb", "state": "invalid"}
 
 
 def test_validate_endpoint_on_macos_checks_password_for_already_secured_server(tmp_path) -> None:
@@ -289,4 +301,4 @@ def test_validate_endpoint_on_macos_checks_password_for_already_secured_server(t
          patch(f"{MODULE}.MariaDBManager.is_unsecured", return_value=False), \
          patch(f"{MODULE}.MariaDBManager.check_credentials", return_value=False):
         resp = _post_validate(_client(tmp_path), "wrong")
-    assert resp.get_json() == {"state": "invalid"}
+    assert resp.get_json() == {"engine": "mariadb", "state": "invalid"}
