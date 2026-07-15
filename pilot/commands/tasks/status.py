@@ -9,11 +9,17 @@ class TaskWorkerStatusCommand(Command):
     group = "tasks"
 
     def run(self) -> None:
-        from admin.backend.tasks.manager.worker_state import WorkerStore
+        from admin.backend.tasks.manager.activity import TaskActivityReader
 
-        store = WorkerStore(self.bench.path)
-        state = store.read_state()
-        observed = state.status.value if state is not None else "not-started"
-        print(f"Task worker: {observed} (desired: {store.read_intent().value})")
+        activity = TaskActivityReader(self.bench.path).read()
+        print(
+            f"Task worker: {activity.worker_status} "
+            f"(desired: {activity.desired_status})"
+        )
+        state = activity.worker_state
         if state is not None and state.current_task_id:
             print(f"Current task: {state.current_task_id}")
+        print(
+            f"Task activity: {'active' if activity.active else 'idle'} "
+            f"(queued: {activity.queued_tasks}, running: {activity.running_tasks})"
+        )

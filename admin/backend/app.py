@@ -194,6 +194,7 @@ def create_app(bench_root: Path) -> Flask:
             else:
                 return jsonify(_wizard_status(bench_root))
         from pilot.platform import native_process_manager
+        from admin.backend.tasks.manager.activity import TaskActivityReader
 
         return jsonify(
             {
@@ -204,6 +205,7 @@ def create_app(bench_root: Path) -> Flask:
                 "native_process_manager": native_process_manager(),
                 "allow_bench_management": config.admin.allow_bench_management,
                 "authenticated": _is_authenticated(config),
+                "task_worker": TaskActivityReader(bench_root).read().public_dict(),
             }
         )
 

@@ -50,4 +50,5 @@ def test_tasks_status_reports_intent_and_current_task(
     assert capsys.readouterr().out == (
         "Task worker: draining (desired: stopped)\n"
         "Current task: task-id\n"
+        "Task activity: active (queued: 0, running: 0)\n"
     )

@@ -151,6 +151,18 @@ def test_status_reports_bench_db_type(tmp_path: Path) -> None:
     assert client.get("/api/status").get_json()["db_type"] == "mariadb"
 
 
+def test_status_reports_sanitized_task_activity(tmp_path: Path) -> None:
+    body = _client(tmp_path).get("/api/status").get_json()
+
+    assert body["task_worker"] == {
+        "active": False,
+        "desired": "running",
+        "status": "not-started",
+        "uncertain": False,
+    }
+    assert "current_task_id" not in body["task_worker"]
+
+
 def test_status_reports_postgres_engine(tmp_path: Path) -> None:
     from admin.backend.app import create_app
     from pilot.config.toml_store import BenchTomlStore
