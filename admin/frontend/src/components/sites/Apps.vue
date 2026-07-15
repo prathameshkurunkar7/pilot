@@ -102,7 +102,7 @@ async function confirmUninstall() {
   uninstallError.value = ''
   try {
     const result = await uninstallApp(uninstallTarget.value)
-    if (result?.ok) {
+    if (result.task_id) {
       showUninstall.value = false
       openTaskDetailPage(router, result.task_id)
     } else {

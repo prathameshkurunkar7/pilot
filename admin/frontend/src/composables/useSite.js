@@ -121,16 +121,8 @@ export function useSite(name) {
     return sitesApi.reinstall(name)
   }
 
-  async function installApp(app) {
-    return sitesApi.apps.install(name, app)
-  }
-
-  async function uninstallApp(app) {
-    return sitesApi.apps.uninstall(name, app)
-  }
-
-  async function forceUninstallApp(app) {
-    return sitesApi.apps.forceUninstall(name, app)
+  async function uninstallApp(app, options) {
+    return sitesApi.apps.remove(name, app, options)
   }
 
   async function saveConfig(config) {
@@ -182,9 +174,7 @@ export function useSite(name) {
     backup,
     drop,
     reinstall,
-    installApp,
     uninstallApp,
-    forceUninstallApp,
     saveConfig,
   }
 }

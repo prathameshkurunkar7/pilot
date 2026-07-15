@@ -9,6 +9,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
+from pilot.core.git_providers import GitProviderError, resolve_app_name_from_repo
 from pilot.exceptions import (
     BenchError,
     ConfigError,
@@ -28,7 +29,7 @@ from admin.backend.uploads import (
     save_archive_upload,
     save_database_upload,
 )
-from ..validators import validate_cron_expression, validate_site_name
+from ..validators import validate_app_name, validate_cron_expression, validate_site_name
 from admin.backend.tasks.manager.task_runner import TaskRunner
 
 from ..readers.app_reader import AppReader
@@ -135,7 +136,7 @@ def detail(name: str):
     )
 
 
-@sites_bp.route("/<name>/apps")
+@sites_bp.get("/<name>/apps")
 @require_scope(site_name)
 def site_apps(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -409,141 +410,81 @@ def migrate_site(name: str):
     return accepted_task_response(bench_root, task_id)
 
 
-@sites_bp.route("/<name>/install-app", methods=["POST"])
+@sites_bp.post("/<name>/apps")
 @require_scope(site_name)
-def install_app(name: str):
+def install_site_app(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not site_exists(bench_root, name):
+        return _site_not_found()
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return _malformed_body()
-    fields = _text_fields(data, "app")
+    fields = _text_fields(data, "app", "repo", "branch")
     if fields is None:
         return _invalid_fields()
-    app = fields["app"]
-    if not app:
-        return error_response("missing_app", "App name is required.", 422)
-    try:
-        task_id = TaskRunner(bench_root).run("install-app", {"site": name, "app": app})
-    except Exception as error:
-        return _task_failure(error)
-    return jsonify({"ok": True, "task_id": task_id})
-
-
-@sites_bp.route("/<name>/get-and-install-app", methods=["POST"])
-@require_scope(site_name)
-def get_and_install_app(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return _malformed_body()
-    fields = _text_fields(data, "app", "repo")
-    target_value = data.get("target", data.get("branch", ""))
-    if fields is None or not isinstance(target_value, str):
-        return _invalid_fields()
-    app = fields["app"]
-    repo = fields["repo"]
-    target = target_value.strip()
-
-    if app:
-        task_args = {"site": name, "app": app, "marketplace_app": app}
-    else:
-        if not repo:
-            return error_response("missing_repo", "Repository URL is required.", 422)
-        from pilot.core.git_providers import GitProviderError, resolve_app_name_from_repo
-
-        try:
-            app = resolve_app_name_from_repo(bench_root, repo, target)["name"]
-        except GitProviderError:
-            return error_response(
-                "invalid_repository", "Could not determine the application name.", 422
-            )
-        except Exception:
-            return _internal_error("Could not inspect the application repository.")
-        task_args = {"site": name, "app": app, "repo": repo}
-        if target:
-            task_args["branch"] = target
+    app, repo, branch = fields["app"], fields["repo"], fields["branch"]
+    if not app and not repo:
+        return error_response("missing_app", "App name or repository is required.", 422)
 
     try:
-        task_id = TaskRunner(bench_root).run("get-and-install-app", task_args)
+        task_id = _submit_install_task(bench_root, name, app, repo, branch)
+    except GitProviderError:
+        return error_response(
+            "invalid_repository", "Could not determine the application name.", 422
+        )
     except Exception as error:
         return _task_failure(error)
-    return jsonify({"ok": True, "task_id": task_id})
+    return accepted_task_response(bench_root, task_id)
 
 
-@sites_bp.route("/<name>/uninstall-app", methods=["POST"])
-@require_scope(site_name)
-def uninstall_app(name: str):
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return _malformed_body()
-    fields = _text_fields(data, "app")
-    if fields is None:
-        return _invalid_fields()
-    app = fields["app"]
-    if not app:
-        return error_response("missing_app", "App name is required.", 422)
+def _submit_install_task(
+    bench_root: Path, site: str, app: str, repo: str, branch: str
+) -> str:
+    """An app already cloned into the bench installs directly; otherwise it is
+    fetched first, by repository URL or by marketplace name."""
+    runner = TaskRunner(bench_root)
+    if app and _is_app_cloned(bench_root, app):
+        return runner.run("install-app", {"site": site, "app": app})
+    if repo:
+        app = app or resolve_app_name_from_repo(bench_root, repo, branch)["name"]
+        task_args = {"site": site, "app": app, "repo": repo}
+        if branch:
+            task_args["branch"] = branch
+        return runner.run("get-and-install-app", task_args)
+    return runner.run(
+        "get-and-install-app", {"site": site, "app": app, "marketplace_app": app}
+    )
+
+
+def _is_app_cloned(bench_root: Path, app: str) -> bool:
+    from pilot.config.toml_store import BenchTomlStore
+    from pilot.core.bench import Bench
+
+    bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
     try:
-        task_id = TaskRunner(bench_root).run("uninstall-app", {"site": name, "app": app})
-    except Exception as error:
-        return _task_failure(error)
-    return jsonify({"ok": True, "task_id": task_id})
+        return bench.app(app).is_cloned
+    except BenchError:
+        return False
 
 
-@sites_bp.route("/<name>/force-uninstall-app", methods=["POST"])
+@sites_bp.delete("/<name>/apps/<app>")
 @require_scope(site_name)
-def force_uninstall_app(name: str):
-    import os
-    import subprocess as _sp
-
+def delete_site_app(name: str, app: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return _malformed_body()
-
-    from ..validators import validate_app_name
-
-    fields = _text_fields(data, "app")
-    if fields is None:
-        return _invalid_fields()
-    app = fields["app"]
+    if not site_exists(bench_root, name):
+        return _site_not_found()
     err = validate_app_name(app)
     if err:
         return error_response("invalid_app", err, 422)
 
-    if not (bench_root / "sites" / name / "site_config.json").exists():
-        return _site_not_found()
-
-    python = str(bench_root / "env" / "bin" / "python")
-    env = os.environ.copy()
-    env.pop("PYTHONPATH", None)
-
+    force = request.args.get("force") == "true"
     try:
-        result = _sp.run(
-            [
-                python,
-                "-m",
-                "frappe.utils.bench_helper",
-                "frappe",
-                "--site",
-                name,
-                "execute",
-                "frappe.installer.remove_from_installed_apps",
-                "--args",
-                f'["{app}"]',
-            ],
-            cwd=str(bench_root / "sites"),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
+        task_id = TaskRunner(bench_root).run(
+            "uninstall-app", {"site": name, "app": app, "force": force}
         )
-        if result.returncode != 0:
-            return _internal_error("Could not remove the application from the site.")
-    except Exception:
-        return _internal_error("Could not remove the application from the site.")
-
-    return jsonify({"ok": True})
+    except Exception as error:
+        return _task_failure(error)
+    return accepted_task_response(bench_root, task_id)
 
 
 @sites_bp.post("/<name>/actions/enable-tls")

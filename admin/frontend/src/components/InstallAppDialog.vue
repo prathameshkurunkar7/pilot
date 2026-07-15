@@ -105,14 +105,12 @@ function rowClass(value) {
 }
 
 async function startInstall(site) {
-  const result = props.app.inBench
-    ? await sitesApi.apps.install(site.name, props.app.name)
-    : await sitesApi.apps.getAndInstall(site.name, {
-        app: props.app.name,
-        repo: props.app.repo,
-        branch: props.app.branch || '',
-      })
-  if (!result.ok) throw new Error(apiErrorMessage(result, `Could not install on ${site.name}.`))
+  const result = await sitesApi.apps.install(site.name, {
+    app: props.app.name,
+    repo: props.app.repo,
+    branch: props.app.branch || '',
+  })
+  if (!result.task_id) throw new Error(apiErrorMessage(result, `Could not install on ${site.name}.`))
   return result.task_id
 }
 
