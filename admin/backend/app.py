@@ -20,7 +20,7 @@ from .auth import (
 from .rate_limit import UsedTokens
 from .uploads import MAX_RESTORE_UPLOAD_BYTES
 from .views.apps import apps_bp
-from .views.benches import benches_bp
+from .views.benches import bench_readiness_bp, benches_bp
 from .views.core import core_bp
 from .views.dashboard import dashboard_bp
 from .views.database import database_bp
@@ -147,6 +147,7 @@ def create_app(bench_root: Path) -> Flask:
     app.register_blueprint(dashboard_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(apps_bp, url_prefix=f"{API_V1_PREFIX}/apps")
     app.register_blueprint(benches_bp, url_prefix=f"{API_V1_PREFIX}/benches")
+    app.register_blueprint(bench_readiness_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(sites_bp, url_prefix=f"{API_V1_PREFIX}/sites")
     app.register_blueprint(processes_bp, url_prefix=f"{API_V1_PREFIX}/processes")
     app.register_blueprint(logs_bp, url_prefix=f"{API_V1_PREFIX}/logs")
@@ -214,4 +215,3 @@ def _secure_cookie_setting(config_store: BenchTomlStore) -> bool:
         return bool(DomainRouteProvider.proxy_servers())
     except Exception:
         return False
-

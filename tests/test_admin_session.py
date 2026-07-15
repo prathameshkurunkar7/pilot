@@ -137,14 +137,14 @@ def test_valid_jwt_cookie_authenticates(tmp_path: Path) -> None:
         "authenticated": True,
         "scope": "bench",
     }
-    assert client.get("/api/v1/benches/").status_code != 401
+    assert client.get("/api/v1/benches").status_code != 401
 
 
 def test_invalid_jwt_cookie_stays_unauthenticated(tmp_path: Path) -> None:
     client = _client(tmp_path)
     client.set_cookie("sid", issue_token("wrong-secret"))
     assert client.get("/api/v1/session").get_json() == {"authenticated": False}
-    assert client.get("/api/v1/benches/").status_code == 401
+    assert client.get("/api/v1/benches").status_code == 401
 
 
 def test_bootstrap_does_not_report_session_state(tmp_path: Path) -> None:
@@ -246,7 +246,7 @@ def test_login_with_sid_sets_httponly_cookie(tmp_path: Path) -> None:
     cookie = next(h for k, h in resp.headers if k == "Set-Cookie" and h.startswith("sid="))
     assert "HttpOnly" in cookie
     assert "Secure" not in cookie
-    assert client.get("/api/v1/benches/").status_code != 401
+    assert client.get("/api/v1/benches").status_code != 401
 
 
 def test_login_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path) -> None:
@@ -313,7 +313,7 @@ def test_login_with_invalid_sid_rejected(tmp_path: Path) -> None:
     resp = client.post("/api/v1/session", json={"sid": issue_login_token("wrong-secret")})
     assert resp.status_code == 401
     assert resp.get_json()["error"]["code"] == "invalid_login_token"
-    assert client.get("/api/v1/benches/").status_code == 401
+    assert client.get("/api/v1/benches").status_code == 401
 
 
 def test_session_creation_requires_a_json_object(tmp_path: Path) -> None:
@@ -604,7 +604,7 @@ def test_current_site_scope_returns_none_for_unscoped(tmp_path: Path) -> None:
 def test_bearer_token_authenticates(tmp_path: Path) -> None:
     client = _client(tmp_path)
     token = issue_token("k3y")
-    resp = client.get("/api/v1/benches/", headers={"Authorization": f"Bearer {token}"})
+    resp = client.get("/api/v1/benches", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code != 401
 
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
 from pilot.exceptions import BenchError
+from pilot.platform import _privileged
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -105,7 +106,7 @@ class DropBenchCommand(Command):
             print(f"Unmounting legacy bind mount at {target}...")
             sys.stdout.flush()
             try:
-                subprocess.run(["sudo", "umount", "-l", str(target)], check=False)
+                subprocess.run(_privileged(["umount", "-l", str(target)]), check=False)
             except Exception as exc:
                 print(f"  (unmount {target} skipped: {exc})")
 
@@ -125,6 +126,11 @@ class DropBenchCommand(Command):
             return
         content = "\n".join(kept) + "\n"
         try:
-            subprocess.run(["sudo", "tee", str(fstab_path)], input=content.encode(), capture_output=True, check=True)
+            subprocess.run(
+                _privileged(["tee", str(fstab_path)]),
+                input=content.encode(),
+                capture_output=True,
+                check=True,
+            )
         except Exception as exc:
             print(f"  (fstab cleanup for {target} skipped: {exc})")

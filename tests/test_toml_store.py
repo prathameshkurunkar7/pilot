@@ -12,6 +12,7 @@ import pytest
 from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import ConfigError
+from pilot.internal.atomic_file import exclusive_file_lock
 
 
 def _write_bench(bench_dir: Path, name: str = "test") -> BenchTomlStore:
@@ -175,6 +176,15 @@ def test_concurrent_raw_edits_preserve_both_updates(tmp_path: Path) -> None:
     config_metadata = store.path.stat()
     assert stat.S_IMODE(lock_metadata.st_mode) == 0o600
     assert lock_metadata.st_uid == config_metadata.st_uid
+
+
+def test_nonblocking_lock_fails_when_another_thread_holds_it(tmp_path: Path) -> None:
+    target = tmp_path / "operation"
+
+    with exclusive_file_lock(target):
+        with pytest.raises(BlockingIOError):
+            with exclusive_file_lock(target, blocking=False):
+                pass
 
 
 def test_unchanged_transaction_does_not_replace_config(

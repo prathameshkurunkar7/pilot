@@ -86,6 +86,12 @@ class ManagedProcessManager(ProcessManager, ABC):
         self.apply_unit_action("start", UnitGroup.WORKLOAD)
 
     @override
+    def start_workload(self) -> None:
+        self.write_config()
+        self.ensure_ready()
+        self.apply_unit_action("start", UnitGroup.WORKLOAD)
+
+    @override
     def stop(self) -> None:
         self.apply_unit_action("stop", UnitGroup.WORKLOAD)
 

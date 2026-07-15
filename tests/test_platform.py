@@ -1,6 +1,7 @@
 """Tests for pilot.platform helpers."""
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from pilot import platform
@@ -23,3 +24,25 @@ def test_which_searches_sbin_when_path_is_minimal(tmp_path: Path, monkeypatch) -
 def test_which_returns_none_for_missing(monkeypatch) -> None:
     monkeypatch.setattr(platform, "_EXTRA_BIN_DIRS", ())
     assert platform.which("definitely-not-a-real-binary-xyz") is None
+
+
+def test_noninteractive_privileges_are_isolated_to_the_current_thread(monkeypatch) -> None:
+    monkeypatch.setattr(platform, "is_root", lambda: False)
+    entered = threading.Event()
+    release = threading.Event()
+    command_from_thread: list[str] = []
+
+    def build_noninteractive_command() -> None:
+        with platform.noninteractive_privileges():
+            entered.set()
+            assert release.wait(timeout=1)
+            command_from_thread.extend(platform._privileged(["true"]))
+
+    thread = threading.Thread(target=build_noninteractive_command)
+    thread.start()
+    assert entered.wait(timeout=1)
+    assert platform._privileged(["true"]) == ["sudo", "true"]
+    release.set()
+    thread.join(timeout=1)
+
+    assert command_from_thread == ["sudo", "-n", "true"]

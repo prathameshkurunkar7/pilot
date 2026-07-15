@@ -2,11 +2,18 @@ import os
 import platform
 import shutil
 import subprocess
+from contextlib import contextmanager
+from contextvars import ContextVar
 from enum import Enum
 from pathlib import Path
+from typing import Iterator
 
 # sbin/bin dirs a minimal PATH often omits (e.g. /usr/sbin for mariadbd/nginx).
 _EXTRA_BIN_DIRS = ("/usr/local/sbin", "/usr/sbin", "/sbin", "/usr/local/bin", "/usr/bin", "/bin")
+_NONINTERACTIVE_PRIVILEGES: ContextVar[bool] = ContextVar(
+    "noninteractive_privileges",
+    default=False,
+)
 
 
 def which(name: str) -> str | None:
@@ -100,7 +107,18 @@ def _privileged(command: list[str]) -> list[str]:
     """Prefix a command with sudo unless we are already root."""
     if is_root():
         return command
-    return ["sudo", *command]
+    sudo = ["sudo", "-n"] if _NONINTERACTIVE_PRIVILEGES.get() else ["sudo"]
+    return [*sudo, *command]
+
+
+@contextmanager
+def noninteractive_privileges() -> Iterator[None]:
+    """Make sudo fail instead of prompting in the current execution context."""
+    token = _NONINTERACTIVE_PRIVILEGES.set(True)
+    try:
+        yield
+    finally:
+        _NONINTERACTIVE_PRIVILEGES.reset(token)
 
 
 def has_passwordless_sudo() -> bool:
@@ -151,5 +169,3 @@ def native_process_manager() -> str:
 def default_nginx_config_dir() -> Path:
     """Directory nginx includes server blocks from (``/etc/nginx/conf.d``)."""
     return Path("/etc/nginx/conf.d")
-
-

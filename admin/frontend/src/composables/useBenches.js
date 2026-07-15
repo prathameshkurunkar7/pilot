@@ -21,7 +21,15 @@ export function useBenches() {
     error.value = ''
     try {
       const result = await action()
-      if (!result.ok) { error.value = apiErrorMessage(result); return false }
+      if (typeof result?.json === 'function') {
+        if (!result.ok) {
+          error.value = apiErrorMessage(await result.json())
+          return false
+        }
+      } else if (result?.error) {
+        error.value = apiErrorMessage(result)
+        return false
+      }
       await load()
       return true
     } catch (e) {
@@ -31,9 +39,14 @@ export function useBenches() {
   }
 
   async function control(name, action) {
+    const operation = benchesApi[action]
+    if (!operation) {
+      error.value = 'Unsupported bench action.'
+      return false
+    }
     controlLoading.value = name
     try {
-      return await run(name, () => benchesApi.control(name, action))
+      return await run(name, () => operation(name))
     } finally {
       if (controlLoading.value === name) controlLoading.value = ''
     }

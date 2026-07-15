@@ -128,6 +128,9 @@ class ProcessManager:
             self.pid_file.unlink(missing_ok=True)
             self._cleanup_proc_pid_files()
 
+    def start_workload(self) -> None:
+        self.start()
+
     def stop(self) -> None:
         if self.pid_file.exists():
             pid = int(self.pid_file.read_text().strip())

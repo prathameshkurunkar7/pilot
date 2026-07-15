@@ -7,7 +7,7 @@ import threading
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from pilot.config.bench_toml_builder import BenchTomlBuilder
 
@@ -46,7 +46,7 @@ def _listening_socket():
         sock.close()
 
 
-# ── GET /api/v1/benches/ ────────────────────────────────────────────────────────
+# ── GET /api/v1/benches ─────────────────────────────────────────────────────────
 
 
 def test_api_benches_requires_auth(tmp_path: Path) -> None:
@@ -58,7 +58,7 @@ def test_api_benches_requires_auth(tmp_path: Path) -> None:
     app.config["TESTING"] = True
     client = app.test_client()
 
-    resp = client.get("/api/v1/benches/")
+    resp = client.get("/api/v1/benches")
     assert resp.status_code == 401
     assert resp.get_json() == {
         "error": {
@@ -76,7 +76,7 @@ def test_api_benches_lists_all_benches_with_reachability(tmp_path: Path) -> None
     with _listening_socket() as live_port:
         _write_raw_bench_toml(benches_dir / "live-bench", "live-bench", admin_port=live_port)
         _write_raw_bench_toml(benches_dir / "dead-bench", "dead-bench", admin_port=1)
-        resp = client.get("/api/v1/benches/")
+        resp = client.get("/api/v1/benches")
 
     entries = {b["name"]: b for b in resp.get_json()}
     # Stopped benches are listed too, flagged unreachable rather than hidden.
@@ -98,7 +98,7 @@ def test_api_benches_includes_production_metadata(tmp_path: Path) -> None:
         )
         # https only once the cert is in place; pretend it is for this assertion.
         with patch("admin.backend.views.benches.admin_cert_exists", return_value=True):
-            resp = client.get("/api/v1/benches/")
+            resp = client.get("/api/v1/benches")
 
     entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
     assert entry["production"] is True
@@ -121,7 +121,7 @@ def test_api_benches_admin_url_is_http_until_cert_exists(tmp_path: Path) -> None
             f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
         with patch("admin.backend.views.benches.admin_cert_exists", return_value=False):
-            resp = client.get("/api/v1/benches/")
+            resp = client.get("/api/v1/benches")
 
     entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
     assert entry["admin_url"] == "http://admin-prod.example.com"
@@ -139,13 +139,65 @@ def test_api_benches_includes_site_count(tmp_path: Path) -> None:
             (bench_dir / "sites" / site).mkdir(parents=True)
             (bench_dir / "sites" / site / "site_config.json").write_text("{}")
         (bench_dir / "sites" / "assets").mkdir(parents=True)
-        resp = client.get("/api/v1/benches/")
+        resp = client.get("/api/v1/benches")
 
     entry = next(b for b in resp.get_json() if b["name"] == "with-sites")
     assert entry["site_count"] == 2
 
 
-# ── POST /api/v1/benches/new ────────────────────────────────────────────────────
+# ── Bench detail, domain options, and creation ──────────────────────────────────
+
+
+def test_api_benches_gets_one_bench(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+    _write_raw_bench_toml(benches_dir / "other", "ignored-config-name", admin_port=8100)
+    with (benches_dir / "other" / "bench.toml").open("a") as config_file:
+        config_file.write('\n[custom_plugin]\napi_token = "must-not-leak"\n')
+
+    resp = client.get("/api/v1/benches/other")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["name"] == "other"
+    assert "custom_plugin" not in resp.get_json()
+
+
+def test_api_benches_get_rejects_unknown_bench(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    resp = client.get("/api/v1/benches/does-not-exist")
+
+    assert resp.status_code == 404
+    assert resp.get_json()["error"]["code"] == "bench_not_found"
+
+
+def test_api_benches_domain_options_returns_suffixes(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    with patch(
+        "pilot.core.domain_controller.DomainRouteProvider.wildcard_domains",
+        return_value=["*.example.com", "*-box.example.net"],
+    ):
+        resp = client.get("/api/v1/benches/domain-options")
+
+    assert resp.get_json() == {"domains": [".example.com", "-box.example.net"]}
+
+
+def test_api_benches_domain_options_reports_provider_failure(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    with patch(
+        "pilot.core.domain_controller.DomainRouteProvider.wildcard_domains",
+        side_effect=RuntimeError("provider detail"),
+    ):
+        resp = client.get("/api/v1/benches/domain-options")
+
+    assert resp.status_code == 500
+    assert resp.get_json()["error"] == {
+        "code": "wildcard_domains_unavailable",
+        "details": {},
+        "message": "Could not read wildcard domains.",
+    }
 
 
 def _new_payload(name: str, **overrides) -> dict:
@@ -154,14 +206,16 @@ def _new_payload(name: str, **overrides) -> dict:
     return payload
 
 
-def test_api_benches_new_creates_bench(tmp_path: Path) -> None:
+def test_api_benches_create_creates_bench(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
     with patch("subprocess.Popen") as mock_popen, \
          patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]):
-        resp = client.post("/api/v1/benches/new", json=_new_payload("fresh"))
+        resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
 
+    assert resp.status_code == 201
+    assert resp.headers["Location"] == "/api/v1/benches/fresh"
     assert resp.get_json()["name"] == "fresh"
     toml = (benches_dir / "fresh" / "bench.toml").read_text()
     assert 'process_manager = "systemd"' in toml
@@ -171,7 +225,7 @@ def test_api_benches_new_creates_bench(tmp_path: Path) -> None:
     mock_popen.assert_called_once()
 
 
-def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path) -> None:
+def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Path) -> None:
     # A bench created from a production admin is routed to the setup wizard at its
     # own domain — not auto-provisioned to a password-protected login. Its process
     # manager and TLS choice are recorded (mirroring the parent bench) but not
@@ -202,10 +256,13 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
          patch("pilot.managers.nginx_manager.NginxManager.admin_cert_exists", return_value=False), \
          patch("pilot.core.domain_controller.DomainRouteProvider.register") as mock_register, \
          patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]), \
+         patch("pilot.platform.has_passwordless_sudo", return_value=True), \
          patch("subprocess.Popen") as mock_popen:
-        resp = client.post("/api/v1/benches/new", json=_new_payload("fresh"))
+        resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
 
     data = resp.get_json()
+    assert resp.status_code == 201
+    assert resp.headers["Location"] == "/api/v1/benches/fresh"
     assert data["wizard_at_domain"] is True
     assert data["domain"] == "fresh-admin.example.com"
     # The admin domain is registered with the provider so it resolves for the wizard.
@@ -232,11 +289,47 @@ def test_api_benches_new_routes_wizard_at_domain_when_production(tmp_path: Path)
     assert 'process_manager = "systemd"' in fresh_toml.split("[production]")[1].split("[")[0]
 
 
-def test_api_benches_new_rejects_when_management_disabled(tmp_path: Path) -> None:
+def test_api_benches_create_does_not_prompt_for_system_privileges(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+
+    with (
+        patch("admin.backend.views.benches.current_is_production", return_value=True),
+        patch("pilot.platform.has_passwordless_sudo", return_value=False),
+        patch("admin.backend.views.benches.NewCommand.run") as create,
+        patch(
+            "pilot.core.domain_controller.DomainRouteProvider.wildcard_domains",
+            return_value=[],
+        ),
+    ):
+        resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
+
+    assert resp.status_code == 409
+    assert resp.get_json()["error"]["code"] == "privileged_operation_unavailable"
+    assert not (benches_dir / "fresh").exists()
+    create.assert_not_called()
+
+
+def test_api_benches_create_reports_busy_without_waiting(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+
+    with patch(
+        "admin.backend.views.benches.exclusive_file_lock",
+        side_effect=BlockingIOError,
+    ):
+        resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
+
+    assert resp.status_code == 409
+    assert resp.get_json()["error"]["code"] == "bench_busy"
+    assert not (benches_dir / "fresh").exists()
+
+
+def test_api_benches_create_rejects_when_management_disabled(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current", admin_allow_bench_management=False)
 
-    resp = client.post("/api/v1/benches/new", json=_new_payload("fresh"))
+    resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
 
     assert resp.status_code == 403
     assert resp.get_json() == {
@@ -253,7 +346,7 @@ def test_api_benches_list_rejects_when_management_disabled(tmp_path: Path) -> No
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current", admin_allow_bench_management=False)
 
-    resp = client.get("/api/v1/benches/")
+    resp = client.get("/api/v1/benches")
 
     assert resp.status_code == 403
 
@@ -268,37 +361,58 @@ def test_api_benches_drop_rejects_when_management_disabled(tmp_path: Path) -> No
     assert resp.status_code == 403
 
 
-def test_api_benches_new_rejects_invalid_name(tmp_path: Path) -> None:
+def test_api_benches_create_rejects_invalid_name(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    resp = client.post("/api/v1/benches/new", json={"name": "bad name!", "process_manager": "systemd", "admin_domain": "x-admin.example.com"})
+    resp = client.post("/api/v1/benches", json={"name": "bad name!", "process_manager": "systemd", "admin_domain": "x-admin.example.com"})
 
     assert resp.status_code == 422
     assert not (benches_dir / "bad name!").exists()
 
 
-def test_api_benches_new_requires_process_manager(tmp_path: Path) -> None:
+def test_api_benches_create_rejects_malformed_body(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    resp = client.post("/api/v1/benches", data="[]", content_type="application/json")
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"]["code"] == "malformed_request"
+
+
+def test_api_benches_create_rejects_invalid_field_types(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    string_field = client.post("/api/v1/benches", json=_new_payload("fresh", db_type=True))
+    tls_field = client.post("/api/v1/benches", json=_new_payload("fresh", admin_tls="yes"))
+
+    assert string_field.status_code == 422
+    assert string_field.get_json()["error"]["code"] == "invalid_bench"
+    assert tls_field.status_code == 422
+    assert tls_field.get_json()["error"]["code"] == "invalid_admin_tls"
+
+
+def test_api_benches_create_requires_process_manager(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    resp = client.post("/api/v1/benches/new", json={"name": "fresh", "admin_domain": "fresh-admin.example.com"})
+    resp = client.post("/api/v1/benches", json={"name": "fresh", "admin_domain": "fresh-admin.example.com"})
 
     assert resp.status_code == 422
     assert "process manager" in resp.get_json()["error"]["message"].lower()
 
 
-def test_api_benches_new_requires_admin_domain(tmp_path: Path) -> None:
+def test_api_benches_create_requires_admin_domain(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    resp = client.post("/api/v1/benches/new", json={"name": "fresh", "process_manager": "systemd"})
+    resp = client.post("/api/v1/benches", json={"name": "fresh", "process_manager": "systemd"})
 
     assert resp.status_code == 422
     assert "domain" in resp.get_json()["error"]["message"].lower()
 
 
-def test_api_benches_new_rejects_duplicate_admin_domain(tmp_path: Path) -> None:
+def test_api_benches_create_rejects_duplicate_admin_domain(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
     other = benches_dir / "other"
@@ -307,32 +421,32 @@ def test_api_benches_new_rejects_duplicate_admin_domain(tmp_path: Path) -> None:
         '[bench]\nname = "other"\n\n[admin]\ndomain = "shared-admin.example.com"\n'
     )
 
-    resp = client.post("/api/v1/benches/new", json=_new_payload("fresh", admin_domain="shared-admin.example.com"))
+    resp = client.post("/api/v1/benches", json=_new_payload("fresh", admin_domain="shared-admin.example.com"))
 
     assert resp.status_code == 409
     assert "already used by bench 'other'" in resp.get_json()["error"]["message"]
 
 
-def test_api_benches_new_rejects_duplicate_name(tmp_path: Path) -> None:
+def test_api_benches_create_rejects_duplicate_name(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
     with patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]):
-        resp = client.post("/api/v1/benches/new", json=_new_payload("current"))
+        resp = client.post("/api/v1/benches", json=_new_payload("current"))
 
     assert resp.status_code == 409
     assert resp.get_json()["error"]["code"] == "bench_already_exists"
     assert "already exists" in resp.get_json()["error"]["message"]
 
 
-# ── GET /api/v1/benches/ready ───────────────────────────────────────────────────
+# ── POST /api/v1/bench-readiness-checks ─────────────────────────────────────────
 
 
 def test_api_benches_ready_true_when_port_live(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
 
     with _listening_socket() as port:
-        resp = client.get(f"/api/v1/benches/ready?port={port}")
+        resp = client.post("/api/v1/bench-readiness-checks", json={"port": port})
 
     assert resp.get_json() == {"ready": True}
 
@@ -342,7 +456,7 @@ def test_api_benches_ready_false_when_port_not_live(tmp_path: Path) -> None:
     with _listening_socket() as port:
         pass
 
-    resp = client.get(f"/api/v1/benches/ready?port={port}")
+    resp = client.post("/api/v1/bench-readiness-checks", json={"port": port})
 
     assert resp.get_json() == {"ready": False}
 
@@ -350,9 +464,40 @@ def test_api_benches_ready_false_when_port_not_live(tmp_path: Path) -> None:
 def test_api_benches_ready_false_on_invalid_port(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
 
-    resp = client.get("/api/v1/benches/ready?port=not-a-number")
+    resp = client.post("/api/v1/bench-readiness-checks", json={"port": "not-a-number"})
 
     assert resp.status_code == 422
+
+
+def test_api_bench_readiness_rejects_malformed_body(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    resp = client.post(
+        "/api/v1/bench-readiness-checks",
+        data="[]",
+        content_type="application/json",
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"]["code"] == "malformed_request"
+
+
+def test_api_bench_readiness_strictly_validates_selectors(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+
+    invalid_requests = (
+        ({}, "invalid_port"),
+        ({"port": True}, "invalid_port"),
+        ({"port": 0}, "invalid_port"),
+        ({"domain": 123}, "invalid_domain"),
+        ({"domain": "admin.example.com", "scheme": "ftp"}, "invalid_scheme"),
+        ({"domain": "admin.example.com", "port": 8000}, "invalid_readiness_check"),
+        ({"port": 8000, "scheme": "http"}, "invalid_readiness_check"),
+    )
+    for payload, code in invalid_requests:
+        resp = client.post("/api/v1/bench-readiness-checks", json=payload)
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["code"] == code
 
 
 @contextmanager
@@ -387,7 +532,10 @@ def test_api_benches_ready_true_when_wizard_answers_at_domain(tmp_path: Path) ->
     client = _client(current)
     with _nginx_stub() as port:
         _set_nginx_http_port(current, port)
-        resp = client.get("/api/v1/benches/ready?domain=admin.example.com")
+        resp = client.post(
+            "/api/v1/bench-readiness-checks",
+            json={"domain": "admin.example.com"},
+        )
 
     assert resp.get_json() == {"ready": True}
 
@@ -397,7 +545,10 @@ def test_api_benches_ready_false_when_wizard_errors_at_domain(tmp_path: Path) ->
     client = _client(current)
     with _nginx_stub(health_status=502) as port:
         _set_nginx_http_port(current, port)
-        resp = client.get("/api/v1/benches/ready?domain=admin.example.com")
+        resp = client.post(
+            "/api/v1/bench-readiness-checks",
+            json={"domain": "admin.example.com"},
+        )
 
     assert resp.get_json() == {"ready": False}
 
@@ -409,7 +560,10 @@ def test_api_benches_ready_true_when_https_bench_redirects(tmp_path: Path) -> No
     client = _client(current)
     with _nginx_stub(health_status=301) as port:
         _set_nginx_http_port(current, port)
-        resp = client.get("/api/v1/benches/ready?domain=admin.example.com&scheme=https")
+        resp = client.post(
+            "/api/v1/bench-readiness-checks",
+            json={"domain": "admin.example.com", "scheme": "https"},
+        )
 
     assert resp.get_json() == {"ready": True}
 
@@ -420,7 +574,10 @@ def test_api_benches_ready_false_when_http_bench_redirects(tmp_path: Path) -> No
     client = _client(current)
     with _nginx_stub(health_status=301) as port:
         _set_nginx_http_port(current, port)
-        resp = client.get("/api/v1/benches/ready?domain=admin.example.com")
+        resp = client.post(
+            "/api/v1/bench-readiness-checks",
+            json={"domain": "admin.example.com"},
+        )
 
     assert resp.get_json() == {"ready": False}
 
@@ -432,18 +589,22 @@ def test_api_benches_ready_false_when_nginx_down_at_domain(tmp_path: Path) -> No
         pass  # nothing listening on `port` now
     _set_nginx_http_port(current, port)
 
-    resp = client.get("/api/v1/benches/ready?domain=admin.example.com")
+    resp = client.post(
+        "/api/v1/bench-readiness-checks",
+        json={"domain": "admin.example.com"},
+    )
 
     assert resp.get_json() == {"ready": False}
 
 
-# ── POST /api/v1/benches/<name>/actions/<action_name> ────────────────────────────
+# ── Explicit bench lifecycle actions ────────────────────────────────────────────
 
 
 def _write_prod_bench_toml(bench_dir: Path, name: str) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
     (bench_dir / "bench.toml").write_text(
-        f'[bench]\nname = "{name}"\n\n[admin]\nport = 9999\n\n'
+        f'[bench]\nname = "{name}"\npython = "3.14"\n\n'
+        f'[admin]\nport = 9999\ndomain = "{name}-admin.example.com"\n\n'
         f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
     )
 
@@ -455,7 +616,7 @@ def test_api_benches_control_rejects_unknown_action(tmp_path: Path) -> None:
 
     resp = client.post("/api/v1/benches/prod-bench/actions/wiggle")
 
-    assert resp.status_code == 422
+    assert resp.status_code == 405
     assert "error" in resp.get_json()
 
 
@@ -479,20 +640,25 @@ def test_api_benches_control_rejects_dev_bench(tmp_path: Path) -> None:
     assert "production" in resp.get_json()["error"]["message"]
 
 
-def test_api_benches_control_runs_pilot_and_reports_success(tmp_path: Path) -> None:
+def test_api_benches_explicit_actions_return_updated_resource(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
+    manager = MagicMock()
+    manager.is_running.return_value = True
+    manager.is_admin_running.return_value = True
 
-    with patch("admin.backend.views.benches.subprocess.run") as mock_run:
-        mock_run.return_value.returncode = 0
-        mock_run.return_value.stdout = ""
-        mock_run.return_value.stderr = ""
-        resp = client.post("/api/v1/benches/prod-bench/actions/restart")
+    with patch("admin.backend.views.benches.ProcessManager.for_bench", return_value=manager):
+        responses = {
+            action: client.post(f"/api/v1/benches/prod-bench/actions/{action}")
+            for action in ("start", "stop", "restart")
+        }
 
-    assert resp.get_json() == {"ok": True}
-    argv = mock_run.call_args.args[0]
-    assert argv[-3:] == ["-b", "prod-bench", "restart"]
+    operations = {"start": "start_workload", "stop": "stop", "restart": "restart"}
+    for action, resp in responses.items():
+        assert resp.status_code == 200
+        assert resp.get_json()["name"] == "prod-bench"
+        getattr(manager, operations[action]).assert_called_once_with()
 
 
 def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
@@ -500,10 +666,9 @@ def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
-    with patch("admin.backend.views.benches.subprocess.run") as mock_run:
-        mock_run.return_value.returncode = 1
-        mock_run.return_value.stdout = ""
-        mock_run.return_value.stderr = "boom"
+    manager = MagicMock()
+    manager.stop.side_effect = RuntimeError("manager detail")
+    with patch("admin.backend.views.benches.ProcessManager.for_bench", return_value=manager):
         resp = client.post("/api/v1/benches/prod-bench/actions/stop")
 
     assert resp.status_code == 500
@@ -553,15 +718,31 @@ def test_api_benches_drop_runs_pilot(tmp_path: Path) -> None:
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
-    with patch("admin.backend.views.benches.subprocess.run") as mock_run:
-        mock_run.return_value.returncode = 0
-        mock_run.return_value.stdout = ""
-        mock_run.return_value.stderr = ""
+    with (
+        patch("admin.backend.views.benches.DropBenchCommand.run") as drop,
+        patch("pilot.platform.has_passwordless_sudo", return_value=True),
+    ):
         resp = client.delete("/api/v1/benches/prod-bench")
 
-    assert resp.get_json() == {"ok": True}
-    argv = mock_run.call_args.args[0]
-    assert argv[-4:] == ["--yes", "-b", "prod-bench", "drop"]
+    assert resp.status_code == 204
+    assert resp.data == b""
+    drop.assert_called_once_with()
+
+
+def test_api_benches_drop_does_not_prompt_for_system_privileges(tmp_path: Path) -> None:
+    benches_dir = tmp_path / "benches"
+    client = _client(benches_dir / "current")
+    _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
+
+    with (
+        patch("pilot.platform.has_passwordless_sudo", return_value=False),
+        patch("admin.backend.views.benches.DropBenchCommand.run") as drop,
+    ):
+        resp = client.delete("/api/v1/benches/prod-bench")
+
+    assert resp.status_code == 409
+    assert resp.get_json()["error"]["code"] == "privileged_operation_unavailable"
+    drop.assert_not_called()
 
 # ── POST /api/v1/sites/create — engine is bench-level, not per-site ──────────────
 

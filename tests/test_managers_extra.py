@@ -407,7 +407,6 @@ def test_systemd_admin_service_runs_gunicorn_with_idle_timeout(tmp_path: Path) -
 
 def test_systemd_target_excludes_admin(tmp_path: Path) -> None:
     from pilot.managers.process_managers.systemd import SystemdRenderer
-    from pilot.managers.process_manager import ProcessDefinition
 
     # write_config feeds the target only workload unit names (admin excluded).
     target = SystemdRenderer("test-bench").target(["test-bench-web.service"])
@@ -602,6 +601,16 @@ def test_supervised_start_brings_up_admin_then_workload() -> None:
     assert fake.generated == 1
     assert fake.prepared == 1
     assert fake.calls == [("start", UnitGroup.ADMIN), ("start", UnitGroup.WORKLOAD)]
+
+
+def test_supervised_start_workload_preserves_admin() -> None:
+    from pilot.managers.process_managers.base import UnitGroup
+
+    fake = _FakeProcessManager()
+    fake.manager.start_workload()
+    assert fake.generated == 1
+    assert fake.prepared == 1
+    assert fake.calls == [("start", UnitGroup.WORKLOAD)]
 
 
 def test_supervised_stop_targets_workload_only() -> None:

@@ -11,6 +11,7 @@ from pilot.managers.gunicorn_manager import GunicornManager
 from pilot.loader import cli_root
 from pilot.managers.process_manager import ProcessDefinition
 from pilot.managers.process_managers.base import ManagedProcessManager, UnitGroup, ServiceRenderer
+from pilot.platform import _privileged
 from pilot.utils import run_command
 
 _ADMIN_IDLE_TIMEOUT = 60  # seconds of inactivity before socket-activated admin stops
@@ -141,8 +142,16 @@ class SystemdProcessManager(ManagedProcessManager):
                 dst.unlink()
             dst.symlink_to(src)
 
-        subprocess.run(["sudo", "loginctl", "enable-linger", getpass.getuser()], capture_output=True, check=False)
-        subprocess.run(["sudo", "systemctl", "start", f"user@{os.getuid()}.service"], capture_output=True, check=False)
+        subprocess.run(
+            _privileged(["loginctl", "enable-linger", getpass.getuser()]),
+            capture_output=True,
+            check=False,
+        )
+        subprocess.run(
+            _privileged(["systemctl", "start", f"user@{os.getuid()}.service"]),
+            capture_output=True,
+            check=False,
+        )
 
         env = self._systemctl_env()
         run_command(self._systemctl("daemon-reload"), env=env)

@@ -16,14 +16,15 @@ def _lock_path(path: Path) -> Path:
 
 
 @contextmanager
-def exclusive_file_lock(path: Path) -> Iterator[None]:
+def exclusive_file_lock(path: Path, *, blocking: bool = True) -> Iterator[None]:
     """Hold a process-wide advisory lock associated with ``path``."""
     with open_private(_lock_path(path), mode="a") as lock_file:
         existing = _existing_file_metadata(path)
         lock_metadata = os.fstat(lock_file.fileno())
         if existing is not None and lock_metadata.st_uid != existing.st_uid:
             os.fchown(lock_file.fileno(), existing.st_uid, existing.st_gid)
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        operation = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
+        fcntl.flock(lock_file.fileno(), operation)
         try:
             yield
         finally:

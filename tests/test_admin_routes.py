@@ -43,7 +43,7 @@ def auth_policy(app, endpoint: str) -> str:
         return policy.value
     if endpoint in SITE_SCOPED_ENDPOINTS:
         return "authenticated+site-scope"
-    if endpoint.startswith("benches."):
+    if endpoint.startswith(("benches.", "bench-readiness.")):
         return "authenticated+bench-management"
     return "authenticated"
 
@@ -71,26 +71,27 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 101
+    assert len(routes) == 104
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 101
+    assert len({(method, path) for method, path, _, _ in routes}) == 104
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 8,
         "GET": 50,
         "PATCH": 2,
-        "POST": 40,
+        "POST": 43,
         "PUT": 1,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
         "authenticated": 57,
-        "authenticated+bench-management": 6,
+        "authenticated+bench-management": 9,
         "authenticated+site-scope": 26,
         "open": 5,
         "setup-conditional": 7,
     }
     assert Counter(areas) == {
         "apps": 7,
-        "benches": 6,
+        "bench-readiness-checks": 1,
+        "benches": 8,
         "dashboard": 1,
         "database": 8,
         "git": 6,
@@ -113,6 +114,17 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
     }
 
     route_keys = {(method, path) for method, path, _, _ in routes}
+    assert {
+        ("GET", "/api/v1/benches"),
+        ("POST", "/api/v1/benches"),
+        ("GET", "/api/v1/benches/<name>"),
+        ("DELETE", "/api/v1/benches/<name>"),
+        ("POST", "/api/v1/benches/<name>/actions/start"),
+        ("POST", "/api/v1/benches/<name>/actions/stop"),
+        ("POST", "/api/v1/benches/<name>/actions/restart"),
+        ("GET", "/api/v1/benches/domain-options"),
+        ("POST", "/api/v1/bench-readiness-checks"),
+    } <= route_keys
     assert {
         ("GET", "/api/v1/tasks"),
         ("POST", "/api/v1/tasks"),
@@ -152,5 +164,10 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             "/api/v1/setup/validate-postgres",
             "/api/v1/setup/start",
             "/api/v1/setup/finish",
+            "/api/v1/benches/",
+            "/api/v1/benches/new",
+            "/api/v1/benches/wildcard-domains",
+            "/api/v1/benches/ready",
+            "/api/v1/benches/<name>/actions/<action_name>",
         }
     }
