@@ -34,12 +34,14 @@ def test_create_queued_publishes_complete_private_task(tmp_path: Path) -> None:
         {"secrets.json": '{"token":"secret"}', "callbacks.json": "{}"},
     )
 
-    assert store.read_metadata(TASK_ID) == metadata()
+    stored_metadata = store.read_metadata(TASK_ID)
+    assert stored_metadata == {**metadata(), "queue_sequence": 1}
     assert store.read_status(TASK_ID) == TaskStatus.QUEUED
     assert json.loads((task_dir / "secrets.json").read_text()) == {"token": "secret"}
     assert stat.S_IMODE(task_dir.stat().st_mode) == 0o700
     for name in ("meta.json", "status", "secrets.json", "callbacks.json"):
         assert stat.S_IMODE((task_dir / name).stat().st_mode) == 0o600
+    assert stat.S_IMODE((store.tasks_root / "queue-sequence").stat().st_mode) == 0o600
 
 
 def test_create_failure_leaves_no_visible_or_staged_task(
@@ -47,9 +49,12 @@ def test_create_failure_leaves_no_visible_or_staged_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = TaskStore(tmp_path)
+    real_replace = task_store_module.os.replace
 
     def fail_replace(source: Path, destination: Path) -> None:
-        raise OSError("replace failed")
+        if Path(destination) == store.task_dir(TASK_ID):
+            raise OSError("replace failed")
+        real_replace(source, destination)
 
     monkeypatch.setattr(task_store_module.os, "replace", fail_replace)
 

@@ -5,7 +5,9 @@ import os
 import shutil
 import tempfile
 from collections.abc import Mapping
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 from admin.backend.tasks.manager.task_state import (
     TaskStatus,
@@ -34,7 +36,9 @@ class TaskStore:
             task_dir = self.task_dir(task_id)
             if task_dir.exists():
                 raise FileExistsError(f"Task already exists: {task_id}")
-            return self._publish_task(task_dir, metadata, private_files or {})
+            stored_metadata = dict(metadata)
+            stored_metadata["queue_sequence"] = self._next_queue_sequence_locked()
+            return self._publish_task(task_dir, stored_metadata, private_files or {})
 
     def read_metadata(self, task_id: str) -> dict:
         task_dir = self._existing_task_dir(task_id)
@@ -70,18 +74,28 @@ class TaskStore:
     ) -> bool:
         validate_task_transition(expected, target)
         with self.locked():
-            current = self.read_status(task_id)
-            if current != expected:
-                return False
-            if metadata_updates:
-                metadata = self.read_metadata(task_id)
-                metadata.update(metadata_updates)
-                self._write_metadata(task_id, metadata)
-            replace_private_text_locked(
-                self.task_dir(task_id) / "status",
-                target.value,
-            )
-            return True
+            return self.transition_locked(task_id, expected, target, metadata_updates)
+
+    def transition_locked(
+        self,
+        task_id: str,
+        expected: TaskStatus,
+        target: TaskStatus,
+        metadata_updates: Mapping[str, object] | None = None,
+    ) -> bool:
+        validate_task_transition(expected, target)
+        current = self.read_status(task_id)
+        if current != expected:
+            return False
+        if metadata_updates:
+            metadata = self.read_metadata(task_id)
+            metadata.update(metadata_updates)
+            self._write_metadata(task_id, metadata)
+        replace_private_text_locked(
+            self.task_dir(task_id) / "status",
+            target.value,
+        )
+        return True
 
     def remove_private_files(self, task_id: str, *names: str) -> None:
         with self.locked():
@@ -95,9 +109,11 @@ class TaskStore:
             raise TaskNotFoundError(f"Invalid task ID: {task_id!r}")
         return self.tasks_root / task_id
 
-    def locked(self):
+    @contextmanager
+    def locked(self) -> Iterator[None]:
         make_private_directory(self.tasks_root, parents=True)
-        return exclusive_file_lock(self._lock_target)
+        with exclusive_file_lock(self._lock_target):
+            yield
 
     def _publish_task(
         self,
@@ -126,6 +142,33 @@ class TaskStore:
             self.task_dir(task_id) / "meta.json",
             json.dumps(metadata, indent=2),
         )
+
+    def _next_queue_sequence_locked(self) -> int:
+        sequence_path = self.tasks_root / "queue-sequence"
+        if sequence_path.exists():
+            current = int(sequence_path.read_text(encoding="utf-8").strip())
+        else:
+            current = max(
+                (
+                    value
+                    for task_dir in self.tasks_root.iterdir()
+                    if task_dir.is_dir()
+                    if (value := self._read_queue_sequence(task_dir)) is not None
+                ),
+                default=0,
+            )
+        sequence = current + 1
+        replace_private_text_locked(sequence_path, str(sequence))
+        return sequence
+
+    @staticmethod
+    def _read_queue_sequence(task_dir: Path) -> int | None:
+        try:
+            metadata = json.loads((task_dir / "meta.json").read_text(encoding="utf-8"))
+            value = metadata.get("queue_sequence")
+            return value if isinstance(value, int) else None
+        except (OSError, ValueError):
+            return None
 
     def _existing_task_dir(self, task_id: str) -> Path:
         task_dir = self.task_dir(task_id)

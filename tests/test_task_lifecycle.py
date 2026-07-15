@@ -103,6 +103,7 @@ def test_run_persists_task_before_starting_wrapper(
         "exit_code",
         "finished_at",
         "queued_at",
+        "queue_sequence",
         "started_at",
         "task_id",
     }
@@ -111,6 +112,7 @@ def test_run_persists_task_before_starting_wrapper(
     assert meta["args"] == {}
     assert meta["bench_root"] == str(tmp_path)
     assert meta["queued_at"] is not None
+    assert meta["queue_sequence"] == 1
     assert meta["started_at"] is None
     assert meta["finished_at"] is None
     assert meta["exit_code"] is None
