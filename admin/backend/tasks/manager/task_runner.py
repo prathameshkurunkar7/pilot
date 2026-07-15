@@ -96,6 +96,7 @@ class TaskRunner:
             "started_at": None,
             "finished_at": None,
             "exit_code": None,
+            "failure": None,
             "bench_root": str(self._bench_root),
         }
         private_files = {}

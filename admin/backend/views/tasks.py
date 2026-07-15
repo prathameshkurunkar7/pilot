@@ -19,18 +19,7 @@ tasks_bp = Blueprint("tasks", __name__)
 
 
 def _task_dict(t):
-    return {
-        "task_id": t.task_id,
-        "command": t.command,
-        "args": t.args,
-        "status": t.status,
-        "pid": t.pid,
-        "queued_at": t.queued_at.isoformat(),
-        "started_at": t.started_at.isoformat() if t.started_at else None,
-        "finished_at": t.finished_at.isoformat() if t.finished_at else None,
-        "exit_code": t.exit_code,
-        "duration_seconds": t.duration_seconds,
-    }
+    return t.as_dict()
 
 
 @tasks_bp.route("/")

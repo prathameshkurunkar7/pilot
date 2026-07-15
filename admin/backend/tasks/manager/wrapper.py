@@ -221,6 +221,9 @@ def main() -> None:
     )
 
     status = TaskStatus.SUCCESS if exit_code == 0 else TaskStatus.FAILED
+    failure = None
+    if status == TaskStatus.FAILED:
+        failure = {"code": "command_failed"}
     store.transition(
         task_id,
         TaskStatus.RUNNING,
@@ -228,6 +231,7 @@ def main() -> None:
         {
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "exit_code": exit_code,
+            "failure": failure,
         },
     )
 

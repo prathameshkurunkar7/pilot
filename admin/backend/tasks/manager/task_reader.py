@@ -7,7 +7,8 @@ from collections.abc import Generator
 from datetime import datetime
 from pathlib import Path
 
-from admin.backend.tasks.manager.models import TaskInfo
+from admin.backend.tasks.manager.models import TaskInfo, safe_task_failure
+from admin.backend.tasks.manager.task_queue import TaskQueue
 from admin.backend.tasks.manager.task_args import redact_task_args
 from admin.backend.tasks.manager.task_state import TaskStatus, parse_task_status
 from admin.backend.tasks.manager.events import (
@@ -51,6 +52,7 @@ def _display_line(raw_line: str) -> str:
 class TaskReader:
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
+        self._queue = TaskQueue(bench_root)
 
     def list_tasks(self, limit: int = 50) -> list[TaskInfo]:
         tasks_dir = self._bench_root / "tasks"
@@ -58,10 +60,11 @@ class TaskReader:
             return []
 
         tasks: list[TaskInfo] = []
+        queue_positions = self._queue.positions()
         for entry in tasks_dir.iterdir():
             if entry.is_dir() and _TASK_ID_PATTERN.match(entry.name):
                 try:
-                    tasks.append(_read_task_dir(self, entry))
+                    tasks.append(_read_task_dir(self, entry, queue_positions))
                 except Exception:
                     continue
 
@@ -76,7 +79,7 @@ class TaskReader:
         if not task_dir.exists():
             raise TaskNotFoundError(f"Task not found: {task_id}")
 
-        return _read_task_dir(self, task_dir)
+        return _read_task_dir(self, task_dir, self._queue.positions())
 
     def read_output(self, task_id: str, lines: int | None = None) -> list[str]:
         self.read_task(task_id)  # validates task_id and existence
@@ -158,7 +161,11 @@ class TaskReader:
         return TaskStatus.RUNNING
 
 
-def _read_task_dir(reader: TaskReader, task_dir: Path) -> TaskInfo:
+def _read_task_dir(
+    reader: TaskReader,
+    task_dir: Path,
+    queue_positions: dict[str, int],
+) -> TaskInfo:
     import json
 
     meta = json.loads((task_dir / "meta.json").read_text())
@@ -199,4 +206,10 @@ def _read_task_dir(reader: TaskReader, task_dir: Path) -> TaskInfo:
         finished_at=finished_at,
         exit_code=meta.get("exit_code"),
         output_path=task_dir / "output.log",
+        queue_position=(
+            queue_positions.get(meta["task_id"])
+            if effective_status == TaskStatus.QUEUED
+            else None
+        ),
+        failure=safe_task_failure(meta.get("failure"), effective_status),
     )

@@ -50,6 +50,7 @@ def task_meta(bench_root: Path) -> dict:
         "started_at": "2026-07-15T12:00:00+00:00",
         "finished_at": None,
         "exit_code": None,
+        "failure": None,
         "bench_root": str(bench_root),
     }
 
@@ -101,6 +102,7 @@ def test_run_persists_task_before_starting_wrapper(
         "command",
         "command_argv",
         "exit_code",
+        "failure",
         "finished_at",
         "queued_at",
         "queue_sequence",
@@ -116,6 +118,7 @@ def test_run_persists_task_before_starting_wrapper(
     assert meta["started_at"] is None
     assert meta["finished_at"] is None
     assert meta["exit_code"] is None
+    assert meta["failure"] is None
     assert (task_dir / "pid").read_text() == "4321"
     assert json.loads((task_dir / "callbacks.json").read_text()) == {
         "on_success": {"operation": "test-success", "args": {"marker": "success"}}
@@ -483,6 +486,9 @@ def test_wrapper_runs_matching_callback_and_finalizes_task(
     assert (task_dir / "status").read_text() == status
     assert final_meta["exit_code"] == exit_code
     assert final_meta["finished_at"] is not None
+    assert final_meta["failure"] == (
+        None if exit_code == 0 else {"code": "command_failed"}
+    )
     assert "Callback successfully triggered" in (task_dir / "output.log").read_text()
 
 

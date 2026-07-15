@@ -294,6 +294,42 @@ def test_stream_output_yields_structured_events(tmp_path: Path) -> None:
     ]
 
 
+def test_reader_derives_queue_positions_from_fifo_order(tmp_path: Path) -> None:
+    task_ids = [
+        "20260521-143022-ffffff",
+        "20260521-143022-000000",
+        "20260521-143022-aaaaaa",
+    ]
+    for sequence, task_id in enumerate(task_ids, start=1):
+        task_dir = _make_task_dir(tmp_path / "tasks", task_id, status="queued")
+        meta = json.loads((task_dir / "meta.json").read_text())
+        meta["queue_sequence"] = sequence
+        (task_dir / "meta.json").write_text(json.dumps(meta))
+
+    tasks = {task.task_id: task for task in TaskReader(tmp_path).list_tasks()}
+
+    assert [tasks[task_id].queue_position for task_id in task_ids] == [1, 2, 3]
+    assert TaskReader(tmp_path).read_task(task_ids[1]).queue_position == 2
+
+
+def test_reader_returns_only_allowlisted_failure_message(tmp_path: Path) -> None:
+    task_id = "20260521-143022-aabbcc"
+    task_dir = _make_task_dir(tmp_path / "tasks", task_id, status="failed")
+    meta = json.loads((task_dir / "meta.json").read_text())
+    meta["failure"] = {
+        "code": "arbitrary_internal_error",
+        "message": "database-password-must-not-leak",
+    }
+    (task_dir / "meta.json").write_text(json.dumps(meta))
+
+    task = TaskReader(tmp_path).read_task(task_id)
+
+    assert task.failure is not None
+    assert task.failure.code == "command_failed"
+    assert task.failure.message == "Task command failed."
+    assert "database-password" not in str(task.as_dict())
+
+
 # ── _collapse_cr ────────────────────────────────────────────────────────────
 
 

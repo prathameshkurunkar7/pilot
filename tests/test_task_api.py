@@ -6,6 +6,8 @@ from unittest.mock import patch
 from flask import Flask
 
 from admin.backend.views.tasks import tasks_bp
+from admin.backend.tasks.manager.task_state import TaskStatus
+from admin.backend.tasks.manager.task_store import TaskStore
 from pilot.exceptions import TaskConflictError
 
 
@@ -51,3 +53,48 @@ def test_run_returns_conflict_for_incompatible_idempotency_key(tmp_path: Path) -
         "ok": False,
         "error": "Idempotency key conflict",
     }
+
+
+def test_task_detail_exposes_queue_position_and_safe_failure(tmp_path: Path) -> None:
+    task_id = "20260715-120000-aabbcc"
+    store = TaskStore(tmp_path)
+    store.create_queued(
+        {
+            "task_id": task_id,
+            "command": "build",
+            "args": {},
+            "queued_at": "2026-07-15T12:00:00+00:00",
+            "started_at": None,
+            "finished_at": None,
+            "exit_code": None,
+            "failure": None,
+        }
+    )
+
+    queued = client(tmp_path).get(f"/api/tasks/{task_id}").get_json()["task"]
+    store.transition(
+        task_id,
+        TaskStatus.QUEUED,
+        TaskStatus.RUNNING,
+        {"started_at": "2026-07-15T12:00:01+00:00"},
+    )
+    store.transition(
+        task_id,
+        TaskStatus.RUNNING,
+        TaskStatus.FAILED,
+        {
+            "finished_at": "2026-07-15T12:00:02+00:00",
+            "exit_code": 1,
+            "failure": {"code": "unknown", "message": "secret text"},
+        },
+    )
+    failed = client(tmp_path).get(f"/api/tasks/{task_id}").get_json()["task"]
+
+    assert queued["queue_position"] == 1
+    assert queued["failure"] is None
+    assert failed["queue_position"] is None
+    assert failed["failure"] == {
+        "code": "command_failed",
+        "message": "Task command failed.",
+    }
+    assert "secret text" not in str(failed)
