@@ -114,7 +114,7 @@ def test_supervisor_program_renders_working_dir(tmp_path: Path) -> None:
 
     pd = ProcessDefinition(
         name="web",
-        command="/env/bin/python -m frappe.utils.bench_helper frappe serve",
+        argv=["/env/bin/python", "-m", "frappe.utils.bench_helper", "frappe", "serve"],
         log_file=tmp_path / "logs" / "web.log",
         working_dir=Path("/sites"),
     )
@@ -130,7 +130,7 @@ def test_supervisor_program_renders_env_vars(tmp_path: Path) -> None:
 
     pd = ProcessDefinition(
         name="admin",
-        command="/env/bin/python -m admin.backend.server",
+        argv=["/env/bin/python", "-m", "admin.backend.server"],
         log_file=tmp_path / "logs" / "admin.log",
         env={"PYTHONPATH": "/cli", "FOO": "bar"},
     )
@@ -147,7 +147,7 @@ def test_supervisor_program_no_prefix(tmp_path: Path) -> None:
 
     pd = ProcessDefinition(
         name="redis_cache",
-        command="redis-server /config/redis_cache.conf",
+        argv=["redis-server", "/config/redis_cache.conf"],
         log_file=tmp_path / "logs" / "redis_cache.log",
     )
     block = SupervisorRenderer("test-bench", tmp_path / "logs").render(pd)
@@ -168,8 +168,8 @@ def test_supervisor_conf_separates_admin_group(tmp_path: Path) -> None:
     from pilot.managers.process_managers.supervisor import SupervisorRenderer
 
     fake_defs = [
-        ProcessDefinition("web", "cmd_web", tmp_path / "logs" / "web.log"),
-        ProcessDefinition("admin", "cmd_admin", tmp_path / "logs" / "admin.log"),
+        ProcessDefinition("web", ["cmd_web"], tmp_path / "logs" / "web.log"),
+        ProcessDefinition("admin", ["cmd_admin"], tmp_path / "logs" / "admin.log"),
     ]
     conf = SupervisorRenderer("test-bench", tmp_path / "logs").conf(fake_defs, tmp_path / "s.sock", tmp_path / "s.pid")
     assert "[group:test-bench]" in conf
@@ -194,8 +194,8 @@ def test_supervisor_conf_program_names_in_group(tmp_path: Path) -> None:
     from pilot.managers.process_managers.supervisor import SupervisorRenderer
 
     fake_defs = [
-        ProcessDefinition("web", "cmd_web", tmp_path / "logs" / "web.log"),
-        ProcessDefinition("worker_default_1", "cmd_worker", tmp_path / "logs" / "w.log"),
+        ProcessDefinition("web", ["cmd_web"], tmp_path / "logs" / "web.log"),
+        ProcessDefinition("worker_default_1", ["cmd_worker"], tmp_path / "logs" / "w.log"),
     ]
     conf = SupervisorRenderer("test-bench", tmp_path / "logs").conf(fake_defs, tmp_path / "s.sock", tmp_path / "s.pid")
     assert "test-bench-web" in conf
@@ -208,7 +208,7 @@ def test_supervisor_conf_redis_gets_stop_timeout(tmp_path: Path) -> None:
     from pilot.managers.process_manager import ProcessDefinition
     from pilot.managers.process_managers.supervisor import SupervisorRenderer
 
-    fake_defs = [ProcessDefinition("redis_cache", "redis-server x.conf", tmp_path / "r.log", stop_timeout=300)]
+    fake_defs = [ProcessDefinition("redis_cache", ["redis-server", "x.conf"], tmp_path / "r.log", stop_timeout=300)]
     conf = SupervisorRenderer("test-bench", tmp_path / "logs").conf(fake_defs, tmp_path / "s.sock", tmp_path / "s.pid")
     assert "stopwaitsecs=300" in conf
 
@@ -240,7 +240,7 @@ def test_supervisor_conf_no_user_directive(tmp_path: Path) -> None:
     from pilot.managers.process_manager import ProcessDefinition
     from pilot.managers.process_managers.supervisor import SupervisorRenderer
 
-    fake_defs = [ProcessDefinition("web", "cmd_web", tmp_path / "logs" / "web.log")]
+    fake_defs = [ProcessDefinition("web", ["cmd_web"], tmp_path / "logs" / "web.log")]
     conf = SupervisorRenderer("test-bench", tmp_path / "logs").conf(fake_defs, tmp_path / "s.sock", tmp_path / "s.pid")
     assert "user=" not in conf
 
@@ -306,7 +306,7 @@ def test_systemd_unit_renders_working_dir(tmp_path: Path) -> None:
 
     pd = ProcessDefinition(
         name="web",
-        command="/env/bin/python -m frappe.utils.bench_helper frappe serve",
+        argv=["/env/bin/python", "-m", "frappe.utils.bench_helper", "frappe", "serve"],
         log_file=tmp_path / "logs" / "web.log",
         working_dir=Path("/sites"),
     )
@@ -322,7 +322,7 @@ def test_systemd_unit_renders_env_vars(tmp_path: Path) -> None:
 
     pd = ProcessDefinition(
         name="admin",
-        command="/env/bin/python -m admin.backend.server",
+        argv=["/env/bin/python", "-m", "admin.backend.server"],
         log_file=tmp_path / "logs" / "admin.log",
         env={"PYTHONPATH": "/cli", "FOO": "bar"},
     )
@@ -336,7 +336,7 @@ def test_systemd_unit_no_user_directive(tmp_path: Path) -> None:
     from pilot.managers.process_manager import ProcessDefinition
     from pilot.managers.process_managers.systemd import SystemdRenderer
 
-    pd = ProcessDefinition(name="web", command="/env/bin/python serve", log_file=tmp_path / "logs" / "web.log")
+    pd = ProcessDefinition(name="web", argv=["/env/bin/python", "serve"], log_file=tmp_path / "logs" / "web.log")
     unit = SystemdRenderer("test-bench").render(pd)
     assert "User=" not in unit
 
@@ -345,7 +345,7 @@ def test_systemd_unit_part_of_target(tmp_path: Path) -> None:
     from pilot.managers.process_manager import ProcessDefinition
     from pilot.managers.process_managers.systemd import SystemdRenderer
 
-    pd = ProcessDefinition(name="web", command="/env/bin/python serve", log_file=tmp_path / "logs" / "web.log")
+    pd = ProcessDefinition(name="web", argv=["/env/bin/python", "serve"], log_file=tmp_path / "logs" / "web.log")
     unit = SystemdRenderer("test-bench").render(pd)
     assert "PartOf=test-bench.target" in unit
 
@@ -355,7 +355,7 @@ def test_systemd_unit_redis_gets_stop_timeout(tmp_path: Path) -> None:
     from pilot.managers.process_manager import ProcessDefinition
     from pilot.managers.process_managers.systemd import SystemdRenderer
 
-    pd = ProcessDefinition("redis_cache", "redis-server x.conf", tmp_path / "r.log", stop_timeout=300)
+    pd = ProcessDefinition("redis_cache", ["redis-server", "x.conf"], tmp_path / "r.log", stop_timeout=300)
     unit = SystemdRenderer("test-bench").render(pd)
     assert "TimeoutStopSec=300" in unit
 
@@ -372,7 +372,7 @@ def test_systemd_generate_config_writes_unit_files(tmp_path: Path) -> None:
 
     mgr = _make_systemd_manager(tmp_path)
     mgr.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
-    fake_defs = [ProcessDefinition("web", "/env/bin/python serve", tmp_path / "logs" / "web.log")]
+    fake_defs = [ProcessDefinition("web", ["/env/bin/python", "serve"], tmp_path / "logs" / "web.log")]
     with patch("pilot.managers.admin_env_manager.AdminEnvManager"):
         with patch.object(mgr, "_prod_process_definitions", return_value=fake_defs):
             mgr.write_config()
@@ -422,8 +422,8 @@ def test_systemd_generate_config_writes_admin_socket(tmp_path: Path) -> None:
     mgr = _make_systemd_manager(tmp_path)
     mgr.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
     fake_defs = [
-        ProcessDefinition("web", "/env/bin/python serve", tmp_path / "logs" / "web.log"),
-        ProcessDefinition("admin", "/env/bin/python -m admin", tmp_path / "logs" / "admin.log"),
+        ProcessDefinition("web", ["/env/bin/python", "serve"], tmp_path / "logs" / "web.log"),
+        ProcessDefinition("admin", ["/env/bin/python", "-m", "admin"], tmp_path / "logs" / "admin.log"),
     ]
     with patch("pilot.managers.admin_env_manager.AdminEnvManager"):
         with patch.object(mgr, "_prod_process_definitions", return_value=fake_defs):

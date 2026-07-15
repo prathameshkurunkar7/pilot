@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 from typing import override
@@ -28,7 +29,7 @@ class SupervisorRenderer(ServiceRenderer):
         stop = f"stopwaitsecs={pd.stop_timeout}\n" if pd.stop_timeout is not None else ""
         return (
             f"[program:{self.program_name(pd)}]\n"
-            f"command={pd.command}\n"
+            f"command={shlex.join(pd.argv)}\n"
             f"{env}{directory}"
             f"autostart=true\n"
             f"autorestart=true\n"

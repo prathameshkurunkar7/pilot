@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 from typing import override
@@ -29,7 +30,7 @@ class SystemdRenderer(ServiceRenderer):
             f"[Service]\n"
             f"Type=simple\n"
             f"{working_dir}{env}"
-            f"ExecStart={pd.command}\n"
+            f"ExecStart={shlex.join(pd.argv)}\n"
             f"Restart=on-failure\n"
             f"{stop}"
             f"StandardOutput=append:{pd.log_file}\n"
@@ -58,7 +59,7 @@ class SystemdRenderer(ServiceRenderer):
             f"Type=simple\n"
             f"WorkingDirectory={pd.working_dir}\n"
             f"{env}"
-            f"ExecStart={pd.command}\n"
+            f"ExecStart={shlex.join(pd.argv)}\n"
             # Re-activation is via the socket, not a restart loop.
             f"Restart=no\n"
             # Signal gunicorn only; never cgroup-kill - tasks run as its children
@@ -244,7 +245,7 @@ class SystemdProcessManager(ManagedProcessManager):
         admin_conf = GunicornManager(self.bench).admin_config_path
         pd = ProcessDefinition(
             name="admin",
-            command=f"{gunicorn} -c {admin_conf} admin.backend.wsgi:application",
+            argv=[str(gunicorn), "-c", str(admin_conf), "admin.backend.wsgi:application"],
             log_file=self.bench.logs_path / "admin.log",
             env={
                 "BENCH_ADMIN_ROOT": str(self.bench.path),

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -51,7 +52,7 @@ _RESET = "\033[0m"
 @dataclass
 class ProcessDefinition:
     name: str
-    command: str  # executable + args only - no `cd`, no inline env prefix
+    argv: list[str]  # executable + args - no shell, no `cd`, no inline env prefix
     log_file: Path
     env: dict = field(default_factory=dict)
     working_dir: Path | None = None  # was `cd {dir} &&`
@@ -102,7 +103,7 @@ class ProcessManager:
         AdminEnvManager(cli_root()).ensure()
         self._ensure_redis_config()
         self._ensure_gunicorn_config()
-        lines = [f"{pd.name}: {pd.command}\n" for pd in self._process_definitions()]
+        lines = [f"{pd.name}: {shlex.join(pd.argv)}\n" for pd in self._process_definitions()]
         self.procfile_path.write_text("".join(lines))
 
     def _ensure_gunicorn_config(self) -> None:
@@ -184,8 +185,7 @@ class ProcessManager:
 
         for i, pd in enumerate(defs):
             proc = subprocess.Popen(
-                pd.command,
-                shell=True,
+                pd.argv,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 preexec_fn=os.setsid,
@@ -288,10 +288,12 @@ class ProcessManager:
         python = self.bench.env_path / "bin" / "python"
         if dev:
             port = self.bench.config.http_port
-            reload_flag = "" if self.bench.config.reload_python else " --noreload"
+            argv = [str(python), "-m", "frappe.utils.bench_helper", "frappe", "serve", "--port", str(port)]
+            if not self.bench.config.reload_python:
+                argv.append("--noreload")
             return ProcessDefinition(
                 name="web",
-                command=f"{python} -m frappe.utils.bench_helper frappe serve --port {port}{reload_flag}",
+                argv=argv,
                 log_file=self.bench.logs_path / "web.log",
                 env={"DEV_SERVER": "1"},
                 working_dir=sites,
@@ -300,7 +302,7 @@ class ProcessManager:
         companion = self.bench.config.production.use_companion_manager
         return ProcessDefinition(
             name="web",
-            command=f"{gunicorn} -c ../config/gunicorn.conf.py frappe.app:application",
+            argv=[str(gunicorn), "-c", "../config/gunicorn.conf.py", "frappe.app:application"],
             log_file=self.bench.logs_path / "web.log",
             env=self._py_memory_env(),
             working_dir=sites,
@@ -310,16 +312,16 @@ class ProcessManager:
     def _socketio_definition(self) -> ProcessDefinition:
         if self.bench.config.socketio_backend == "python":
             python = self.bench.env_path / "bin" / "python"
-            command = f"{python} -m frappe.realtime.server"
+            argv = [str(python), "-m", "frappe.realtime.server"]
             working_dir = self.bench.path
             backend_env = self._py_memory_env()
         else:
-            command = f"node {self.bench.apps_path}/frappe/socketio.js"
+            argv = ["node", f"{self.bench.apps_path}/frappe/socketio.js"]
             working_dir = self.bench.sites_path
             backend_env = {}
         return ProcessDefinition(
             name="socketio",
-            command=command,
+            argv=argv,
             log_file=self.bench.logs_path / "socketio.log",
             env=backend_env,
             working_dir=working_dir,
@@ -329,7 +331,7 @@ class ProcessManager:
         python = self.bench.env_path / "bin" / "python"
         return ProcessDefinition(
             name="watch",
-            command=f"{python} -m frappe.utils.bench_helper frappe watch",
+            argv=[str(python), "-m", "frappe.utils.bench_helper", "frappe", "watch"],
             log_file=self.bench.logs_path / "watch.log",
             working_dir=self.bench.sites_path,
         )
@@ -338,7 +340,17 @@ class ProcessManager:
         python = self.bench.env_path / "bin" / "python"
         return ProcessDefinition(
             name="worker_pool",
-            command=f"{python} -m frappe.utils.bench_helper frappe worker-pool --num-workers {num_workers} --queue {queues}",
+            argv=[
+                str(python),
+                "-m",
+                "frappe.utils.bench_helper",
+                "frappe",
+                "worker-pool",
+                "--num-workers",
+                str(num_workers),
+                "--queue",
+                queues,
+            ],
             log_file=self.bench.logs_path / "worker_pool.log",
             env=self._py_memory_env(),
             working_dir=self.bench.sites_path,
@@ -352,7 +364,7 @@ class ProcessManager:
         return [
             ProcessDefinition(
                 name=f"worker_{slug}_{i}",
-                command=f"{python} -m frappe.utils.bench_helper frappe worker --queue {queue}",
+                argv=[str(python), "-m", "frappe.utils.bench_helper", "frappe", "worker", "--queue", queue],
                 log_file=self.bench.logs_path / f"worker_{slug}_{i}.log",
                 env=self._py_memory_env(),
                 working_dir=sites,
@@ -365,7 +377,7 @@ class ProcessManager:
 
         return ProcessDefinition(
             name=name,
-            command=f"{redis_server_binary() or 'redis-server'} {self.bench.config_path}/{config_filename}",
+            argv=[redis_server_binary() or "redis-server", f"{self.bench.config_path}/{config_filename}"],
             log_file=self.bench.logs_path / f"{name}.log",
             stop_timeout=300,
         )
@@ -382,7 +394,18 @@ class ProcessManager:
         cfg = self.bench.config.admin
         return ProcessDefinition(
             name="admin",
-            command=f"{python} -m admin.backend.server --bench-root {self.bench.path} --port {cfg.port} --timeout {cfg.timeout} {mode_flag}",
+            argv=[
+                str(python),
+                "-m",
+                "admin.backend.server",
+                "--bench-root",
+                str(self.bench.path),
+                "--port",
+                str(cfg.port),
+                "--timeout",
+                str(cfg.timeout),
+                mode_flag,
+            ],
             log_file=self.bench.logs_path / "admin.log",
             env={"PYTHONPATH": str(root)},
         )
@@ -392,7 +415,7 @@ class ProcessManager:
         cfg = self.bench.config.admin
         return ProcessDefinition(
             name="admin-ui",
-            command=f"npm run dev --prefix {frontend_dir}",
+            argv=["npm", "run", "dev", "--prefix", str(frontend_dir)],
             log_file=self.bench.logs_path / "admin-ui.log",
             env={"VITE_ADMIN_PORT": str(cfg.port)},
         )

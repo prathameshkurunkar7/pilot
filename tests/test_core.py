@@ -1,3 +1,4 @@
+import shlex
 from pathlib import Path
 
 import pytest
@@ -351,7 +352,7 @@ def test_process_definitions_can_enable_app_watch(tmp_path: Path) -> None:
     definitions = ProcessManager(bench)._process_definitions()
     assert "watch" in [pd.name for pd in definitions]
     watch = next(pd for pd in definitions if pd.name == "watch")
-    assert "frappe watch" in watch.command
+    assert "frappe watch" in shlex.join(watch.argv)
     assert watch.working_dir == bench.sites_path
     assert len(definitions) == 10
 
@@ -388,7 +389,7 @@ def test_dev_web_disables_python_reloader_by_default(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     web = ProcessManager(bench)._process_definitions()[0]
     assert web.name == "web"
-    assert "--noreload" in web.command
+    assert "--noreload" in web.argv
 
 
 def test_dev_web_can_enable_python_reloader(tmp_path: Path) -> None:
@@ -396,7 +397,7 @@ def test_dev_web_can_enable_python_reloader(tmp_path: Path) -> None:
     bench.config.reload_python = True
     web = ProcessManager(bench)._process_definitions()[0]
     assert web.name == "web"
-    assert "--noreload" not in web.command
+    assert "--noreload" not in web.argv
 
 
 # ── ProcessManager tests ───────────────────────────────────────────────
@@ -466,7 +467,7 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
     with patch("pilot.managers.process_manager.subprocess.Popen", side_effect=fake_popen):
         with patch.object(process_manager, "_stop_all"):
             for pd in process_manager._process_definitions():
-                proc = fake_popen(pd.command)
+                proc = fake_popen(pd.argv)
                 process_manager._procs[pd.name] = proc
                 (bench.pids_path / f"{pd.name}.pid").write_text(str(proc.pid))
 

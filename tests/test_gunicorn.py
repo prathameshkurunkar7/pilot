@@ -1,6 +1,7 @@
 """Tests for gunicorn production support."""
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 from unittest.mock import patch
 
@@ -157,11 +158,12 @@ def test_web_definition_uses_gunicorn_in_production(tmp_path: Path) -> None:
     manager = ProcessManager(bench)
 
     pd = manager._web_definition(dev=False)
+    command_line = shlex.join(pd.argv)
 
-    assert "gunicorn" in pd.command
-    assert "frappe.app:application" in pd.command
-    assert "../config/gunicorn.conf.py" in pd.command
-    assert "frappe serve" not in pd.command
+    assert "gunicorn" in command_line
+    assert "frappe.app:application" in command_line
+    assert "../config/gunicorn.conf.py" in command_line
+    assert "frappe serve" not in command_line
 
 
 def test_web_definition_uses_frappe_serve_in_dev(tmp_path: Path) -> None:
@@ -169,9 +171,10 @@ def test_web_definition_uses_frappe_serve_in_dev(tmp_path: Path) -> None:
     manager = ProcessManager(bench)
 
     pd = manager._web_definition(dev=True)
+    command_line = shlex.join(pd.argv)
 
-    assert "frappe serve" in pd.command
-    assert "gunicorn" not in pd.command
+    assert "frappe serve" in command_line
+    assert "gunicorn" not in command_line
 
 
 def test_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
