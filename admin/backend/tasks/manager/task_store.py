@@ -107,6 +107,15 @@ class TaskStore:
             return None
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def task_ids_with_process(self) -> list[str]:
+        with self.locked():
+            return sorted(
+                task_dir.name
+                for task_dir in self.tasks_root.iterdir()
+                if not task_dir.is_symlink() and task_dir.is_dir()
+                if (task_dir / "process.json").exists()
+            )
+
     def update_metadata(self, task_id: str, updates: Mapping[str, object]) -> dict:
         with self.locked():
             metadata = self.read_metadata(task_id)
@@ -232,6 +241,8 @@ class TaskStore:
             task_id = task_dir.name
             try:
                 if self.read_status(task_id) not in TERMINAL_TASK_STATUSES:
+                    continue
+                if (task_dir / "process.json").exists():
                     continue
                 metadata = self.read_metadata(task_id)
                 terminal.append((self._completion_key(metadata, task_id), task_id))

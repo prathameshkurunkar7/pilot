@@ -16,6 +16,7 @@ from admin.backend.tasks.manager.process_identity import (
 )
 from admin.backend.tasks.manager.task_state import TaskStatus
 from admin.backend.tasks.manager.task_store import TaskStore
+from pilot.exceptions import TaskNotFoundError
 
 _READY_FD_ENV = "BENCH_TASK_READY_FD"
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
@@ -101,6 +102,23 @@ class TaskProcess:
         except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
             return ProcessOwnership.UNKNOWN
 
+    def reconcile(self) -> str | None:
+        for task_id in self._store.task_ids_with_process():
+            ownership = self.ownership(task_id)
+            if ownership in {ProcessOwnership.OWNED, ProcessOwnership.UNKNOWN}:
+                return task_id
+            try:
+                status = self._store.read_status(task_id)
+            except (OSError, ValueError, TaskNotFoundError):
+                return task_id
+            if status == TaskStatus.RUNNING:
+                self._interrupt(task_id)
+            elif status != TaskStatus.QUEUED:
+                self._store.remove_private_files(task_id, "process.json")
+            else:
+                return task_id
+        return None
+
     def _environment(self, task_dir: Path, launch_id: str, read_fd: int) -> dict[str, str]:
         environment = {
             **os.environ,
@@ -124,6 +142,9 @@ class TaskProcess:
                 pass
             process.wait()
         self._store.remove_private_files(task_id, "process.json", "pid")
+        self._interrupt(task_id)
+
+    def _interrupt(self, task_id: str) -> None:
         self._store.transition(
             task_id,
             TaskStatus.RUNNING,
@@ -132,4 +153,10 @@ class TaskProcess:
                 "finished_at": datetime.now(timezone.utc).isoformat(),
                 "failure": {"code": "task_interrupted"},
             },
+        )
+        self._store.remove_private_files(
+            task_id,
+            "process.json",
+            "secrets.json",
+            "callbacks.json",
         )

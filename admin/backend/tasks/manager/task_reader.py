@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 import time
 from collections.abc import Generator
@@ -145,24 +144,6 @@ class TaskReader:
 
                 time.sleep(_POLL_INTERVAL)
 
-    def _effective_status(
-        self,
-        task_id: str,
-        raw_status: str,
-        pid: int | None,
-    ) -> TaskStatus:
-        status = parse_task_status(raw_status)
-        if status != TaskStatus.RUNNING:
-            return status
-        if pid is None:
-            return TaskStatus.RUNNING
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            return TaskStatus.KILLED
-        return TaskStatus.RUNNING
-
-
 def _read_task_dir(
     reader: TaskReader,
     task_dir: Path,
@@ -182,7 +163,7 @@ def _read_task_dir(
     if status_file.exists():
         raw_status = status_file.read_text().strip()
 
-    effective_status = reader._effective_status(meta["task_id"], raw_status, pid)
+    effective_status = parse_task_status(raw_status)
 
     queued_at_value = meta.get("queued_at") or meta.get("started_at")
     queued_at = datetime.fromisoformat(queued_at_value)

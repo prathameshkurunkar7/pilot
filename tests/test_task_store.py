@@ -228,3 +228,20 @@ def test_retention_deletes_only_oldest_terminal_tasks(tmp_path: Path) -> None:
     assert store.task_dir(running_id).exists()
     assert unknown.exists()
     assert missing_status.exists()
+
+
+def test_retention_keeps_terminal_task_with_live_process_record(tmp_path: Path) -> None:
+    store = TaskStore(tmp_path)
+    protected = "20260715-120000-111111"
+    removable = "20260715-120000-222222"
+    for task_id in (protected, removable):
+        task_dir = store.task_dir(task_id)
+        task_dir.mkdir(parents=True, exist_ok=True)
+        (task_dir / "meta.json").write_text(json.dumps({**metadata(), "task_id": task_id}))
+        (task_dir / "status").write_text("killed")
+    (store.task_dir(protected) / "process.json").write_text("{}")
+
+    deleted = store.purge_terminal(0)
+
+    assert deleted == [removable]
+    assert store.task_dir(protected).exists()

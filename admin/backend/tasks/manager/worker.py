@@ -65,6 +65,16 @@ class TaskWorker:
     def _work(self, pid: int) -> None:
         while not self._drain.is_set():
             self._wake.clear()
+            blocking_task = self._processes.reconcile()
+            if blocking_task is not None:
+                status = (
+                    WorkerStatus.DRAINING
+                    if self._intent_stopped()
+                    else WorkerStatus.RUNNING
+                )
+                self._write_state(status, pid, blocking_task)
+                self._wake.wait(_CONTROL_POLL_SECONDS)
+                continue
             if self._intent_stopped():
                 self._write_state(WorkerStatus.STOPPED, pid)
                 self._wake.wait(_CONTROL_POLL_SECONDS)

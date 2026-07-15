@@ -203,36 +203,6 @@ def test_build_argv_switch_branch_requires_name_and_branch(tmp_path: Path) -> No
         runner._build_argv("switch-branch", {"name": "gameplan"})
 
 
-# ── TaskReader._effective_status ────────────────────────────────────────────
-
-
-def test_effective_status_dead_pid_returns_killed(tmp_path: Path) -> None:
-    reader = TaskReader(tmp_path)
-    with patch("os.kill", side_effect=OSError("no such process")):
-        result = reader._effective_status("task-id", "running", 99999)
-    assert result == "killed"
-
-
-def test_effective_status_live_pid_returns_running(tmp_path: Path) -> None:
-    reader = TaskReader(tmp_path)
-    with patch("os.kill", return_value=None):
-        result = reader._effective_status("task-id", "running", 12345)
-    assert result == "running"
-
-
-def test_effective_status_non_running_passthrough(tmp_path: Path) -> None:
-    reader = TaskReader(tmp_path)
-    for status in ("queued", "success", "failed", "killed"):
-        result = reader._effective_status("task-id", status, 12345)
-        assert result == status
-
-
-def test_effective_status_none_pid_remains_running_until_recovery(tmp_path: Path) -> None:
-    reader = TaskReader(tmp_path)
-    result = reader._effective_status("task-id", "running", None)
-    assert result == "running"
-
-
 # ── TaskReader.read_output ───────────────────────────────────────────────────
 
 
