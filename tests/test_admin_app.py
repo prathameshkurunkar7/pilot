@@ -341,13 +341,13 @@ def test_api_benches_ready_false_on_invalid_port(tmp_path: Path) -> None:
 
 
 @contextmanager
-def _nginx_stub(ping_status: int = 200):
-    """A loopback HTTP server standing in for nginx+admin: answers /api/v1/ping with
+def _nginx_stub(health_status: int = 200):
+    """A loopback HTTP server standing in for nginx+admin: answers /api/v1/health with
     the given status (any Host), so the domain readiness probe can be exercised."""
 
     class _Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            self.send_response(ping_status if self.path == "/api/v1/ping" else 404)
+            self.send_response(health_status if self.path == "/api/v1/health" else 404)
             self.end_headers()
 
         def log_message(self, *args):
@@ -380,7 +380,7 @@ def test_api_benches_ready_true_when_wizard_answers_at_domain(tmp_path: Path) ->
 def test_api_benches_ready_false_when_wizard_errors_at_domain(tmp_path: Path) -> None:
     current = tmp_path / "benches" / "current"
     client = _client(current)
-    with _nginx_stub(ping_status=502) as port:
+    with _nginx_stub(health_status=502) as port:
         _set_nginx_http_port(current, port)
         resp = client.get("/api/v1/benches/ready?domain=admin.example.com")
 
@@ -392,7 +392,7 @@ def test_api_benches_ready_true_when_https_bench_redirects(tmp_path: Path) -> No
     # redirect is itself the readiness signal, so scheme=https accepts a 301.
     current = tmp_path / "benches" / "current"
     client = _client(current)
-    with _nginx_stub(ping_status=301) as port:
+    with _nginx_stub(health_status=301) as port:
         _set_nginx_http_port(current, port)
         resp = client.get("/api/v1/benches/ready?domain=admin.example.com&scheme=https")
 
@@ -403,7 +403,7 @@ def test_api_benches_ready_false_when_http_bench_redirects(tmp_path: Path) -> No
     # Without scheme=https a redirect is not readiness (an http bench answers 200).
     current = tmp_path / "benches" / "current"
     client = _client(current)
-    with _nginx_stub(ping_status=301) as port:
+    with _nginx_stub(health_status=301) as port:
         _set_nginx_http_port(current, port)
         resp = client.get("/api/v1/benches/ready?domain=admin.example.com")
 

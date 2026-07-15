@@ -477,8 +477,8 @@ class NginxManager:
         firewall_block = self._render_firewall()
         proxy_block = (
             self._render_error_pages()
-            + self._render_open_cors_location("/api/v1/ping")
-            + self._render_open_cors_location("/api/v1/status")
+            + self._render_open_cors_location("/api/v1/health")
+            + self._render_open_cors_location("/api/v1/bootstrap")
             + self._render_admin_proxy_location()
         )
 

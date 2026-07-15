@@ -79,8 +79,8 @@ async function login() {
   errorMessage.value = ''
   try {
     const result = await authApi.login(password.value)
-    if (!result.ok) {
-      errorMessage.value = result.error || 'Login failed'
+    if (result.authenticated !== true) {
+      errorMessage.value = result.error?.message || 'Login failed'
       return
     }
     await loadSession()

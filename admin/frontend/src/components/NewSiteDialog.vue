@@ -222,7 +222,7 @@ async function loadWildcardDomains() {
 
 async function loadBenchDbType() {
   try {
-    const { db_type } = await authApi.status()
+    const { db_type } = await authApi.bootstrap()
     benchDbType.value = db_type || 'mariadb'
     dbType.value = benchDbType.value
   } catch {

@@ -5,21 +5,28 @@ const session = reactive({
   loaded: false,
   authenticated: false,
   wizard: false,
-  enabled: true,
+  enabled: false,
   benchName: '',
-  allowBenchManagement: true,
+  allowBenchManagement: false,
 })
 
 async function loadSession() {
   try {
-    const status = await authApi.status()
-    session.authenticated = status.authenticated !== false
-    session.wizard = status.wizard === true
-    session.enabled = status.enabled !== false
-    session.benchName = status.name || ''
-    session.allowBenchManagement = status.allow_bench_management !== false
+    const [bootstrap, currentSession] = await Promise.all([
+      authApi.bootstrap(),
+      authApi.session(),
+    ])
+    session.authenticated = currentSession.authenticated === true
+    session.wizard = bootstrap.mode === 'setup'
+    session.enabled = bootstrap.enabled === true
+    session.benchName = bootstrap.name || ''
+    session.allowBenchManagement = bootstrap.allow_bench_management === true
   } catch {
     session.authenticated = false
+    session.wizard = false
+    session.enabled = false
+    session.benchName = ''
+    session.allowBenchManagement = false
   }
   session.loaded = true
 }

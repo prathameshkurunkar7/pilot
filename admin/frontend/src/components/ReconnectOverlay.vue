@@ -35,13 +35,13 @@ async function tick() {
     return
   }
   if (!down.value) {
-    down.value = !(await pingOk(apiUrl('ping', window.location.origin)))
+    down.value = !(await pingOk(apiUrl('health', window.location.origin)))
   } else {
     const port = window.location.port ? `:${window.location.port}` : ''
     const authority = `${window.location.hostname}${port}`
     const [httpsOk, httpOk] = await Promise.all([
-      pingOk(apiUrl('ping', `https://${authority}`)),
-      pingOk(apiUrl('ping', `http://${authority}`)),
+      pingOk(apiUrl('health', `https://${authority}`)),
+      pingOk(apiUrl('health', `http://${authority}`)),
     ])
     const scheme = httpsOk ? 'https' : httpOk ? 'http' : null
     if (scheme) {

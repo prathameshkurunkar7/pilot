@@ -133,26 +133,63 @@ def _client(tmp_path: Path, jwt_secret: str = "k3y"):
 def test_valid_jwt_cookie_authenticates(tmp_path: Path) -> None:
     client = _client(tmp_path)
     client.set_cookie("sid", issue_token("k3y"))
-    assert client.get("/api/v1/status").get_json()["authenticated"] is True
+    assert client.get("/api/v1/session").get_json() == {
+        "authenticated": True,
+        "scope": "bench",
+    }
     assert client.get("/api/v1/benches/").status_code != 401
 
 
 def test_invalid_jwt_cookie_stays_unauthenticated(tmp_path: Path) -> None:
     client = _client(tmp_path)
     client.set_cookie("sid", issue_token("wrong-secret"))
-    assert client.get("/api/v1/status").get_json()["authenticated"] is False
+    assert client.get("/api/v1/session").get_json() == {"authenticated": False}
     assert client.get("/api/v1/benches/").status_code == 401
 
 
-def test_status_reports_bench_db_type(tmp_path: Path) -> None:
-    # The engine is a bench-wide property; the admin reads it from /api/v1/status to
+def test_bootstrap_does_not_report_session_state(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    client.set_cookie("sid", issue_token("k3y"))
+
+    body = client.get("/api/v1/bootstrap").get_json()
+
+    assert body["mode"] == "admin"
+    assert "authenticated" not in body
+
+
+def test_fresh_bench_bootstrap_and_session_are_explicit(tmp_path: Path) -> None:
+    from admin.backend.app import create_app
+
+    client = create_app(tmp_path).test_client()
+
+    assert client.get("/api/v1/bootstrap").get_json() == {
+        "enabled": True,
+        "mode": "setup",
+        "name": tmp_path.name,
+    }
+    assert client.get("/api/v1/session").get_json() == {"authenticated": False}
+
+
+def test_delete_session_clears_cookie(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    client.set_cookie("sid", issue_token("k3y"))
+
+    response = client.delete("/api/v1/session")
+
+    assert response.status_code == 204
+    assert response.data == b""
+    assert client.get("/api/v1/session").get_json() == {"authenticated": False}
+
+
+def test_bootstrap_reports_bench_db_type(tmp_path: Path) -> None:
+    # The engine is a bench-wide property; the admin reads it from bootstrap to
     # show one bench-level badge instead of a per-site one.
     client = _client(tmp_path)
-    assert client.get("/api/v1/status").get_json()["db_type"] == "mariadb"
+    assert client.get("/api/v1/bootstrap").get_json()["db_type"] == "mariadb"
 
 
-def test_status_reports_sanitized_task_activity(tmp_path: Path) -> None:
-    body = _client(tmp_path).get("/api/v1/status").get_json()
+def test_bootstrap_reports_sanitized_task_activity(tmp_path: Path) -> None:
+    body = _client(tmp_path).get("/api/v1/bootstrap").get_json()
 
     assert body["task_worker"] == {
         "active": False,
@@ -163,7 +200,7 @@ def test_status_reports_sanitized_task_activity(tmp_path: Path) -> None:
     assert "current_task_id" not in body["task_worker"]
 
 
-def test_status_reports_postgres_engine(tmp_path: Path) -> None:
+def test_bootstrap_reports_postgres_engine(tmp_path: Path) -> None:
     from admin.backend.app import create_app
     from pilot.config.toml_store import BenchTomlStore
 
@@ -176,15 +213,15 @@ def test_status_reports_postgres_engine(tmp_path: Path) -> None:
 
     app = create_app(bench_root)
     app.config["TESTING"] = True
-    assert app.test_client().get("/api/v1/status").get_json()["db_type"] == "postgres"
+    assert app.test_client().get("/api/v1/bootstrap").get_json()["db_type"] == "postgres"
 
 
-def test_status_reports_allow_bench_management_default_true(tmp_path: Path) -> None:
+def test_bootstrap_reports_allow_bench_management_default_true(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    assert client.get("/api/v1/status").get_json()["allow_bench_management"] is True
+    assert client.get("/api/v1/bootstrap").get_json()["allow_bench_management"] is True
 
 
-def test_status_reports_allow_bench_management_when_disabled(tmp_path: Path) -> None:
+def test_bootstrap_reports_allow_bench_management_when_disabled(tmp_path: Path) -> None:
     from admin.backend.app import create_app
     from pilot.config.toml_store import BenchTomlStore
 
@@ -197,13 +234,14 @@ def test_status_reports_allow_bench_management_when_disabled(tmp_path: Path) -> 
 
     app = create_app(bench_root)
     app.config["TESTING"] = True
-    assert app.test_client().get("/api/v1/status").get_json()["allow_bench_management"] is False
+    assert app.test_client().get("/api/v1/bootstrap").get_json()["allow_bench_management"] is False
 
 
 def test_login_with_sid_sets_httponly_cookie(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    resp = client.post("/api/v1/login", json={"sid": issue_login_token("k3y")})
+    resp = client.post("/api/v1/session", json={"sid": issue_login_token("k3y")})
     assert resp.status_code == 200
+    assert resp.get_json() == {"authenticated": True, "scope": "bench"}
     cookie = next(h for k, h in resp.headers if k == "Set-Cookie" and h.startswith("sid="))
     assert "HttpOnly" in cookie
     assert "Secure" not in cookie
@@ -214,14 +252,32 @@ def test_login_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path) -> Non
     client = _client(tmp_path)
     client.application.config["SESSION_COOKIE_SECURE"] = True
 
-    response = client.post("/api/v1/login", json={"sid": issue_login_token("k3y")})
+    response = client.post("/api/v1/session", json={"sid": issue_login_token("k3y")})
 
     cookie = next(
-        value
-        for key, value in response.headers
-        if key == "Set-Cookie" and value.startswith("sid=")
+        value for key, value in response.headers if key == "Set-Cookie" and value.startswith("sid=")
     )
     assert "Secure" in cookie
+
+
+def test_setup_session_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path) -> None:
+    from admin.backend.app import create_app
+
+    app = create_app(tmp_path)
+    app.config.update(TESTING=True, SESSION_COOKIE_SECURE=True)
+
+    response = app.test_client().post(
+        "/api/v1/setup/save",
+        json={"admin_password": "secret", "mariadb_password": "db-secret"},
+    )
+
+    cookie = next(
+        value for key, value in response.headers if key == "Set-Cookie" and value.startswith("sid=")
+    )
+    assert response.status_code == 200
+    assert "HttpOnly" in cookie
+    assert "Secure" in cookie
+    assert "SameSite=Lax" in cookie
 
 
 def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> None:
@@ -253,37 +309,62 @@ def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> 
 
 def test_login_with_invalid_sid_rejected(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    resp = client.post("/api/v1/login", json={"sid": issue_login_token("wrong-secret")})
+    resp = client.post("/api/v1/session", json={"sid": issue_login_token("wrong-secret")})
     assert resp.status_code == 401
+    assert resp.get_json()["error"]["code"] == "invalid_login_token"
     assert client.get("/api/v1/benches/").status_code == 401
+
+
+def test_session_creation_requires_a_json_object(tmp_path: Path) -> None:
+    response = _client(tmp_path).post("/api/v1/session", json=["secret"])
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": {
+            "code": "malformed_request",
+            "details": {},
+            "message": "Expected a JSON object.",
+        }
+    }
 
 
 def test_sid_is_single_use(tmp_path: Path) -> None:
     client = _client(tmp_path)
     sid = issue_login_token("k3y")
-    assert client.post("/api/v1/login", json={"sid": sid}).status_code == 200
-    assert client.post("/api/v1/login", json={"sid": sid}).status_code == 401
+    assert client.post("/api/v1/session", json={"sid": sid}).status_code == 200
+    assert client.post("/api/v1/session", json={"sid": sid}).status_code == 401
 
 
 def test_login_rate_limited_after_limit(tmp_path: Path) -> None:
     client = _client(tmp_path)
     for _ in range(5):
-        assert client.post("/api/v1/login", json={"password": "wrong"}).status_code == 401
-    assert client.post("/api/v1/login", json={"password": "wrong"}).status_code == 429
+        assert client.post("/api/v1/session", json={"password": "wrong"}).status_code == 401
+    assert client.post("/api/v1/session", json={"password": "wrong"}).status_code == 429
+
+
+def test_login_rate_limit_is_scoped_to_each_app(tmp_path: Path) -> None:
+    first_client = _client(tmp_path / "first")
+    for _ in range(5):
+        first_client.post("/api/v1/session", json={"password": "wrong"})
+
+    second_client = _client(tmp_path / "second")
+
+    response = second_client.post("/api/v1/session", json={"password": "wrong"})
+    assert response.status_code == 401
 
 
 def test_login_rate_limit_ignores_spoofed_forwarded_ips(tmp_path: Path) -> None:
     client = _client(tmp_path)
     for index in range(5):
         response = client.post(
-            "/api/v1/login",
+            "/api/v1/session",
             json={"password": "wrong"},
             headers={"X-Real-IP": f"203.0.113.{index + 1}"},
         )
         assert response.status_code == 401
 
     response = client.post(
-        "/api/v1/login",
+        "/api/v1/session",
         json={"password": "wrong"},
         headers={"X-Real-IP": "203.0.113.99"},
     )

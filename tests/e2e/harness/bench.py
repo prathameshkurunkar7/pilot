@@ -351,7 +351,7 @@ class Bench:
         self._proc = None
 
     def _wait_for_admin(self, expect_wizard: bool, timeout: float = 60 * 60) -> None:
-        """Poll /api/v1/status until the admin answers in the expected mode."""
+        """Poll bootstrap until the admin answers in the expected mode."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             if self._proc and self._proc.poll() is not None:
@@ -359,9 +359,9 @@ class Bench:
                     f"bench start exited early (code {self._proc.returncode}) before the admin came up"
                 )
             try:
-                with urlopen(f"{self.admin_url}/api/v1/status", timeout=5) as res:
+                with urlopen(f"{self.admin_url}/api/v1/bootstrap", timeout=5) as res:
                     data = json.load(res)
-                if (data.get("wizard") is True) == expect_wizard:
+                if (data.get("mode") == "setup") == expect_wizard:
                     return
             except Exception:
                 pass  # not up yet

@@ -66,7 +66,7 @@ const processManagerOptions = computed(() => [
 async function loadMode() {
   isProduction.value = null
   try {
-    const data = await authApi.status()
+    const data = await authApi.bootstrap()
     isProduction.value = data.production === true
     nativeProcessManager.value = data.native_process_manager || 'systemd'
     processManager.value = nativeProcessManager.value

@@ -314,20 +314,20 @@ class TestProductionSSL:
         assert code in ("301", "308"), f"expected redirect, got {code}"
         assert target.startswith(f"https://{SITE}"), f"unexpected redirect target: {target!r}"
 
-    def test_admin_status_endpoint_works(self, production: Path) -> None:
-        status, body = _request(ADMIN_DOMAIN, "/api/v1/status")
-        assert status == "200", f"/api/v1/status returned {status}: {body!r}"
+    def test_admin_bootstrap_endpoint_works(self, production: Path) -> None:
+        status, body = _request(ADMIN_DOMAIN, "/api/v1/bootstrap")
+        assert status == "200", f"/api/v1/bootstrap returned {status}: {body!r}"
         data = json.loads(body)
-        assert data.get("name"), f"admin status missing bench name: {data}"
+        assert data.get("name"), f"admin bootstrap missing bench name: {data}"
         assert data.get("production") is True, f"admin does not report production: {data}"
         assert "native_process_manager" in data, data
 
     def test_admin_login_works(self, production: Path) -> None:
         status, body = _request(
-            ADMIN_DOMAIN, "/api/v1/login", method="POST", json_body={"password": ADMIN_PASSWORD}
+            ADMIN_DOMAIN, "/api/v1/session", method="POST", json_body={"password": ADMIN_PASSWORD}
         )
-        assert status == "200", f"/api/v1/login returned {status}: {body!r}"
-        assert json.loads(body).get("ok") is True, f"login not ok: {body!r}"
+        assert status == "200", f"/api/v1/session returned {status}: {body!r}"
+        assert json.loads(body).get("authenticated") is True, f"login failed: {body!r}"
 
     def test_plain_site_vhost_has_no_ssl(self, production: Path) -> None:
         if not _site_dir(production, SITE_NO_SSL).is_dir():
@@ -402,8 +402,8 @@ class TestProductionSSL:
 
         admin_conf = (_nginx_conf_dir(production) / "sites" / "_admin.conf").read_text()
         assert ADMIN_DOMAIN_2 in admin_conf
-        status, body = _request(ADMIN_DOMAIN_2, "/api/v1/status")
-        assert status == "200", f"new admin domain /api/v1/status returned {status}: {body!r}"
+        status, body = _request(ADMIN_DOMAIN_2, "/api/v1/bootstrap")
+        assert status == "200", f"new admin domain /api/v1/bootstrap returned {status}: {body!r}"
         assert json.loads(body).get("production") is True, f"admin not live on new domain: {body!r}"
 
     def test_remove_production(self, production: Path, bench_bin: str) -> None:
@@ -458,8 +458,8 @@ class TestProductionNoTLS:
         assert "return 301 https" not in conf, conf
 
     def test_admin_served_over_http(self, http_only_production: Path) -> None:
-        status, body = _request(ADMIN_DOMAIN, "/api/v1/status", scheme="http")
-        assert status == "200", f"admin /api/v1/status over http returned {status}: {body!r}"
+        status, body = _request(ADMIN_DOMAIN, "/api/v1/bootstrap", scheme="http")
+        assert status == "200", f"admin /api/v1/bootstrap over http returned {status}: {body!r}"
         assert json.loads(body).get("production") is True, body
 
     def test_admin_not_served_over_https(self, http_only_production: Path) -> None:

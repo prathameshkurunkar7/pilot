@@ -4,9 +4,13 @@ import functools
 import threading
 import time
 
-from flask import jsonify
+from flask import current_app
 
+from .api_contract import error_response
 from .client_ip import client_ip
+
+_WINDOWS_EXTENSION = "rate_limit_windows"
+_WINDOWS_LOCK = threading.Lock()
 
 
 class SlidingWindow:
@@ -55,14 +59,26 @@ def rate_limit(attempts: int, seconds: int, user_ip: bool = True):
     """Allow at most ``attempts`` calls per ``seconds``, returning HTTP 429 once exceeded."""
 
     def decorator(view):
-        window = SlidingWindow(attempts, seconds)
+        window_key = (view.__module__, view.__qualname__, attempts, seconds, user_ip)
 
         @functools.wraps(view)
         def wrapper(*args, **kwargs):
+            window = _app_window(window_key, attempts, seconds)
             if not window.allow(_client_ip() if user_ip else "*"):
-                return jsonify({"ok": False, "error": "Too many attempts. Try again later."}), 429
+                return error_response(
+                    "rate_limit_exceeded",
+                    "Too many attempts. Try again later.",
+                    429,
+                )
             return view(*args, **kwargs)
 
         return wrapper
 
     return decorator
+
+
+def _app_window(key: tuple, attempts: int, seconds: int) -> SlidingWindow:
+    app = current_app._get_current_object()
+    with _WINDOWS_LOCK:
+        windows = app.extensions.setdefault(_WINDOWS_EXTENSION, {})
+        return windows.setdefault(key, SlidingWindow(attempts, seconds))

@@ -1,24 +1,29 @@
 from __future__ import annotations
 
-import hmac
 import os
 from pathlib import Path
 
 from flask import Flask, g, jsonify, request, send_file
 
 from .api_contract import API_V1_PREFIX, error_response, is_api_path
-from .auth import AuthPolicy, allow_unauthenticated, endpoint_auth_policy
-from .rate_limit import rate_limit, UsedTokens
+from .auth import (
+    AuthPolicy,
+    allow_unauthenticated,
+    authenticate_request,
+    endpoint_auth_policy,
+)
+from .rate_limit import UsedTokens
 from .uploads import MAX_RESTORE_UPLOAD_BYTES
 from .views.apps import apps_bp
 from .views.benches import benches_bp
+from .views.core import core_bp
 from .views.dashboard import dashboard_bp
 from .views.database import database_bp
 from .views.git import git_bp
 from .views.logs import logs_bp
 from .views.processes import processes_bp
 from .views.settings import settings_bp
-from .views.setup import setup_bp, wizard_marker_path
+from .views.setup import setup_bp
 from .views.sites import sites_bp
 from .views.ssh_keys import ssh_keys_bp
 from .views.stats import stats_bp
@@ -29,34 +34,6 @@ from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import ConfigError
 
 _STATIC_DIR = Path(__file__).parent / "static"
-def _wizard_status(bench_root: Path) -> dict:
-    name = bench_root.name
-    try:
-        name = BenchTomlStore.for_bench(bench_root).read_raw().get("bench", {}).get("name", name)
-    except Exception:
-        pass
-    return {"wizard": True, "name": name, "enabled": True, "authenticated": True}
-
-
-def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
-    """Whether first-time setup has fully finished."""
-    if not (bench_root / "env" / "bin" / "python").exists() or not config.admin.password:
-        return False
-    if config.production.process_manager and not config.production.enabled:
-        return False
-    try:
-        from admin.backend.tasks.manager.task_reader import TaskReader
-        from admin.backend.tasks.manager.task_state import ACTIVE_TASK_STATUSES
-
-        tasks = TaskReader(bench_root).list_tasks(limit=20)
-        if any(
-            t.command == "wizard-setup" and t.status in ACTIVE_TASK_STATUSES
-            for t in tasks
-        ):
-            return False
-    except Exception:
-        pass
-    return True
 
 
 def _install_idle_watchdog(
@@ -94,7 +71,7 @@ def create_app(bench_root: Path) -> Flask:
     app.config["TRUSTED_PROXY_PEERS"] = _trusted_proxy_peers(config_store)
     app.config["SESSION_COOKIE_SECURE"] = _secure_cookie_setting(config_store)
 
-    used_logins = UsedTokens()
+    app.extensions["used_logins"] = UsedTokens()
 
     def _load_config():
         return config_store.read()
@@ -105,32 +82,7 @@ def create_app(bench_root: Path) -> Flask:
         return None
 
     def _is_authenticated(config: BenchConfig) -> bool:
-        from .auth import decode_session_token
-
-        token = _extract_token()
-        if not token:
-            return False
-        claims = decode_session_token(token, config)
-        if claims is None:
-            return False
-        g.jwt_claims = claims
-        return True
-
-    def _extract_token() -> str | None:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            return auth_header[7:]
-        return request.cookies.get("sid")
-
-    def _set_sid_cookie(resp, sid: str):
-        resp.set_cookie(
-            "sid",
-            sid,
-            max_age=24 * 3600,
-            httponly=True,
-            secure=app.config["SESSION_COOKIE_SECURE"],
-            samesite="Lax",
-        )
+        return authenticate_request(config)
 
     def _check_password(config: BenchConfig):
         if not config.admin.password:
@@ -169,89 +121,7 @@ def create_app(bench_root: Path) -> Flask:
             return None
         return _check_enabled(config) or _check_password(config)
 
-    @app.route(f"{API_V1_PREFIX}/ping")
-    @allow_unauthenticated
-    def api_ping():
-        resp = jsonify({"ok": True})
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        return resp
-
-    @app.route(f"{API_V1_PREFIX}/status")
-    @allow_unauthenticated
-    def api_status():
-        initialized = (bench_root / "env" / "bin" / "python").exists()
-        try:
-            config = BenchTomlStore.for_bench(bench_root).read()
-        except Exception as exc:
-            return jsonify({"enabled": False, "error": str(exc)}), 503
-        if not initialized or not config.admin.password:
-            return jsonify(_wizard_status(bench_root))
-        marker = wizard_marker_path(bench_root)
-        if marker.exists():
-            if _setup_complete(bench_root, config):
-                marker.unlink(missing_ok=True)
-            else:
-                return jsonify(_wizard_status(bench_root))
-        from pilot.platform import native_process_manager
-        from admin.backend.tasks.manager.activity import TaskActivityReader
-
-        return jsonify(
-            {
-                "enabled": config.admin.enabled,
-                "name": config.name,
-                "db_type": config.db_type,
-                "production": config.production.enabled,
-                "native_process_manager": native_process_manager(),
-                "allow_bench_management": config.admin.allow_bench_management,
-                "authenticated": _is_authenticated(config),
-                "task_worker": TaskActivityReader(bench_root).read().public_dict(),
-            }
-        )
-
-    @app.route(f"{API_V1_PREFIX}/login", methods=["POST"])
-    @allow_unauthenticated
-    @rate_limit(5, 60, user_ip=True)
-    def api_login():
-        try:
-            config = BenchTomlStore.for_bench(bench_root).read()
-        except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 503
-        if not config.admin.password:
-            return jsonify(
-                {"ok": False, "error": "No admin password configured in bench.toml"}
-            ), 503
-        from .auth import decode_session_token
-        from pilot.commands.generate_session import ensure_jwt_secret, issue_token
-
-        data = request.get_json(silent=True) or {}
-        sid = data.get("sid")
-        if sid is not None:
-            payload = decode_session_token(sid, config)
-            jti = payload.get("jti") if payload else None
-            # A ?sid= sign-in must be a single-use (jti), bench-scoped token.
-            # Requiring a jti also blocks site-scoped API tokens (which carry
-            # none) from being exchanged for a full admin session, and stops a
-            # captured token from being replayed for fresh sessions.
-            if (
-                payload is None
-                or not jti
-                or payload.get("scope", "bench") != "bench"
-                or not used_logins.use(jti, payload["exp"])
-            ):
-                return jsonify({"ok": False, "error": "Invalid or expired sign-in link"}), 401
-        elif not hmac.compare_digest(str(data.get("password", "")), config.admin.password):
-            return jsonify({"ok": False, "error": "Incorrect password"}), 401
-        resp = jsonify({"ok": True})
-        _set_sid_cookie(resp, issue_token(ensure_jwt_secret(bench_root / "bench.toml")))
-        return resp
-
-    @app.route(f"{API_V1_PREFIX}/logout", methods=["POST"])
-    @allow_unauthenticated
-    def api_logout():
-        resp = jsonify({"ok": True})
-        resp.delete_cookie("sid")
-        return resp
-
+    app.register_blueprint(core_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(setup_bp, url_prefix=f"{API_V1_PREFIX}/setup")
     app.register_blueprint(dashboard_bp, url_prefix=API_V1_PREFIX)
     app.register_blueprint(apps_bp, url_prefix=f"{API_V1_PREFIX}/apps")

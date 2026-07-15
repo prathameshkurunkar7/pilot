@@ -357,10 +357,8 @@ export function useSetup() {
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, 3000))
       try {
-        const response = await setupApi.status()
-        if (!response.ok) continue
-        const status = await response.json()
-        if (status.wizard !== true) return (window.location.href = '/sites')
+        const bootstrap = await setupApi.bootstrap()
+        if (bootstrap.mode === 'admin') return (window.location.href = '/sites')
       } catch {}
     }
   }

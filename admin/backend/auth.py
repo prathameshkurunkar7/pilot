@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from flask import g
+from flask import g, request
 
 
 _SITE_SCOPE_RESOLVER = "_site_scope_resolver"
@@ -27,6 +27,30 @@ def allow_during_setup(view):
 
 def endpoint_auth_policy(view) -> AuthPolicy:
     return getattr(view, _AUTH_POLICY, AuthPolicy.AUTHENTICATED)
+
+
+def authenticate_request(config) -> bool:
+    authorization = request.headers.get("Authorization", "")
+    token = authorization[7:] if authorization.startswith("Bearer ") else None
+    token = token or request.cookies.get("sid")
+    if not token:
+        return False
+    claims = decode_session_token(token, config)
+    if claims is None:
+        return False
+    g.jwt_claims = claims
+    return True
+
+
+def set_session_cookie(response, token: str, secure: bool) -> None:
+    response.set_cookie(
+        "sid",
+        token,
+        max_age=24 * 3600,
+        httponly=True,
+        secure=secure,
+        samesite="Lax",
+    )
 
 
 def decode_session_token(token: str, config) -> dict | None:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 
-from admin.backend.auth import allow_during_setup
+from admin.backend.auth import allow_during_setup, set_session_cookie
 from admin.backend.tasks.manager.task_reader import TaskReader
 from admin.backend.tasks.manager.events import sse_message
 from admin.backend.tasks.manager.task_runner import TaskRunner
@@ -28,8 +28,8 @@ def wizard_marker_path(bench_root: Path) -> Path:
     """Marker that the bench is going through first-time setup via the wizard.
 
     Written when the wizard kicks off its setup task and cleared when setup
-    finishes (and as a safety-net by /api/v1/status once the bench is fully set up).
-    It keeps /api/v1/status on the wizard while init runs — env/bin/python can appear
+    finishes (and as a safety-net by /api/v1/bootstrap once the bench is fully set up).
+    It keeps /api/v1/bootstrap on the wizard while init runs — env/bin/python can appear
     partway through, making the bench look 'initialized' before the task is done —
     so a reload returns to the wizard rather than a half-built dashboard.
     """
@@ -86,12 +86,10 @@ def save_config():
 def _issue_setup_session(resp, toml_path: Path) -> None:
     from pilot.commands.generate_session import ensure_jwt_secret, issue_token
 
-    resp.set_cookie(
-        "sid",
+    set_session_cookie(
+        resp,
         issue_token(ensure_jwt_secret(toml_path)),
-        max_age=24 * 3600,
-        httponly=True,
-        samesite="Lax",
+        current_app.config["SESSION_COOKIE_SECURE"],
     )
 
 

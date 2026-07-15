@@ -66,6 +66,6 @@ def run_and_await_task(
 
 def expect_bench_online(request: APIRequestContext, base_url: str) -> None:
     """Sanity assert that the admin is reachable and out of wizard mode."""
-    res = request.get(f"{base_url}/api/v1/status")
+    res = request.get(f"{base_url}/api/v1/bootstrap")
     expect(res).to_be_ok()
-    assert res.json().get("wizard") is not True
+    assert res.json().get("mode") == "admin"
