@@ -786,13 +786,21 @@ def test_reinstall_site_generates_new_admin_password(tmp_path: Path) -> None:
     site_dir.mkdir(parents=True)
     (site_dir / "site_config.json").write_text("{}")
 
-    with patch("admin.backend.views.sites.TaskRunner.run", return_value="task-1") as run:
-        response = client.post("/api/v1/sites/s.localhost/reinstall", json={})
+    with patch(
+        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        return_value=False,
+    ):
+        response = client.post("/api/v1/sites/s.localhost/actions/reinstall", json={})
 
-    assert response.get_json() == {"ok": True, "task_id": "task-1"}
-    args = run.call_args.args[1]
-    assert args["site"] == "s.localhost"
-    assert args["admin_password"] and args["admin_password"] != "admin"
+    body = response.get_json()
+    assert response.status_code == 202
+    assert body["command"] == "reinstall-site"
+    assert body["args"] == {"site": "s.localhost", "admin_password": "[redacted]"}
+    secrets_payload = json.loads(
+        (bench_root / "tasks" / body["task_id"] / "secrets.json").read_text()
+    )
+    assert secrets_payload["admin_password"]
+    assert secrets_payload["admin_password"] != "admin"
 
 
 def test_reinstall_site_submits_new_admin_password_as_secret(tmp_path: Path) -> None:
@@ -802,15 +810,95 @@ def test_reinstall_site_submits_new_admin_password_as_secret(tmp_path: Path) -> 
     site_dir.mkdir(parents=True)
     (site_dir / "site_config.json").write_text("{}")
 
-    with patch("admin.backend.views.sites.TaskRunner.run", return_value="task-1") as run:
+    with patch(
+        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        return_value=False,
+    ):
         response = client.post(
-            "/api/v1/sites/s.localhost/reinstall", json={"admin_password": "new-secret"}
+            "/api/v1/sites/s.localhost/actions/reinstall",
+            json={"admin_password": "new-secret"},
         )
 
-    assert response.get_json() == {"ok": True, "task_id": "task-1"}
-    run.assert_called_once_with(
-        "reinstall-site", {"site": "s.localhost", "admin_password": "new-secret"}
-    )
+    body = response.get_json()
+    assert response.status_code == 202
+    assert body["args"]["admin_password"] == "[redacted]"
+    assert "new-secret" not in json.dumps(body)
+    assert json.loads(
+        (bench_root / "tasks" / body["task_id"] / "secrets.json").read_text()
+    ) == {"admin_password": "new-secret"}
+
+
+def test_site_actions_return_canonical_task_resources(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    cases = [
+        ("reinstall", "reinstall-site", {}),
+        ("clear-cache", "clear-cache", {}),
+        ("migrate", "migrate", {}),
+        ("enable-tls", "setup-letsencrypt", {"email": "ops@example.com"}),
+    ]
+
+    with patch(
+        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        return_value=False,
+    ):
+        for index, (action, command, payload) in enumerate(cases):
+            site = f"s{index}.localhost"
+            site_dir = bench_root / "sites" / site
+            site_dir.mkdir(parents=True)
+            (site_dir / "site_config.json").write_text("{}")
+
+            response = client.post(
+                f"/api/v1/sites/{site}/actions/{action}",
+                json=payload,
+            )
+
+            body = response.get_json()
+            assert response.status_code == 202
+            assert response.headers["Location"] == f"/api/v1/tasks/{body['task_id']}"
+            assert body["command"] == command
+            assert body["args"]["site"] == site
+
+
+def test_site_action_idempotency_replays_same_task(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    site_dir = bench_root / "sites" / "s.localhost"
+    site_dir.mkdir(parents=True)
+    (site_dir / "site_config.json").write_text("{}")
+
+    with patch(
+        "admin.backend.tasks.manager.task_runner.task_workers.wake",
+        return_value=False,
+    ):
+        first = client.post(
+            "/api/v1/sites/s.localhost/actions/clear-cache",
+            headers={"Idempotency-Key": "clear-s"},
+        )
+        replay = client.post(
+            "/api/v1/sites/s.localhost/actions/clear-cache",
+            headers={"Idempotency-Key": "clear-s"},
+        )
+
+    assert first.status_code == replay.status_code == 202
+    assert first.get_json()["task_id"] == replay.get_json()["task_id"]
+
+
+def test_site_actions_reject_missing_and_symlinked_sites(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    outside = tmp_path / "outside-site"
+    outside.mkdir()
+    (outside / "site_config.json").write_text("{}")
+    sites_dir = bench_root / "sites"
+    sites_dir.mkdir()
+    (sites_dir / "linked.localhost").symlink_to(outside, target_is_directory=True)
+
+    missing = client.post("/api/v1/sites/missing.localhost/actions/migrate")
+    linked = client.post("/api/v1/sites/linked.localhost/actions/clear-cache")
+
+    assert missing.status_code == linked.status_code == 404
+    assert not (bench_root / "tasks").exists()
 
 
 def test_setup_site_creation_generates_admin_password_when_omitted(tmp_path: Path) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 import secrets
 import shutil
@@ -16,7 +17,7 @@ from pilot.exceptions import (
     DomainProviderError,
     TaskConflictError,
 )
-from pilot.secure_files import write_private_text
+from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 
 from admin.backend.api_contract import error_response
 from admin.backend.auth import require_scope
@@ -65,10 +66,15 @@ _SENSITIVE_CONFIG_KEY_PARTS = (
     "_key",
     "access_key",
     "api_key",
+    "authorization",
+    "bearer",
+    "cookie",
     "credential",
+    "dsn",
     "password",
     "private_key",
     "secret",
+    "session_id",
     "token",
 )
 
@@ -330,11 +336,11 @@ def drop_site(name: str):
     return accepted_task_response(bench_root, task_id)
 
 
-@sites_bp.route("/<name>/reinstall", methods=["POST"])
+@sites_bp.post("/<name>/actions/reinstall")
 @require_scope(site_name)
 def reinstall_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    if not (bench_root / "sites" / name / "site_config.json").exists():
+    if not _site_exists(bench_root, name):
         return _site_not_found()
     data = request.get_json(silent=True)
     if data is None:
@@ -346,11 +352,14 @@ def reinstall_site(name: str):
         admin_password = secrets.token_urlsafe(16)
     try:
         task_id = TaskRunner(bench_root).run(
-            "reinstall-site", {"site": name, "admin_password": admin_password}
+            "reinstall-site",
+            {"site": name, "admin_password": admin_password},
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
         return _task_failure(error)
-    return jsonify({"ok": True, "task_id": task_id})
+    return accepted_task_response(bench_root, task_id)
 
 
 @sites_bp.route("/<name>/backup", methods=["POST"])
@@ -364,26 +373,40 @@ def backup_site(name: str):
     return jsonify({"ok": True, "task_id": task_id})
 
 
-@sites_bp.route("/<name>/clear-cache", methods=["POST"])
+@sites_bp.post("/<name>/actions/clear-cache")
 @require_scope(site_name)
 def clear_cache(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not _site_exists(bench_root, name):
+        return _site_not_found()
     try:
-        task_id = TaskRunner(bench_root).run("clear-cache", {"site": name})
+        task_id = TaskRunner(bench_root).run(
+            "clear-cache",
+            {"site": name},
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            resource_key=f"site:{name.lower()}",
+        )
     except Exception as error:
         return _task_failure(error)
-    return jsonify({"ok": True, "task_id": task_id})
+    return accepted_task_response(bench_root, task_id)
 
 
-@sites_bp.route("/<name>/migrate", methods=["POST"])
+@sites_bp.post("/<name>/actions/migrate")
 @require_scope(site_name)
 def migrate_site(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
+    if not _site_exists(bench_root, name):
+        return _site_not_found()
     try:
-        task_id = TaskRunner(bench_root).run("migrate", {"site": name})
+        task_id = TaskRunner(bench_root).run(
+            "migrate",
+            {"site": name},
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            resource_key=f"site:{name.lower()}",
+        )
     except Exception as error:
         return _task_failure(error)
-    return jsonify({"ok": True, "task_id": task_id})
+    return accepted_task_response(bench_root, task_id)
 
 
 @sites_bp.route("/<name>/install-app", methods=["POST"])
@@ -587,12 +610,12 @@ def login_to_site(name: str):
     return jsonify({"ok": True, "url": url})
 
 
-@sites_bp.route("/<name>/enable-ssl", methods=["POST"])
+@sites_bp.post("/<name>/actions/enable-tls")
 @require_scope(site_name)
-def enable_ssl(name: str):
+def enable_tls(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
-    config_path = bench_root / "sites" / name / "site_config.json"
-    if not config_path.exists():
+    config_path = _site_config_path(bench_root, name)
+    if config_path is None:
         return _site_not_found()
 
     from pilot.config.toml_store import BenchTomlStore
@@ -600,7 +623,6 @@ def enable_ssl(name: str):
     from ..validators import validate_email
 
     store = BenchTomlStore.for_bench(bench_root)
-    # Let's Encrypt needs an ACME account email; persist one if the UI supplied it.
     data = request.get_json(silent=True)
     if data is None:
         data = {}
@@ -615,19 +637,13 @@ def enable_ssl(name: str):
             return error_response(
                 "invalid_email", err, 422, {"needs_email": True}
             )
-        try:
-            with store.edit() as config:
-                config.letsencrypt.email = email
-        except Exception:
-            return _internal_error("Could not save the certificate email.")
     else:
         try:
             config = store.read()
         except Exception:
             return _internal_error("Could not read certificate configuration.")
 
-    # No email anywhere — ask the UI to collect one instead of starting a doomed task.
-    if not config.letsencrypt.email:
+    if not email and not config.letsencrypt.email:
         return error_response(
             "missing_certificate_email",
             "A Let's Encrypt account email is required to issue certificates.",
@@ -635,29 +651,33 @@ def enable_ssl(name: str):
             {"needs_email": True},
         )
 
-    import json
-
     try:
         current = json.loads(config_path.read_text())
-        current["ssl"] = True
-        write_private_text(config_path, json.dumps(current, indent=1))
     except Exception:
-        return _internal_error("Could not enable SSL in the site configuration.")
+        return _internal_error("Could not read the site configuration.")
+    if not isinstance(current, dict):
+        return _internal_error("Could not read the site configuration.")
+    if current.get("ssl"):
+        return error_response("tls_already_enabled", "TLS is already enabled.", 409)
 
+    rollback = {"operation": "disable-site-ssl", "args": {"site": name}}
+    task_args = {"site": name}
+    if email:
+        task_args["email"] = email
     try:
         task_id = TaskRunner(bench_root).run(
             "setup-letsencrypt",
-            {"site": name},
+            task_args,
             callbacks={
-                "on_failure": {
-                    "operation": "disable-site-ssl",
-                    "args": {"site": name},
-                }
+                "on_failure": rollback,
+                "on_cancel": rollback,
             },
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            resource_key=f"site:{name.lower()}",
         )
     except Exception as error:
         return _task_failure(error)
-    return jsonify({"ok": True, "task_id": task_id})
+    return accepted_task_response(bench_root, task_id)
 
 
 def _domain_routes(bench_root: Path):
@@ -793,9 +813,25 @@ def set_primary_domain(name: str):
     return jsonify({"ok": True, "task_id": task_id})
 
 
-@sites_bp.route("/<name>/config", methods=["PATCH"])
+@sites_bp.get("/<name>/configuration")
 @require_scope(site_name)
-def update_config(name: str):
+def get_configuration(name: str):
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    config_path = _site_config_path(bench_root, name)
+    if config_path is None:
+        return _site_not_found()
+    try:
+        config = json.loads(config_path.read_text())
+    except Exception:
+        return _internal_error("Could not read site configuration.")
+    if not isinstance(config, dict):
+        return _internal_error("Could not read site configuration.")
+    return jsonify(_public_config(config))
+
+
+@sites_bp.patch("/<name>/configuration")
+@require_scope(site_name)
+def update_configuration(name: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     config_path = _site_config_path(bench_root, name)
     if config_path is None:
@@ -805,22 +841,19 @@ def update_config(name: str):
     if data is None or not isinstance(data, dict):
         return _malformed_body()
 
-    import json
-
     try:
-        current = json.loads(config_path.read_text())
-    except Exception:
-        return _internal_error("Could not read site configuration.")
-
-    # The UI sends the complete visible config. Hidden keys are blocklisted and
-    # preserved from disk, including nested custom keys unknown to Pilot.
-    merged = _merge_public_config(current, data)
-
-    try:
-        write_private_text(config_path, json.dumps(merged, indent=1))
+        with exclusive_file_lock(config_path):
+            current = json.loads(config_path.read_text())
+            if not isinstance(current, dict):
+                raise ValueError("Site configuration must be a JSON object.")
+            error = _config_patch_error(current, data)
+            if error:
+                return error_response("protected_configuration", error, 422)
+            merged = _merge_public_config(current, data)
+            replace_private_text_locked(config_path, json.dumps(merged, indent=1))
     except Exception:
         return _internal_error("Could not update site configuration.")
-    return jsonify({"ok": True})
+    return jsonify(_public_config(merged))
 
 
 _DEFAULT_BACKUPS_PAGE_SIZE = 20
@@ -1018,13 +1051,14 @@ def _site_config_path(bench_root: Path, name: str) -> Path | None:
 
 
 def _site_resource(site: SiteInfo) -> dict:
+    framework_branch = site.site_config.get("frappe_branch", "")
     return {
         "name": site.name,
         "exists": site.exists,
         "installed_apps": [
             app for app in site.installed_apps if isinstance(app, str)
         ],
-        "site_config": _public_config(site.site_config),
+        "framework_branch": framework_branch if isinstance(framework_branch, str) else "",
         "broken": site.broken,
         "provisioning": site.provisioning,
     }
@@ -1147,13 +1181,10 @@ def _public_config_value(value):
 
 
 def _merge_public_config(current: dict, submitted: dict) -> dict:
-    merged = {
-        key: copy.deepcopy(value)
-        for key, value in current.items()
-        if not _is_public_config_key(key)
-    }
+    merged = copy.deepcopy(current)
     for key, submitted_value in submitted.items():
-        if not _is_public_config_key(key):
+        if submitted_value is None:
+            merged.pop(key, None)
             continue
         current_value = current.get(key)
         merged[key] = _merge_public_value(current_value, submitted_value)
@@ -1163,15 +1194,55 @@ def _merge_public_config(current: dict, submitted: dict) -> dict:
 def _merge_public_value(current, submitted):
     if isinstance(current, dict) and isinstance(submitted, dict):
         return _merge_public_config(current, submitted)
-    if isinstance(current, list) and isinstance(submitted, list):
-        return [
-            _merge_public_value(
-                current[index] if index < len(current) else None,
-                value,
-            )
-            for index, value in enumerate(submitted)
-        ]
     return copy.deepcopy(submitted)
+
+
+def _config_patch_error(current, submitted) -> str | None:
+    if not isinstance(submitted, dict):
+        return "Configuration patches must be JSON objects."
+    for key, value in submitted.items():
+        if not isinstance(key, str) or not _is_public_config_key(key):
+            return "System-managed and secret-like configuration keys cannot be changed."
+        existing = current.get(key) if isinstance(current, dict) else None
+        if value is None:
+            if _contains_protected_config(existing):
+                return "A configuration value containing protected fields cannot be removed."
+            continue
+        if isinstance(value, dict):
+            error = _config_patch_error(existing if isinstance(existing, dict) else {}, value)
+            if error:
+                return error
+        elif isinstance(value, list):
+            if _contains_protected_config(existing):
+                return "A list containing protected fields cannot be replaced."
+            for item in value:
+                error = _submitted_config_value_error(item)
+                if error:
+                    return error
+        elif _contains_protected_config(existing):
+            return "A configuration value containing protected fields cannot change type."
+    return None
+
+
+def _submitted_config_value_error(value) -> str | None:
+    if isinstance(value, dict):
+        return _config_patch_error({}, value)
+    if isinstance(value, list):
+        for item in value:
+            if error := _submitted_config_value_error(item):
+                return error
+    return None
+
+
+def _contains_protected_config(value) -> bool:
+    if isinstance(value, dict):
+        return any(
+            not _is_public_config_key(key) or _contains_protected_config(child)
+            for key, child in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_protected_config(child) for child in value)
+    return False
 
 
 def _is_public_config_key(key: str) -> bool:

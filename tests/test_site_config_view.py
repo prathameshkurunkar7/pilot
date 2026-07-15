@@ -51,7 +51,7 @@ def test_public_site_config_copies_mutable_values() -> None:
     assert config["maintenance_mode"] == {"enabled": True}
 
 
-def test_site_detail_preserves_custom_keys_without_exposing_secrets(tmp_path) -> None:
+def test_site_configuration_preserves_custom_keys_without_exposing_secrets(tmp_path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
     site_dir = bench_root / "sites" / "s.localhost"
@@ -65,11 +65,11 @@ def test_site_detail_preserves_custom_keys_without_exposing_secrets(tmp_path) ->
         "future_provider_api_token": "unknown-secret",
     }))
 
-    response = client.get("/api/v1/sites/s.localhost")
+    response = client.get("/api/v1/sites/s.localhost/configuration")
 
     assert response.status_code == 200
     body = response.get_json()
-    assert body["site_config"] == {
+    assert body == {
         "developer_mode": 1,
         "custom_app_mode": "strict",
     }
@@ -77,8 +77,12 @@ def test_site_detail_preserves_custom_keys_without_exposing_secrets(tmp_path) ->
     assert "db_host" not in body
     assert "db_type" not in body
 
+    detail = client.get("/api/v1/sites/s.localhost").get_json()
+    assert "site_config" not in detail
+    assert detail["framework_branch"] == ""
 
-def test_site_config_update_preserves_hidden_custom_keys(tmp_path) -> None:
+
+def test_site_config_patch_preserves_omitted_and_hidden_custom_keys(tmp_path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
     config_path = bench_root / "sites" / "s.localhost" / "site_config.json"
@@ -102,30 +106,84 @@ def test_site_config_update_preserves_hidden_custom_keys(tmp_path) -> None:
     )
 
     response = client.patch(
-        "/api/v1/sites/s.localhost/config",
+        "/api/v1/sites/s.localhost/configuration",
         json={
             "developer_mode": 1,
             "custom_provider": {
                 "endpoint": "https://new.example",
-                "regions": [{"name": "europe"}],
             },
         },
     )
 
     assert response.status_code == 200
-    assert json.loads(config_path.read_text()) == {
+    assert response.get_json() == {
         "developer_mode": 1,
+        "custom_provider": {
+            "endpoint": "https://new.example",
+            "regions": [{"name": "eu"}],
+        },
+    }
+    assert json.loads(config_path.read_text()) == {
         "installed_apps": [],
+        "developer_mode": 1,
         "future_provider_api_token": "unknown-secret",
         "custom_credential": {"value": "also-hidden"},
         "custom_provider": {
             "endpoint": "https://new.example",
             "accessToken": "nested-secret",
             "regions": [
-                {"name": "europe", "apiKey": "region-secret"},
+                {"name": "eu", "apiKey": "region-secret"},
             ],
         },
     }
+
+
+def test_site_config_patch_deletes_public_key_with_null(tmp_path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    config_path = bench_root / "sites" / "s.localhost" / "site_config.json"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(json.dumps({"custom_mode": "strict", "developer_mode": 1}))
+
+    response = client.patch(
+        "/api/v1/sites/s.localhost/configuration",
+        json={"custom_mode": None},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"developer_mode": 1}
+    assert json.loads(config_path.read_text()) == {"developer_mode": 1}
+
+
+def test_site_config_patch_rejects_protected_keys_and_hidden_container_changes(tmp_path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    client = _client(bench_root)
+    config_path = bench_root / "sites" / "s.localhost" / "site_config.json"
+    config_path.parent.mkdir(parents=True)
+    original = {
+        "custom_provider": {
+            "endpoint": "https://old.example",
+            "apiToken": "hidden",
+        },
+        "regions": [{"name": "eu", "apiKey": "hidden"}],
+    }
+    config_path.write_text(json.dumps(original))
+
+    protected = client.patch(
+        "/api/v1/sites/s.localhost/configuration",
+        json={"db_password": "changed"},
+    )
+    type_change = client.patch(
+        "/api/v1/sites/s.localhost/configuration",
+        json={"custom_provider": "reset"},
+    )
+    list_change = client.patch(
+        "/api/v1/sites/s.localhost/configuration",
+        json={"regions": [{"name": "us"}]},
+    )
+
+    assert [protected.status_code, type_change.status_code, list_change.status_code] == [422, 422, 422]
+    assert json.loads(config_path.read_text()) == original
 
 
 def test_site_detail_rejects_symlinked_site(tmp_path) -> None:

@@ -94,7 +94,7 @@ function isInstalled(site) {
 }
 
 function siteVersion(site) {
-  const match = /^version-(\d+)/.exec(site.site_config?.frappe_branch || '')
+  const match = /^version-(\d+)/.exec(site.framework_branch || '')
   return match ? `Version ${match[1]}` : ''
 }
 

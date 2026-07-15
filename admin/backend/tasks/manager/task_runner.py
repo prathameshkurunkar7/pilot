@@ -270,7 +270,12 @@ class TaskRunner:
         if command == "setup-production":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_production_task", str(self._bench_root)]
         if command == "setup-letsencrypt":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.setup_letsencrypt_task", str(self._bench_root)]
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.setup_letsencrypt_task", str(self._bench_root)]
+            if args.get("site"):
+                argv += ["--site", args["site"]]
+            if args.get("email"):
+                argv += ["--email", args["email"]]
+            return argv
         if command == "wizard-setup":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.wizard_setup_task", str(self._bench_root)]
         if command == "new-site-from-backup":

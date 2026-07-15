@@ -15,10 +15,11 @@ SITE_SCOPED_ENDPOINTS = {
     "sites.domain_dns_records",
     "sites.download_backup",
     "sites.drop_site",
-    "sites.enable_ssl",
+    "sites.enable_tls",
     "sites.force_uninstall_app",
     "sites.get_and_install_app",
     "sites.get_backup_schedule",
+    "sites.get_configuration",
     "sites.install_app",
     "sites.list_backups",
     "sites.list_domains",
@@ -31,7 +32,7 @@ SITE_SCOPED_ENDPOINTS = {
     "sites.set_primary_domain",
     "sites.site_apps",
     "sites.uninstall_app",
-    "sites.update_config",
+    "sites.update_configuration",
 }
 
 
@@ -70,12 +71,12 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 103
+    assert len(routes) == 104
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 103
+    assert len({(method, path) for method, path, _, _ in routes}) == 104
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 9,
-        "GET": 50,
+        "GET": 51,
         "PATCH": 2,
         "POST": 41,
         "PUT": 1,
@@ -83,7 +84,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
     assert Counter(policy for _, _, _, policy in routes) == {
         "authenticated": 57,
         "authenticated+bench-management": 9,
-        "authenticated+site-scope": 25,
+        "authenticated+site-scope": 26,
         "open": 5,
         "setup-conditional": 7,
     }
@@ -103,7 +104,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "settings": 4,
         "setup": 7,
         "site-restores": 1,
-        "sites": 28,
+        "sites": 29,
         "ssh-keys": 3,
         "stats": 1,
         "session": 3,
@@ -131,6 +132,12 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("GET", "/api/v1/sites/<name>"),
         ("DELETE", "/api/v1/sites/<name>"),
         ("POST", "/api/v1/site-restores"),
+        ("POST", "/api/v1/sites/<name>/actions/reinstall"),
+        ("POST", "/api/v1/sites/<name>/actions/clear-cache"),
+        ("POST", "/api/v1/sites/<name>/actions/migrate"),
+        ("POST", "/api/v1/sites/<name>/actions/enable-tls"),
+        ("GET", "/api/v1/sites/<name>/configuration"),
+        ("PATCH", "/api/v1/sites/<name>/configuration"),
     } <= route_keys
     assert {
         ("GET", "/api/v1/tasks"),
@@ -181,5 +188,10 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
             "/api/v1/sites/create-from-upload",
             "/api/v1/sites/<name>/drop",
             "/api/v1/sites/<name>/force-drop",
+            "/api/v1/sites/<name>/reinstall",
+            "/api/v1/sites/<name>/clear-cache",
+            "/api/v1/sites/<name>/migrate",
+            "/api/v1/sites/<name>/enable-ssl",
+            "/api/v1/sites/<name>/config",
         }
     }

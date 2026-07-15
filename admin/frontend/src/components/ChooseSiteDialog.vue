@@ -63,7 +63,7 @@ function rowClass(name) {
 }
 
 function siteVersion(s) {
-  const match = /^version-(\d+)/.exec(s.site_config?.frappe_branch || '')
+  const match = /^version-(\d+)/.exec(s.framework_branch || '')
   return match ? `Version ${match[1]}` : ''
 }
 

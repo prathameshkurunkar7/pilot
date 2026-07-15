@@ -45,6 +45,17 @@ def test_build_argv_clear_cache(tmp_path: Path) -> None:
     assert "mysite.localhost" in argv
 
 
+def test_build_argv_setup_letsencrypt_carries_site_and_email(tmp_path: Path) -> None:
+    runner = TaskRunner(tmp_path)
+    argv = runner._build_argv(
+        "setup-letsencrypt",
+        {"site": "mysite.localhost", "email": "ops@example.com"},
+    )
+
+    assert argv[1:3] == ["-m", "admin.backend.tasks.jobs.setup_letsencrypt_task"]
+    assert argv[-4:] == ["--site", "mysite.localhost", "--email", "ops@example.com"]
+
+
 def test_build_argv_install_app(tmp_path: Path) -> None:
     runner = TaskRunner(tmp_path)
     argv = runner._build_argv("install-app", {"site": "mysite.localhost", "app": "erpnext"})

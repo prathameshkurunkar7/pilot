@@ -67,8 +67,8 @@ async function enableSsl(email) {
   sslEmailError.value = ''
   sslLoading.value = true
   try {
-    const data = await sitesApi.enableSsl(props.siteName, email)
-    if (data.ok) {
+    const data = await sitesApi.enableTls(props.siteName, email)
+    if (data.task_id) {
       showSslEmail.value = false
       openTaskDetailPage(router, data.task_id)
     } else if (data.error?.details?.needs_email) {
@@ -92,7 +92,7 @@ async function clearCache() {
   clearingCache.value = true
   try {
     const data = await sitesApi.clearCache(props.siteName)
-    if (data.ok) openTaskDetailPage(router, data.task_id)
+    if (data.task_id) openTaskDetailPage(router, data.task_id)
     else error.value = apiErrorMessage(data, 'Failed to clear cache.')
   } catch (e) {
     error.value = e.message || 'Failed to clear cache.'

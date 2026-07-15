@@ -99,7 +99,7 @@ async function confirmMigrate() {
   migrateError.value = ''
   try {
     const data = await sitesApi.migrate(props.siteName)
-    if (data.ok) {
+    if (data.task_id) {
       showMigrate.value = false
       openTaskDetailPage(router, data.task_id)
     } else migrateError.value = apiErrorMessage(data, 'Failed to migrate site.')
@@ -143,7 +143,7 @@ async function confirmReset() {
   resetError.value = ''
   try {
     const data = await sitesApi.reinstall(props.siteName)
-    if (data.ok) {
+    if (data.task_id) {
       showReset.value = false
       openTaskDetailPage(router, data.task_id)
     } else resetError.value = apiErrorMessage(data, 'Failed to reset site.')

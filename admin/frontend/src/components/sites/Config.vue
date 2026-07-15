@@ -159,7 +159,7 @@ async function save() {
   saving.value = true
   dialogError.value = ''
   try {
-    await sitesApi.config(props.siteName, { ...site.value.site_config, [key]: parseValue(entryValue.value) })
+    await sitesApi.configuration.update(props.siteName, { [key]: parseValue(entryValue.value) })
     await reload()
     showAddDialog.value = false
     showEditDialog.value = false
@@ -179,9 +179,7 @@ async function confirmDelete() {
   deleting.value = true
   deleteError.value = ''
   try {
-    const next = { ...site.value.site_config }
-    delete next[deleteKey.value]
-    await sitesApi.config(props.siteName, next)
+    await sitesApi.configuration.update(props.siteName, { [deleteKey.value]: null })
     await reload()
     showDelete.value = false
   } catch (e) {

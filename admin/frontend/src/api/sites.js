@@ -6,11 +6,14 @@ export const sitesApi = {
   create: (payload) => request.post('sites', { json: payload }).json(),
   restore: (formData) => request.post('site-restores', { body: formData }).json(),
   login: (name) => request.post(`sites/${encodeURIComponent(name)}/login`).json(),
-  config: (name, config) => request.patch(`sites/${encodeURIComponent(name)}/config`, { json: config }).json(),
-  enableSsl: (name, email) => request.post(`sites/${encodeURIComponent(name)}/enable-ssl`, { json: email ? { email } : {} }).json(),
-  clearCache: (name) => request.post(`sites/${encodeURIComponent(name)}/clear-cache`).json(),
-  migrate: (name) => request.post(`sites/${encodeURIComponent(name)}/migrate`).json(),
-  reinstall: (name) => request.post(`sites/${encodeURIComponent(name)}/reinstall`).json(),
+  configuration: {
+    get: (name) => request.get(`sites/${encodeURIComponent(name)}/configuration`).json(),
+    update: (name, patch) => request.patch(`sites/${encodeURIComponent(name)}/configuration`, { json: patch }).json(),
+  },
+  enableTls: (name, email) => request.post(`sites/${encodeURIComponent(name)}/actions/enable-tls`, { json: email ? { email } : {} }).json(),
+  clearCache: (name) => request.post(`sites/${encodeURIComponent(name)}/actions/clear-cache`).json(),
+  migrate: (name) => request.post(`sites/${encodeURIComponent(name)}/actions/migrate`).json(),
+  reinstall: (name) => request.post(`sites/${encodeURIComponent(name)}/actions/reinstall`).json(),
   drop: (name) => request.delete(`sites/${encodeURIComponent(name)}`).json(),
 
   apps: {

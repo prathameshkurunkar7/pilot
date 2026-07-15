@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from admin.backend.tasks.manager.task_state import TaskStatus
-from pilot.secure_files import write_private_text
+from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.utils import hosts_line_contains
 
 CallbackOperation = Callable[[dict, dict], None]
@@ -87,9 +87,10 @@ def _disable_site_ssl(meta: dict, args: dict) -> None:
     config_path = (
         _safe_site_path(Path(meta["bench_root"]), site_name) / "site_config.json"
     )
-    config = json.loads(config_path.read_text())
-    config["ssl"] = False
-    write_private_text(config_path, json.dumps(config, indent=1))
+    with exclusive_file_lock(config_path):
+        config = json.loads(config_path.read_text())
+        config["ssl"] = False
+        replace_private_text_locked(config_path, json.dumps(config, indent=1))
 
 
 def _cleanup_site_restore(meta: dict, args: dict) -> None:

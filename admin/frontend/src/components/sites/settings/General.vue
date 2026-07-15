@@ -55,8 +55,7 @@ async function toggle(s, value) {
   savingKey.value = s.key
   error.value = ''
   try {
-    const next = { ...site.value.site_config, [s.key]: s.toValue(value) }
-    await sitesApi.config(props.siteName, next)
+    await sitesApi.configuration.update(props.siteName, { [s.key]: s.toValue(value) })
     await reload()
   } catch (e) {
     error.value = e.message || 'Failed to update.'

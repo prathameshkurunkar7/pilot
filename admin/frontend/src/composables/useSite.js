@@ -31,8 +31,11 @@ export function useSite(name) {
     store.loading.value = true
     store.error.value = ''
     try {
-      const data = await sitesApi.detail(name)
-      store.site.value = data
+      const [data, configuration] = await Promise.all([
+        sitesApi.detail(name),
+        sitesApi.configuration.get(name),
+      ])
+      store.site.value = { ...data, site_config: configuration }
       store.installable.value = data.installable_apps || []
       store.nginxEnabled.value = data.nginx_enabled ?? false
       store.adminTls.value = data.admin_tls ?? false
@@ -46,8 +49,11 @@ export function useSite(name) {
 
   async function reload() {
     try {
-      const data = await sitesApi.detail(name)
-      store.site.value = data
+      const [data, configuration] = await Promise.all([
+        sitesApi.detail(name),
+        sitesApi.configuration.get(name),
+      ])
+      store.site.value = { ...data, site_config: configuration }
       store.installable.value = data.installable_apps || []
       store.nginxEnabled.value = data.nginx_enabled ?? false
       store.adminTls.value = data.admin_tls ?? false
@@ -129,7 +135,7 @@ export function useSite(name) {
   }
 
   async function saveConfig(config) {
-    return sitesApi.config(name, config)
+    return sitesApi.configuration.update(name, config)
   }
 
   const installedApps = computed(() => store.site.value?.installed_apps || [])
