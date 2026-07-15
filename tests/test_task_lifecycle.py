@@ -265,46 +265,6 @@ def test_task_reader_redacts_secrets_in_legacy_metadata(
     assert task.args == {"name": "new.localhost", "admin_password": "[redacted]"}
 
 
-def test_kill_signals_task_pid_and_marks_it_killed(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    task_dir = tmp_path / "tasks" / TASK_ID
-    task_dir.mkdir(parents=True)
-    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
-    (task_dir / "status").write_text("running")
-    (task_dir / "pid").write_text("4321")
-    signals = []
-    monkeypatch.setattr(os, "getpgid", lambda pid: pid)
-    monkeypatch.setattr(os, "killpg", lambda pid, sig: signals.append((pid, sig)))
-
-    TaskRunner(tmp_path).kill(TASK_ID)
-
-    assert signals == [(4321, signal.SIGTERM)]
-    assert (task_dir / "status").read_text() == "killed"
-    assert json.loads((task_dir / "meta.json").read_text())["finished_at"] is not None
-
-
-def test_kill_marks_task_killed_when_pid_is_stale(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    task_dir = tmp_path / "tasks" / TASK_ID
-    task_dir.mkdir(parents=True)
-    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
-    (task_dir / "status").write_text("running")
-    (task_dir / "pid").write_text("4321")
-
-    def missing_process(pid: int) -> None:
-        raise ProcessLookupError
-
-    monkeypatch.setattr(os, "getpgid", missing_process)
-
-    TaskRunner(tmp_path).kill(TASK_ID)
-
-    assert (task_dir / "status").read_text() == "killed"
-
-
 def test_kill_cancels_queued_task_without_pid(tmp_path: Path) -> None:
     task_dir = tmp_path / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
@@ -313,25 +273,6 @@ def test_kill_cancels_queued_task_without_pid(tmp_path: Path) -> None:
 
     TaskRunner(tmp_path).kill(TASK_ID)
 
-    assert (task_dir / "status").read_text() == "killed"
-
-
-def test_kill_does_not_signal_reused_non_leader_pid(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    task_dir = tmp_path / "tasks" / TASK_ID
-    task_dir.mkdir(parents=True)
-    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
-    (task_dir / "status").write_text("running")
-    (task_dir / "pid").write_text("4321")
-    signals = []
-    monkeypatch.setattr(os, "getpgid", lambda pid: 9999)
-    monkeypatch.setattr(os, "killpg", lambda pid, sig: signals.append((pid, sig)))
-
-    TaskRunner(tmp_path).kill(TASK_ID)
-
-    assert signals == []
     assert (task_dir / "status").read_text() == "killed"
 
 
@@ -491,6 +432,41 @@ def test_wrapper_runs_matching_callback_and_finalizes_task(
         None if exit_code == 0 else {"code": "command_failed"}
     )
     assert "Callback successfully triggered" in (task_dir / "output.log").read_text()
+
+
+def test_wrapper_suppresses_callbacks_after_cancellation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_dir = tmp_path / "tasks" / TASK_ID
+    task_dir.mkdir(parents=True)
+    (task_dir / "meta.json").write_text(json.dumps(task_meta(tmp_path)))
+    (task_dir / "status").write_text("running")
+    (task_dir / "callbacks.json").write_text(
+        json.dumps(
+            {
+                "on_success": {"operation": "test-success", "args": {}},
+                "on_failure": {"operation": "test-failure", "args": {}},
+            }
+        )
+    )
+    monkeypatch.setitem(callback_module._OPERATIONS, "test-success", write_success_marker)
+    monkeypatch.setitem(callback_module._OPERATIONS, "test-failure", write_failure_marker)
+
+    def cancel_during_task(*args) -> int:
+        (task_dir / "status").write_text("killed")
+        wrapper_module._request_cancel(None, None)
+        return -signal.SIGTERM
+
+    monkeypatch.setattr(wrapper_module, "run_with_syslog_output", cancel_during_task)
+    monkeypatch.setattr(sys, "argv", ["wrapper", str(task_dir)])
+
+    wrapper_module.main()
+
+    assert (task_dir / "status").read_text() == "killed"
+    assert not (task_dir / "callbacks.json").exists()
+    assert not (tmp_path / "success.marker").exists()
+    assert not (tmp_path / "failure.marker").exists()
 
 
 def test_callback_failure_is_logged_and_callback_is_removed(

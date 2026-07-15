@@ -9,6 +9,7 @@ This module uses only the standard library and the fixed callback registry.
 import base64
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -28,6 +29,7 @@ _HOSTNAME = socket.gethostname()
 
 # facility=1 (user-level messages), severity=6 (informational) -> PRI 14.
 _PRI = 14
+_cancel_requested = False
 
 
 def _wait_until_ready() -> bool:
@@ -39,6 +41,11 @@ def _wait_until_ready() -> bool:
         return os.read(descriptor, 1) == b"1"
     finally:
         os.close(descriptor)
+
+
+def _request_cancel(_signum, _frame) -> None:
+    global _cancel_requested
+    _cancel_requested = True
 
 
 def _syslog_prefix_parts(tag: str, pid: int) -> tuple[bytes, bytes]:
@@ -176,6 +183,17 @@ def _load_redactions(task_dir: Path, bench_root: Path) -> list[str]:
 
 
 def main() -> None:
+    global _cancel_requested
+    _cancel_requested = False
+    previous = signal.getsignal(signal.SIGTERM)
+    signal.signal(signal.SIGTERM, _request_cancel)
+    try:
+        _run_task()
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def _run_task() -> None:
     if not _wait_until_ready():
         return
     task_dir = Path(sys.argv[1])
@@ -214,8 +232,9 @@ def main() -> None:
     finally:
         store.remove_private_files(task_id, "secrets.json")
 
+    cancelled = _cancel_requested or store.read_status(task_id) == TaskStatus.KILLED
     selected = callbacks.get("on_success" if exit_code == 0 else "on_failure")
-    if selected:
+    if selected and not cancelled:
         callback_handler(selected, task_dir / "output.log", meta=meta, redactions=redactions)
 
     store.remove_private_files(
@@ -224,6 +243,9 @@ def main() -> None:
         "on_success.bin",
         "on_failure.bin",
     )
+
+    if cancelled:
+        return
 
     status = TaskStatus.SUCCESS if exit_code == 0 else TaskStatus.FAILED
     failure = None

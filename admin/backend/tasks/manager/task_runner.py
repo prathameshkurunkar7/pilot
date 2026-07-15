@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import secrets
-import signal
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +17,7 @@ from admin.backend.tasks.manager.task_args import (
 from admin.backend.tasks.manager.task_state import (
     TaskStatus,
 )
+from admin.backend.tasks.manager.task_process import TaskProcess
 from admin.backend.tasks.manager.task_store import TaskStore
 from admin.backend.tasks.manager.worker_registry import task_workers
 from pilot.exceptions import TaskNotRunningError
@@ -67,6 +66,7 @@ class TaskRunner:
     def __init__(self, bench_root: Path) -> None:
         self._bench_root = bench_root
         self._store = TaskStore(bench_root)
+        self._processes = TaskProcess(bench_root)
 
     def run(
         self,
@@ -127,27 +127,20 @@ class TaskRunner:
                 f"Task is not active: {task_id} (status={status.value})"
             )
 
-        if not self._store.transition(
-            task_id,
-            status,
-            TaskStatus.KILLED,
-            {"finished_at": datetime.now(timezone.utc).isoformat()},
-        ):
-            current = self._store.read_status(task_id)
-            raise TaskNotRunningError(
-                f"Task is not active: {task_id} (status={current.value})"
-            )
         if status == TaskStatus.QUEUED:
+            if not self._store.transition(
+                task_id,
+                TaskStatus.QUEUED,
+                TaskStatus.KILLED,
+                {"finished_at": datetime.now(timezone.utc).isoformat()},
+            ):
+                current = self._store.read_status(task_id)
+                raise TaskNotRunningError(
+                    f"Task is not active: {task_id} (status={current.value})"
+                )
             self._store.remove_private_files(task_id, "secrets.json", "callbacks.json")
-
-        pid = self._store.read_pid(task_id)
-        if pid is None:
             return
-        try:
-            if os.getpgid(pid) == pid:
-                os.killpg(pid, signal.SIGTERM)
-        except OSError:
-            pass
+        self._processes.cancel(task_id)
 
     def _build_argv(self, command: str, args: dict) -> list[str]:
         if command not in _WHITELIST:

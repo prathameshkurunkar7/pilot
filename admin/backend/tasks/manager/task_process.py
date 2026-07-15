@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import signal
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,12 +16,14 @@ from admin.backend.tasks.manager.process_identity import (
     ProcessInspector,
     ProcessOwnership,
 )
-from admin.backend.tasks.manager.task_state import TaskStatus
+from admin.backend.tasks.manager.task_state import TERMINAL_TASK_STATUSES, TaskStatus
 from admin.backend.tasks.manager.task_store import TaskStore
-from pilot.exceptions import TaskNotFoundError
+from pilot.exceptions import TaskNotFoundError, TaskNotRunningError
 
 _READY_FD_ENV = "BENCH_TASK_READY_FD"
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
+_CANCEL_GRACE_SECONDS = 3.0
+_PROCESS_POLL_SECONDS = 0.05
 
 
 class TaskProcessStartError(RuntimeError):
@@ -119,6 +123,45 @@ class TaskProcess:
                 return task_id
         return None
 
+    def cancel(self, task_id: str, grace_seconds: float | None = None) -> None:
+        if self._store.read_status(task_id) != TaskStatus.RUNNING:
+            raise TaskNotRunningError(f"Task is not running: {task_id}")
+        try:
+            record = self.read(task_id)
+        except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
+            record = None
+        if record is None or record.task_id != task_id:
+            raise TaskNotRunningError(f"Task process ownership is unavailable: {task_id}")
+
+        ownership = self._inspector.inspect(record.identity, record.argv)
+        if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
+            self._interrupt(task_id)
+            return
+        if ownership == ProcessOwnership.UNKNOWN:
+            raise TaskNotRunningError(f"Task process ownership is uncertain: {task_id}")
+
+        outcome = self._signal(record, signal.SIGTERM)
+        if outcome in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
+            self._interrupt(task_id)
+            return
+        if outcome == ProcessOwnership.UNKNOWN:
+            raise TaskNotRunningError(f"Task process ownership changed: {task_id}")
+
+        self._store.remove_private_files(task_id, "secrets.json", "callbacks.json")
+        transitioned = self._store.transition(
+            task_id,
+            TaskStatus.RUNNING,
+            TaskStatus.KILLED,
+            {"finished_at": datetime.now(timezone.utc).isoformat()},
+        )
+        if not transitioned:
+            status = self._store.read_status(task_id)
+            if status not in TERMINAL_TASK_STATUSES:
+                raise TaskNotRunningError(f"Task state changed during cancellation: {task_id}")
+
+        grace = _CANCEL_GRACE_SECONDS if grace_seconds is None else grace_seconds
+        self._wait_for_exit(record, grace)
+
     def _environment(self, task_dir: Path, launch_id: str, read_fd: int) -> dict[str, str]:
         environment = {
             **os.environ,
@@ -154,6 +197,75 @@ class TaskProcess:
                 "failure": {"code": "task_interrupted"},
             },
         )
+        self._store.remove_private_files(
+            task_id,
+            "process.json",
+            "secrets.json",
+            "callbacks.json",
+        )
+
+    def _wait_for_exit(self, record: TaskProcessRecord, grace_seconds: float) -> None:
+        deadline = time.monotonic() + max(0, grace_seconds)
+        while time.monotonic() < deadline:
+            ownership = self._inspector.inspect(record.identity, record.argv)
+            if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
+                self._clear_process(record.task_id)
+                return
+            if ownership == ProcessOwnership.UNKNOWN:
+                return
+            time.sleep(_PROCESS_POLL_SECONDS)
+
+        outcome = self._signal(record, signal.SIGKILL)
+        if outcome in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
+            self._clear_process(record.task_id)
+            return
+        if outcome == ProcessOwnership.UNKNOWN:
+            return
+
+        deadline = time.monotonic() + max(1.0, grace_seconds)
+        while time.monotonic() < deadline:
+            ownership = self._inspector.inspect(record.identity, record.argv)
+            if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
+                self._clear_process(record.task_id)
+                return
+            if ownership == ProcessOwnership.UNKNOWN:
+                return
+            time.sleep(_PROCESS_POLL_SECONDS)
+
+    def _signal(
+        self,
+        record: TaskProcessRecord,
+        signum: signal.Signals,
+    ) -> ProcessOwnership:
+        ownership = self._inspector.inspect(record.identity, record.argv)
+        if ownership != ProcessOwnership.OWNED:
+            return ownership
+
+        pid_descriptor = self._open_pid_descriptor(record.identity.pid)
+        try:
+            ownership = self._inspector.inspect(record.identity, record.argv)
+            if ownership != ProcessOwnership.OWNED:
+                return ownership
+            os.killpg(record.identity.pgid, signum)
+            return ProcessOwnership.OWNED
+        except ProcessLookupError:
+            return ProcessOwnership.DEAD
+        except PermissionError:
+            return ProcessOwnership.UNKNOWN
+        finally:
+            if pid_descriptor is not None:
+                os.close(pid_descriptor)
+
+    @staticmethod
+    def _open_pid_descriptor(pid: int) -> int | None:
+        if not hasattr(os, "pidfd_open"):
+            return None
+        try:
+            return os.pidfd_open(pid)
+        except OSError:
+            return None
+
+    def _clear_process(self, task_id: str) -> None:
         self._store.remove_private_files(
             task_id,
             "process.json",
