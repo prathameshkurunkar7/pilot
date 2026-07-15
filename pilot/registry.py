@@ -14,6 +14,7 @@ from pilot.loader import load_bench
 GROUP_HELP = {
     "setup": "Production setup commands.",
     "remove": "Teardown commands.",
+    "tasks": "Admin task worker controls.",
 }
 
 

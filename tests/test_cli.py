@@ -123,8 +123,8 @@ def test_command_discovery_matches_baseline() -> None:
     commands = registry._discover()
     identities = {(command.group, command.name) for command in commands}
 
-    assert len(commands) == 30
-    assert len(identities) == 30
+    assert len(commands) == 33
+    assert len(identities) == 33
     assert registry.command_names() == {
         "build",
         "build-admin",
@@ -149,6 +149,7 @@ def test_command_discovery_matches_baseline() -> None:
         "setup",
         "start",
         "stop",
+        "tasks",
         "uninstall-app",
         "update",
         "upgrade",
@@ -160,6 +161,11 @@ def test_command_discovery_matches_baseline() -> None:
         "nginx",
         "production",
         "requirements",
+    }
+    assert {name for group, name in identities if group == "tasks"} == {
+        "start",
+        "status",
+        "stop",
     }
 
 
