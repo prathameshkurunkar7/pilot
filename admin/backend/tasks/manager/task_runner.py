@@ -207,7 +207,10 @@ class TaskRunner:
         if command == "clear-cache":
             return [sys.executable, "-m", "admin.backend.tasks.jobs.clear_cache_task", str(self._bench_root), args["site"]]
         if command == "uninstall-app":
-            return [sys.executable, "-m", "admin.backend.tasks.jobs.uninstall_app_task", str(self._bench_root), args["site"], args["app"]]
+            argv = [sys.executable, "-m", "admin.backend.tasks.jobs.uninstall_app_task", str(self._bench_root), args["site"], args["app"]]
+            if args.get("force"):
+                argv += ["--force"]
+            return argv
         if command == "backup-site":
             argv = [sys.executable, "-m", "admin.backend.tasks.jobs.backup_site_task", str(self._bench_root), args["site"]]
             if args.get("with_files"):
