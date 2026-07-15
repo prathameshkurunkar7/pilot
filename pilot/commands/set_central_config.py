@@ -44,14 +44,13 @@ class SetCentralConfigCommand(Command):
 
         store = BenchTomlStore.for_bench(self.bench.path)
         try:
-            config = store.read_raw()
+            with store.edit_raw() as config:
+                config.setdefault("central", {})["endpoint"] = self.endpoint
+                config["central"]["auth_token"] = self.token
         except FileNotFoundError as exc:
             raise BenchError(f"{store.path} not found — is this a bench?") from exc
         except ValueError as exc:
             raise BenchError(f"{store.path} contains invalid TOML: {exc}") from exc
-        config.setdefault("central", {})["endpoint"] = self.endpoint
-        config["central"]["auth_token"] = self.token
-        store.write_raw(config)
         self.bench.config.central.endpoint = self.endpoint
         self.bench.config.central.auth_token = self.token
         print("Central config written to bench.toml")

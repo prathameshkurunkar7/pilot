@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pilot.commands.drop_site import DropSiteCommand
 from pilot.config.bench_config import BenchConfig
+from pilot.config.toml_store import BenchTomlStore
 from pilot.core.bench import Bench
 
 _BENCH_DATA: dict = {
@@ -98,7 +99,7 @@ def test_no_op_for_missing_site(tmp_path: Path, monkeypatch) -> None:
 
 
 def _capture_drop_cmd(tmp_path: Path, monkeypatch, bench: Bench) -> dict:
-    (bench.path / "bench.toml").write_text('[bench]\nname = "test-bench"\n')
+    BenchTomlStore.for_bench(bench.path).write(bench.config)
     _write_site(bench, "mysite", {})
     captured: dict = {}
     monkeypatch.setattr("pilot.utils.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))

@@ -40,9 +40,8 @@ class SetAdminPasswordCommand(Command):
             raise BenchError("Password must not be empty.")
 
         store = BenchTomlStore.for_bench(self.bench.path)
-        data = store.read_raw()
-        data.setdefault("admin", {})["password"] = password
-        store.write_raw(data)
+        with store.edit_raw() as data:
+            data.setdefault("admin", {})["password"] = password
         self.bench.config.admin.password = password
         print("Admin password updated.")
 

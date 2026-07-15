@@ -63,10 +63,9 @@ def site_count(bench_dir: Path) -> int:
 def persist_toml(bench_dir: Path, updates: dict) -> None:
     """Merge ``updates`` into a bench's bench.toml in place."""
     store = BenchTomlStore.for_bench(bench_dir)
-    data = store.read_raw()
-    for section, values in updates.items():
-        data.setdefault(section, {}).update(values)
-    store.write_raw(data)
+    with store.edit_raw() as data:
+        for section, values in updates.items():
+            data.setdefault(section, {}).update(values)
 
 
 def nginx_http_port(bench_root: Path) -> int:

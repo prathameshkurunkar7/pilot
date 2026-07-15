@@ -52,9 +52,8 @@ class DropSiteCommand:
         from pilot.config.toml_store import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.bench.path)
-        raw = store.read_raw()
-        raw["sites"] = [s for s in raw.get("sites", []) if s.get("name") != self.name]
-        store.write_raw(raw)
+        with store.edit_raw() as raw:
+            raw["sites"] = [s for s in raw.get("sites", []) if s.get("name") != self.name]
 
     def _reload_nginx(self) -> None:
         if not self.bench.config.production.enabled:

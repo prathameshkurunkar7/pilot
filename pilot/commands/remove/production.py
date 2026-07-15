@@ -51,12 +51,11 @@ class RemoveProductionCommand(Command):
         from pilot.config.toml_store import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.bench.path)
-        data = store.read_raw()
-        production = data.setdefault("production", {})
-        production["enabled"] = False
-        production.pop("process_manager", None)
-        production.pop("nginx", None)
-        store.write_raw(data)
+        with store.edit_raw() as data:
+            production = data.setdefault("production", {})
+            production["enabled"] = False
+            production.pop("process_manager", None)
+            production.pop("nginx", None)
 
     def _print_summary(self) -> None:
         from pilot.admin_url import admin_url

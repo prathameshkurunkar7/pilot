@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import copy
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
+from pilot._internal.atomic_file import (
+    atomic_write_private_text,
+    exclusive_file_lock,
+    replace_private_text_locked,
+)
 from pilot._internal.bench_toml import dumps_config, load_config
-from pilot._internal.toml_codec import dumps_toml, load_toml
+from pilot._internal.toml_codec import dumps_toml, loads_toml, load_toml
 from pilot.config.bench_config import BenchConfig
-from pilot.secure_files import write_private_text
 
 
 class BenchTomlStore:
@@ -43,7 +50,29 @@ class BenchTomlStore:
         return BenchTomlBuilder.read_settings(self.path)
 
     def write(self, config: BenchConfig) -> None:
-        write_private_text(self.path, dumps_config(config))
+        atomic_write_private_text(self.path, self._serialized_config(config))
+
+    @contextmanager
+    def edit(self) -> Iterator[BenchConfig]:
+        """Lock, load, and commit one typed read-modify-write transaction."""
+        with exclusive_file_lock(self.path):
+            config = load_config(self.path)
+            original = copy.deepcopy(config)
+            yield config
+            if config != original:
+                replace_private_text_locked(self.path, self._serialized_config(config))
+
+    @contextmanager
+    def edit_raw(self) -> Iterator[dict]:
+        """Lock, load, and commit one raw read-modify-write transaction."""
+        with exclusive_file_lock(self.path):
+            data = load_toml(self.path)
+            original = copy.deepcopy(data)
+            yield data
+            if data != original:
+                content = dumps_toml(data)
+                self._validate_serialized(content)
+                replace_private_text_locked(self.path, content)
 
     def write_flat(self, name: str, settings: dict, port_offset: int = 0) -> None:
         """Serialise the wizard's flat-key settings dict to bench.toml.
@@ -56,9 +85,26 @@ class BenchTomlStore:
         from pilot.config.bench_toml_builder import BenchTomlBuilder
 
         config = BenchTomlBuilder(name, settings, port_offset=port_offset).build()
-        if self.path.exists():
-            config.production.enabled = self.read_raw().get("production", {}).get("enabled", False)
-        self.write(config)
+        with exclusive_file_lock(self.path):
+            if self.path.exists():
+                config.production.enabled = load_toml(self.path).get("production", {}).get(
+                    "enabled", False
+                )
+            replace_private_text_locked(self.path, self._serialized_config(config))
 
     def write_raw(self, data: dict) -> None:
-        write_private_text(self.path, dumps_toml(data))
+        content = dumps_toml(data)
+        self._validate_serialized(content)
+        atomic_write_private_text(self.path, content)
+
+    @staticmethod
+    def _validate_serialized(content: str) -> None:
+        config = BenchConfig._from_dict(loads_toml(content))
+        config.validate()
+
+    @classmethod
+    def _serialized_config(cls, config: BenchConfig) -> str:
+        config.validate()
+        content = dumps_config(config)
+        cls._validate_serialized(content)
+        return content

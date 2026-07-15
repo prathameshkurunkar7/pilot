@@ -297,12 +297,11 @@ class SetupProductionCommand(Command):
         from pilot.config.toml_store import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.bench.path)
-        data = store.read_raw()
-        for section, values in updates.items():
-            data.setdefault(section, {}).update(values)
-        # Drop the deprecated production.nginx key — nginx is always on in prod.
-        data.get("production", {}).pop("nginx", None)
-        store.write_raw(data)
+        with store.edit_raw() as data:
+            for section, values in updates.items():
+                data.setdefault(section, {}).update(values)
+            # Drop the deprecated production.nginx key — nginx is always on in prod.
+            data.get("production", {}).pop("nginx", None)
 
     def _write_dns_multitenancy(self) -> None:
         common_config_path = self.bench.sites_path / "common_site_config.json"

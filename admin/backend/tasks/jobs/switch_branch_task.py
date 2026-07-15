@@ -52,12 +52,11 @@ class SwitchBranchTask(BaseTask):
         subprocess.run([uv, "pip", "install", "--python", python_bin, "-e", str(app_path)], check=False)
 
         store = BenchTomlStore.for_bench(self.bench_root)
-        raw = store.read_raw()
-        for app_entry in raw.get("apps", []):
-            if app_entry.get("name") == self.name:
-                app_entry["branch"] = self.branch
-                break
-        store.write_raw(raw)
+        with store.edit_raw() as raw:
+            for app_entry in raw.get("apps", []):
+                if app_entry.get("name") == self.name:
+                    app_entry["branch"] = self.branch
+                    break
         print(f"Updated bench.toml: {self.name} -> {self.branch}")
 
         if (app_path / "package.json").exists():

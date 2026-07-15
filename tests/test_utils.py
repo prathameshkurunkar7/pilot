@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.toml_store import BenchTomlStore
+from pilot._internal.toml_codec import dumps_toml
 from pilot.utils import host_owner, normalize_host, run_command
 
 
@@ -112,10 +112,7 @@ def test_normalize_host() -> None:
 
 
 def _roundtrip(tmp_path: Path, data: dict) -> dict:
-    path = tmp_path / "out.toml"
-    BenchTomlStore(path).write_raw(data)
-    with path.open("rb") as fh:
-        return tomllib.load(fh)
+    return tomllib.loads(dumps_toml(data))
 
 
 def test_write_toml_scalars(tmp_path: Path) -> None:
@@ -182,8 +179,5 @@ def test_write_toml_file_is_valid_toml(tmp_path: Path) -> None:
         "mariadb": {"root_password": "r"},
         "redis": {"cache_port": 13000, "queue_port": 11000},
     }
-    path = tmp_path / "bench.toml"
-    BenchTomlStore(path).write_raw(data)
-    # If tomllib.load raises, the file is invalid TOML.
-    with path.open("rb") as fh:
-        tomllib.load(fh)
+    # If tomllib.loads raises, the serialized value is invalid TOML.
+    tomllib.loads(dumps_toml(data))

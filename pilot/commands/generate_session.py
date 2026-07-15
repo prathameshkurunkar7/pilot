@@ -102,14 +102,12 @@ def ensure_jwt_secret(toml_path) -> str:
     from pilot.config.toml_store import BenchTomlStore
 
     store = BenchTomlStore(toml_path)
-    data = store.read_raw()
-    secret = data.get("admin", {}).get("jwt_secret")
-    if secret:
+    with store.edit_raw() as data:
+        secret = data.get("admin", {}).get("jwt_secret")
+        if not secret:
+            secret = secrets.token_urlsafe(32)
+            data.setdefault("admin", {})["jwt_secret"] = secret
         return secret
-    secret = secrets.token_urlsafe(32)
-    data.setdefault("admin", {})["jwt_secret"] = secret
-    store.write_raw(data)
-    return secret
 
 
 class GenerateSessionCommand(Command):

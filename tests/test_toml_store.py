@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import stat
+import threading
 from pathlib import Path
 
 import pytest
@@ -69,14 +71,152 @@ def test_write_round_trips_config(tmp_path: Path) -> None:
     assert store.read().http_port == 8123
 
 
+def test_write_rejects_invalid_config_without_replacing_file(tmp_path: Path) -> None:
+    store = _write_bench(tmp_path, "valid")
+    original = store.path.read_bytes()
+    config = store.read()
+    config.http_port = 0
+
+    with pytest.raises(ConfigError):
+        store.write(config)
+
+    assert store.path.read_bytes() == original
+
+
+def test_write_raw_validates_known_config_without_dropping_custom_keys(tmp_path: Path) -> None:
+    store = _write_bench(tmp_path, "valid")
+    raw = store.read_raw()
+    raw["custom_plugin"] = {"operator_key": "kept"}
+    store.write_raw(raw)
+
+    assert store.read_raw()["custom_plugin"] == {"operator_key": "kept"}
+
+    original = store.path.read_bytes()
+    raw["bench"]["http_port"] = 0
+    with pytest.raises(ConfigError):
+        store.write_raw(raw)
+    assert store.path.read_bytes() == original
+
+
+def test_failed_atomic_replace_keeps_existing_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _write_bench(tmp_path, "stable")
+    original = store.path.read_bytes()
+    config = store.read()
+    config.http_port = 8123
+
+    def fail_replace(source, destination):
+        raise OSError("replace failed")
+
+    monkeypatch.setattr("pilot._internal.atomic_file.os.replace", fail_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        store.write(config)
+
+    assert store.path.read_bytes() == original
+    assert not list(tmp_path.glob(".bench.toml.*.tmp"))
+
+
+def test_write_fsyncs_file_and_parent_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _write_bench(tmp_path, "durable")
+    config = store.read()
+    events = []
+    real_replace = os.replace
+
+    def replace(source, destination):
+        events.append("replace")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(
+        "pilot._internal.atomic_file.os.fsync", lambda descriptor: events.append("fsync")
+    )
+    monkeypatch.setattr("pilot._internal.atomic_file.os.replace", replace)
+
+    store.write(config)
+
+    assert events == ["fsync", "replace", "fsync"]
+
+
+def test_concurrent_raw_edits_preserve_both_updates(tmp_path: Path) -> None:
+    store = _write_bench(tmp_path, "locked")
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    second_entered = threading.Event()
+
+    def first_edit() -> None:
+        with store.edit_raw() as raw:
+            raw.setdefault("custom", {})["first"] = True
+            first_entered.set()
+            assert release_first.wait(timeout=1)
+
+    def second_edit() -> None:
+        assert first_entered.wait(timeout=1)
+        with store.edit_raw() as raw:
+            second_entered.set()
+            raw.setdefault("custom", {})["second"] = True
+
+    first_writer = threading.Thread(target=first_edit)
+    second_writer = threading.Thread(target=second_edit)
+    first_writer.start()
+    second_writer.start()
+    assert first_entered.wait(timeout=1)
+    assert not second_entered.wait(timeout=0.1)
+    release_first.set()
+    first_writer.join(timeout=1)
+    second_writer.join(timeout=1)
+
+    assert store.read_raw()["custom"] == {"first": True, "second": True}
+    lock_metadata = (tmp_path / ".bench.toml.lock").stat()
+    config_metadata = store.path.stat()
+    assert stat.S_IMODE(lock_metadata.st_mode) == 0o600
+    assert lock_metadata.st_uid == config_metadata.st_uid
+
+
+def test_unchanged_transaction_does_not_replace_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _write_bench(tmp_path, "unchanged")
+
+    def fail_replace(source, destination):
+        raise AssertionError("unchanged transaction replaced the file")
+
+    monkeypatch.setattr("pilot._internal.atomic_file.os.replace", fail_replace)
+
+    with store.edit_raw():
+        pass
+
+
+def test_atomic_write_refuses_symbolic_link_destination(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config = _write_bench(config_dir, "safe").read()
+    target = tmp_path / "target.toml"
+    target.write_text("untouched")
+    link = tmp_path / "bench.toml"
+    link.symlink_to(target)
+
+    with pytest.raises(OSError, match="symbolic link"):
+        BenchTomlStore(link).write(config)
+
+    assert link.is_symlink()
+    assert target.read_text() == "untouched"
+
+
 def test_write_keeps_bench_config_private(tmp_path: Path) -> None:
     store = BenchTomlStore.for_bench(tmp_path)
     store.write_flat("private-bench", {"admin_password": "secret"})
     assert stat.S_IMODE(store.path.stat().st_mode) == 0o600
+    original_owner = (store.path.stat().st_uid, store.path.stat().st_gid)
 
     store.path.chmod(0o644)
     store.write_raw(store.read_raw())
     assert stat.S_IMODE(store.path.stat().st_mode) == 0o600
+    assert (store.path.stat().st_uid, store.path.stat().st_gid) == original_owner
 
 
 def test_write_flat_serialises_settings(tmp_path: Path) -> None:

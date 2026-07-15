@@ -496,22 +496,22 @@ def enable_ssl(name: str):
     from ..validators import validate_email
 
     store = BenchTomlStore.for_bench(bench_root)
-    try:
-        config = store.read()
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
     # Let's Encrypt needs an ACME account email; persist one if the UI supplied it.
     data = request.get_json(silent=True) or {}
     email = (data.get("email") or "").strip()
     if email:
         if err := validate_email(email):
             return jsonify({"ok": False, "error": err, "needs_email": True})
-        config.letsencrypt.email = email
         try:
-            store.write(config)
+            with store.edit() as config:
+                config.letsencrypt.email = email
         except Exception as e:
             return jsonify({"ok": False, "error": f"Failed to save email: {e}"}), 500
+    else:
+        try:
+            config = store.read()
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
 
     # No email anywhere — ask the UI to collect one instead of starting a doomed task.
     if not config.letsencrypt.email:

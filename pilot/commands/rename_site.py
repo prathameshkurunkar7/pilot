@@ -93,14 +93,10 @@ class RenameSiteCommand(Command):
         from pilot.config.toml_store import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.bench.path)
-        raw = store.read_raw()
-        renamed = False
-        for site in raw.get("sites", []):
-            if site.get("name") == self.old_name:
-                site["name"] = self.new_name
-                renamed = True
-        if renamed:
-            store.write_raw(raw)
+        with store.edit_raw() as raw:
+            for site in raw.get("sites", []):
+                if site.get("name") == self.old_name:
+                    site["name"] = self.new_name
 
     def _remove_stale_nginx_conf(self) -> None:
         # generate_config writes per-site confs but never prunes; drop the old one.

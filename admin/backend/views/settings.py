@@ -18,6 +18,11 @@ from pilot.platform import is_linux, native_process_manager
 
 settings_bp = Blueprint("settings", __name__)
 
+
+class _SettingsUpdateRejected(Exception):
+    pass
+
+
 _RESTART_KEYS = {
     ("bench", "python"),
     ("bench", "http_port"),
@@ -441,30 +446,25 @@ def update_settings():
     data = request.get_json(silent=True) or {}
     store = BenchTomlStore.for_bench(bench_root)
     try:
-        config = store.read()
-    except Exception as error:
-        return jsonify({"ok": False, "error": str(error)}), 500
+        with store.edit() as config:
+            old_restart = _restart_trigger_values(config)
+            old_firewall = _firewall_payload(config)
+            old_s3_config = _s3_payload(config)
 
-    old_restart = _restart_trigger_values(config)
-    old_firewall = _firewall_payload(config)
-    old_s3_config = _s3_payload(config)
+            if error := ConfigPatcher(config, data).apply():
+                raise _SettingsUpdateRejected(error)
 
-    if error := ConfigPatcher(config, data).apply():
-        return jsonify({"ok": False, "error": error}), 400
+            # Verify the bucket before persisting while the config transaction
+            # is still locked, so the validated value is exactly what commits.
+            if _s3_payload(config) != old_s3_config and config.s3.access_key:
+                from pilot.integrations.s3.base import S3, S3IntegrationError
 
-    # Verify the bucket is reachable before anything is persisted, so a
-    # rejected S3 config leaves the stored config (and synced credentials)
-    # unchanged.
-    if _s3_payload(config) != old_s3_config and config.s3.access_key:
-        from pilot.integrations.s3.base import S3, S3IntegrationError
-
-        try:
-            S3.from_config(config.s3)
-        except S3IntegrationError as error:
-            return jsonify({"ok": False, "error": str(error)}), 400
-
-    try:
-        store.write(config)
+                try:
+                    S3.from_config(config.s3)
+                except S3IntegrationError as error:
+                    raise _SettingsUpdateRejected(str(error)) from error
+    except _SettingsUpdateRejected as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
     except Exception as error:
         return jsonify({"ok": False, "error": f"Failed to write config: {error}"}), 500
 
