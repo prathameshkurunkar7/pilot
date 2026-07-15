@@ -303,6 +303,40 @@ class SlowQuery:
 
 ## Routes
 
+### API conventions
+
+Product routes use a major version prefix such as `/api/v1`. A new major
+version may coexist with the previous version, but services must not branch on
+the requested API version.
+
+- `GET` reads without starting work or refreshing external data.
+- `POST` creates resources or starts explicit actions.
+- `PATCH` changes selected fields; `PUT` replaces a complete resource.
+- `DELETE` identifies the resource in the path and does not require a body.
+- Action routes use an explicit noun under `/actions`, not arbitrary dispatch.
+
+Synchronous creation returns `201` with `Location`; queued work returns `202`
+with the task and `Location`; completed deletion returns `204`. Malformed input
+uses `400`, authentication and authorization use `401` and `403`, missing
+resources use `404`, conflicts use `409`, and invalid fields use `422`.
+
+Errors use one shape:
+
+```json
+{
+  "error": {
+    "code": "stable_code",
+    "message": "Human-readable message",
+    "details": {}
+  }
+}
+```
+
+Growing collections accept a bounded `limit` and an opaque `cursor`, then
+return the resource list with `meta.next_cursor`. Timestamps use UTC ISO 8601.
+Structured streams use `/events`; raw and downloadable data use `/content`.
+Canonical URLs do not end in `/`.
+
 ### `GET /` — Dashboard
 
 Reads `BenchReader.summary()`, `AppReader.read_all()`, `SiteReader.read_all()`, `ProcessReader.read_all()`. Displays a single-page overview:
