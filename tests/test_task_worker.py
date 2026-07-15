@@ -47,7 +47,7 @@ def test_worker_thread_runs_fifo_tasks_one_at_a_time(
             self.task_id = task_id
             self.pid = pid
 
-        def wait(self) -> int:
+        def wait(self, timeout: float | None = None) -> int:
             events.append(("wait", self.task_id))
             store.transition(self.task_id, TaskStatus.RUNNING, TaskStatus.SUCCESS)
             if self.task_id == second:
@@ -101,7 +101,7 @@ def test_worker_passes_private_secrets_to_task_wrapper(
     class Process:
         pid = 4321
 
-        def wait(self) -> int:
+        def wait(self, timeout: float | None = None) -> int:
             store.transition(task_id, TaskStatus.RUNNING, TaskStatus.SUCCESS)
             completed.set()
             return 0
@@ -147,3 +147,64 @@ def test_second_worker_thread_cannot_claim_work(
 
     assert not worker.is_alive()
     assert TaskStore(tmp_path).read_status(task_id) == TaskStatus.QUEUED
+
+
+def test_idle_drain_does_not_claim_new_work(tmp_path: Path) -> None:
+    worker = TaskWorker(tmp_path)
+    state = WorkerStore(tmp_path)
+    worker.start()
+    wait_for_status(state, WorkerStatus.IDLE)
+
+    worker.request_drain()
+    enqueue(TaskStore(tmp_path), "20260715-120000-111111", 1)
+    worker.wake()
+    worker.join(2)
+
+    assert not worker.is_alive()
+    assert TaskStore(tmp_path).read_status("20260715-120000-111111") == TaskStatus.QUEUED
+
+
+def test_running_drain_finishes_current_task_and_leaves_next_queued(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = TaskStore(tmp_path)
+    current = "20260715-120000-111111"
+    queued = "20260715-120000-222222"
+    enqueue(store, current, 1)
+    started = threading.Event()
+    finish = threading.Event()
+
+    class Process:
+        pid = 4321
+
+        def wait(self, timeout: float | None = None) -> int:
+            started.set()
+            if not finish.wait(timeout):
+                raise subprocess.TimeoutExpired("wrapper", timeout)
+            store.transition(current, TaskStatus.RUNNING, TaskStatus.SUCCESS)
+            return 0
+
+    monkeypatch.setattr(worker_module.subprocess, "Popen", lambda *args, **kwargs: Process())
+    worker = TaskWorker(tmp_path)
+    worker.start()
+    assert started.wait(2)
+    enqueue(store, queued, 2)
+
+    worker.request_drain()
+    wait_for_status(WorkerStore(tmp_path), WorkerStatus.DRAINING)
+    finish.set()
+    worker.join(2)
+
+    assert not worker.is_alive()
+    assert store.read_status(current) == TaskStatus.SUCCESS
+    assert store.read_status(queued) == TaskStatus.QUEUED
+
+
+def wait_for_status(store: WorkerStore, expected: WorkerStatus) -> None:
+    for _ in range(100):
+        state = store.read_state()
+        if state is not None and state.status == expected:
+            return
+        threading.Event().wait(0.01)
+    raise AssertionError(f"worker did not reach {expected.value}")

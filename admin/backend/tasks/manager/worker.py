@@ -76,10 +76,26 @@ class TaskWorker:
         self._worker.write_state(WorkerStatus.RUNNING, pid, task_id)
         process = self._start_task(task_id)
         self._tasks.write_pid(task_id, process.pid)
-        process.wait()
+        self._wait_for_task(process, pid, task_id)
         if self._tasks.read_status(task_id) not in TERMINAL_TASK_STATUSES:
             raise RuntimeError(f"Task wrapper exited without finalizing {task_id}")
         return True
+
+    def _wait_for_task(
+        self,
+        process: subprocess.Popen,
+        pid: int,
+        task_id: str,
+    ) -> None:
+        draining = False
+        while True:
+            try:
+                process.wait(timeout=0.1)
+                return
+            except subprocess.TimeoutExpired:
+                if self._drain.is_set() and not draining:
+                    self._worker.write_state(WorkerStatus.DRAINING, pid, task_id)
+                    draining = True
 
     def _claim_next(self) -> str | None:
         with self._claim_lock:
