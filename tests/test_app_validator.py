@@ -41,6 +41,22 @@ def _static_checks() -> list:
     return [RepoStructureCheck(), SyntaxCheck(), DependencyDeclarationsCheck()]
 
 
+_SETUPTOOLS_BUILD = '[build-system]\nrequires = ["setuptools>=61"]\nbuild-backend = "setuptools.build_meta"\n'
+
+
+def _make_fake_frappe(bench_root: Path) -> None:
+    """A minimal, locally-buildable stand-in for the real frappe package,
+    installed into the bench's apps/ dir so TmpEnv.create() has something
+    real to pip install without needing network access to PyPI for frappe."""
+    frappe_path = bench_root / "apps" / "frappe"
+    frappe_path.mkdir(parents=True)
+    (frappe_path / "pyproject.toml").write_text(
+        f'[project]\nname = "frappe"\nversion = "0.0.1"\n\n{_SETUPTOOLS_BUILD}'
+    )
+    (frappe_path / "frappe").mkdir()
+    (frappe_path / "frappe" / "__init__.py").write_text("")
+
+
 def test_validate_passes_for_well_formed_app(tmp_path: Path) -> None:
     app = _make_app(
         tmp_path,
@@ -107,3 +123,142 @@ def test_dependency_declarations_fails_when_required_app_is_missing(tmp_path: Pa
     )
     with pytest.raises(AppValidationError, match="erpnext"):
         Validator(app, checks=_static_checks()).validate()
+
+
+def test_import_check_passes_when_all_imports_resolve(tmp_path: Path) -> None:
+    _make_fake_frappe(tmp_path)
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        f'[project]\nname = "myapp"\nversion = "0.0.1"\ndependencies = ["frappe"]\n\n{_SETUPTOOLS_BUILD}',
+        {
+            "myapp/hooks.py": "app_name = 'myapp'\n",
+            "myapp/utils.py": "import frappe\nfrom myapp.hooks import app_name\n",
+        },
+    )
+    ImportCheck().run(app)
+
+
+def test_import_check_fails_on_genuinely_missing_import(tmp_path: Path) -> None:
+    _make_fake_frappe(tmp_path)
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        f'[project]\nname = "myapp"\nversion = "0.0.1"\ndependencies = ["frappe"]\n\n{_SETUPTOOLS_BUILD}',
+        {
+            "myapp/hooks.py": "app_name = 'myapp'\n",
+            "myapp/utils.py": "import definitely_missing_package_xyz\n",
+        },
+    )
+    with pytest.raises(AppValidationError, match="definitely_missing_package_xyz"):
+        ImportCheck().run(app)
+
+
+def test_import_check_resolves_external_package_published_under_different_dist_name(
+    tmp_path: Path,
+) -> None:
+    """beautifulsoup4 is published on PyPI under that dist name but installs
+    an import-name folder of `bs4` — proves resolution goes off what's
+    actually on disk in site-packages, not the pyproject dependency string."""
+    _make_fake_frappe(tmp_path)
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        (
+            '[project]\nname = "myapp"\nversion = "0.0.1"\n'
+            f'dependencies = ["frappe", "beautifulsoup4"]\n\n{_SETUPTOOLS_BUILD}'
+        ),
+        {
+            "myapp/hooks.py": "app_name = 'myapp'\n",
+            "myapp/utils.py": "import bs4\nfrom bs4 import BeautifulSoup\n",
+        },
+    )
+    ImportCheck().run(app)
+
+
+def _modules_for(app: App, relpath: str, source: str) -> set[str]:
+    full = app.path / relpath
+    full.parent.mkdir(parents=True, exist_ok=True)
+    full.write_text(source)
+    return ImportCheck()._file_imported_modules(app, full)
+
+
+def test_import_check_skips_stdlib_imports(tmp_path: Path) -> None:
+    # Stdlib filtering happens in _imported_modules (across all files), not
+    # per-file — os/sys/json show up in the raw per-file parse either way.
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n',
+        {"myapp/hooks.py": "", "myapp/utils.py": "import os\nimport sys\nimport json\n"},
+    )
+    assert ImportCheck()._imported_modules(app) == []
+
+
+def test_import_check_resolves_bare_relative_import_at_package_root(tmp_path: Path) -> None:
+    app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": ""})
+    modules = _modules_for(app, "myapp/utils.py", "from . import hooks\n")
+    assert modules == {"myapp"}
+
+
+def test_import_check_resolves_relative_import_with_module(tmp_path: Path) -> None:
+    app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": ""})
+    modules = _modules_for(app, "myapp/sub/mod.py", "from .. import other\n")
+    assert modules == {"myapp"}
+    modules = _modules_for(app, "myapp/sub/mod.py", "from ..sibling import thing\n")
+    assert modules == {"myapp.sibling"}
+
+
+def test_import_check_raises_on_relative_import_beyond_top_level_package(tmp_path: Path) -> None:
+    app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": ""})
+    with pytest.raises(AppValidationError, match="invalid relative import"):
+        _modules_for(app, "myapp/hooks.py", "from .. import x\n")
+
+
+def test_import_check_skips_imports_inside_any_try_except(tmp_path: Path) -> None:
+    app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": ""})
+    source = (
+        "try:\n"
+        "    import definitely_missing_a\n"
+        "except ImportError:\n"
+        "    pass\n"
+        "try:\n"
+        "    import definitely_missing_b\n"
+        "except Exception:\n"
+        "    pass\n"
+        "try:\n"
+        "    import definitely_missing_c\n"
+        "except:\n"
+        "    pass\n"
+        "import required_dependency\n"
+    )
+    assert _modules_for(app, "myapp/utils.py", source) == {"required_dependency"}
+
+
+def test_import_check_skips_type_checking_only_imports(tmp_path: Path) -> None:
+    source = (
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        "    import only_needed_for_types\n"
+        "import required_dependency\n"
+    )
+    app = _make_app(
+        tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": "", "myapp/utils.py": source}
+    )
+    # `typing` itself is stdlib, filtered out at the _imported_modules level.
+    assert ImportCheck()._imported_modules(app) == ["required_dependency"]
+
+
+def test_import_check_skips_test_files(tmp_path: Path) -> None:
+    app = _make_app(
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n',
+        {
+            "myapp/hooks.py": "",
+            "myapp/test_utils.py": "import dev_only_dependency\n",
+            "myapp/conftest.py": "import dev_only_dependency\n",
+        },
+    )
+    check = ImportCheck()
+    assert check._imported_modules(app) == []
