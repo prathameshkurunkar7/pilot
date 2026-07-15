@@ -4,6 +4,7 @@ import json
 import shutil
 import tempfile
 import typing
+from collections.abc import Iterable
 from pathlib import Path
 
 from pilot.exceptions import AppValidationError, BenchError, CommandError
@@ -42,9 +43,11 @@ class TmpEnv:
             )
         return self
 
-    def install_app(self, app: "App") -> None:
+    def install_app(self, app: "App", dependency_paths: Iterable[Path] = ()) -> None:
+        # Installed together so imports across the app and its bench-installed
+        # required apps (e.g. erpnext) resolve in one shot.
         try:
-            self._pip_install([app.path])
+            self._pip_install([*dependency_paths, app.path])
         except CommandError as exc:
             raise AppValidationError(f"'{app.config.name}' failed to install:\n{exc.message}")
 

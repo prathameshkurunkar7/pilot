@@ -25,10 +25,30 @@ class ImportCheck:
     def run(self, app: "App") -> None:
         try:
             self.tmp_env.create(app.bench.apps_path / "frappe")
-            self.tmp_env.install_app(app)
+            self.tmp_env.install_app(app, self._dependency_paths(app))
             self._check_imports(app)
         finally:
             self.tmp_env.delete()
+
+    @staticmethod
+    def _dependency_paths(app: "App") -> list[Path]:
+        """Paths of this app's pyproject.toml-declared required apps that are
+        already in the bench, so e.g. india_compliance's `import erpnext...`
+        resolves against the real erpnext instead of failing as unresolved.
+        This also assumes that the app is already installed in the bench by get-app,
+        In case it isn't we will fail anyways saying that the import is unresolved which is true!!
+        """
+        from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
+        from pilot.exceptions import BenchError
+
+        required = DependencyDeclarationsCheck()._get_pyproject_required_apps(app)
+        paths = []
+        for name in required:
+            try:
+                paths.append(app.bench.app(name).path)
+            except BenchError:
+                continue  # not installed — surfaces as an unresolved import instead
+        return paths
 
     def _check_imports(self, app: "App") -> None:
         # Stat-based resolution first (fast, no code runs); anything it can't
@@ -86,9 +106,7 @@ class ImportCheck:
                 modules.append((self._resolve_module(app, path, node), node.lineno))
         return modules
 
-    def _runtime_imports(
-        self, nodes: Iterable[ast.AST]
-    ) -> Iterator[ast.Import | ast.ImportFrom]:
+    def _runtime_imports(self, nodes: Iterable[ast.AST]) -> Iterator[ast.Import | ast.ImportFrom]:
         """Imports that must resolve at runtime — skips imports inside any
         try/except block (apps use these for optional dependencies) and
         `if TYPE_CHECKING:` blocks."""

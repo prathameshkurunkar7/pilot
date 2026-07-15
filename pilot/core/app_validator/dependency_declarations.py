@@ -37,9 +37,10 @@ class DependencyDeclarationsCheck:
                     if isinstance(target, ast.Name) and target.id == "required_apps":
                         if isinstance(node.value, (ast.List, ast.Tuple)):
                             return [
-                                # For declarations like "frappe/erpnext", strip the
-                                # "frappe/" prefix to get the actual app name.
-                                elt.value.removeprefix("frappe/")
+                                # Entries may be "org/app" (any org, not just
+                                # "frappe/") or a bare app name — pyproject.toml
+                                # keys are always just the bare app name.
+                                elt.value.rsplit("/", 1)[-1]
                                 for elt in node.value.elts
                                 if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
                             ]
