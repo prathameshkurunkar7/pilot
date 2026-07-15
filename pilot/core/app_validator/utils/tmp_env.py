@@ -27,7 +27,12 @@ class TmpEnv:
 
     def create(self, frappe_path: Path) -> "TmpEnv":
         self._dir = tempfile.mkdtemp(prefix="pilot-app-validate-")
-        run_command([self._uv(), "venv", str(self.path)], stream_output=True)
+        try:
+            run_command([self._uv(), "venv", str(self.path)], stream_output=True)
+        except CommandError as exc:
+            raise AppValidationError(
+                f"Failed to create temporary environment for validation:\n{exc.message}"
+            )
         try:
             self._pip_install([frappe_path])
         except CommandError as exc:
