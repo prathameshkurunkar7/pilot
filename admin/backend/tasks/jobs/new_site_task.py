@@ -1,6 +1,8 @@
+from pilot.commands.get_app import GetAppCommand
 from pilot.commands.new_site import NewSiteCommand
+from pilot.core.marketplace import Marketplace
+
 from .base_task import BaseTask
-from .marketplace_fetcher import MarketplaceFetcher
 
 
 class NewSiteTask(BaseTask):
@@ -28,13 +30,18 @@ class NewSiteTask(BaseTask):
 
     def _fetch_missing_apps(self) -> None:
         """The new-site wizard offers marketplace apps that may not be cloned onto
-        this bench yet; fetch those before NewSiteCommand validates the app list."""
+        this bench yet; fetch those (and their dependencies) before NewSiteCommand
+        validates the app list."""
         apps_txt = self.bench.sites_path / "apps.txt"
         installed = set(apps_txt.read_text().splitlines()) if apps_txt.exists() else set()
-        fetcher = MarketplaceFetcher(self.bench, self._step)
-        for app_name in self.apps:
-            if app_name not in installed:
-                fetcher.fetch(app_name)
+        missing = [name for name in self.apps if name not in installed]
+        if not missing:
+            return
+        marketplace = Marketplace(self.bench)
+        for app_name in missing:
+            resolver = marketplace.find_app(app_name)
+            self._step("fetch", f"Fetch {app_name}")
+            GetAppCommand(self.bench, resolver.repo, resolver.target, install_dependencies=True).run()
 
 
 if __name__ == "__main__":

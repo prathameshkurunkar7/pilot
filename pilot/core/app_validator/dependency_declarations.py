@@ -19,7 +19,16 @@ class DependencyDeclarationsCheck:
         required_apps_from_hooks = self._get_hooks_required_apps(app)
         declared_required_apps_in_pyproject = self._get_pyproject_required_apps(app)
 
-        missing = set(required_apps_from_hooks) - set(declared_required_apps_in_pyproject)
+        if "frappe" not in declared_required_apps_in_pyproject:
+            raise AppValidationError(
+                f"'{app.config.name}' must declare 'frappe' in pyproject.toml's "
+                "[tool.bench.frappe-dependencies]."
+            )
+
+        # hooks.py's required_apps never lists frappe itself (it's implicit),
+        # while pyproject.toml always does — exclude it before comparing.
+        non_frappe_pyproject_deps = set(declared_required_apps_in_pyproject) - {"frappe"}
+        missing = set(required_apps_from_hooks) - non_frappe_pyproject_deps
         if missing:
             raise AppValidationError(
                 f"'{app.config.name}' requires {sorted(missing)} in hooks.py but they're "
