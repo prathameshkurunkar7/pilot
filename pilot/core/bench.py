@@ -202,7 +202,7 @@ class Bench:
 
     def restart(self):
         """Restart bench in case we are running in production"""
-        from pilot.commands.restart import RestartCommand
+        from pilot.commands.runtime.restart import RestartCommand
 
         RestartCommand(self).run()
 

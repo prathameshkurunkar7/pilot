@@ -64,7 +64,7 @@ def test_check_admin_domain_rejects_sibling_owned(tmp_path: Path) -> None:
 
 
 def test_check_admin_domain_grandfathers_existing_non_matching(tmp_path: Path, monkeypatch) -> None:
-    from pilot.core.domain_controller import DomainRouteProvider
+    from pilot.core.domains import DomainRouteProvider
 
     monkeypatch.setattr(DomainRouteProvider, "wildcard_domains", staticmethod(lambda: ["*.node1.example.com"]))
     bench = _make_bench(tmp_path, admin_domain="node1.example.com")  # apex, can't match wildcard
@@ -166,7 +166,7 @@ def test_require_production_inputs_passes_with_domain_and_email(tmp_path: Path) 
 
 
 def test_resolve_monitor_log_path_default(tmp_path: Path) -> None:
-    from pilot.core.monitor import resolve_monitor_log_path
+    from pilot.core.monitoring import resolve_monitor_log_path
 
     bench = _make_bench(tmp_path)
     result = resolve_monitor_log_path(bench.config)
@@ -175,7 +175,7 @@ def test_resolve_monitor_log_path_default(tmp_path: Path) -> None:
 
 def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch) -> None:
     import tomllib
-    from pilot.core.monitor import ConfigureMonitor
+    from pilot.core.monitoring import ConfigureMonitor
 
     bench = _make_bench(tmp_path, process_manager="systemd")
     bench.config.production.enabled = True
@@ -191,7 +191,7 @@ def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch)
 
 
 def test_setup_monitoring_log_path_is_path_on_config(tmp_path: Path, monkeypatch) -> None:
-    from pilot.core.monitor import ConfigureMonitor
+    from pilot.core.monitoring import ConfigureMonitor
 
     bench = _make_bench(tmp_path, process_manager="systemd")
     bench.config.production.enabled = True

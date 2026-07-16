@@ -15,7 +15,7 @@ from pilot.config.redis_config import RedisConfig
 from pilot.config.toml_store import BenchTomlStore
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
-from pilot.core.central_client import CentralClient, CentralClientError
+from pilot.integrations.central import CentralClient, CentralClientError
 from pilot.exceptions import BenchError
 
 
@@ -128,7 +128,7 @@ def test_heartbeat_sends_x_pilot_token_and_returns_echo(tmp_path: Path) -> None:
         captured["headers"] = dict(request.headers)
         return _FakeResponse({"ok": True, "team": "TEAM-1", "pilot_credential_id": "pcred-x"})
 
-    with patch("pilot.core.central_client.urllib.request.urlopen", side_effect=fake_urlopen):
+    with patch("pilot.integrations.central.urllib.request.urlopen", side_effect=fake_urlopen):
         result = CentralClient(bench).heartbeat()
 
     assert result["team"] == "TEAM-1"
@@ -153,6 +153,6 @@ def test_heartbeat_wraps_non_json_response(tmp_path: Path) -> None:
         def __exit__(self, *exc) -> bool:
             return False
 
-    with patch("pilot.core.central_client.urllib.request.urlopen", return_value=_HtmlResponse()):
+    with patch("pilot.integrations.central.urllib.request.urlopen", return_value=_HtmlResponse()):
         with pytest.raises(CentralClientError):
             CentralClient(bench).heartbeat()

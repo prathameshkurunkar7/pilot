@@ -9,7 +9,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
-from pilot.core.git_providers import GitProviderError, resolve_app_name_from_repo
+from pilot.integrations.git_providers import GitProviderError, resolve_app_name_from_repo
 from pilot.exceptions import (
     BenchError,
     ConfigError,
@@ -183,7 +183,7 @@ def site_apps(name: str):
 @sites_bp.route("/wildcard-domains", methods=["GET"])
 def wildcard_domains():
     """Wildcard domain suffixes (no leading '*') new site names may be built from."""
-    from pilot.core.domain_controller import DomainRouteProvider
+    from pilot.core.domains import DomainRouteProvider
     from pilot.utils import wildcard_suffix
 
     try:
@@ -562,7 +562,7 @@ def enable_tls(name: str):
 def _domain_routes(bench_root: Path):
     from pilot.config.toml_store import BenchTomlStore
     from pilot.core.bench import Bench
-    from pilot.core.domain_controller import DomainRouteProvider
+    from pilot.core.domains import DomainRouteProvider
 
     bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
     return DomainRouteProvider(bench)
@@ -1041,7 +1041,7 @@ def _new_site_name_error(bench_root: Path, name: str) -> str | None:
     if admin_domain and normalize_host(name) == normalize_host(admin_domain):
         return f"Site '{name}' clashes with this bench's admin domain. An admin domain must not match a site domain."
 
-    from pilot.core.domain_controller import DomainRouteProvider
+    from pilot.core.domains import DomainRouteProvider
     from pilot.utils import matches_wildcard
 
     patterns = DomainRouteProvider.wildcard_domains()

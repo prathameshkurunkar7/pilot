@@ -10,7 +10,7 @@ from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
 from pilot.config.worker_config import WorkerConfig
 from pilot.core.bench import Bench
-from pilot.core.monitor import Monitor
+from pilot.core.monitoring import Monitor
 
 
 def _make_bench(path: Path, name: str = "my-bench") -> Bench:
@@ -64,7 +64,7 @@ def test_authority_false_when_sibling_runs_systemd(tmp_path: Path) -> None:
     HostTomlStore(tmp_path).write(HostConfig(monitor_authority="other-bench"))
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
 
-    with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter([_sibling("other-bench", "systemd")])):
+    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("other-bench", "systemd")])):
         assert monitor.is_system_log_authority is False
 
 
@@ -72,7 +72,7 @@ def test_authority_false_when_sibling_runs_supervisor(tmp_path: Path) -> None:
     HostTomlStore(tmp_path).write(HostConfig(monitor_authority="other-bench"))
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
 
-    with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter([_sibling("other-bench", "supervisor")])):
+    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("other-bench", "supervisor")])):
         assert monitor.is_system_log_authority is False
 
 
@@ -80,7 +80,7 @@ def test_authority_stolen_when_recorded_bench_is_in_dev_mode(tmp_path: Path) -> 
     HostTomlStore(tmp_path).write(HostConfig(monitor_authority="other-bench"))
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
 
-    with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter([_sibling("other-bench", "")])):
+    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("other-bench", "")])):
         assert monitor.is_system_log_authority is True
     assert HostTomlStore(tmp_path).read().monitor_authority == "my-bench"
 
@@ -89,7 +89,7 @@ def test_authority_stolen_when_recorded_bench_no_longer_exists(tmp_path: Path) -
     HostTomlStore(tmp_path).write(HostConfig(monitor_authority="dropped-bench"))
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"))
 
-    with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter([])):
+    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([])):
         assert monitor.is_system_log_authority is True
     assert HostTomlStore(tmp_path).read().monitor_authority == "my-bench"
 
@@ -103,7 +103,7 @@ def test_exactly_one_bench_holds_authority(tmp_path: Path) -> None:
     assert monitor_a.is_system_log_authority is True
 
     # bench-b sees bench-a as the running authority
-    with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter([_sibling("bench-a", "systemd")])):
+    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter([_sibling("bench-a", "systemd")])):
         assert monitor_b.is_system_log_authority is False
 
 
@@ -152,7 +152,7 @@ def test_collect_system_metrics_skipped_when_not_authority(tmp_path: Path) -> No
     monitor.bench.config.monitor.system_log_path = system_log_file
 
     siblings = [_sibling("other-bench", "systemd")]
-    with patch("pilot.core.monitor.iter_sibling_benches", return_value=iter(siblings)):
+    with patch("pilot.core.monitoring.iter_sibling_benches", return_value=iter(siblings)):
         monitor.collect_system_metrics()
 
     assert not system_log_file.exists()
@@ -261,7 +261,7 @@ def test_disk_io_fields_ignores_partitions(tmp_path: Path) -> None:
         "   8       1 sda1 40 0 800 0 20 0 400 0 0 0 0\n"
         "  259       0 nvme0n1 10 0 200 0 5 0 100 0 0 0 0\n"
     )
-    with patch("pilot.core.monitor.Path", side_effect=lambda p: diskstats if p == "/proc/diskstats" else Path(p)):
+    with patch("pilot.core.monitoring.Path", side_effect=lambda p: diskstats if p == "/proc/diskstats" else Path(p)):
         result = monitor._disk_io_fields()
 
     assert result == {"read_bytes": (2000 + 200) * 512, "write_bytes": (1000 + 100) * 512}

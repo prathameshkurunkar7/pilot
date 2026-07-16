@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 from pilot.tasks.jobs.fetch_app_updates_task import FetchAppUpdatesTask
 from pilot.core.app import RevisionPin
-from pilot.core.marketplace import Marketplace
+from pilot.integrations.marketplace import Marketplace
 
 
 def app_mock(

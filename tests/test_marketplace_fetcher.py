@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pilot.tasks.jobs.marketplace_fetcher import MarketplaceFetcher
-from pilot.core.marketplace import Marketplace, Resolver
+from pilot.integrations.marketplace import Marketplace, Resolver
 from pilot.exceptions import BenchError
 
 

@@ -856,7 +856,7 @@ def test_update_command_passes_marketplace_pin_to_app_update(tmp_path: Path) -> 
     import subprocess
     from pilot.commands.runtime.update import UpdateCommand
     from pilot.core.app import RevisionPin
-    from pilot.core.marketplace import Marketplace
+    from pilot.integrations.marketplace import Marketplace
 
     bench = make_bench(tmp_path)
     bench.create_directories()

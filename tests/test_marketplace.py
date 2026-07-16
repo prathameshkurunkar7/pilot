@@ -1,10 +1,10 @@
-"""Tests for pilot.core.marketplace — Resolver and Marketplace classes."""
+"""Tests for pilot.integrations.marketplace — Resolver and Marketplace classes."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pilot.core.marketplace import Marketplace, Resolver
+from pilot.integrations.marketplace import Marketplace, Resolver
 from pilot.exceptions import BenchError
 
 
@@ -341,8 +341,8 @@ def make_marketplace(frappe_version: str, registry: list | None = None) -> Marke
     bench.env_path = Path("/fake/env")
 
     with (
-        patch("pilot.core.marketplace.Marketplace.get_current_frappe_version", return_value=frappe_version),
-        patch("pilot.core.marketplace._REGISTRY_V2_PATH") as mock_path,
+        patch("pilot.integrations.marketplace.Marketplace.get_current_frappe_version", return_value=frappe_version),
+        patch("pilot.integrations.marketplace._REGISTRY_V2_PATH") as mock_path,
     ):
         import json
         mock_path.read_text.return_value = json.dumps(registry or SAMPLE_REGISTRY)

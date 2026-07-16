@@ -176,7 +176,7 @@ def test_api_benches_domain_options_returns_suffixes(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
 
     with patch(
-        "pilot.core.domain_controller.DomainRouteProvider.wildcard_domains",
+        "pilot.core.domains.DomainRouteProvider.wildcard_domains",
         return_value=["*.example.com", "*-box.example.net"],
     ):
         resp = client.get("/api/v1/benches/domain-options")
@@ -188,7 +188,7 @@ def test_api_benches_domain_options_reports_provider_failure(tmp_path: Path) -> 
     client = _client(tmp_path / "benches" / "current")
 
     with patch(
-        "pilot.core.domain_controller.DomainRouteProvider.wildcard_domains",
+        "pilot.core.domains.DomainRouteProvider.wildcard_domains",
         side_effect=RuntimeError("provider detail"),
     ):
         resp = client.get("/api/v1/benches/domain-options")
@@ -212,7 +212,7 @@ def test_api_benches_create_creates_bench(tmp_path: Path) -> None:
     client = _client(benches_dir / "current")
 
     with patch("subprocess.Popen") as mock_popen, \
-         patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]):
+         patch("pilot.core.domains.DomainRouteProvider.wildcard_domains", return_value=[]):
         resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
 
     assert resp.status_code == 201
@@ -255,8 +255,8 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
          patch("pilot.managers.nginx_manager.NginxManager.install_config"), \
          patch("pilot.managers.nginx_manager.NginxManager.reload"), \
          patch("pilot.managers.nginx_manager.NginxManager.admin_cert_exists", return_value=False), \
-         patch("pilot.core.domain_controller.DomainRouteProvider.register") as mock_register, \
-         patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]), \
+         patch("pilot.core.domains.DomainRouteProvider.register") as mock_register, \
+         patch("pilot.core.domains.DomainRouteProvider.wildcard_domains", return_value=[]), \
          patch("pilot.platform.has_passwordless_sudo", return_value=True), \
          patch("subprocess.Popen") as mock_popen:
         resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
@@ -299,7 +299,7 @@ def test_api_benches_create_does_not_prompt_for_system_privileges(tmp_path: Path
         patch("pilot.platform.has_passwordless_sudo", return_value=False),
         patch("admin.backend.views.benches.NewCommand.run") as create,
         patch(
-            "pilot.core.domain_controller.DomainRouteProvider.wildcard_domains",
+            "pilot.core.domains.DomainRouteProvider.wildcard_domains",
             return_value=[],
         ),
     ):
@@ -432,7 +432,7 @@ def test_api_benches_create_rejects_duplicate_name(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    with patch("pilot.core.domain_controller.DomainRouteProvider.wildcard_domains", return_value=[]):
+    with patch("pilot.core.domains.DomainRouteProvider.wildcard_domains", return_value=[]):
         resp = client.post("/api/v1/benches", json=_new_payload("current"))
 
     assert resp.status_code == 409

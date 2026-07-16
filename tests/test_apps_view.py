@@ -191,7 +191,7 @@ def test_marketplace_returns_catalog_apps(tmp_path: Path) -> None:
     marketplace = Mock()
     marketplace.read_all_apps.return_value = [Mock(to_dict=lambda: {"app": "suite"})]
 
-    with patch("pilot.core.marketplace.Marketplace", return_value=marketplace):
+    with patch("pilot.integrations.marketplace.Marketplace", return_value=marketplace):
         response = client.get("/api/v1/marketplace/apps")
 
     assert response.status_code == 200

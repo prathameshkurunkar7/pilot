@@ -31,7 +31,7 @@ def marketplace():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         from pilot.core.bench import Bench
-        from pilot.core.marketplace import Marketplace
+        from pilot.integrations.marketplace import Marketplace
         from pilot.config.toml_store import BenchTomlStore
 
         bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
