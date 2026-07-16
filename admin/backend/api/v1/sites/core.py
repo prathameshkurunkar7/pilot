@@ -286,17 +286,17 @@ def create_site_session(bench_root: Path, site: str) -> str | None:
     cli_root = Path(__file__).resolve().parents[4]
     env = os.environ.copy()
     env["PYTHONPATH"] = str(cli_root)
+    program = (
+        "import sys, frappe\n"
+        "frappe.init(site=sys.argv[1], sites_path='.')\n"
+        "frappe.connect()\n"
+        "from pilot.internal.site_session import create_administrator_session\n"
+        "sid = create_administrator_session()\n"
+        "frappe.db.commit()\n"
+        "sys.stdout.write(sid)\n"
+    )
     result = subprocess.run(
-        [
-            str(python),
-            "-m",
-            "frappe.utils.bench_helper",
-            "frappe",
-            "--site",
-            site,
-            "execute",
-            "pilot.internal.site_session.create_administrator_session",
-        ],
+        [str(python), "-c", program, site],
         capture_output=True,
         text=True,
         timeout=30,
