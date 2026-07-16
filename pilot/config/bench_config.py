@@ -17,6 +17,7 @@ from pilot.config.postgres_config import PostgresConfig
 from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
 from pilot.config.s3_config import S3Config
+from pilot.config.waf_config import WAF_MODES, WafConfig, parse_nginx_size
 from pilot.config.worker_config import WorkerConfig, WorkerGroup
 from pilot.exceptions import ConfigError
 
@@ -26,6 +27,10 @@ _VERSION_PATTERN = re.compile(r"^\d+(\.\d+)*$")
 # Lenient hostname: dotted labels of alphanumerics/hyphens. Allows dev names
 # like "admin1.localhost" and real domains like "admin.example.com".
 _HOSTNAME_PATTERN = re.compile(r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
+# A WAF exempt path is interpolated into a ModSecurity SecRule string, so it must
+# be a plain URL path — no quotes, whitespace, backslashes, or control characters
+# that could break out of the rule and inject directives.
+_WAF_EXEMPT_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._~%/-]*$")
 _REDIS_PORT_MIN = 1024
 _REDIS_PORT_MAX = 65535
 _PORT_MIN = 1
@@ -58,6 +63,7 @@ class BenchConfig:
     admin: AdminConfig = field(default_factory=AdminConfig)
     central: CentralConfig = field(default_factory=CentralConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
+    waf: WafConfig = field(default_factory=WafConfig)
     s3: S3Config = field(default_factory=S3Config)
 
     @classmethod
@@ -91,6 +97,7 @@ class BenchConfig:
         admin = cls._parse_admin(data.get("admin", {}))
         central = cls._parse_central(data.get("central", {}))
         firewall = cls._parse_firewall(data.get("firewall"))
+        waf = cls._parse_waf(data.get("waf"))
         s3 = S3Config(**data.get("s3", {}))
         return cls(
             name=bench_data.get("name", ""),
@@ -115,6 +122,7 @@ class BenchConfig:
             admin=admin,
             central=central,
             firewall=firewall,
+            waf=waf,
             s3=s3,
         )
 
@@ -246,6 +254,24 @@ class BenchConfig:
             rules=rules,
         )
 
+    @staticmethod
+    def _parse_waf(data: dict | None) -> WafConfig:
+        if not data:
+            return WafConfig()
+        # paranoia/inbound_threshold pass through unconverted so a hand-edited
+        # non-integer surfaces as a clean ConfigError in _validate_waf rather
+        # than a raw ValueError here.
+        return WafConfig(
+            enabled=bool(data.get("enabled", False)),
+            mode=str(data.get("mode", "DetectionOnly")),
+            paranoia=data.get("paranoia", 1),
+            inbound_threshold=data.get("inbound_threshold", 5),
+            body_limit=str(data.get("body_limit", "50m")),
+            inspect_responses=bool(data.get("inspect_responses", False)),
+            exclusions=[str(line) for line in data.get("exclusions", [])],
+            exempt_paths=[str(path) for path in data.get("exempt_paths", [])],
+        )
+
     def validate(self) -> None:
         self._validate_required_fields()
         self._validate_bench_name()
@@ -261,6 +287,7 @@ class BenchConfig:
         self._validate_production()
         self._validate_admin_domain()
         self._validate_firewall()
+        self._validate_waf()
 
     def _validate_required_fields(self) -> None:
         if not self.name:
@@ -375,6 +402,32 @@ class BenchConfig:
                 ipaddress.ip_network(rule.ip, strict=False)
             except ValueError:
                 raise ConfigError(f"{prefix}.ip '{rule.ip}' is not a valid IPv4/IPv6 address or CIDR range.")
+
+    def _validate_waf(self) -> None:
+        waf = self.waf
+        if waf.mode not in WAF_MODES:
+            raise ConfigError(f"waf.mode '{waf.mode}' is invalid. Must be one of: {', '.join(WAF_MODES)}.")
+        if not isinstance(waf.paranoia, int) or not 1 <= waf.paranoia <= 4:
+            raise ConfigError(f"waf.paranoia '{waf.paranoia}' is invalid. Must be an integer between 1 and 4.")
+        if not isinstance(waf.inbound_threshold, int) or waf.inbound_threshold < 1:
+            raise ConfigError(f"waf.inbound_threshold '{waf.inbound_threshold}' is invalid. Must be a positive integer.")
+        try:
+            body_limit = parse_nginx_size(waf.body_limit)
+        except ValueError:
+            raise ConfigError(f"waf.body_limit '{waf.body_limit}' is not a valid size (e.g. '50m', '13107200').")
+        # Coupling only matters when the WAF is on: a body larger than what
+        # ModSecurity buffers would be proxied to the app uninspected.
+        if waf.enabled and body_limit < parse_nginx_size(self.nginx.client_max_body_size):
+            raise ConfigError(
+                f"waf.body_limit '{waf.body_limit}' must be >= nginx.client_max_body_size "
+                f"'{self.nginx.client_max_body_size}', else large uploads bypass inspection."
+            )
+        for i, path in enumerate(waf.exempt_paths):
+            if len(path) > 255 or not _WAF_EXEMPT_PATH_PATTERN.match(path):
+                raise ConfigError(
+                    f"waf.exempt_paths[{i}] '{path}' is invalid. Must be a URL path starting "
+                    f"with '/' using only letters, digits, and . _ ~ % / - characters."
+                )
 
     def _validate_gunicorn(self) -> None:
         if not isinstance(self.gunicorn.workers, int) or self.gunicorn.workers < 1:

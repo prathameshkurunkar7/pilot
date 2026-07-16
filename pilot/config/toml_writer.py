@@ -1,6 +1,19 @@
 from __future__ import annotations
 
 from pilot.config.bench_config import BenchConfig
+from pilot.config.waf_config import WafConfig
+
+
+def _toml_string(value: str) -> str:
+    """A TOML basic string with backslashes and quotes escaped, so raw SecLang
+    exclusion lines (which contain double quotes) round-trip through tomllib."""
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    escaped = escaped.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    return f'"{escaped}"'
+
+
+def _toml_string_array(values: list[str]) -> str:
+    return "[" + ", ".join(_toml_string(v) for v in values) + "]"
 
 
 def bench_config_to_toml(config: BenchConfig) -> str:
@@ -125,6 +138,22 @@ def bench_config_to_toml(config: BenchConfig) -> str:
             parts.append(f'action = "{rule.action}"')
             parts.append(f'description = "{rule.description}"')
             parts.append("")
+
+    waf = config.waf
+    # Persist whenever anything differs from the defaults — not just when enabled —
+    # so non-default tuning (mode/paranoia/…) set before enabling isn't dropped on
+    # the next load.
+    if waf != WafConfig():
+        parts.append("[waf]")
+        parts.append(f"enabled = {'true' if waf.enabled else 'false'}")
+        parts.append(f'mode = "{waf.mode}"')
+        parts.append(f"paranoia = {waf.paranoia}")
+        parts.append(f"inbound_threshold = {waf.inbound_threshold}")
+        parts.append(f'body_limit = "{waf.body_limit}"')
+        parts.append(f"inspect_responses = {'true' if waf.inspect_responses else 'false'}")
+        parts.append(f"exclusions = {_toml_string_array(waf.exclusions)}")
+        parts.append(f"exempt_paths = {_toml_string_array(waf.exempt_paths)}")
+        parts.append("")
 
     s3 = config.s3
     if s3.access_key or s3.secret_key or s3.bucket or s3.provider or s3.region:

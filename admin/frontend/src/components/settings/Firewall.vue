@@ -3,6 +3,14 @@
     <span class="size-5 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
   </div>
   <div v-else class="space-y-6">
+    <Alert v-if="!production" title="Not enforced yet" theme="yellow" :dismissible="false">
+      <template #description>
+        <span class="text-ink-gray-6 text-p-sm">These rules take effect only in production (they're applied by
+          nginx). This bench isn't deployed, so nothing is enforced until you run
+          <span class="font-mono text-xs">bench setup production</span>.</span>
+      </template>
+    </Alert>
+
     <Switch label="Enable firewall" description="Restrict who can reach Pilot and deployed sites; off means open."
       :model-value="enabled" @update:model-value="(v) => (enabled = v)" />
 
@@ -80,6 +88,7 @@ const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
 const enabled = ref(false)
+const production = ref(true)
 const defaultPolicy = ref('allow')
 const rules = ref([])
 const myIp = ref('')
@@ -139,6 +148,7 @@ async function save() {
 onMounted(async () => {
   try {
     const data = await settingsApi.get()
+    production.value = !!data.production?.enabled
     const fw = data.firewall || {}
     enabled.value = !!fw.enabled
     defaultPolicy.value = fw.default || 'allow'
