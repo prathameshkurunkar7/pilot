@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import shutil
 import tarfile
 import tempfile
@@ -22,8 +23,17 @@ _MODULE_DIRS = ("/usr/lib/nginx/modules", "/usr/lib64/nginx/modules")
 
 # Pinned OWASP CRS (the 4.x LTS line) so every host runs an identical,
 # reproducible rule set regardless of what — or whether — the distro packages it.
+# The immutable release asset (not the auto-generated source archive, whose bytes
+# GitHub does not guarantee stable) is verified against a hardcoded SHA-256 before
+# it is extracted into a privileged system directory. The digest was confirmed
+# against the OWASP CRS PGP signing key (36006F0E0BA167832158821138EEACA1AB8A6E72,
+# security@coreruleset.org) at pin time.
 CRS_VERSION = "4.25.0"
-_CRS_URL = f"https://github.com/coreruleset/coreruleset/archive/refs/tags/v{CRS_VERSION}.tar.gz"
+_CRS_URL = (
+    f"https://github.com/coreruleset/coreruleset/releases/download/"
+    f"v{CRS_VERSION}/coreruleset-{CRS_VERSION}-minimal.tar.gz"
+)
+_CRS_SHA256 = "409a0da1f4daed0719150fcee5173c351e08ffa33b5b2f8936f30968b3ad4ff0"
 
 
 class WafManager:
@@ -79,11 +89,26 @@ class WafManager:
             tmp_path = Path(tmp)
             archive = tmp_path / "crs.tar.gz"
             urllib.request.urlretrieve(_CRS_URL, archive)
+            self._verify_checksum(archive)
             with tarfile.open(archive) as tar:
                 tar.extractall(tmp_path, filter="data")
-            extracted = tmp_path / f"coreruleset-{CRS_VERSION}"
+            # The archive holds a single top-level dir (coreruleset-<version>/);
+            # find it rather than assume the name, in case a future pin differs.
+            extracted = next(entry for entry in tmp_path.iterdir() if entry.is_dir())
             staged_setup = tmp_path / "crs-setup.conf"
             shutil.copy(extracted / "crs-setup.conf.example", staged_setup)
             run_command(_privileged(["mkdir", "-p", str(SHARED_MODSEC_DIR)]))
             run_command(_privileged(["cp", str(staged_setup), str(SHARED_MODSEC_DIR / "crs-setup.conf")]))
             run_command(_privileged(["cp", "-rT", str(extracted / "rules"), str(SHARED_MODSEC_DIR / "rules")]))
+
+    @staticmethod
+    def _verify_checksum(archive: Path) -> None:
+        """Abort before extraction if the download doesn't match the pinned digest,
+        so a compromised release or a redirect can't plant tampered rules under
+        /usr/share."""
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if digest != _CRS_SHA256:
+            raise RuntimeError(
+                f"CRS archive checksum mismatch: expected {_CRS_SHA256}, got {digest}. "
+                f"Refusing to install potentially tampered WAF rules."
+            )
