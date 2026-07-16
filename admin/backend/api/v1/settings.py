@@ -6,7 +6,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
-from admin.backend.client_ip import client_ip
+from admin.backend.middleware import client_ip
 
 from pilot.config.bench_config import BenchConfig
 from pilot.config.firewall_config import FirewallRule

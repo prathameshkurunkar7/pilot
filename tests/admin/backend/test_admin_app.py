@@ -8,7 +8,7 @@ import threading
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 from pilot.config.bench_toml_builder import BenchTomlBuilder
 
@@ -98,7 +98,7 @@ def test_api_benches_includes_production_metadata(tmp_path: Path) -> None:
             f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
         # https only once the cert is in place; pretend it is for this assertion.
-        with patch("admin.backend.api.v1.benches.admin_cert_exists", return_value=True):
+        with patch("admin.backend.providers.bench.BenchProvider.has_admin_cert", new_callable=PropertyMock, return_value=True):
             resp = client.get("/api/v1/benches")
 
     entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
@@ -121,7 +121,7 @@ def test_api_benches_admin_url_is_http_until_cert_exists(tmp_path: Path) -> None
             f'[admin]\nport = {live_port}\ndomain = "admin-prod.example.com"\ntls = true\n\n'
             f'[production]\nenabled = true\nprocess_manager = "systemd"\n'
         )
-        with patch("admin.backend.api.v1.benches.admin_cert_exists", return_value=False):
+        with patch("admin.backend.providers.bench.BenchProvider.has_admin_cert", new_callable=PropertyMock, return_value=False):
             resp = client.get("/api/v1/benches")
 
     entry = next(b for b in resp.get_json() if b["name"] == "prod-bench")
@@ -295,7 +295,7 @@ def test_api_benches_create_does_not_prompt_for_system_privileges(tmp_path: Path
     client = _client(benches_dir / "current")
 
     with (
-        patch("admin.backend.api.v1.benches.current_is_production", return_value=True),
+        patch("admin.backend.providers.bench.BenchProvider.is_production", new_callable=PropertyMock, return_value=True),
         patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
         patch("admin.backend.api.v1.benches.NewCommand.run") as create,
         patch(
@@ -754,7 +754,7 @@ def test_create_site_does_not_carry_db_type(tmp_path: Path) -> None:
     client = _client(bench_root)
 
     with (
-        patch("admin.backend.api.v1.sites._new_site_name_error", return_value=None),
+        patch("admin.backend.api.v1.sites.core.new_site_name_error", return_value=None),
         patch(
             "pilot.tasks.manager.task_runner.task_workers.wake",
             return_value=False,

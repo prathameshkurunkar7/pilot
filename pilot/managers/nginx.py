@@ -342,7 +342,6 @@ class NginxManager:
             + self._render_assets_location()
             + self._render_files_location(site)
             + self._render_socketio_location(socketio_port, site.name)
-            + self._render_site_login_handoff_location()
             + self._render_proxy_location(bench_name, site)
             + "}\n"
         )
@@ -359,7 +358,6 @@ class NginxManager:
             + self._render_proxy_trust()
             + self._render_firewall()
             + self._render_acme_location()
-            + self._render_site_login_handoff_location()
             + "    location / {\n"
             "        return 301 https://$host$request_uri;\n"
             "    }\n"
@@ -405,7 +403,6 @@ class NginxManager:
             + self._render_assets_location()
             + self._render_files_location(site)
             + self._render_socketio_location(socketio_port, site.name)
-            + self._render_site_login_handoff_location()
             + self._render_proxy_location(bench_name, site)
             + "}\n"
         )
@@ -440,20 +437,6 @@ class NginxManager:
             f"        proxy_set_header   X-Frappe-Site-Name {site_name};\n"
             f"        proxy_set_header   Origin $scheme://$http_host;\n"
             f"        proxy_set_header   Host $host;\n"
-            f"    }}\n\n"
-        )
-
-    def _render_site_login_handoff_location(self) -> str:
-        return (
-            f"    location = /api/v1/site-login-handoffs {{\n"
-            f"        client_max_body_size 4k;\n"
-            f"        proxy_pass         http://127.0.0.1:{self._admin_proxy_port()};\n"
-            f"        proxy_read_timeout 30;\n"
-            f"        proxy_redirect     off;\n"
-            f"        proxy_set_header   Host              $host;\n"
-            f"        proxy_set_header   X-Real-IP         $remote_addr;\n"
-            f"        proxy_set_header   X-Forwarded-For   {self._xff_header()};\n"
-            f"        proxy_set_header   X-Forwarded-Proto $scheme;\n"
             f"    }}\n\n"
         )
 

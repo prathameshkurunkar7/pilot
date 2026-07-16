@@ -44,8 +44,6 @@ def test_http_only_site_config(tmp_path: Path) -> None:
     assert "server_name" in config
     assert "listen 80" in config
     assert "ssl_certificate" not in config
-    assert "location = /api/v1/site-login-handoffs" in config
-    assert "proxy_pass         http://127.0.0.1:7000;" in config
 
 
 def test_ssl_site_not_ready_is_http_only(tmp_path: Path) -> None:
@@ -69,7 +67,6 @@ def test_ssl_site_ready_has_https_block(tmp_path: Path) -> None:
     assert "ssl_certificate" in config
     assert "ssl_certificate_key" in config
     assert "return 301 https://$host$request_uri" in config
-    assert config.count("location = /api/v1/site-login-handoffs") == 2
 
 
 def test_include_conf_content(tmp_path: Path) -> None:
@@ -115,12 +112,6 @@ def test_admin_domain_proxy_under_systemd(tmp_path: Path) -> None:
     assert "server_name admin.example.com;" in content
     # Under systemd the admin is socket-activated on the internal port.
     assert f"proxy_pass         http://127.0.0.1:{bench.config.admin.internal_port};" in content
-
-    site_conf = tmp_path / "config" / "nginx" / "sites" / "site1.example.com.conf"
-    assert (
-        f"proxy_pass         http://127.0.0.1:{bench.config.admin.internal_port};"
-        in site_conf.read_text()
-    )
 
 
 def test_localhost_ssl_site_gets_https_when_cert_present(tmp_path: Path) -> None:

@@ -130,7 +130,7 @@ def test_supervisor_program_renders_env_vars(tmp_path: Path) -> None:
 
     pd = ProcessDefinition(
         name="admin",
-        argv=["/env/bin/python", "-m", "admin.backend.server"],
+        argv=["/env/bin/python", "-m", "admin.backend.run_server"],
         log_file=tmp_path / "logs" / "admin.log",
         env={"PYTHONPATH": "/cli", "FOO": "bar"},
     )
@@ -322,7 +322,7 @@ def test_systemd_unit_renders_env_vars(tmp_path: Path) -> None:
 
     pd = ProcessDefinition(
         name="admin",
-        argv=["/env/bin/python", "-m", "admin.backend.server"],
+        argv=["/env/bin/python", "-m", "admin.backend.run_server"],
         log_file=tmp_path / "logs" / "admin.log",
         env={"PYTHONPATH": "/cli", "FOO": "bar"},
     )

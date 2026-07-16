@@ -170,8 +170,8 @@ def test_backup_schedule_put_returns_the_saved_resource(tmp_path: Path) -> None:
     _make_site(bench_root, "site.localhost")
     client = _client(bench_root)
 
-    with patch("admin.backend.cron_manager.CronManager.get_schedule", return_value="0 2 * * *"), \
-         patch("admin.backend.cron_manager.CronManager.set_schedule") as set_schedule:
+    with patch("pilot.managers.cron.CronManager.get_schedule", return_value="0 2 * * *"), \
+         patch("pilot.managers.cron.CronManager.set_schedule") as set_schedule:
         response = client.put(
             "/api/v1/sites/site.localhost/backup-schedule",
             json={"schedule": "0 2 * * *", "retention": {"scheme": "fifo", "keep_last": 5}},
@@ -202,7 +202,7 @@ def test_backup_schedule_delete_returns_no_content(tmp_path: Path) -> None:
     _make_site(bench_root, "site.localhost")
     client = _client(bench_root)
 
-    with patch("admin.backend.cron_manager.CronManager.remove_schedule") as remove_schedule:
+    with patch("pilot.managers.cron.CronManager.remove_schedule") as remove_schedule:
         response = client.delete("/api/v1/sites/site.localhost/backup-schedule")
 
     assert response.status_code == 204

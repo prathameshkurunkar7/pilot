@@ -60,26 +60,9 @@ def validate_cron_expression(expr: str) -> str | None:
     return None
 
 
-def validate_port(port: int, name: str = "Port") -> str | None:
-    if not 1 <= port <= 65535:
-        return f"{name} must be between 1 and 65535."
-    return None
-
-
 def validate_email(email: str) -> str | None:
     if not email:
         return None
     if not _EMAIL_RE.match(email):
         return "Invalid email address."
     return None
-
-
-def validate_worker_count(n: int, name: str = "Worker count") -> str | None:
-    if n < 1:
-        return f"{name} must be at least 1."
-    return None
-
-
-def first_error(*errors: str | None) -> str | None:
-    """Return the first non-None error, or None if all pass."""
-    return next((e for e in errors if e), None)

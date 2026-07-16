@@ -3,7 +3,6 @@ from __future__ import annotations
 from flask import current_app, request
 from werkzeug.exceptions import HTTPException, InternalServerError
 
-from admin.backend.api.responses import error_response
 from pilot.exceptions import (
     ConfigError,
     TaskConflictError,
@@ -11,8 +10,8 @@ from pilot.exceptions import (
     TaskNotRunningError,
 )
 
-API_ROOT_PREFIX = "/api"
-API_V1_PREFIX = f"{API_ROOT_PREFIX}/v1"
+from .responses import error_response
+from .routes import is_api_path
 
 _HTTP_ERROR_CODES = {
     400: "malformed_request",
@@ -40,16 +39,13 @@ class ApiProblem(Exception):
         self.details = details
 
 
-def is_api_path(path: str) -> bool:
-    return path == API_ROOT_PREFIX or path.startswith(f"{API_ROOT_PREFIX}/")
-
-
 def install_api_error_handlers(app) -> None:
     app.register_error_handler(ApiProblem, _handle_api_problem)
     app.register_error_handler(TaskNotFoundError, _handle_task_not_found)
     app.register_error_handler(TaskNotRunningError, _handle_task_not_active)
     app.register_error_handler(TaskConflictError, _handle_task_conflict)
     app.register_error_handler(ConfigError, _handle_config_unavailable)
+    app.register_error_handler(405, _handle_method_not_allowed)
     app.register_error_handler(HTTPException, _handle_http_error)
     app.register_error_handler(Exception, _handle_unexpected_error)
 
@@ -68,6 +64,12 @@ def _handle_task_not_active(error: TaskNotRunningError):
 
 def _handle_task_conflict(error: TaskConflictError):
     return error_response("task_conflict", str(error), 409)
+
+
+def _handle_method_not_allowed(error: HTTPException):
+    if not is_api_path(request.path):
+        return error
+    return error_response("method_not_allowed", "Method not allowed.", 405)
 
 
 def _handle_config_unavailable(_error: ConfigError):

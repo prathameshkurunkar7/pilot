@@ -154,7 +154,7 @@ class RunCommand(Command):
             [
                 str(admin_mgr.python),
                 "-m",
-                "admin.backend.server",
+                "admin.backend.run_server",
                 "--bench-root",
                 str(self.bench.path),
                 "--port",

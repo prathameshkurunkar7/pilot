@@ -9,7 +9,7 @@ bench ships a web-based admin backend built on Flask. It exposes a versioned JSO
 - **Stateless.** The Flask app keeps no request state in memory. Every route reads current state from the filesystem (`bench.toml`, git, `site_config.json`, task directories) or from the database on each request.
 - **Admin-only dependencies.** The `pilot` core CLI has zero dependencies. The Flask backend is installed via the `admin` extra (`pip install .[admin]`): Flask, psutil, PyMySQL, gunicorn, boto3, psycopg2-binary, and `pyjwt[crypto]`. These live only under `admin/backend/` and its own virtualenv (`.admin-venv/`); the CLI itself never imports them.
 - **Compiled single-page frontend.** The UI is a Vite-built SPA under `admin/frontend/`, compiled to `admin/backend/static/dist/`. Flask serves those static assets and falls back to `index.html` for client-side routes; it serves a 503 with a build instruction if `bench build-admin` hasn't produced a build yet. Unknown paths under `/api/` never fall back to the SPA — they return a JSON 404.
-- **Not loopback-restricted by the process itself.** `admin.backend.server` binds a dual-stack socket on all interfaces (`app.run(host="::")`), so restricting access to localhost or a private network is the job of the reverse proxy and the bench's `[firewall]` rules, not a bind-address restriction in the admin process.
+- **Not loopback-restricted by the process itself.** `admin.backend.run_server` binds a dual-stack socket on all interfaces (`app.run(host="::")`), so restricting access to localhost or a private network is the job of the reverse proxy and the bench's `[firewall]` rules, not a bind-address restriction in the admin process.
 - **Password always required.** The admin refuses every `/api/` request with HTTP 503 (`admin_disabled` or `session_unavailable`) if `[admin] enabled` is false or no password is set in `bench.toml`, except for the small set of endpoints marked open (health, bootstrap, session) and setup endpoints while the bench has no `bench.toml` yet.
 
 ---
@@ -27,7 +27,7 @@ admin: <cli_root>/.admin-venv/bin/gunicorn -c <bench>/config/admin-gunicorn.conf
 In dev/watch mode it runs the module directly, with auto-reload:
 
 ```
-admin: PYTHONPATH=<cli_root> <cli_root>/.admin-venv/bin/python -m admin.backend.server --bench-root <bench> --port 8002 --dev
+admin: PYTHONPATH=<cli_root> <cli_root>/.admin-venv/bin/python -m admin.backend.run_server --bench-root <bench> --port 8002 --dev
 ```
 
 The admin UI is always available at `http://localhost:<admin.port>` (default `8002`) while the bench is running. The port and password are configured in `bench.toml`:
@@ -48,35 +48,47 @@ password = "your-password"
 admin/
 ├── frontend/                    # Vite/React SPA source; builds into backend/static/dist
 └── backend/
-    ├── app.py                   # Flask app factory — create_app(bench_root: Path)
-    ├── server.py                # dev/watch entry point (started via `--dev`/`--wizard`)
+    ├── app.py                   # Flask app factory — create_app(bench_root: Path): config +
+    │                               extensions + install_auth_guard() + every
+    │                               app.register_blueprint() call + the built-frontend
+    │                               fallback route + install_api_error_handlers()
+    ├── middleware.py             # AuthPolicy, install_auth_guard() (the before_request
+    │                               guard), session/JWT verification, site-scope checks,
+    │                               client_ip(), rate_limit()
+    ├── run_server.py             # runs the admin with its own Werkzeug server (dev
+    │                               reload, wizard bootstrap) — the runserver equivalent
+    │                               of wsgi.py
     ├── wsgi.py                  # gunicorn entry point used in production
-    ├── task_response.py         # accepted_task_response() — the one Flask-coupled
-    │                               piece of task handling; the engine itself lives in
-    │                               pilot/tasks (see docs/tasks.md)
-    ├── security/
-    │   ├── authentication.py    # AuthPolicy, session/JWT verification, site-scope checks
+    ├── internal/                 # admin-only helpers with no Flask coupling
     │   ├── jwks.py               # remote JWKS verification for external issuers
-    │   ├── rate_limits.py        # in-memory sliding-window rate limiting
-    │   └── validation.py         # request field validators (site/app names, cron, ...)
+    │   └── rate_limiter.py       # SlidingWindow, UsedTokens — in-memory counters
     │
     ├── api/
-    │   ├── errors.py             # ApiProblem, is_api_path, install_api_error_handlers
-    │   ├── responses.py          # response envelope + pagination helpers
+    │   ├── routes.py             # API_ROOT_PREFIX/API_V1_PREFIX, is_api_path() — the
+    │   │                           routing-shape contract everything else builds on
+    │   ├── errors.py             # ApiProblem, install_api_error_handlers
+    │   ├── responses.py          # response envelope, pagination, accepted_task_response()
     │   └── v1/                   # Flask blueprints, one per API area
     │       ├── core.py               # health, bootstrap, session
     │       ├── setup.py               # first-run setup wizard API
     │       ├── apps.py, git.py        # installed apps, marketplace, git connection
     │       ├── benches.py             # multi-bench management
-    │       ├── sites.py, site_login.py # sites, domains, backups, login handoff
+    │       ├── sites/                 # sites_bp, split by sub-resource
+    │       │   ├── shared.py              # site_name(), error helpers shared by every file below
+    │       │   ├── core.py                # list/detail/create/drop + reinstall/clear-cache/migrate,
+    │       │   │                             quick site login (sid-in-URL redirect)
+    │       │   ├── apps.py                # GET/POST/DELETE /<name>/apps...
+    │       │   ├── domains.py             # /<name>/domains..., enable-tls
+    │       │   ├── configuration.py       # /<name>/configuration (public config filtering)
+    │       │   └── backups.py            # /<name>/backups..., /<name>/backup-schedule
     │       ├── processes.py           # runtime/process control
     │       ├── logs.py, databases.py  # log and database inspection
     │       ├── tasks.py                # task queue + task worker control
     │       ├── settings.py             # bench.toml read/patch, audit log, client IP
     │       └── ssh_keys.py, stats.py, updates.py
     │
-    ├── utils.py                 # read_tail_text(), format_duration() — shared helpers
     └── providers/                # Stateless filesystem/DB providers, one per resource
+        ├── bench.py             # BenchProvider — reachability, TLS cert, process status
         ├── apps.py              # AppProvider — cloned apps + git/pip state
         ├── sites.py             # SiteProvider — sites + site_config.json
         ├── processes.py         # ProcessProvider — process status/PID/resource use
@@ -84,6 +96,13 @@ admin/
         ├── backups.py           # BackupProvider — on-disk and offsite backup sets
         ├── monitor.py           # MonitorProvider — monitor log history
         └── os.py                # OSProvider — CLI/frappe/runtime version info, host-level facts
+
+pilot/internal/                  # Zero-dependency helpers shared across the whole CLI
+├── validators.py                # Regex validators (site/app names, cron, branch, email)
+├── site_paths.py                # Symlink-safe resolution of a site's directory
+└── atomic_file.py, git.py, toml.py, site_session.py
+
+pilot/managers/cron.py           # CronManager — one crontab entry per (bench, job_key)
 
 pilot/tasks/                     # The task engine itself (Flask-free) — see docs/tasks.md
 ├── manager/                     # Task infrastructure
@@ -105,7 +124,7 @@ pilot/tasks/                     # The task engine itself (Flask-free) — see d
 - Every product route is registered under one prefix, `API_V1_PREFIX = "/api/v1"`. There is currently no `/api/v2` and no unversioned product route.
 - A future breaking contract change is introduced as `/api/v2` served alongside `/api/v1`, not as a branch inside existing view logic — routes, payloads, errors, pagination, and event shapes are versioned together as one unit, and a new version does not fork request handling on the requested version string.
 - When a route migrates to a new version, the old one is removed in the same change; there is no staged deprecation window with two live copies of a route.
-- Unknown paths under `/api/` return a JSON 404 or 405 (`_method_not_allowed` / the `serve_spa` guard in `app.py`) and never fall through to the single-page app.
+- Unknown paths under `/api/` return a JSON 404 or 405 (`_handle_method_not_allowed` in `api/errors.py` / the `serve_frontend` guard in `app.py`) and never fall through to the single-page app.
 - Whether an endpoint requires authentication is metadata on the view function (`AuthPolicy`), not something inferred from its path.
 
 ### Response envelope
@@ -131,7 +150,7 @@ Status codes and where they're actually used:
 | Status | Meaning | Example |
 |--------|---------|---------|
 | 200 | Read succeeded, or a synchronous write completed | `GET /sites/{name}`, `PATCH /settings` |
-| 201 | A resource was created synchronously, with `Location` | `POST /session` (login), `POST /ssh-keys`, `POST /sites/{name}/login-links` |
+| 201 | A resource was created synchronously, with `Location` | `POST /session` (login), `POST /ssh-keys`, `POST /sites/{name}/login` |
 | 202 | Work was queued as a task; body is the task, `Location` points at it | `POST /sites`, `POST /apps`, `POST /tasks` |
 | 204 | Deletion (or logout) completed; no body | `DELETE /session`, `DELETE /sites/{name}/backup-schedule`, `DELETE /ssh-keys/{fingerprint}` |
 | 400 | Malformed request body (not a JSON object) | any `error_response("malformed_request", ...)` |
@@ -140,27 +159,27 @@ Status codes and where they're actually used:
 | 404 | Resource does not exist | `site_not_found`, `task_not_found`, `domain_not_found` |
 | 409 | Lifecycle conflict or duplicate | `task_conflict`, `bench_busy`, `tls_already_enabled`, `app_already_installed` |
 | 422 | Well-formed request, invalid field values | `invalid_bench_name`, `invalid_schedule`, `missing_app` |
-| 429 | Rate limit exceeded | login, login-link issuance, handoff consumption |
+| 429 | Rate limit exceeded | login, login-link issuance |
 | 500 / 503 | Internal error / dependency unavailable | `settings_unavailable`, `configuration_unavailable` |
 
 Timestamps are UTC ISO 8601. Canonical URLs never end in a trailing slash. Structured event streams live under `/events`; raw/downloadable payloads live under `/content`.
 
 ### Auth model
 
-Every view has an `AuthPolicy`, set by a decorator in `admin/backend/security/authentication.py`:
+Every view has an `AuthPolicy`, set by a decorator in `admin/backend/middleware.py`:
 
 | Policy | Decorator | Meaning |
 |--------|-----------|---------|
 | `AUTHENTICATED` (default) | none — implicit | Requires a valid session cookie or bearer token |
-| `OPEN` | `@allow_unauthenticated` | No auth check at all (health, bootstrap, session endpoints, the login handoff) |
+| `OPEN` | `@allow_unauthenticated` | No auth check at all (health, bootstrap, session endpoints) |
 | `SETUP_CONDITIONAL` | `@allow_during_setup` | Open only while the bench has no admin password yet; once one is set, behaves like `AUTHENTICATED` |
 
-`app.py`'s `before_request` guard runs for every `/api/` path and **fails closed**: any exception loading `bench.toml` returns 503 rather than falling back to open access (the one exception is `SETUP_CONDITIONAL` before `bench.toml` exists at all, which is the wizard's only way to bootstrap). Once authenticated, `authorization_error()` checks the request's JWT claims against the view:
+`middleware.py`'s `install_auth_guard()` registers a `before_request` hook that runs for every `/api/` path and **fails closed**: any exception loading `bench.toml` returns 503 rather than falling back to open access (the one exception is `SETUP_CONDITIONAL` before `bench.toml` exists at all, which is the wizard's only way to bootstrap). Once authenticated, `get_authorization_error()` checks the request's JWT claims against the view:
 
 - Routes registered under `benches_bp` / `bench_readiness_bp` additionally require `admin.allow_bench_management` to be true (`guard_bench_management`, a blueprint-level `before_request`), else every route in that area returns 403.
-- Routes decorated with `@require_scope(...)` (all of `sites_bp`, plus `site-login.create_login_link`) require the caller's JWT to either carry no site restriction (`scope: "bench"`) or match the specific site in the URL (`scope: "site"`, confined by the `site` claim). A JWT confined to one site can never reach another site's routes or any bench-level route.
+- Routes decorated with `@require_scope(...)` (most of `sites_bp`, including `create_login_link`) require the caller's JWT to either carry no site restriction (`scope: "bench"`) or match the specific site in the URL (`scope: "site"`, confined by the `site` claim). A JWT confined to one site can never reach another site's routes or any bench-level route.
 
-Sensitive endpoints add a sliding-window rate limit on top (`@rate_limit`): `POST /session` (5/60s per IP), `POST /sites/{name}/login-links` and `POST /site-login-handoffs` (10/60s per IP).
+Sensitive endpoints add a sliding-window rate limit on top (`@rate_limit`): `POST /session` (5/60s per IP) and `POST /sites/{name}/login` (10/60s per IP).
 
 ### Pagination
 
@@ -195,7 +214,7 @@ A task is the JSON produced by `TaskInfo.as_dict()`:
 - `status` is one of `queued`, `running`, `success`, `failed`, `killed` (`TaskStatus`). Valid transitions: `queued → running | killed`, `running → success | failed | killed`; terminal states don't transition further.
 - `args` is redacted for display: password- and token-like keys are replaced with `"[redacted]"`, and credentials embedded in URLs are stripped, before the task is ever written to disk (`public_task_args`). A few commands (`new-site`, `new-site-from-backup`, `reinstall-site`) additionally keep their password argument out of `meta.json` entirely, in a private `secrets.json` the wrapper reads at exec time.
 - `failure` is populated only when `status == "failed"`, as `{"code": "command_failed" | "task_interrupted", "message": "..."}`.
-- Every mutating action that starts background work (`POST /sites`, `POST /apps`, `POST /sites/{name}/actions/*`, `POST /site-restores`, `POST /setup/actions/start`, ...) returns **202** with the task JSON above and a `Location: /api/v1/tasks/{task_id}` header, built by `accepted_task_response()`.
+- Every mutating action that starts background work (`POST /sites`, `POST /apps`, `POST /sites/{name}/actions/*`, `POST /setup/actions/start`, ...) returns **202** with the task JSON above and a `Location: /api/v1/tasks/{task_id}` header, built by `accepted_task_response()`.
 - **Idempotency:** send `Idempotency-Key: <opaque>` on a task-creating POST to make retried requests safe. The key is hashed and checked against a fingerprint of `{command, args}`; a repeat with the same key and same request body returns the original task instead of creating a new one. `POST /setup/actions/start` requires this header (422 `idempotency_key_required` if missing); it's optional elsewhere.
 - **Conflicts:** site-scoped mutations pass a `resource_key` (`site:{name}`) so only one task can be in flight per site; a second concurrent request gets 409 `task_conflict`.
 - **Retry:** `POST /tasks/{task_id}/actions/retry` resubmits the same `command`/`args` as a new task. It refuses (409 `task_not_finished`) if the task is still active, and refuses (409 `fresh_credentials_required`) for commands whose secret arguments (like a generated admin password) aren't retained — `new-site`, `new-site-from-backup`, `reinstall-site`.
@@ -324,9 +343,7 @@ Bench-lifecycle routes (`create`, `delete`, `actions/*`) take an exclusive file 
 | GET | `/sites/{name}/backup-schedule` | site-scope | `{"schedule": "<cron>"\|null, "retention": {...}\|null}` |
 | PUT | `/sites/{name}/backup-schedule` | site-scope | Body `{"schedule", "retention"?}`; validates the cron expression and retention config, writes both, returns the updated schedule |
 | DELETE | `/sites/{name}/backup-schedule` | site-scope | Removes the cron entry and clears retention; 204 |
-| POST | `/site-restores` | authenticated | Multipart form: `name`, `admin_password`?, `db_file`, `public_files`?, `private_files`?. Uploads are staged to a temp directory, then 202, task `new-site-from-backup` with cleanup callbacks on every outcome |
-| POST | `/sites/{name}/login-links` | site-scope, rate-limited | Issues a single-use handoff token redeemable at the site's own origin; 201 `{"url", "method": "POST", "handoff_token", "expires_at"}` |
-| POST | `/site-login-handoffs` | open, rate-limited | Form field `handoff_token`; redeems it (one-time, host-bound) for a Frappe Administrator session, 303 redirect with the session cookie set |
+| POST | `/sites/{name}/login` | site-scope, rate-limited | Creates a real Frappe Administrator session for the site synchronously and returns it as a redirect URL; 201 `{"url": "<site origin>/desk?sid=<sid>"}`. The site's own application layer is responsible for turning that `sid` into a cookie — the admin backend's job ends at handing back the URL |
 
 `POST /sites`, `DELETE /sites/{name}`, and the `reinstall`/`clear-cache`/`migrate`/`enable-tls` actions all accept `Idempotency-Key` and are serialized per site via a `site:{name}` resource key (409 `task_conflict` on overlap).
 

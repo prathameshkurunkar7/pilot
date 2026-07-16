@@ -12,7 +12,12 @@ from flask import (
     url_for,
 )
 
-from admin.backend.api.responses import accepted_response, error_response, no_content_response
+from admin.backend.api.responses import (
+    accepted_response,
+    accepted_task_response,
+    error_response,
+    no_content_response,
+)
 from pilot.tasks.manager.activity import TaskActivityReader
 from pilot.tasks.manager.events import sse_message
 from pilot.tasks.manager.task_args import task_requires_secrets
@@ -21,7 +26,6 @@ from pilot.tasks.manager.task_runner import TaskRunner
 from pilot.tasks.manager.task_state import ACTIVE_TASK_STATUSES, TaskStatus
 from pilot.tasks.manager.worker_registry import task_workers
 from pilot.tasks.manager.worker_state import WorkerIntent, WorkerStore
-from admin.backend.task_response import accepted_task_response
 from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
 
 tasks_bp = Blueprint("tasks", __name__)

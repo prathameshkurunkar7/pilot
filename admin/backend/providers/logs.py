@@ -8,11 +8,24 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from admin.backend.timing import MAX_STREAM_LINES
-
-from ..utils import read_tail_text
-
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mKJHfABCDGsu]")
+
+_MAX_STREAM_LINES = 5000  # cap on lines a single log tail-stream connection emits
+
+
+def _read_tail_text(path: Path, min_lines: int, block_size: int = 65536) -> str:
+    """Read only as much of the file's end as needed for at least min_lines
+    newlines, doubling the window each attempt so a bounded tail read never
+    touches a large file's full size."""
+    size = path.stat().st_size
+    read_size = min(block_size, size)
+    with path.open("rb") as handle:
+        while True:
+            handle.seek(size - read_size)
+            chunk = handle.read(read_size)
+            if read_size >= size or chunk.count(b"\n") >= min_lines:
+                return chunk.decode(errors="replace")
+            read_size = min(read_size * 2, size)
 
 
 @dataclass
@@ -50,7 +63,7 @@ class LogProvider:
         if not log_path.exists():
             raise FileNotFoundError(f"Log file not found: {filename}")
 
-        tail = read_tail_text(log_path, max(lines, 0)).splitlines()
+        tail = _read_tail_text(log_path, max(lines, 0)).splitlines()
         return [_ANSI_RE.sub("", line) for line in tail[-lines:]] if lines > 0 else []
 
     def get_file_path(self, filename: str) -> Path:
@@ -64,7 +77,7 @@ class LogProvider:
 
         with open(log_path, "r", errors="replace") as file_handle:
             file_handle.seek(0, 2)  # seek to end
-            while yielded < MAX_STREAM_LINES:
+            while yielded < _MAX_STREAM_LINES:
                 line = file_handle.readline()
                 if line:
                     yield _ANSI_RE.sub("", line.rstrip("\n"))

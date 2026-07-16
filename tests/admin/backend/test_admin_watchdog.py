@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from admin.backend.app import _install_idle_watchdog
+from admin.backend.app import configure_idle_watchdog
 from admin.backend.watchdog import AdminIdleWatchdog, AdminProcessOwner
 
 
@@ -37,7 +37,7 @@ def test_watchdog_noop_without_env(monkeypatch) -> None:
     monkeypatch.delenv("BENCH_ADMIN_IDLE_TIMEOUT", raising=False)
     app = _FakeApp()
     with patch("admin.backend.watchdog.threading.Thread") as thread:
-        _install_idle_watchdog(app, Path("/bench"))
+        configure_idle_watchdog(app, Path("/bench"))
     thread.assert_not_called()
     assert app.before_request_funcs == []
 
@@ -46,7 +46,7 @@ def test_watchdog_noop_when_timeout_not_positive(monkeypatch) -> None:
     monkeypatch.setenv("BENCH_ADMIN_IDLE_TIMEOUT", "0")
     app = _FakeApp()
     with patch("admin.backend.watchdog.threading.Thread") as thread:
-        _install_idle_watchdog(app, Path("/bench"))
+        configure_idle_watchdog(app, Path("/bench"))
     thread.assert_not_called()
 
 
@@ -54,7 +54,7 @@ def test_watchdog_registers_request_lifecycle_and_thread(monkeypatch) -> None:
     monkeypatch.setenv("BENCH_ADMIN_IDLE_TIMEOUT", "60")
     app = _FakeApp()
     with patch("admin.backend.watchdog.threading.Thread") as thread:
-        _install_idle_watchdog(app, Path("/bench"))
+        configure_idle_watchdog(app, Path("/bench"))
 
     assert len(app.before_request_funcs) == 1
     assert len(app.teardown_request_funcs) == 1

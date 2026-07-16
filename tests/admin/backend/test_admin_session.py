@@ -282,7 +282,7 @@ def test_setup_session_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path
 
 
 def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> None:
-    from admin.backend.app import _secure_cookie_setting
+    from admin.backend.app import secure_cookie_setting
 
     config = SimpleNamespace(
         production=SimpleNamespace(enabled=True),
@@ -293,19 +293,19 @@ def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> 
     monkeypatch.setattr(
         "pilot.core.domains.DomainRouteProvider.proxy_servers", lambda: []
     )
-    assert _secure_cookie_setting(store) is False
+    assert secure_cookie_setting(store) is False
 
     monkeypatch.setattr(
         "pilot.core.domains.DomainRouteProvider.proxy_servers",
         lambda: ["203.0.113.10"],
     )
-    assert _secure_cookie_setting(store) is True
+    assert secure_cookie_setting(store) is True
 
     config.admin.tls = True
     monkeypatch.setattr(
         "pilot.core.domains.DomainRouteProvider.proxy_servers", lambda: []
     )
-    assert _secure_cookie_setting(store) is True
+    assert secure_cookie_setting(store) is True
 
 
 def test_login_with_invalid_sid_rejected(tmp_path: Path) -> None:
@@ -382,7 +382,7 @@ def test_login_rate_limit_ignores_spoofed_forwarded_ips(tmp_path: Path) -> None:
 
 
 def test_forwarded_headers_are_trusted_only_behind_production_nginx() -> None:
-    from admin.backend.app import _trusted_proxy_peers
+    from admin.backend.app import trusted_proxy_peers
 
     development = SimpleNamespace(
         read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=False))
@@ -391,8 +391,8 @@ def test_forwarded_headers_are_trusted_only_behind_production_nginx() -> None:
         read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=True))
     )
 
-    assert _trusted_proxy_peers(development) == ()
-    assert _trusted_proxy_peers(production) == ("127.0.0.1", "::1", "")
+    assert trusted_proxy_peers(development) == ()
+    assert trusted_proxy_peers(production) == ("127.0.0.1", "::1", "")
 
 
 def test_setup_endpoint_requires_auth_once_password_set(tmp_path: Path) -> None:
@@ -505,7 +505,7 @@ def test_non_bench_token_cannot_access_bench_route(
 def test_require_scope_allows_unscoped_token(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.security.authentication import require_scope
+    from admin.backend.middleware import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -525,7 +525,7 @@ def test_require_scope_allows_unscoped_token(tmp_path: Path) -> None:
 def test_require_scope_allows_matching_scoped_token(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.security.authentication import require_scope
+    from admin.backend.middleware import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -545,7 +545,7 @@ def test_require_scope_allows_matching_scoped_token(tmp_path: Path) -> None:
 def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.security.authentication import require_scope
+    from admin.backend.middleware import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -565,7 +565,7 @@ def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
 def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.security.authentication import current_site_scope, require_scope
+    from admin.backend.middleware import current_site_scope, require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -585,7 +585,7 @@ def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
 def test_current_site_scope_returns_none_for_unscoped(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.security.authentication import current_site_scope
+    from admin.backend.middleware import current_site_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -611,7 +611,7 @@ def test_bearer_token_authenticates(tmp_path: Path) -> None:
 def test_bearer_token_with_site_scope(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.security.authentication import require_scope
+    from admin.backend.middleware import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -632,7 +632,7 @@ def test_bearer_token_with_site_scope(tmp_path: Path) -> None:
 def test_bearer_token_wrong_site_rejected(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.security.authentication import require_scope
+    from admin.backend.middleware import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -653,7 +653,7 @@ def test_bearer_token_wrong_site_rejected(tmp_path: Path) -> None:
 def test_require_scope_with_callable(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.security.authentication import require_scope
+    from admin.backend.middleware import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")

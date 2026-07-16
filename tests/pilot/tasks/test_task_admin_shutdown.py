@@ -94,7 +94,7 @@ def test_systemd_admin_shutdown_signals_only_the_admin_process(tmp_path: Path) -
 def test_supervisor_admin_shutdown_signals_only_the_admin_group(tmp_path: Path) -> None:
     process = ProcessDefinition(
         "admin",
-        "/env/bin/python -m admin.backend.server",
+        "/env/bin/python -m admin.backend.run_server",
         tmp_path / "admin.log",
     )
     renderer = SupervisorRenderer("test-bench", tmp_path)

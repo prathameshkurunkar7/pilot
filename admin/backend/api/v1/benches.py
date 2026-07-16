@@ -8,15 +8,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request, url_for
 
-from admin.backend.bench_helpers import (
-    admin_cert_exists,
-    admin_running,
-    current_is_production,
-    port_open,
-    site_count,
-    wizard_responds,
-    workload_running,
-)
+from admin.backend.providers.bench import BenchProvider
 from pilot.commands.bench.delete import DropBenchCommand
 from pilot.commands.bench.create import NewCommand
 from pilot.config.toml_store import BenchTomlStore
@@ -111,19 +103,20 @@ def _bench_resource(bench_dir: Path) -> dict:
     domain = admin_config.get("domain", "")
     if not isinstance(domain, str):
         domain = ""
+    bench = BenchProvider(bench_dir)
     tls = admin_config.get("tls") is True
-    scheme = "https" if tls and admin_cert_exists(bench_dir, toml_path) else "http"
+    scheme = "https" if tls and bench.has_admin_cert else "http"
     return {
         "name": bench_dir.name,
         "port": port,
         "domain": domain,
         "production": production,
         "process_manager": process_manager or None,
-        "reachable": port_open(port) or port_open(port + 1),
+        "reachable": bench.is_port_open(port) or bench.is_port_open(port + 1),
         "admin_url": f"{scheme}://{domain}" if production and domain else "",
-        "workload_running": workload_running(bench_dir, toml_path) if production else None,
-        "admin_running": admin_running(bench_dir, toml_path) if production else None,
-        "site_count": site_count(bench_dir),
+        "workload_running": bench.is_workload_running if production else None,
+        "admin_running": bench.is_admin_running if production else None,
+        "site_count": bench.site_count,
     }
 
 
@@ -247,7 +240,7 @@ def delete_bench(name: str):
 def _delete_bench_locked(target_dir: Path, toml_path: Path, name: str):
     if not toml_path.exists():
         return error_response("bench_not_found", f"Bench '{name}' not found.", 404)
-    sites = site_count(target_dir)
+    sites = BenchProvider(target_dir).site_count
     if sites:
         return error_response(
             "bench_not_empty",
@@ -419,7 +412,7 @@ def _create_bench_locked(
             422,
         )
 
-    production_parent = current_is_production(bench_root)
+    production_parent = BenchProvider(bench_root).is_production
     if production_parent:
         from pilot.managers.platform import has_passwordless_sudo
 
@@ -506,7 +499,7 @@ def _create_bench_locked(
             [
                 str(root / ".admin-venv" / "bin" / "python"),
                 "-m",
-                "admin.backend.server",
+                "admin.backend.run_server",
                 "--bench-root",
                 str(new_dir),
                 "--port",
@@ -558,7 +551,7 @@ def create_readiness_check():
         scheme = (data.get("scheme") or "http").strip()
         if scheme not in ("http", "https"):
             return error_response("invalid_scheme", "scheme must be 'http' or 'https'.", 422)
-        return jsonify({"ready": wizard_responds(bench_root, domain, scheme)})
+        return jsonify({"ready": BenchProvider(bench_root).is_wizard_ready(domain, scheme)})
     if "scheme" in data:
         return error_response(
             "invalid_readiness_check",

@@ -10,7 +10,8 @@ from pathlib import Path
 from flask import Flask
 
 from pilot.tasks.manager.activity import TaskActivityReader
-from admin.backend.timing import WATCHDOG_MAX_POLL_SECONDS
+
+_WATCHDOG_MAX_POLL_SECONDS = 30.0  # longest single sleep between activity checks
 
 
 @dataclass(frozen=True)
@@ -85,7 +86,7 @@ class AdminIdleWatchdog:
             return self._owner.terminate()
 
     def _watch(self) -> None:
-        poll_seconds = min(self._timeout, WATCHDOG_MAX_POLL_SECONDS)
+        poll_seconds = min(self._timeout, _WATCHDOG_MAX_POLL_SECONDS)
         while True:
             time.sleep(poll_seconds)
             if self.check_once():

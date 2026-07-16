@@ -134,7 +134,7 @@ def test_domain_failures_preserve_their_semantics(
     routes = Mock()
     routes.domains.side_effect = error
 
-    with patch("admin.backend.api.v1.sites._domain_routes", return_value=routes):
+    with patch("admin.backend.api.v1.sites.domains._domain_routes", return_value=routes):
         response = client.get("/api/v1/sites/site.test/domains")
 
     assert response.status_code == status

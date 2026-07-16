@@ -1,9 +1,9 @@
 from collections import Counter
 from pathlib import Path
 
-from admin.backend.api.errors import API_ROOT_PREFIX, API_V1_PREFIX
+from admin.backend.api.routes import API_ROOT_PREFIX, API_V1_PREFIX
 from admin.backend.app import create_app
-from admin.backend.security.authentication import AuthPolicy, endpoint_auth_policy
+from admin.backend.middleware import AuthPolicy, get_auth_policy
 
 
 SITE_SCOPED_ENDPOINTS = {
@@ -32,13 +32,13 @@ SITE_SCOPED_ENDPOINTS = {
     "sites.site_apps",
     "sites.update_configuration",
     "sites.update_domain",
-    "site-login.create_login_link",
+    "sites.create_login_link",
 }
 
 
 def auth_policy(app, endpoint: str) -> str:
     view = app.view_functions[endpoint]
-    policy = endpoint_auth_policy(view)
+    policy = get_auth_policy(view)
     if policy != AuthPolicy.AUTHENTICATED:
         return policy.value
     if endpoint in SITE_SCOPED_ENDPOINTS:
@@ -71,21 +71,21 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 100
+    assert len(routes) == 98
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 100
+    assert len({(method, path) for method, path, _, _ in routes}) == 98
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 10,
         "GET": 49,
         "PATCH": 4,
-        "POST": 34,
+        "POST": 32,
         "PUT": 3,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
-        "authenticated": 53,
+        "authenticated": 52,
         "authenticated+bench-management": 9,
         "authenticated+site-scope": 26,
-        "open": 6,
+        "open": 5,
         "setup-conditional": 6,
     }
     assert Counter(areas) == {
@@ -108,8 +108,6 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "runtime": 4,
         "settings": 2,
         "setup": 6,
-        "site-login-handoffs": 1,
-        "site-restores": 1,
         "sites": 29,
         "ssh-keys": 3,
         "metrics": 1,
@@ -146,7 +144,6 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("POST", "/api/v1/sites"),
         ("GET", "/api/v1/sites/<name>"),
         ("DELETE", "/api/v1/sites/<name>"),
-        ("POST", "/api/v1/site-restores"),
         ("POST", "/api/v1/sites/<name>/actions/reinstall"),
         ("POST", "/api/v1/sites/<name>/actions/clear-cache"),
         ("POST", "/api/v1/sites/<name>/actions/migrate"),

@@ -7,6 +7,7 @@ from pathlib import Path
 from pilot.tasks.manager.task_reader import TaskReader
 from pilot.tasks.manager.task_state import ACTIVE_TASK_STATUSES
 from pilot.commands.sites.list_apps import _query_via_db_cli
+from pilot.internal.site_paths import resolve_site_path
 
 # These write site_config.json well before the DB is queryable, so a failed
 # DB probe during one means "not ready yet", not "broken".
@@ -71,13 +72,8 @@ class SiteProvider:
         return names
 
     def get_site(self, site_name: str, provisioning: set[str]) -> SiteInfo:
-        raw_sites_path = self._bench_root / "sites"
-        if raw_sites_path.is_symlink():
-            raise ValueError("Sites path must stay within the bench.")
-
-        sites_path = raw_sites_path.resolve()
-        site_path = sites_path / site_name
-        if site_path.is_symlink() or site_path.resolve(strict=False).parent != sites_path:
+        site_path = resolve_site_path(self._bench_root, site_name)
+        if site_path is None:
             raise ValueError("Site path must stay within the bench.")
 
         site_config_path = site_path / "site_config.json"

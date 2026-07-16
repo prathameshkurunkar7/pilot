@@ -27,3 +27,8 @@ Guidelines for writing good code for a developer
     extracting a helper, check it's reused or non-trivial enough to
     earn its own name — a single-use one-liner usually reads better
     inlined at its call site.
+16. Name boolean-returning properties/methods with an is_/has_ prefix
+    (e.g. is_workload_running, has_passwordless_sudo), never a bare
+    verb or adjective (e.g. not workload_running). This applies even
+    when the value can be None for "unknown" — the name still describes
+    the yes/no question being answered.

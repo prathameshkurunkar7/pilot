@@ -8,7 +8,10 @@ from pathlib import Path
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="bench admin server daemon")
+    parser = argparse.ArgumentParser(
+        description="Run the admin app with its own Werkzeug server (dev reload or wizard "
+        "bootstrap) instead of behind gunicorn."
+    )
     parser.add_argument("--bench-root", required=True)
     parser.add_argument("--port", type=int, default=8002)
     parser.add_argument("--timeout", type=int, default=900, help="Inactivity timeout in seconds")

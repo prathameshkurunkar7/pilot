@@ -7,11 +7,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..utils import format_duration
-
 if TYPE_CHECKING:
     from pilot.managers.processes.supervisor import SupervisorProcessManager
     from pilot.managers.processes.systemd import SystemdProcessManager
+
+
+def _format_duration(seconds: float) -> str:
+    s = int(seconds)
+    d, s = divmod(s, 86400)
+    h, s = divmod(s, 3600)
+    m, s = divmod(s, 60)
+    if d:
+        return f"{d}d {h}h"
+    if h:
+        return f"{h}h {m}m"
+    if m:
+        return f"{m}m {s}s"
+    return f"{s}s"
 
 
 @dataclass
@@ -222,6 +234,6 @@ class ProcessProvider:
             # ')' start at field 3, so it's index 19 in the post-comm split.
             starttime_ticks = int(data[data.rindex(")") + 2:].split()[19])
             elapsed = system_uptime - starttime_ticks / os.sysconf("SC_CLK_TCK")
-            return format_duration(elapsed) if elapsed >= 0 else None
+            return _format_duration(elapsed) if elapsed >= 0 else None
         except (OSError, ValueError, IndexError):
             return None
