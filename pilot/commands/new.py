@@ -59,6 +59,7 @@ class NewCommand(Command):
 
     def run(self) -> None:
         from pilot.config.bench_toml_builder import default_ports
+        from pilot.config.host_toml_store import HostTomlStore
         from pilot.config.toml_store import BenchTomlStore
 
         bench_toml = self.target_directory / "bench.toml"
@@ -75,38 +76,42 @@ class NewCommand(Command):
 
         offset = self._pick_port_offset(self.target_directory)
         print("Writing bench.toml")
-        admin_tls = self.admin_tls if self.admin_tls is not None else self._sibling_admin_tls()
-        # admin.domain is left empty unless given: development serves the admin on
-        # localhost, and 'bench setup production' requires a real domain (via its
-        # --admin-domain flag or here), erroring rather than deploying a placeholder.
-        settings = {
-            "admin_enabled": True,
-            "admin_domain": self.admin_domain,
-            "admin_tls": admin_tls,
-            "db_type": self.db_type,
-        }
-        if self.db_type == "mariadb":
-            settings["mariadb_port"] = self._sibling_mariadb_port() or self._pick_mariadb_port()
-            settings["mariadb_password"] = self._sibling_mariadb_password() or secrets.token_hex(
-                nbytes=8
-            )
-        if self.db_type == "postgres":
-            settings["postgres_port"] = self._sibling_postgres_port() or self._pick_postgres_port()
-            settings["postgres_password"] = self._sibling_postgres_password() or secrets.token_hex(
-                nbytes=8
-            )
-        if self.process_manager:
-            settings["production_process_manager"] = self.process_manager
 
-        sibling_email = self._sibling_letsencrypt_email()
-        if sibling_email:
-            settings["letsencrypt_email"] = sibling_email
+        with HostTomlStore.for_bench(self.target_directory).edit() as host:
+            self._backfill_host_config(host)
 
-        sibling_admin = self._sibling_jwks_admin()
-        if sibling_admin:
-            settings["admin_jwks_url"] = sibling_admin.jwks_url
-            if sibling_admin.jwks_audience:
-                settings["admin_jwks_audience"] = sibling_admin.jwks_audience
+            admin_tls = self.admin_tls if self.admin_tls is not None else host.admin_tls
+            host.admin_tls = admin_tls
+            # admin.domain is left empty unless given: development serves the admin on
+            # localhost, and 'bench setup production' requires a real domain (via its
+            # --admin-domain flag or here), erroring rather than deploying a placeholder.
+            settings = {
+                "admin_enabled": True,
+                "admin_domain": self.admin_domain,
+                "admin_tls": admin_tls,
+                "db_type": self.db_type,
+            }
+            if self.db_type == "mariadb":
+                host.mariadb_port = host.mariadb_port or self._pick_mariadb_port()
+                host.mariadb_root_password = host.mariadb_root_password or secrets.token_hex(nbytes=8)
+                settings["mariadb_port"] = host.mariadb_port
+                settings["mariadb_password"] = host.mariadb_root_password
+            if self.db_type == "postgres":
+                host.postgres_port = host.postgres_port or self._pick_postgres_port()
+                host.postgres_root_password = host.postgres_root_password or secrets.token_hex(nbytes=8)
+                settings["postgres_port"] = host.postgres_port
+                settings["postgres_password"] = host.postgres_root_password
+            if self.process_manager:
+                settings["production_process_manager"] = self.process_manager
+
+            if host.letsencrypt_email:
+                settings["letsencrypt_email"] = host.letsencrypt_email
+
+            if host.admin_jwks_url:
+                settings["admin_jwks_url"] = host.admin_jwks_url
+                if host.admin_jwks_audience:
+                    settings["admin_jwks_audience"] = host.admin_jwks_audience
+
         BenchTomlStore(bench_toml).write_flat(self.name, settings, port_offset=offset)
 
         admin_port = default_ports()["admin.port"] + offset
@@ -114,6 +119,24 @@ class NewCommand(Command):
         print("\nNext step:")
         print("  bench start")
         print(f"  Then open http://localhost:{admin_port} — the setup wizard takes it from there.")
+
+    def _backfill_host_config(self, host) -> None:
+        """One-time bootstrap for a host upgrading from before host.toml existed:
+        fill any still-empty field from whatever a sibling bench.toml already
+        established, so the shared MariaDB/Postgres server, ACME account, and
+        admin JWKS trust survive unchanged. Once populated, later bench creations
+        read straight from host.toml and never scan siblings for this."""
+        host.mariadb_port = host.mariadb_port or self._sibling_mariadb_port()
+        host.mariadb_root_password = host.mariadb_root_password or self._sibling_mariadb_password()
+        host.postgres_port = host.postgres_port or self._sibling_postgres_port()
+        host.postgres_root_password = host.postgres_root_password or self._sibling_postgres_password()
+        host.letsencrypt_email = host.letsencrypt_email or self._sibling_letsencrypt_email()
+        if not host.admin_jwks_url:
+            sibling_admin = self._sibling_jwks_admin()
+            if sibling_admin:
+                host.admin_jwks_url = sibling_admin.jwks_url
+                host.admin_jwks_audience = sibling_admin.jwks_audience or ""
+        host.admin_tls = host.admin_tls or self._sibling_admin_tls()
 
     def _sibling_letsencrypt_email(self) -> str:
         """The Let's Encrypt email from any sibling bench that has one, so a new
