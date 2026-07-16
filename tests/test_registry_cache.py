@@ -97,6 +97,30 @@ def test_ensure_fresh_falls_back_to_local_clone_when_offline(tmp_path: Path) -> 
     assert cache.apps_json_path.read_text() == '{"apps": []}'
 
 
+def test_ensure_fresh_falls_back_when_fetch_fails_mid_refresh(tmp_path: Path, _point_at_local_remote) -> None:
+    """ls-remote can succeed (remote reachable) while the subsequent fetch
+    still fails (connection dropped mid-transfer) — that must fall back too,
+    not propagate and take down every marketplace/get-app call."""
+    from pilot.exceptions import CommandError
+    from pilot.utils import run_command as real_run_command
+
+    cache = make_cache(tmp_path)
+    cache.ensure_fresh()
+    commit_new_content(_point_at_local_remote, '{"apps": ["new"]}')
+    _age_last_checked(cache)
+
+    def flaky_run_command(argv, *args, **kwargs):
+        if "fetch" in argv:
+            raise CommandError("connection reset")
+        return real_run_command(argv, *args, **kwargs)
+
+    with patch.object(RegistryCache, "_remote_head_sha", return_value="deadbeef" * 5), \
+            patch("pilot.core.registry_cache.run_command", side_effect=flaky_run_command):
+        cache.ensure_fresh()  # must not raise
+
+    assert cache.apps_json_path.read_text() == '{"apps": []}'
+
+
 def test_first_clone_installs_daily_refresh_cron(tmp_path: Path) -> None:
     with patch("pilot.core.registry_cache.CronManager") as mock_cron_cls:
         cache = make_cache(tmp_path)

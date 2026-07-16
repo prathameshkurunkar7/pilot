@@ -2,7 +2,6 @@ from pilot.commands.get_app import GetAppCommand
 from pilot.core.app import App
 from pilot.core.marketplace import Marketplace
 from pilot.core.site import Site, SiteConfig
-from pilot.exceptions import BenchError
 
 from .base_task import BaseTask
 
@@ -37,21 +36,14 @@ class GetAndInstallAppTask(BaseTask):
         # get-app resolves and installs marketplace dependencies itself; a
         # plain repo has none to resolve.
         if self.marketplace_app:
-            repo, branch = self._resolve_marketplace_app()
+            resolver = Marketplace(self.bench).find_app(self.marketplace_app)
+            repo, branch = resolver.repo, resolver.target
         else:
             repo, branch = self.repo, self.branch
         self._step("fetch", f"Fetch {self.marketplace_app or self.repo}")
         cmd = GetAppCommand(self.bench, repo, branch, install_dependencies=bool(self.marketplace_app))
         cmd.run()
         return cmd
-
-    def _resolve_marketplace_app(self) -> tuple[str, str]:
-        resolver = next(
-            (r for r in Marketplace(self.bench).read_all_apps() if r.app == self.marketplace_app), None
-        )
-        if not resolver:
-            raise BenchError(f"'{self.marketplace_app}' not found in marketplace.")
-        return resolver.repo, resolver.target
 
     def _install_on_sites(self, apps: list[App]) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager

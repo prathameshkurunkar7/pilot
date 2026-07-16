@@ -1,7 +1,6 @@
 from pilot.commands.get_app import GetAppCommand
 from pilot.commands.new_site import NewSiteCommand
 from pilot.core.marketplace import Marketplace
-from pilot.exceptions import BenchError
 
 from .base_task import BaseTask
 
@@ -38,11 +37,9 @@ class NewSiteTask(BaseTask):
         missing = [name for name in self.apps if name not in installed]
         if not missing:
             return
-        marketplace = Marketplace(self.bench).read_all_apps()
+        marketplace = Marketplace(self.bench)
         for app_name in missing:
-            resolver = next((r for r in marketplace if r.app == app_name), None)
-            if not resolver:
-                raise BenchError(f"'{app_name}' not found in marketplace.")
+            resolver = marketplace.find_app(app_name)
             self._step("fetch", f"Fetch {app_name}")
             GetAppCommand(self.bench, resolver.repo, resolver.target, install_dependencies=True).run()
 

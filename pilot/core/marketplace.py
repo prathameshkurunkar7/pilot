@@ -197,3 +197,11 @@ class Marketplace:
         for resolver in resolvers:
             resolver._registry = dependency_lookup
         return resolvers
+
+    def find_app(self, name: str) -> Resolver:
+        """Look up a marketplace app by name, or raise BenchError — the single
+        place every caller resolves a marketplace name to its Resolver."""
+        resolver = next((r for r in self.read_all_apps() if r.app == name), None)
+        if resolver is None:
+            raise BenchError(f"'{name}' not found in marketplace.")
+        return resolver

@@ -92,8 +92,11 @@ class RegistryCache:
         local_head = run_command(["git", "-C", str(self.path), "rev-parse", "HEAD"]).stdout.decode().strip()
         if remote_head == local_head:
             return
-        run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", "HEAD"])
-        run_command(["git", "-C", str(self.path), "reset", "--hard", "FETCH_HEAD"])
+        try:
+            run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", "HEAD"])
+            run_command(["git", "-C", str(self.path), "reset", "--hard", "FETCH_HEAD"])
+        except CommandError:
+            return  # network dropped mid-fetch — keep serving the existing clone
 
     def _remote_head_sha(self) -> str | None:
         try:
