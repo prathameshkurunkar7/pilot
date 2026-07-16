@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import secrets
 import subprocess
@@ -282,19 +281,18 @@ def _site_resource(site: SiteInfo) -> dict:
 
 
 def create_site_session(bench_root: Path, site: str) -> str | None:
-    from pilot.loader import cli_root
-
     python = bench_root / "env" / "bin" / "python"
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(cli_root())
     program = (
         "import sys, frappe\n"
+        "from frappe.auth import CookieManager, LoginManager\n"
         "frappe.init(site=sys.argv[1], sites_path='.')\n"
         "frappe.connect()\n"
-        "from pilot.internal.site_session import create_administrator_session\n"
-        "sid = create_administrator_session()\n"
+        "frappe.utils.set_request(path='/')\n"
+        "frappe.local.cookie_manager = CookieManager()\n"
+        "frappe.local.login_manager = LoginManager()\n"
+        "frappe.local.login_manager.login_as('Administrator')\n"
         "frappe.db.commit()\n"
-        "sys.stdout.write(sid)\n"
+        "sys.stdout.write(frappe.session.sid)\n"
     )
     result = subprocess.run(
         [str(python), "-c", program, site],
@@ -302,7 +300,6 @@ def create_site_session(bench_root: Path, site: str) -> str | None:
         text=True,
         timeout=30,
         cwd=str(bench_root / "sites"),
-        env=env,
     )
     if result.returncode != 0:
         return None
