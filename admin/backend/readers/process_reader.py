@@ -141,7 +141,6 @@ class ProcessReader:
         from pilot.config.toml_store import BenchTomlStore
         from pilot.core.bench import Bench
 
-        # If the bench config file is not present there is no point in look at procs
         config = BenchTomlStore.for_bench(self._bench_root).read()
         bench = Bench(config, self._bench_root)
 

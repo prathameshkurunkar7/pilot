@@ -38,8 +38,6 @@ if TYPE_CHECKING:
 #                              or blank for none (the bench is directly exposed).
 # - On failure, exit non-zero and write a human-readable error to stderr; that
 #   text becomes the BenchError message shown to the user. stdout is ignored.
-# - On failure, exit non-zero and write a human-readable error to stderr; that
-#   text becomes the BenchError message shown to the user. stdout is ignored.
 _PROVIDER_BIN = "bench-domain-provider"
 
 

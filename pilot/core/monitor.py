@@ -1,7 +1,5 @@
-"""This module houses the light-weight monitoring daemon that will utilise /proc
-- Dump them into a bench-stats.json present inside the bench
-- Logrotate the bench-stats.json file
-"""
+"""Light-weight monitoring daemon: samples /proc and appends metrics to bench-stats.json,
+with logrotate configured for that file."""
 
 import getpass
 import json
@@ -188,7 +186,6 @@ class ToMonitor:
         result = run_command(["supervisorctl", "-c", bench_process_manager.supervisor_conf_path, "status"])
         supervised_processes = result.stdout.decode().strip()
 
-        # Optimize matching loop by extracting specific named groups directly
         for match in SUPERVISOR_PROCESS_PATTERN.finditer(supervised_processes):
             service_name = match.group("service")
 
@@ -320,8 +317,6 @@ class Monitor:
     def log_path(self) -> Path:
         from pilot.config.monitor_config import MonitorConfig
 
-        # In case of benches that have not configured the monitoring path
-        # We still want to log at the default monitoring path
         return self.bench.config.monitor.log_path or MonitorConfig.default_log_path(self.bench.config.name)
 
     @property
@@ -402,7 +397,7 @@ class Monitor:
 
     def _process_metrics(self, service: str, pid: int) -> dict:
         status = self._read_status(pid)
-        # Pss takes are of the shared memory pages giving a more accurate representation
+        # PSS accounts for shared memory pages, unlike RSS.
         pss_memeory = self._read_pss(pid)
         read_bytes, write_bytes = self._io_bytes(pid)
         return {

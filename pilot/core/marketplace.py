@@ -1,8 +1,4 @@
-"""
-Parse and read the marketplace based on the current version of frappe running
-Show install for apps that are compatibile with the version mentioned in the apps_v2.json only
-When install is clicked instead of showing a dropdown of branches just install the expected frappe version compliant branch.
-"""
+"""Resolve installable apps and their dependency versions against the bench's current Frappe version."""
 
 import json
 import typing
@@ -130,7 +126,6 @@ class Marketplace:
         self._registry = self._parse_registry(json.loads(_REGISTRY_V2_PATH.read_text()))
 
     def get_current_frappe_version(self) -> str:
-        """We need the current framework version to correctly suggest apps for installation"""
         cmd = [str(self.bench.env_path / "bin" / "python"), "-c", "import frappe; print(frappe.__version__)"]
         result = run_command(cmd)
         return result.stdout.strip().decode()
@@ -145,7 +140,7 @@ class Marketplace:
     def _parse_registry(raw: list[dict]) -> list[dict]:
         for app in raw:
             for target in app.get("targets", []):
-                # Loads in the >=17.0.0-dev,<18.0.0 version specifier for each target
+                # prereleases=True so -dev/-rc frappe_core specs match.
                 target["_spec"] = SpecifierSet(target["frappe_core"], prereleases=True)
         return raw
 

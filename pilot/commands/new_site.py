@@ -175,8 +175,9 @@ class NewSiteCommand(Command):
                 raise BenchError(f"App '{app}' is not installed. Run 'bench get-app <repo>' first.")
 
     def _add_to_hosts(self) -> None:
+        # Only a dev bench (no process manager) needs a synthetic /etc/hosts entry;
+        # production sites resolve via real DNS.
         if not self.bench.config.production.process_manager == "none":
-            # In case running via procfile assume we are in dev mode
             return
 
         hosts_path = Path("/etc/hosts")

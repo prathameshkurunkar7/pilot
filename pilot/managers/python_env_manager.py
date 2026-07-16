@@ -190,10 +190,8 @@ class PythonEnvManager:
                 )
 
     def _ensure_yarn_install(self, path: Path) -> None:
-        """Run yarn install only when node_modules is absent or yarn.lock has changed.
-        Fresh clone — node_modules/ is gitignored and doesn't exist, so integrity.exists() is False → falls through to yarn install. ✓
-        After yarn install — integrity file is written now, which is always newer than yarn.lock (which was set to the clone time) → skips on subsequent calls. ✓
-        After git pull that changes yarn.lock — git sets the mtime of checked-out files to the time of the checkout operation, so yarn.lock gets a fresh mtime newer than the old integrity file → runs yarn install. ✓"""
+        """Run yarn install only when node_modules is absent or yarn.lock is newer than the
+        yarn-integrity marker — which git pull also triggers, since checkout refreshes mtimes."""
         integrity = path / "node_modules" / ".yarn-integrity"
         lock = path / "yarn.lock"
         if integrity.exists() and (not lock.exists() or lock.stat().st_mtime <= integrity.stat().st_mtime):

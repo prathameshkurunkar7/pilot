@@ -49,7 +49,7 @@ FLAT_KEYS = {
     "production_process_manager": "production.process_manager",
 }
 
-# Framework branches the setup wizard offers, newest/recommended first. The
+# Framework branches the setup wizard offers, newest/recommended first.
 FRAMEWORK_BRANCHES = ["version-16", "develop"]
 
 _DEFAULT_DATA: dict = {

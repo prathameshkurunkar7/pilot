@@ -471,12 +471,10 @@ def _create_bench_locked(
                     from pilot.managers.process_managers.supervisor import SupervisorProcessManager as PM
                 pm = PM(bench)
                 pm.start_admin()
-                # Just enough to make the wizard reachable at its domain (over plain
-                # HTTP). The workload, TLS, and marking production.enabled all need
-                # the venv/framework app the wizard's init step installs, so
-                # WizardSetupTask finishes the rest via SetupProductionCommand once
-                # that's done - duplicating those steps here risks running them
-                # before the bench can actually support them (see git history).
+                # Just enough to make the wizard reachable at its domain (over plain HTTP).
+                # The workload, TLS, and production.enabled all need the venv/framework app
+                # the wizard's init step installs, so WizardSetupTask finishes the rest via
+                # SetupProductionCommand once that's done.
                 nginx = NginxManager(bench)
                 nginx.generate_config()
                 nginx.install_config()
