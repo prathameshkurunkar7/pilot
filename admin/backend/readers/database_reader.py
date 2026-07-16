@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pilot.config.mariadb_config import MariaDBConfig
+from pilot.managers.mariadb_manager import MariaDBManager
 
 
 @dataclass
@@ -44,20 +44,13 @@ _SLOW_QUERY_STATS = re.compile(
 
 
 class DatabaseReader:
-    def __init__(self, mariadb_config: MariaDBConfig) -> None:
-        self._config = mariadb_config
+    def __init__(self, manager: MariaDBManager) -> None:
+        self._manager = manager
 
     def _connect(self):
         import pymysql
 
-        return pymysql.connect(
-            host=self._config.host,
-            port=self._config.port,
-            user="root",
-            password=self._config.root_password,
-            unix_socket=self._config.socket_path or None,
-            cursorclass=pymysql.cursors.DictCursor,
-        )
+        return self._manager.connect(cursorclass=pymysql.cursors.DictCursor)
 
     def list_binary_logs(self) -> list[BinaryLogInfo]:
         connection = self._connect()

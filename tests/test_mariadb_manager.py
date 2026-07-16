@@ -134,7 +134,7 @@ def test_kill_process_types_an_unknown_thread_error() -> None:
     cursor = connection.cursor.return_value.__enter__.return_value
     cursor.execute.side_effect = pymysql.err.OperationalError(1094, "Unknown thread")
 
-    with patch.object(manager, "_connect", return_value=connection):
+    with patch.object(manager, "connect", return_value=connection):
         with pytest.raises(DatabaseProcessNotActiveError):
             manager.kill_process(42)
 

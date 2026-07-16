@@ -5,7 +5,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api_contract import error_response, no_content_response
-from pilot.exceptions import DatabaseProcessNotActiveError
+from pilot.exceptions import DatabaseProcessNotActiveError, UnsupportedDatabaseEngineError
 
 from ..readers.bench_reader import BenchReader
 from ..readers.database_reader import DatabaseReader
@@ -13,16 +13,19 @@ from ..readers.database_reader import DatabaseReader
 database_bp = Blueprint("database", __name__)
 
 
-def _get_database_reader(bench_root) -> DatabaseReader:
-    config = BenchReader(bench_root).config()
-    return DatabaseReader(config.mariadb)
-
-
 def _get_mariadb_manager(bench_root):
     from pilot.managers.mariadb_manager import MariaDBManager
 
     config = BenchReader(bench_root).config()
+    if config.db_type != "mariadb":
+        raise UnsupportedDatabaseEngineError(
+            f"This operation requires a MariaDB bench, but this bench uses '{config.db_type}'."
+        )
     return MariaDBManager(config.mariadb)
+
+
+def _get_database_reader(bench_root) -> DatabaseReader:
+    return DatabaseReader(_get_mariadb_manager(bench_root))
 
 
 @database_bp.get("/binlogs")
@@ -31,6 +34,8 @@ def binlogs():
     try:
         reader = _get_database_reader(bench_root)
         binary_logs = reader.list_binary_logs()
+    except UnsupportedDatabaseEngineError as error:
+        return error_response("unsupported_database_engine", str(error), 409)
     except Exception:
         return error_response("binlogs_unavailable", "Could not read binary logs.", 500)
 
@@ -49,6 +54,8 @@ def binlog_detail(log_name: str):
     try:
         reader = _get_database_reader(bench_root)
         events = reader.read_binary_log_events(log_name, limit=limit, offset=offset)
+    except UnsupportedDatabaseEngineError as error:
+        return error_response("unsupported_database_engine", str(error), 409)
     except Exception:
         return error_response("binlog_unavailable", "Could not read the binary log.", 500)
 
@@ -78,6 +85,8 @@ def list_processes():
     try:
         reader = _get_database_reader(bench_root)
         rows = reader.read_processlist()
+    except UnsupportedDatabaseEngineError as error:
+        return error_response("unsupported_database_engine", str(error), 409)
     except Exception:
         return error_response(
             "database_processes_unavailable",
@@ -113,6 +122,8 @@ def kill_process(process_id: int):
             f"Database process {process_id} is no longer active.",
             409,
         )
+    except UnsupportedDatabaseEngineError as error:
+        return error_response("unsupported_database_engine", str(error), 409)
     except Exception:
         return error_response(
             "database_process_kill_failed",
@@ -134,6 +145,8 @@ def slow_queries():
     try:
         reader = _get_database_reader(bench_root)
         queries = reader.read_slow_queries(limit=limit)
+    except UnsupportedDatabaseEngineError as error:
+        return error_response("unsupported_database_engine", str(error), 409)
     except Exception:
         return error_response(
             "slow_queries_unavailable",

@@ -216,7 +216,7 @@ class MariaDBManager(UserOwnedDBManager):
 
         from pilot.exceptions import DatabaseProcessNotActiveError
 
-        connection = self._connect()
+        connection = self.connect()
         try:
             with connection.cursor() as cursor:
                 try:
@@ -232,7 +232,7 @@ class MariaDBManager(UserOwnedDBManager):
 
     @contextmanager
     def snapshot_lock(self):
-        connection = self._connect()
+        connection = self.connect()
         try:
             with connection.cursor() as cursor:
                 cursor.execute("FLUSH TABLES WITH READ LOCK")
@@ -242,7 +242,9 @@ class MariaDBManager(UserOwnedDBManager):
                 cursor.execute("UNLOCK TABLES")
             connection.close()
 
-    def _connect(self, password: str | None = None):
+    def connect(self, password: str | None = None, cursorclass=None):
+        """The one place that resolves host, port, admin user, and socket for an
+        admin connection to this bench's MariaDB."""
         import pymysql
 
         return pymysql.connect(
@@ -251,6 +253,7 @@ class MariaDBManager(UserOwnedDBManager):
             user=self.config.admin_user,
             password=self.config.root_password if password is None else password,
             unix_socket=self._detect_socket() or None,
+            cursorclass=cursorclass or pymysql.cursors.Cursor,
         )
 
     def _detect_socket(self) -> str:
