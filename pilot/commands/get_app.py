@@ -77,7 +77,12 @@ class GetAppCommand(Command):
 
     def run(self) -> None:
         if self._is_registered():
-            self.name = self.app.module_name
+            # Re-point self.app at the real registered App, not just the name —
+            # self.app's raw (possibly hyphenated) path may not exist on disk
+            # if it was already normalized in an earlier run, and callers (e.g.
+            # get_and_install_app_task) read cmd.app afterward.
+            self.app = self.bench.app(self.app.module_name)
+            self.name = self.app.config.name
             print(f"'{self.name}' already installed, skipping.")
             sys.stdout.flush()
             return
