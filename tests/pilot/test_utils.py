@@ -1,15 +1,12 @@
 """Tests for shared utilities and the raw bench TOML store interface."""
 from __future__ import annotations
 
-import json
-import stat
-import sys
 from pathlib import Path
 
 import pytest
 
 from pilot.internal.toml import Toml
-from pilot.utils import hosts_line_contains, host_owner, normalize_host, run_command
+from pilot.utils import hosts_line_contains, host_owner, normalize_host
 
 
 @pytest.mark.parametrize(
@@ -24,51 +21,6 @@ from pilot.utils import hosts_line_contains, host_owner, normalize_host, run_com
 )
 def test_hosts_line_contains_exact_hostname_token(line: str, expected: bool) -> None:
     assert hosts_line_contains(line, "site.localhost") is expected
-
-
-def test_run_command_hides_password_flags_from_process_argv(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    password = "process-secret-password"
-    captured = {}
-
-    class _FakeProcess:
-        pid = 12345
-        returncode = 0
-
-        def communicate(self, timeout=None):
-            return b"", b""
-
-        def wait(self):
-            return 0
-
-    def fake_start(argv, cwd, env, stream_output):
-        payload_path = Path(argv[2])
-        captured["argv"] = argv
-        captured["payload_path"] = payload_path
-        captured["payload"] = json.loads(payload_path.read_text())
-        captured["mode"] = stat.S_IMODE(payload_path.stat().st_mode)
-        return _FakeProcess()
-
-    monkeypatch.setattr("pilot.utils._start_process", fake_start)
-
-    run_command(
-        [
-            sys.executable,
-            "-m",
-            "frappe.utils.bench_helper",
-            "new-site",
-            "--admin-password",
-            password,
-        ],
-        cwd=tmp_path,
-    )
-
-    assert password not in "\0".join(captured["argv"])
-    assert captured["payload"]["args"][-1] == password
-    assert captured["mode"] == 0o600
-    assert not captured["payload_path"].exists()
 
 
 def _make_bench(benches: Path, name: str, *, admin_domain: str, sites: list[str] | None = None) -> Path:

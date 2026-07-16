@@ -30,7 +30,6 @@ class GitHubProvider(GitProvider):
     name = "github"
     host = "github.com"
     api_base = "https://api.github.com"
-    git_username = "x-access-token"
 
     def _headers(self) -> dict:
         headers = {

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import stat
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,12 +11,9 @@ from pilot.integrations.git import (
     GitCredentialStore,
     GitHubProvider,
     GitProviderError,
-    git_remote_for,
     parse_github_owner_repo,
     resolve_app_name_from_repo,
 )
-from pilot.config.app_config import AppConfig
-from pilot.core.app import App
 
 
 def test_github_provider_omits_auth_header_without_token() -> None:
@@ -61,41 +57,6 @@ def test_credential_store_mark_invalid_and_valid(tmp_path: Path) -> None:
     assert store.load()["is_token_valid"] is False
     store.mark_valid()
     assert store.load()["is_token_valid"] is True
-
-
-def test_git_remote_keeps_token_out_of_url(tmp_path: Path) -> None:
-    token = "git-process-secret"
-    GitCredentialStore(tmp_path).save("github", token)
-
-    remote, env = git_remote_for(tmp_path, "git@github.com:acme/private.git")
-
-    assert remote == "https://github.com/acme/private.git"
-    assert token not in remote
-    assert env is not None
-    assert env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
-    assert token not in env["GIT_CONFIG_VALUE_0"]
-
-
-def test_app_clone_passes_plain_remote_and_auth_environment(tmp_path: Path) -> None:
-    bench = SimpleNamespace(path=tmp_path, apps_path=tmp_path / "apps")
-    app = App(
-        AppConfig(name="private", repo="git@github.com:acme/private.git", branch="main"),
-        bench,
-    )
-    auth_env = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_VALUE_0": "encoded-auth"}
-
-    with (
-        patch(
-            "pilot.integrations.git.git_remote_for",
-            return_value=("https://github.com/acme/private.git", auth_env),
-        ),
-        patch("pilot.core.app.run_command") as run,
-    ):
-        app.clone()
-
-    argv = run.call_args.args[0]
-    assert argv[2] == "https://github.com/acme/private.git"
-    assert run.call_args.kwargs["env"] == auth_env
 
 
 @pytest.mark.parametrize(

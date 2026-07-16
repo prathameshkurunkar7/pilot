@@ -240,7 +240,7 @@ Apps and sites are tracked by the filesystem — no need to list them in `bench.
 | `bench build-admin` | Rebuild admin frontend assets from source |
 | `bench generate-admin-session` | Issue a 5-minute, single-use admin sign-in link (`--full-path` for the URL) |
 | `bench issue-site-token <name>` | Issue a scoped JWT for site-to-bench API calls (use as `Authorization: Bearer`) |
-| `bench set-admin-password` | Set the admin UI password using a secure prompt |
+| `bench set-admin-password` | Set the admin UI password (prompts securely if `--password` is omitted) |
 | `bench setup nginx` | Generate and install nginx config |
 | `bench setup letsencrypt` | Obtain SSL certificates |
 | `bench setup production` | Full production setup — `--process-manager`, `--admin-domain`, `--tls` |

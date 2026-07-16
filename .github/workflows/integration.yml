@@ -49,11 +49,9 @@ jobs:
         timeout-minutes: 45
 
       - name: Create sites
-        env:
-          BENCH_SITE_ADMIN_PASSWORD: admin
         run: |
-          bench new-site site1.localhost
-          bench new-site site2.localhost
+          bench new-site site1.localhost --admin-password admin
+          bench new-site site2.localhost --admin-password admin
 
       - name: Verify sites exist
         run: |

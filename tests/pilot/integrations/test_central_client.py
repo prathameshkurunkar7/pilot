@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -81,20 +80,6 @@ def test_set_central_config_raises_without_bench_toml(tmp_path: Path) -> None:
     (bench.path / "bench.toml").unlink()
     with pytest.raises(BenchError, match="not found"):
         SetCentralConfigCommand(bench, endpoint="https://central.test", token="tok").run()
-
-
-def test_set_central_config_reads_token_from_file(tmp_path: Path) -> None:
-    bench = _bench(tmp_path)
-    token_path = tmp_path / "central-token"
-    token_path.write_text("file-token\n")
-
-    command = SetCentralConfigCommand.from_args(
-        SimpleNamespace(endpoint="https://central.test", token_file=str(token_path)),
-        bench,
-    )
-    command.run()
-
-    assert BenchTomlStore.for_bench(bench.path).read_raw()["central"]["auth_token"] == "file-token"
 
 
 # --- CentralClient ----------------------------------------------------------

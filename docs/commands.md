@@ -234,7 +234,7 @@ Creates a new Frappe site.
 
 ```bash
 bench new-site site1.localhost
-bench new-site site1.localhost --admin-password-file /secure/path/site-password
+bench new-site site1.localhost --admin-password admin
 ```
 
 **Pre-conditions:**
@@ -252,11 +252,12 @@ bench new-site site1.localhost --admin-password-file /secure/path/site-password
 
 #### Step 2 — Create the site
 
-`Site.create(mariadb_config)` runs the framework app's `new-site` module. Password values are delivered through a protected temporary payload and do not appear in the spawned process arguments. Conceptually, the call supplies:
+`Site.create(mariadb_config)` runs the framework app's `new-site` command:
 ```
-new-site <site.name>
-    database root credentials
-    Administrator credentials
+env/bin/bench new-site <site.name>
+    --mariadb-root-password <root_password>
+    --admin-password <admin_password>
+    --no-mariadb-socket
 ```
 
 frappe generates and manages the database name and credentials internally; they are written into `sites/<name>/site_config.json`. The site directory is created on disk — it is **not** written to `bench.toml`.
@@ -506,11 +507,11 @@ Requires `admin.jwt_secret` to be set in `bench.toml`. See [docs/admin-api.md](a
 
 ## `bench set-admin-password`
 
-Sets the admin UI password in `bench.toml`. It prompts twice without echo and confirms the values match; the password is never placed in process arguments, printed, or logged. Automation can pass the path to a protected file.
+Sets the admin UI password in `bench.toml`. With `--password` omitted it prompts twice (securely, no echo) and confirms they match; the password is never printed or logged.
 
 ```bash
 bench set-admin-password                       # prompts for the password
-bench set-admin-password --password-file /secure/path/admin-password
+bench set-admin-password --password <secret>   # non-interactive
 ```
 
 `bench init` already generates a random password when admin is enabled and none is set, so this is for rotating it or setting one explicitly. The change takes effect immediately — the admin reloads `bench.toml` per request, no restart needed.

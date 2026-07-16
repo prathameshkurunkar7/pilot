@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import os
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
@@ -23,16 +21,11 @@ class SetCentralConfigCommand(Command):
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--endpoint", required=True, help="Central API base URL the pilot calls back on")
-        parser.add_argument("--token-file", help="File containing the Central authentication token")
+        parser.add_argument("--token", required=True, help="Opaque token the pilot presents to Central")
 
     @classmethod
     def from_args(cls, args, bench):
-        token = os.environ.get("BENCH_CENTRAL_TOKEN", "")
-        if args.token_file:
-            token = Path(args.token_file).read_text().strip()
-        if not token:
-            raise BenchError("Set BENCH_CENTRAL_TOKEN or pass --token-file.")
-        return cls(bench, endpoint=args.endpoint, token=token)
+        return cls(bench, endpoint=args.endpoint, token=args.token)
 
     def __init__(self, bench: "Bench", endpoint: str, token: str) -> None:
         self.bench = bench

@@ -40,7 +40,6 @@ class GitProvider(abc.ABC):
 
     name: str = ""
     host: str = ""
-    git_username: str = ""
 
     def __init__(self, token: str = "") -> None:
         self.token = token

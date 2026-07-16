@@ -100,20 +100,25 @@ class App:
         return module_path != self.path and (module_path / ".git").exists()
 
     @property
-    def _git_remote(self) -> tuple[str, dict | None]:
-        from pilot.integrations.git import git_remote_for
+    def _remote_url(self) -> str:
+        """The clone URL to use, token-embedded when the repo is private.
 
-        return git_remote_for(self.bench.path, self.config.repo)
+        Public repos resolve to the original URL; for a repo hosted on a
+        connected provider with a stored PAT, the token is injected so private
+        clones and ls-remote probes authenticate.
+        """
+        from pilot.integrations.git import authenticated_url_for
+
+        return authenticated_url_for(self.bench.path, self.config.repo)
 
     def _detect_default_branch(self) -> str:
         import subprocess
 
-        remote, env = self._git_remote
+        remote = self._remote_url
         result = subprocess.run(
             ["git", "ls-remote", "--symref", remote, "HEAD"],
             capture_output=True,
             text=True,
-            env=env,
         )
         for line in result.stdout.splitlines():
             if line.startswith("ref: refs/heads/"):
@@ -123,7 +128,6 @@ class App:
             ["git", "ls-remote", "--heads", remote],
             capture_output=True,
             text=True,
-            env=env,
         ).stdout
         for candidate in ("develop", "master", "version-16", "version-15"):
             if f"refs/heads/{candidate}" in refs:
@@ -136,8 +140,7 @@ class App:
         return bool(re.fullmatch(r"[0-9a-f]{7,40}", ref))
 
     def _clone_rev(self, commit: str) -> None:
-        remote, env = self._git_remote
-        run_command(["git", "clone", remote, str(self.path)], env=env, stream_output=True)
+        run_command(["git", "clone", self._remote_url, str(self.path)], stream_output=True)
         try:
             run_command(["git", "-C", str(self.path), "checkout", commit])
         except CommandError:
@@ -145,13 +148,11 @@ class App:
 
     def clone(self) -> None:
         target = self.config.branch or self._detect_default_branch()
-        remote, env = self._git_remote
         if self.is_commit_hash(target):
             self._clone_rev(target)
         else:
             run_command(
-                ["git", "clone", remote, "--branch", target, "--depth", "1", str(self.path)],
-                env=env,
+                ["git", "clone", self._remote_url, "--branch", target, "--depth", "1", str(self.path)],
                 stream_output=True,
             )
 

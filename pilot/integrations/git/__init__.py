@@ -8,8 +8,6 @@ reaching into base/credentials/github/gitlab directly.
 
 from __future__ import annotations
 
-import base64
-import os
 from pathlib import Path
 
 from pilot.integrations.git.base import (
@@ -34,7 +32,6 @@ __all__ = [
     "GitProvider",
     "GitProviderError",
     "authenticated_url_for",
-    "git_remote_for",
     "inject_https_token",
     "normalize_to_https",
     "parse_github_owner_repo",
@@ -109,24 +106,16 @@ def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = ""
 
 
 def authenticated_url_for(bench_root: Path, repo_url: str) -> str:
-    """Return the credential-free URL used for Git transport."""
-    return git_remote_for(bench_root, repo_url)[0]
+    """Return a clone URL for ``repo_url``, token-embedded when applicable.
 
-
-def git_remote_for(bench_root: Path, repo_url: str) -> tuple[str, dict | None]:
-    """Return a remote URL and optional Git auth environment."""
+    Consults the bench's stored credential. If the repo's host matches the
+    connected provider and a token is on file, the token is embedded; otherwise
+    the original URL is returned unchanged (public repos clone fine without it).
+    """
     record = GitCredentialStore(bench_root).load()
     if not record or not record.get("token"):
-        return repo_url, None
+        return repo_url
     provider = provider_for_repo(repo_url, record["token"])
     if provider is None or provider.name != record.get("provider"):
-        return repo_url, None
-
-    credentials = f"{provider.git_username}:{record['token']}".encode()
-    authorization = base64.b64encode(credentials).decode()
-    env = os.environ.copy()
-    index = int(env.get("GIT_CONFIG_COUNT", "0"))
-    env["GIT_CONFIG_COUNT"] = str(index + 1)
-    env[f"GIT_CONFIG_KEY_{index}"] = "http.extraHeader"
-    env[f"GIT_CONFIG_VALUE_{index}"] = f"Authorization: Basic {authorization}"
-    return normalize_to_https(repo_url), env
+        return repo_url
+    return provider.authenticated_clone_url(repo_url)

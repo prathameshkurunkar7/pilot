@@ -8,7 +8,6 @@ class GitLabProvider(GitProvider):
 
     name = "gitlab"
     host = "gitlab.com"
-    git_username = "oauth2"
 
     def validate(self) -> dict:
         raise GitProviderError("GitLab support is not implemented yet.")
