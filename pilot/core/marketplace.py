@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Literal
 
-from packaging.specifiers import SpecifierSet
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import Version
 
 from pilot.exceptions import AppNotFoundError, DependencyResolutionError
@@ -150,10 +150,17 @@ class Marketplace:
     @staticmethod
     def _parse_registry(raw: list[dict]) -> list[dict]:
         for app in raw:
-            for target in app.get("targets", []):
-                # Loads in the >=17.0.0-dev,<18.0.0 version specifier for each target
-                target["_spec"] = SpecifierSet(target["frappe_core"], prereleases=True)
+            for target in app.get("targets") or []:
+                target["_spec"] = Marketplace._safe_spec(target.get("frappe_core"))
         return raw
+
+    @staticmethod
+    def _safe_spec(frappe_core: str | None) -> SpecifierSet | None:
+        """None means unparseable — excluded from compatibility matching."""
+        try:
+            return SpecifierSet(frappe_core or "", prereleases=True)
+        except InvalidSpecifier:
+            return None
 
     def _make_resolver(self, app: dict, target: dict, is_installable: bool) -> "Resolver":
         return Resolver(
@@ -163,7 +170,7 @@ class Marketplace:
             target=target.get("target", ""),
             version=target.get("version", ""),
             frappe_version=self.frappe_version,
-            required_version=target.get("frappe_core", ""),
+            required_version=target.get("frappe_core") or "",
             dependencies=target.get("dependencies", {}),
             title=app.get("title", app["name"]),
             description=app.get("description", ""),
@@ -182,8 +189,8 @@ class Marketplace:
         current_frappe = Version(self.frappe_version)
 
         for app in self._registry:
-            targets = app.get("targets", [])
-            compatible_targets = [t for t in targets if current_frappe in t["_spec"]]
+            targets = app.get("targets") or []
+            compatible_targets = [t for t in targets if t["_spec"] and current_frappe in t["_spec"]]
             best_match = compatible_targets[0] if compatible_targets else None
             display_target = best_match or (targets[0] if targets else {})
 
