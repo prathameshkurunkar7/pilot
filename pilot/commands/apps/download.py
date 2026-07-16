@@ -81,7 +81,7 @@ class GetAppCommand(Command):
         if already_installed:
             # self.app's raw path may not exist if already normalized earlier
             self.app = self.bench.app(self.app.module_name)
-            self.name = self.app.config.name
+            self.name = self.app.config.name  # type: ignore[misc]  # the app's name, distinct from Command.name (the CLI verb)
         else:
             self._clone()
             self._normalize_folder()
