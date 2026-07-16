@@ -198,13 +198,20 @@ def run_command(
     cwd: Path | None = None,
     env: dict | None = None,
     stream_output: bool = False,
+    timeout: float | None = None,
 ) -> subprocess.CompletedProcess:
-    result = subprocess.run(
-        argv,
-        cwd=cwd,
-        env=env,
-        capture_output=not stream_output,
-    )
+    try:
+        result = subprocess.run(
+            argv,
+            cwd=cwd,
+            env=env,
+            capture_output=not stream_output,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise CommandError(
+            f"Command {argv[0]!r} timed out after {timeout}s.", returncode=-1
+        ) from exc
     if result.returncode != 0:
         stderr = result.stderr.decode() if not stream_output and result.stderr else ""
         raise CommandError(
