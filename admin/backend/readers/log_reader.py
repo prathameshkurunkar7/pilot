@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .tail_read import read_tail_text
+
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mKJHfABCDGsu]")
 
 
@@ -56,8 +58,8 @@ class LogReader:
         log_path = self._validated_path(filename)
         if not log_path.exists():
             raise FileNotFoundError(f"Log file not found: {filename}")
-        all_lines = log_path.read_text(errors="replace").splitlines()
-        return [_ANSI_RE.sub("", l) for l in all_lines[-lines:]]
+        tail = read_tail_text(log_path, max(lines, 0)).splitlines()
+        return [_ANSI_RE.sub("", line) for line in tail[-lines:]] if lines > 0 else []
 
     def file_path(self, filename: str) -> Path:
         return self._validated_path(filename)

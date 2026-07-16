@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pilot.managers.mariadb_manager import MariaDBManager
 
+from .tail_read import read_tail_text
+
 
 @dataclass
 class BinaryLogInfo:
@@ -115,11 +117,13 @@ class DatabaseReader:
         finally:
             connection.close()
 
+    _LINES_PER_SLOW_QUERY_RECORD = 4
+
     def read_slow_queries(self, limit: int = 50) -> list[SlowQuery]:
         log_path = self.slow_query_log_path()
         if log_path is None or not log_path.exists():
             return []
-        content = log_path.read_text(errors="replace")
+        content = read_tail_text(log_path, (limit + 1) * self._LINES_PER_SLOW_QUERY_RECORD)
         return _parse_slow_query_log(content, limit)
 
 
