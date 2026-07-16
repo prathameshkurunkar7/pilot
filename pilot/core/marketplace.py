@@ -13,7 +13,7 @@ from typing import Literal
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
-from pilot.exceptions import BenchError
+from pilot.exceptions import AppNotFoundError, DependencyResolutionError
 from pilot.utils import run_command
 
 if typing.TYPE_CHECKING:
@@ -72,10 +72,10 @@ class Resolver:
     ):
         if app in path:
             cycle = " -> ".join(path[path.index(app) :] + [app])
-            raise BenchError(f"Circular dependency detected: {cycle}")
+            raise DependencyResolutionError(f"Circular dependency detected: {cycle}")
         if app in visited:
             if required_spec and Version(visited[app]) not in SpecifierSet(required_spec):
-                raise BenchError(
+                raise DependencyResolutionError(
                     f"Version conflict: '{app}' {visited[app]!r} already selected "
                     f"but {required_spec!r} is required by '{path[-1]}'."
                 )
@@ -89,7 +89,7 @@ class Resolver:
             None,
         )
         if not resolver:
-            raise BenchError(
+            raise DependencyResolutionError(
                 f"Dependency '{app}' has no version satisfying {required_spec!r} "
                 f"compatible with Frappe {self.frappe_version}.\n"
                 f"Needed by '{path[-2]}' in the marketplace registry."
@@ -105,7 +105,7 @@ class Resolver:
     def resolve(self) -> list["Resolver"]:
         """Returns dependencies in install order (deepest first, self last)."""
         if not self.is_installable:
-            raise BenchError(
+            raise DependencyResolutionError(
                 f"'{self.app}' is not compatible with the current Frappe version.\nRequired: {self.required_version} Current: {self.frappe_version}"
             )
         result: list["Resolver"] = []
@@ -199,9 +199,9 @@ class Marketplace:
         return resolvers
 
     def find_app(self, name: str) -> Resolver:
-        """Look up a marketplace app by name, or raise BenchError — the single
-        place every caller resolves a marketplace name to its Resolver."""
+        """Look up a marketplace app by name, or raise AppNotFoundError — the
+        single place every caller resolves a marketplace name to its Resolver."""
         resolver = next((r for r in self.read_all_apps() if r.app == name), None)
         if resolver is None:
-            raise BenchError(f"'{name}' not found in marketplace.")
+            raise AppNotFoundError(f"'{name}' not found in marketplace.")
         return resolver

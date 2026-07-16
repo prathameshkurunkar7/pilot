@@ -5,7 +5,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from pilot.core.marketplace import Marketplace, Resolver
-from pilot.exceptions import BenchError
+from pilot.exceptions import AppNotFoundError, BenchError, DependencyResolutionError
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -13,10 +13,8 @@ if TYPE_CHECKING:
 
 
 class AppDependencyInstaller:
-    """Installs whichever of an app's marketplace dependencies are missing
-    from the bench, and reports every dependency App — fresh or already
-    installed from an earlier run — so callers can install them onto
-    requested sites too."""
+    """Installs an app's missing marketplace dependencies and returns every
+    dependency App (fresh or pre-existing) for callers to install on sites."""
 
     def __init__(self, bench: "Bench", app: "App") -> None:
         self.bench = bench
@@ -32,9 +30,7 @@ class AppDependencyInstaller:
     def _find_resolver(self) -> Resolver | None:
         try:
             return Marketplace(self.bench).find_app(self.app.config.name)
-        except BenchError:
-            # The app itself isn't in the marketplace registry — only a
-            # problem if it actually declares dependencies we can't resolve.
+        except AppNotFoundError:
             missing = self._missing_required_apps()
             if missing:
                 raise BenchError(
@@ -52,8 +48,8 @@ class AppDependencyInstaller:
 
         try:
             dependency_chain = resolver.resolve()
-        except BenchError as exc:
-            raise BenchError(
+        except DependencyResolutionError as exc:
+            raise DependencyResolutionError(
                 f"Could not resolve dependencies for '{self.app.config.name}':\n{exc}\n"
                 "Manually install the dependencies before retrying."
             ) from exc
@@ -63,10 +59,7 @@ class AppDependencyInstaller:
                 continue
             print(f"Installing dependency '{dep.app}'...")
             sys.stdout.flush()
-            # resolve() already returned the full transitive chain, so this
-            # dependency's own deps are already installed by earlier entries.
-            # Only the app the user actually asked for gets validated — a
-            # dependency just needs to be installed, not vetted on its own.
+            # transitive deps already handled by earlier entries in the chain
             GetAppCommand(
                 self.bench, dep.repo, dep.target, install_dependencies=False, skip_validations=True
             ).run()
@@ -74,7 +67,7 @@ class AppDependencyInstaller:
     def _dependency_apps(self, resolver: Resolver) -> list["App"]:
         try:
             chain = resolver.resolve()
-        except BenchError:
+        except DependencyResolutionError:
             return []
 
         apps = []

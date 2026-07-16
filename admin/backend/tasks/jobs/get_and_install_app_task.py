@@ -29,11 +29,7 @@ class GetAndInstallAppTask(BaseTask):
 
     def run(self) -> None:
         cmd = self._fetch()
-        # Only the app itself gets installed on requested sites — Frappe's own
-        # site install-app cascades installing its declared dependencies (they're
-        # already on the bench, fully installed with assets built, via
-        # get-app's own dependency flow), so installing them here too would
-        # just be a redundant no-op per site.
+        # Frappe's site install-app cascades installing declared dependencies
         self._install_on_sites(cmd.app)
         self._step("done")
 

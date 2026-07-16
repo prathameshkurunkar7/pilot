@@ -8,7 +8,7 @@ import pytest
 
 from pilot.core.app_dependency_installer import AppDependencyInstaller
 from pilot.core.marketplace import Marketplace, Resolver
-from pilot.exceptions import BenchError
+from pilot.exceptions import BenchError, RegistryUnavailableError
 from tests.test_commands import make_bench
 from tests.test_get_app import make_resolver
 
@@ -73,6 +73,21 @@ def test_install_skips_already_installed_dependency(tmp_path: Path) -> None:
 
     mock_cmd.assert_not_called()
     assert [a.config.name for a in result] == ["telephony"]
+
+
+def test_install_propagates_registry_unavailable_instead_of_swallowing_as_not_found(tmp_path: Path) -> None:
+    """P1 regression: a tampered/corrupted registry cache raising
+    RegistryUnavailableError during Marketplace construction must propagate —
+    it must NOT be treated as "app not in registry" (which would silently
+    skip dependency installation and leave a potentially broken install)."""
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    app = make_app(bench, "helpdesk")
+
+    with patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
+            patch.object(Marketplace, "_read_apps_json", side_effect=RegistryUnavailableError("tampered")):
+        with pytest.raises(RegistryUnavailableError):
+            AppDependencyInstaller(bench, app).install()
 
 
 def test_install_raises_when_app_not_in_marketplace_but_requires_missing_apps(tmp_path: Path) -> None:

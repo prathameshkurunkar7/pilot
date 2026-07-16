@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from pilot.core.cron_manager import CronManager
-from pilot.exceptions import BenchError, CommandError
+from pilot.exceptions import CommandError, RegistryUnavailableError
 from pilot.utils import run_command
 
 REGISTRY_URL = "https://github.com/frappe/marketplace"
@@ -25,12 +25,9 @@ _CRON_SCHEDULE = "0 3 * * *"  # once a day, 03:00
 
 
 class RegistryCache:
-    """A shallow, read-only clone of REGISTRY_URL at `cli_root/registry-cache`.
-
-    The refresh-tracking file lives beside the clone, not inside it — a file
-    inside the working tree would itself show up as untracked and permanently
-    trip the tamper check.
-    """
+    """Shallow, read-only clone of REGISTRY_URL at `cli_root/registry-cache`.
+    Refresh-tracking file lives beside the clone, not inside it, so it can't
+    itself trip the tamper check."""
 
     def __init__(self, cli_root: Path) -> None:
         self._cli_root = cli_root
@@ -68,19 +65,19 @@ class RegistryCache:
         try:
             run_command(["git", "clone", "--depth", "1", REGISTRY_URL, str(self.path)])
         except CommandError as exc:
-            raise BenchError(f"Could not clone marketplace registry:\n{exc.message}")
+            raise RegistryUnavailableError(f"Could not clone marketplace registry:\n{exc.message}")
         self.install_daily_refresh_cron()
 
     def _reject_if_tampered(self) -> None:
         try:
             result = run_command(["git", "-C", str(self.path), "status", "--porcelain"])
         except CommandError:
-            raise BenchError(
+            raise RegistryUnavailableError(
                 "The marketplace registry cache is corrupted (git status failed) — "
                 f"restore it before using get-app/marketplace: {self.path}"
             )
         if result.stdout.decode().strip():
-            raise BenchError(
+            raise RegistryUnavailableError(
                 "The marketplace registry cache has been modified manually — "
                 f"restore it before using get-app/marketplace: {self.path}"
             )

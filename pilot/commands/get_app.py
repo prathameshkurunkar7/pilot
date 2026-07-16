@@ -79,19 +79,15 @@ class GetAppCommand(Command):
     def run(self) -> None:
         already_installed = self.bench.is_app_installed(self.name)
         if already_installed:
-            # Re-point self.app at the real registered App, not just the name —
-            # self.app's raw (possibly hyphenated) path may not exist on disk
-            # if it was already normalized in an earlier run, and callers (e.g.
-            # get_and_install_app_task) read cmd.app afterward.
+            # self.app's raw path may not exist if already normalized earlier
             self.app = self.bench.app(self.app.module_name)
             self.name = self.app.config.name
         else:
             self._clone()
             self._normalize_folder()
 
-        # Take care in case users install a parent app without it's dependencies.
-        # But then they try and install the app on the site, which would break the site.
-        # Since the dependencies are not installed, let's regardless install the dependencies.
+        # Install missing deps regardless — a parent app can be installed
+        # without them, which would later break a site install.
         if self.install_dependencies:
             self.installed_dependencies = self._install_dependencies()
 
@@ -178,9 +174,7 @@ class GetAppCommand(Command):
         try:
             Validator(self.app).validate()
         except AppValidationError:
-            # Roll back the clone only if this run created it — an app that
-            # was already installed (re-running get-app on it) must survive
-            # a validation failure; only a fresh, unvetted clone gets removed.
+            # Only roll back a clone this run created
             if self._cloned_this_run:
                 shutil.rmtree(self.app.path, ignore_errors=True)
             raise
