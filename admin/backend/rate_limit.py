@@ -78,7 +78,7 @@ def rate_limit(attempts: int, seconds: int, user_ip: bool = True):
 
 
 def _app_window(key: tuple, attempts: int, seconds: int) -> SlidingWindow:
-    app = current_app._get_current_object()
+    app = current_app._get_current_object()  # type: ignore[attr-defined]  # unwrap Flask's LocalProxy
     with _WINDOWS_LOCK:
         windows = app.extensions.setdefault(_WINDOWS_EXTENSION, {})
         return windows.setdefault(key, SlidingWindow(attempts, seconds))

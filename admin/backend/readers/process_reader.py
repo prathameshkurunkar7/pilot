@@ -184,9 +184,11 @@ class ProcessReader:
         pid_str = props.get("MainPID", "0")
         pid = int(pid_str) if pid_str.isdigit() and pid_str != "0" else None
         log_file = self._bench_root / "logs" / f"{name}.log"
-        running = bool(pid and status == "running")
-        cpu, rss, pss = _get_process_stats(pid) if running else (None, None, None)
-        uptime = _proc_uptime(pid) if running else None
+        if pid and status == "running":
+            cpu, rss, pss = _get_process_stats(pid)
+            uptime = _proc_uptime(pid)
+        else:
+            cpu = rss = pss = uptime = None
         return ProcessInfo(name=name, status=status, pid=pid, uptime=uptime, log_file=log_file, cpu_percent=cpu, rss_mb=rss, pss_mb=pss)
 
     # ── Supervisor ───────────────────────────────────────────────────────────
@@ -224,9 +226,11 @@ class ProcessReader:
 
         program = full_name.split(":", 1)[-1].removeprefix(f"{bench_name}-")
         log_file = self._bench_root / "logs" / f"{program.replace('-', '_')}.log"
-        running = bool(pid and status == "running")
-        cpu, rss, pss = _get_process_stats(pid) if running else (None, None, None)
-        uptime = _proc_uptime(pid) if running else None
+        if pid and status == "running":
+            cpu, rss, pss = _get_process_stats(pid)
+            uptime = _proc_uptime(pid)
+        else:
+            cpu = rss = pss = uptime = None
         return ProcessInfo(name=program, status=status, pid=pid, uptime=uptime, log_file=log_file, cpu_percent=cpu, rss_mb=rss, pss_mb=pss)
 
     # ── Procfile (dev) ───────────────────────────────────────────────────────

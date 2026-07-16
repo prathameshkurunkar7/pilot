@@ -27,7 +27,7 @@ def _bench_config_to_dict(config: BenchConfig) -> ConfigDict:
 
     apps = []
     for app in config.apps:
-        app_data = {"name": app.name, "repo": app.repo, "branch": app.branch}
+        app_data: ConfigDict = {"name": app.name, "repo": app.repo, "branch": app.branch}
         if app.branches:
             app_data["branches"] = app.branches
         apps.append(app_data)
@@ -47,14 +47,14 @@ def _bench_config_to_dict(config: BenchConfig) -> ConfigDict:
         "admin_user": config.postgres.admin_user,
         "existing": config.postgres.existing,
     }
-    redis = {
+    redis: ConfigDict = {
         "cache_port": config.redis.cache_port,
         "queue_port": config.redis.queue_port,
     }
     if config.redis.version:
         redis["version"] = config.redis.version
 
-    production = {
+    production: ConfigDict = {
         "enabled": config.production.enabled,
         "use_companion_manager": config.production.use_companion_manager,
     }

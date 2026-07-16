@@ -26,6 +26,8 @@ def verify_jwks_token(token: str, jwks_url: str, audience: str) -> dict | None:
         return None
     try:
         kid = jwt.get_unverified_header(token).get("kid")
+        if not isinstance(kid, str):
+            return None
         # Match against the cached key set only. The set self-refreshes on its
         # 5-minute lifespan, so an unknown kid never triggers a per-request
         # refetch an attacker could use to hammer the issuer.

@@ -85,6 +85,7 @@ def _render_error_html(code: int, title: str, message: str) -> str:
     return _ERROR_PAGE_TEMPLATE.substitute(code=code, title=title, message=message)
 
 if TYPE_CHECKING:
+    from pilot.config.nginx_config import NginxConfig
     from pilot.config.site_config import SiteConfig
     from pilot.core.bench import Bench
 
@@ -319,7 +320,7 @@ class NginxManager:
         self,
         site: "SiteConfig",
         bench_name: str,
-        nginx_config: object,
+        nginx_config: "NginxConfig",
         bench_root: Path,
     ) -> str:
         server_name = " ".join(site.all_domains)
@@ -346,7 +347,7 @@ class NginxManager:
             + "}\n"
         )
 
-    def _render_http_redirect_block(self, site: "SiteConfig", nginx_config: object) -> str:
+    def _render_http_redirect_block(self, site: "SiteConfig", nginx_config: "NginxConfig") -> str:
         server_name = " ".join(site.all_domains)
         http_port = nginx_config.http_port
 
@@ -369,7 +370,7 @@ class NginxManager:
         self,
         site: "SiteConfig",
         bench_name: str,
-        nginx_config: object,
+        nginx_config: "NginxConfig",
         bench_root: Path,
     ) -> str:
         server_name = " ".join(site.all_domains)

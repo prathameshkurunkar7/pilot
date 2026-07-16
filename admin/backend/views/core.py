@@ -151,7 +151,8 @@ def _validate_login(data: dict, config: BenchConfig):
         expires = payload.get("exp") if payload else None
         used_logins = current_app.extensions["used_logins"]
         if (
-            not jti
+            payload is None
+            or not jti
             or not expires
             or payload.get("scope", "bench") != "bench"
             or not used_logins.use(jti, expires)

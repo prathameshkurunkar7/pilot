@@ -30,7 +30,7 @@ from admin.backend.uploads import (
     save_database_upload,
 )
 from ..validators import validate_app_name, validate_cron_expression, validate_site_name
-from admin.backend.tasks.manager.task_runner import TaskRunner
+from admin.backend.tasks.manager.task_runner import TaskCallback, TaskRunner
 
 from ..readers.app_reader import AppReader
 from ..readers.site_reader import SiteInfo, SiteReader
@@ -539,7 +539,7 @@ def enable_tls(name: str):
     if current.get("ssl"):
         return error_response("tls_already_enabled", "TLS is already enabled.", 409)
 
-    rollback = {"operation": "disable-site-ssl", "args": {"site": name}}
+    rollback: TaskCallback = {"operation": "disable-site-ssl", "args": {"site": name}}
     task_args = {"site": name}
     if email:
         task_args["email"] = email

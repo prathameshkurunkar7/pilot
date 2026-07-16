@@ -45,7 +45,7 @@ class NewSiteCommand(Command):
         if not isinstance(admin_password, str) or not admin_password.strip():
             raise BenchError("Site Administrator password must not be empty.")
         self.bench = bench
-        self.name = name
+        self.name = name  # type: ignore[misc]  # the new site's name, distinct from Command.name (the CLI verb)
         self.apps = apps
         self.admin_password = admin_password
         self.db_type = db_type

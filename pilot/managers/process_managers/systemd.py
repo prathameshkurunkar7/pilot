@@ -4,13 +4,17 @@ import os
 import shlex
 import subprocess
 from pathlib import Path
-from typing import override
 
 from pilot.managers.admin_env_manager import AdminEnvManager
 from pilot.managers.gunicorn_manager import GunicornManager
 from pilot.loader import cli_root
 from pilot.managers.process_manager import ProcessDefinition
-from pilot.managers.process_managers.base import ManagedProcessManager, UnitGroup, ServiceRenderer
+from pilot.managers.process_managers.base import (
+    ManagedProcessManager,
+    UnitGroup,
+    ServiceRenderer,
+    override,
+)
 from pilot.platform import _privileged
 from pilot.utils import run_command
 

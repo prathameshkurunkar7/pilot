@@ -7,8 +7,6 @@ from pilot.commands.base import Command
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
-    from pilot.managers.process_managers.supervisor import SupervisorProcessManager
-    from pilot.managers.process_managers.systemd import SystemdProcessManager
 
 _DEV_MESSAGE = (
     "Restart is available only for production benches managed by\n"
@@ -42,9 +40,14 @@ class RestartCommand(Command):
             print(_DEV_MESSAGE)
             return
 
-        from pilot.managers.process_manager import ProcessManager
+        from typing import cast
 
-        manager: SystemdProcessManager | SupervisorProcessManager = ProcessManager.for_bench(self.bench)
+        from pilot.managers.process_manager import ProcessManager
+        from pilot.managers.process_managers.base import ManagedProcessManager
+
+        # production.enabled is already confirmed above, so for_bench() always
+        # returns a ManagedProcessManager subclass here, never the plain base.
+        manager = cast(ManagedProcessManager, ProcessManager.for_bench(self.bench))
         if not manager.is_configured():
             print(_incomplete_message(self.bench))
             return

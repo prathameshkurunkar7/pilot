@@ -80,6 +80,7 @@ def run_with_syslog_output(
     interpreter iteration per byte.
     """
     process = subprocess.Popen(command_argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    assert process.stdout is not None
     fd = process.stdout.fileno()
     head, tail = _syslog_prefix_parts(tag, process.pid)
     secret_bytes = sorted({value.encode() for value in redactions or [] if value}, key=len, reverse=True)
@@ -248,6 +249,7 @@ def _run_task() -> None:
 
 
 def _finalize_task(store: TaskStore, task_id: str, exit_code: int) -> TaskStatus:
+    updates: dict[str, object]
     if _cancel_requested:
         target = TaskStatus.KILLED
         updates = {"finished_at": datetime.now(timezone.utc).isoformat()}

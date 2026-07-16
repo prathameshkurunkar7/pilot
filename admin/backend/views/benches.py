@@ -461,7 +461,10 @@ def _create_bench_locked(
             with noninteractive_privileges():
                 bench = Bench(BenchTomlStore.for_bench(new_dir).read(), new_dir)
                 DomainRouteProvider(bench).register(admin_domain, admin_domain)
+                from pilot.managers.process_managers.base import ManagedProcessManager
+
                 configured_pm = bench.config.production.process_manager
+                PM: type[ManagedProcessManager]
                 if configured_pm == "systemd":
                     from pilot.managers.process_managers.systemd import SystemdProcessManager as PM
                 else:

@@ -11,10 +11,10 @@ try:
 except ImportError:
     boto3 = TransferConfig = BaseClient = Config = None
 
-    class ClientError(Exception):
+    class ClientError(Exception):  # type: ignore[no-redef]
         pass
 
-    class EndpointConnectionError(Exception):
+    class EndpointConnectionError(Exception):  # type: ignore[no-redef]
         pass
 
 from pilot.config.s3_config import S3Config
@@ -199,7 +199,7 @@ class S3:
     def list_objects(self, bucket_name: str, prefix: str) -> list[str]:
         try:
             paginator = self.client.get_paginator("list_objects_v2")
-            keys = []
+            keys: list[str] = []
             for page in paginator.paginate(Bucket=bucket_name, Prefix=prefix):
                 keys.extend(obj["Key"] for obj in page.get("Contents", []))
             return keys

@@ -59,7 +59,7 @@ class DomainRouteProvider:
         domain = self._validate_new(site_name, domain)
         ran, data = self._ask_provider("generate-dns-records", domain, site=site_name)
         if ran:
-            return data or {}
+            return data if isinstance(data, dict) else {}
         records = {"cname": [{"type": "CNAME", "host": domain, "value": site_name}], "a": []}
         if ip := self._server_ip():
             records["a"] = [{"type": "A", "host": domain, "value": ip}]
@@ -249,7 +249,7 @@ class DomainRouteProvider:
     @staticmethod
     def _resolve(host: str) -> set[str]:
         try:
-            return {info[4][0] for info in socket.getaddrinfo(host, None)}
+            return {str(info[4][0]) for info in socket.getaddrinfo(host, None)}
         except OSError:
             return set()
 

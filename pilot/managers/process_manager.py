@@ -166,6 +166,9 @@ class ProcessManager:
     def stop_admin(self) -> None:
         pass
 
+    def restart(self) -> None:
+        pass
+
     def restart_admin(self) -> None:
         pass
 

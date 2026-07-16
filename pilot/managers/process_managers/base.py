@@ -3,7 +3,12 @@ from __future__ import annotations
 import subprocess
 from abc import ABC, abstractmethod
 from enum import Enum, auto
-from typing import override
+try:
+    from typing import override  # type: ignore[attr-defined]  # Python 3.12+
+except ImportError:  # Python 3.11
+
+    def override(func):
+        return func
 
 from pilot.managers.process_manager import ProcessDefinition, ProcessManager
 

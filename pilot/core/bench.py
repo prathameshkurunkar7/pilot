@@ -131,18 +131,18 @@ class Bench:
         if not self.sites_path.is_dir():
             return []
         result = []
-        for d in sorted(self.sites_path.iterdir()):
-            cfg_path = d / "site_config.json"
-            if d.is_dir() and cfg_path.exists():
+        for site_dir in sorted(self.sites_path.iterdir()):
+            cfg_path = site_dir / "site_config.json"
+            if site_dir.is_dir() and cfg_path.exists():
                 try:
                     raw = _json.loads(cfg_path.read_text())
                 except (OSError, _json.JSONDecodeError):
                     raw = {}
-                domains = [(entry.get("domain") if isinstance(entry, dict) else entry) for entry in (raw.get("domains") or [])]
-                domains = [d for d in domains if isinstance(d, str) and d]
+                raw_domains = [(entry.get("domain") if isinstance(entry, dict) else entry) for entry in (raw.get("domains") or [])]
+                domains = [domain for domain in raw_domains if isinstance(domain, str) and domain]
                 host_name = (raw.get("host_name") or "").strip()
                 primary = host_name.split("://", 1)[-1] if host_name else ""
-                site_config = SiteConfig(name=d.name, apps=[], ssl=bool(raw.get("ssl")), domains=domains, primary_domain=primary)
+                site_config = SiteConfig(name=site_dir.name, apps=[], ssl=bool(raw.get("ssl")), domains=domains, primary_domain=primary)
                 result.append(Site(site_config, self))
         return result
 

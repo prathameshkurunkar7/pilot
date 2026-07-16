@@ -113,7 +113,7 @@ class Validator:
         except (SyntaxError, OSError):
             return []
         guarded = Validator._optional_import_ids(tree)
-        modules = []
+        modules: list[str] = []
         for node in ast.walk(tree):
             if id(node) in guarded:
                 continue

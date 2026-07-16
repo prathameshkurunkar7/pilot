@@ -121,7 +121,7 @@ def _report_elapsed(elapsed: float) -> None:
 
 
 def main() -> None:
-    sys.stdout.reconfigure(line_buffering=True)
+    sys.stdout.reconfigure(line_buffering=True)  # type: ignore[union-attr]  # real stdout is always a TextIOWrapper
     args_list = sys.argv[1:]
     bench_name, remaining = _strip_bench_flag(args_list)
     context = _build_context(

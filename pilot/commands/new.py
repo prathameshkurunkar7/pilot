@@ -50,7 +50,7 @@ class NewCommand(Command):
         db_type: str = "mariadb",
     ) -> None:
         self.target_directory = target_directory
-        self.name = name
+        self.name = name  # type: ignore[misc]  # the new bench's name, distinct from Command.name (the CLI verb "new")
         self.process_manager = process_manager
         self.admin_domain = admin_domain
         # None → inherit the server-wide value from a sibling bench (default False).

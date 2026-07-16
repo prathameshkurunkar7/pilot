@@ -116,7 +116,7 @@ _OPERATIONS: dict[str, CallbackOperation] = {
 }
 
 
-def validate_callback(spec: dict) -> dict:
+def validate_callback(spec: object) -> dict:
     if not isinstance(spec, dict):
         raise ValueError("Callback must be a JSON object.")
     operation = spec.get("operation")

@@ -9,6 +9,7 @@ and refuse to remove the final key (locking yourself out).
 from __future__ import annotations
 
 import base64
+import builtins
 import contextlib
 import fcntl
 import hashlib
@@ -97,7 +98,9 @@ class AuthorizedKeysStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or (Path.home() / ".ssh" / "authorized_keys")
 
-    def list(self) -> list[SSHKey]:
+    # Other methods below spell the builtin as builtins.list[...] — this method's
+    # own name would otherwise shadow it in their annotations.
+    def list(self) -> builtins.list[SSHKey]:
         return [self._to_key(parsed) for parsed in self._parse_lines(self._read())]
 
     def add(self, public_key: str) -> SSHKey:
@@ -126,20 +129,20 @@ class AuthorizedKeysStore:
         key_type, blob, comment = parsed
         return SSHKey(key_type=key_type, fingerprint=_fingerprint(blob), comment=comment)
 
-    def _parse_lines(self, lines: list[str]) -> list[tuple[str, str, str]]:
+    def _parse_lines(self, lines: builtins.list[str]) -> builtins.list[tuple[str, str, str]]:
         return [parsed for line in lines if (parsed := _parse_line(line))]
 
     def _line_fingerprint(self, line: str) -> str | None:
         parsed = _parse_line(line)
         return _fingerprint(parsed[1]) if parsed else None
 
-    def _read(self) -> list[str]:
+    def _read(self) -> builtins.list[str]:
         try:
             return self.path.read_text().splitlines()
         except FileNotFoundError:
             return []
 
-    def _write(self, lines: list[str]) -> None:
+    def _write(self, lines: builtins.list[str]) -> None:
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         content = "\n".join(lines) + "\n" if lines else ""
         fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), prefix=".authorized_keys-")

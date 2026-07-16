@@ -238,6 +238,7 @@ class Monitor:
         self._cpu_before = (self._cpu_fields(), {pid: self._proc_ticks(pid) for pid in pids})
 
     def compute_cpu(self) -> None:
+        assert self._cpu_before is not None, "sample_cpu() must run before compute_cpu()"
         fields_before, proc_before = self._cpu_before
         fields_after = self._cpu_fields()
         delta = {key: fields_after[key] - fields_before[key] for key in fields_after}
@@ -277,6 +278,7 @@ class Monitor:
         self._io_before = (self._net_fields(), self._disk_io_fields())
 
     def compute_io(self) -> None:
+        assert self._io_before is not None, "sample_io() must run before compute_io()"
         net_before, disk_before = self._io_before
         net_after, disk_after = self._net_fields(), self._disk_io_fields()
         self._network = {

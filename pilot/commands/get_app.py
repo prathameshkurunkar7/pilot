@@ -35,7 +35,7 @@ class GetAppCommand(Command):
 
         self.bench = bench
         self.repo = repo
-        self.name = name
+        self.name = name  # type: ignore[misc]  # the app's name, distinct from Command.name (the CLI verb)
         self.app = App(AppConfig(name=name, repo=repo, branch=branch), bench)
 
     def run(self) -> None:
@@ -78,7 +78,7 @@ class GetAppCommand(Command):
         from pilot.config.app_config import AppConfig
         from pilot.core.app import App
 
-        self.name = name
+        self.name = name  # type: ignore[misc]  # the app's name, distinct from Command.name (the CLI verb)
         self.app = App(AppConfig(name=name, repo=self.repo, branch=self.app.config.branch), self.bench)
 
     def _install(self) -> None:
