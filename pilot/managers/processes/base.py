@@ -46,7 +46,7 @@ class ManagedProcessManager(ProcessManager, ABC):
 
     How to add a new backend
     ------------------------
-    1. Create ``bench_cli/managers/process_managers/<name>.py``.
+    1. Create ``pilot/managers/processes/<name>.py``.
     2. Add a ``<Name>Renderer(ServiceRenderer)`` that implements ``render(pd)``.
     3. Add a ``<Name>ProcessManager(ManagedProcessManager)`` that implements the
        six abstract methods below:

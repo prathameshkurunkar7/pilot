@@ -76,7 +76,7 @@ If the `IS_SUDOERS_SETUP` environment variable is set, `bench init` assumes the 
 
 #### Step 2 — Install system packages
 
-`MariaDBManager.install()` and `RedisManager.install()` each check `is_installed()` first and skip if already present. The package manager is selected by `get_package_manager()` from `pilot.platform`.
+`MariaDBManager.install()` and `RedisManager.install()` each check `is_installed()` first and skip if already present. The package manager is selected by `get_package_manager()` from `pilot.managers.platform`.
 
 **Ubuntu (apt):**
 - `mariadb-server`

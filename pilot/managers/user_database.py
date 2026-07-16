@@ -79,7 +79,7 @@ class UserOwnedDBManager:
     def _systemctl_env(self) -> dict:
         # A login session normally sets XDG_RUNTIME_DIR; environments without
         # one (CI runners, su -c) need it set explicitly for `systemctl --user`
-        # to find the right user manager. Mirrors process_managers/systemd.py.
+        # to find the right user manager. Mirrors processes/systemd.py.
         env = dict(os.environ)
         if not env.get("XDG_RUNTIME_DIR"):
             env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"

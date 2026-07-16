@@ -1,9 +1,9 @@
 """Production process-manager backends and their shared machinery.
 
-The dev foreground runner, ProcessDefinition and the ProcessManager constructors
-live one level up in pilot.managers.processes.local. This package holds only
-the production side: base.py (ManagedProcessManager + UnitGroup), renderers.py (config
-text builders), and one module per backend (systemd/supervisor).
+The dev foreground runner, ProcessDefinition, and the ProcessManager
+constructors live in local.py. base.py holds the production side shared by
+every backend (ManagedProcessManager + UnitGroup + ServiceRenderer); systemd.py
+and supervisor.py are one module per backend.
 """
 
 from __future__ import annotations
