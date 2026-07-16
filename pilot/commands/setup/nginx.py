@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
@@ -30,13 +31,27 @@ class SetupNginxCommand(Command):
         self._print_site_urls()
 
     def _install_waf(self) -> None:
-        """Install the ModSecurity module + CRS before config is generated, so the
-        WAF's install-gated render actually emits directives on first setup."""
-        if not self.bench.config.waf.enabled:
+        """Install the ModSecurity module + CRS as a standard part of production
+        setup (like nginx itself), so enabling the WAF later is a fast, config-only
+        change. Shared and machine-wide; idempotent, so re-runs are cheap.
+
+        Best-effort: a package/download hiccup must not abort an otherwise-fine
+        deploy — the WAF just stays unavailable (render is gated on is_installed)
+        until a later setup run succeeds. Linux-only; a no-op elsewhere."""
+        from pilot.platform import is_linux
+
+        if not is_linux():
             return
         from pilot.managers.waf_manager import WafManager
 
-        WafManager(self.bench).install()
+        try:
+            WafManager(self.bench).install()
+        except Exception as exc:
+            print(
+                f"Warning: could not install the WAF (ModSecurity/CRS): {exc}. "
+                f"Sites are unaffected; re-run setup to retry.",
+                file=sys.stderr,
+            )
 
     def _validate_nginx_enabled(self) -> None:
         if not self.bench.config.production.enabled:

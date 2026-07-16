@@ -7,10 +7,11 @@
       description="ModSecurity + OWASP Core Rule Set inspects request contents (SQLi, XSS, path traversal) for all sites and the admin."
       :model-value="enabled" @update:model-value="(v) => (enabled = v)" />
 
-    <Alert v-if="enabled && !installed" title="ModSecurity will be installed" theme="blue" :dismissible="false">
+    <Alert v-if="enabled && !installed" title="ModSecurity not installed" theme="yellow" :dismissible="false">
       <template #description>
-        <span class="text-ink-gray-6 text-p-sm">Saving installs the ModSecurity module and rule set the first
-          time. This can take a minute; the page will wait for it to finish.</span>
+        <span class="text-ink-gray-6 text-p-sm">The ModSecurity module isn't installed on this host, so the WAF
+          stays inactive even when enabled. Redeploy production
+          (<span class="font-mono text-xs">bench setup production</span>) to install it, then it takes effect.</span>
       </template>
     </Alert>
 
@@ -113,7 +114,6 @@ async function save() {
     }
     toast.success('WAF updated')
     if (result.nginx_error) toast.error(result.nginx_error)
-    installed.value = installed.value || enabled.value
   } catch (e) {
     error.value = e.message || 'Failed to save.'
   } finally {

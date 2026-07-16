@@ -517,15 +517,17 @@ def update_settings():
         restarted, restart_error = _do_restart(bench_root, config)
 
     # Firewall and WAF rules only affect nginx: regenerate + reload the vhosts
-    # (no workload restart). Only meaningful once the bench is in production.
-    # Enabling the WAF for the first time also installs the ModSecurity module +
-    # CRS, so this branch can be slow on that one transition (idempotent after).
+    # (no workload restart). Only meaningful once the bench is in production. The
+    # ModSecurity module + CRS are installed by production setup, so enabling the
+    # WAF here is config-only. If they're somehow absent (e.g. a bench deployed
+    # before the WAF existed), warn rather than fail — the render is gated on
+    # is_installed, so nginx stays valid and the WAF activates on the next deploy.
     nginx_error = None
     waf_changed = _waf_payload(config) != old_waf
     if config.production.enabled and (_firewall_payload(config) != old_firewall or waf_changed):
+        if waf_changed and config.waf.enabled and not WafManager.is_installed():
+            nginx_error = "ModSecurity is not installed on this host. Redeploy production to install the WAF; it stays inactive until then."
         try:
-            if waf_changed and config.waf.enabled:
-                WafManager(Bench(config, bench_root)).install()
             _regenerate_nginx(bench_root, config)
         except Exception as error:
             nginx_error = str(error)
