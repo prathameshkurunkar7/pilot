@@ -8,7 +8,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from ...api.responses import error_response
 from ...readers.app_reader import AppReader
-from ...validators import validate_app_name, validate_repo_url
+from ...security.validation import validate_app_name, validate_repo_url
 from pilot.tasks.manager.task_runner import TaskRunner
 from admin.backend.task_response import accepted_task_response
 

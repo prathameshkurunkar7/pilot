@@ -18,8 +18,8 @@ from flask import (
 )
 
 from admin.backend.api.responses import created_response, error_response
-from admin.backend.auth import allow_unauthenticated, require_scope
-from admin.backend.rate_limit import rate_limit
+from admin.backend.security.authentication import allow_unauthenticated, require_scope
+from admin.backend.security.rate_limits import rate_limit
 from admin.backend.site_paths import site_config_path
 from admin.backend.site_login_handoff import SiteLoginHandoffStore
 from pilot.config.bench_config import BenchConfig

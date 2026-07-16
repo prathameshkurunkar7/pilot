@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from admin.backend.validators import validate_site_name
+from admin.backend.security.validation import validate_site_name
 
 
 def site_config_path(bench_root: Path, name: str) -> Path | None:

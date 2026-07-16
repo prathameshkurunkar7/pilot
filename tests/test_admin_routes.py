@@ -3,7 +3,7 @@ from pathlib import Path
 
 from admin.backend.api.errors import API_ROOT_PREFIX, API_V1_PREFIX
 from admin.backend.app import create_app
-from admin.backend.auth import AuthPolicy, endpoint_auth_policy
+from admin.backend.security.authentication import AuthPolicy, endpoint_auth_policy
 
 
 SITE_SCOPED_ENDPOINTS = {

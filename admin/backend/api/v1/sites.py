@@ -20,7 +20,7 @@ from pilot.exceptions import (
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 
 from admin.backend.api.responses import error_response, no_content_response
-from admin.backend.auth import require_scope
+from admin.backend.security.authentication import require_scope
 from admin.backend.site_paths import site_config_path, site_exists
 from admin.backend.task_response import accepted_task_response
 from admin.backend.uploads import (
@@ -29,7 +29,7 @@ from admin.backend.uploads import (
     save_archive_upload,
     save_database_upload,
 )
-from ...validators import validate_app_name, validate_cron_expression, validate_site_name
+from ...security.validation import validate_app_name, validate_cron_expression, validate_site_name
 from pilot.tasks.manager.task_runner import TaskCallback, TaskRunner
 
 from ...readers.app_reader import AppReader
@@ -499,7 +499,7 @@ def enable_tls(name: str):
 
     from pilot.config.toml_store import BenchTomlStore
 
-    from ...validators import validate_email
+    from ...security.validation import validate_email
 
     store = BenchTomlStore.for_bench(bench_root)
     data = request.get_json(silent=True)

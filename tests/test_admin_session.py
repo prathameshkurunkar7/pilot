@@ -505,7 +505,7 @@ def test_non_bench_token_cannot_access_bench_route(
 def test_require_scope_allows_unscoped_token(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.auth import require_scope
+    from admin.backend.security.authentication import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -525,7 +525,7 @@ def test_require_scope_allows_unscoped_token(tmp_path: Path) -> None:
 def test_require_scope_allows_matching_scoped_token(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.auth import require_scope
+    from admin.backend.security.authentication import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -545,7 +545,7 @@ def test_require_scope_allows_matching_scoped_token(tmp_path: Path) -> None:
 def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.auth import require_scope
+    from admin.backend.security.authentication import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -565,7 +565,7 @@ def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
 def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.auth import current_site_scope, require_scope
+    from admin.backend.security.authentication import current_site_scope, require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -585,7 +585,7 @@ def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
 def test_current_site_scope_returns_none_for_unscoped(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.auth import current_site_scope
+    from admin.backend.security.authentication import current_site_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -611,7 +611,7 @@ def test_bearer_token_authenticates(tmp_path: Path) -> None:
 def test_bearer_token_with_site_scope(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.auth import require_scope
+    from admin.backend.security.authentication import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -632,7 +632,7 @@ def test_bearer_token_with_site_scope(tmp_path: Path) -> None:
 def test_bearer_token_wrong_site_rejected(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.auth import require_scope
+    from admin.backend.security.authentication import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -653,7 +653,7 @@ def test_bearer_token_wrong_site_rejected(tmp_path: Path) -> None:
 def test_require_scope_with_callable(tmp_path: Path) -> None:
     from flask import jsonify
     from admin.backend.app import create_app
-    from admin.backend.auth import require_scope
+    from admin.backend.security.authentication import require_scope
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")

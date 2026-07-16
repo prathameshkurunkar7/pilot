@@ -7,7 +7,7 @@ from flask import request
 from admin.backend.api.errors import API_ROOT_PREFIX, API_V1_PREFIX, ApiProblem
 from admin.backend.api.responses import accepted_response, created_response, no_content_response
 from admin.backend.app import create_app
-from admin.backend.auth import allow_unauthenticated
+from admin.backend.security.authentication import allow_unauthenticated
 from pilot.exceptions import (
     ConfigError,
     TaskConflictError,

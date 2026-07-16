@@ -11,13 +11,13 @@ from .api.errors import (
     is_api_path,
 )
 from .api.responses import error_response
-from .auth import (
+from .security.authentication import (
     AuthPolicy,
     allow_unauthenticated,
     authenticate_request,
     endpoint_auth_policy,
 )
-from .rate_limit import UsedTokens
+from .security.rate_limits import UsedTokens
 from .uploads import MAX_RESTORE_UPLOAD_BYTES
 from .api.v1.apps import apps_bp, marketplace_bp
 from .api.v1.benches import bench_readiness_bp, benches_bp
@@ -110,7 +110,7 @@ def create_app(bench_root: Path) -> Flask:
                 "Authentication is required.",
                 401,
             )
-        from .auth import authorization_error
+        from .security.authentication import authorization_error
 
         view = app.view_functions.get(request.endpoint) if request.endpoint else None
         error = authorization_error(g.jwt_claims, view, request.view_args or {})

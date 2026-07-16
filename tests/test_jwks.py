@@ -10,9 +10,9 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from jwt import PyJWKClient
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
-from admin.backend import jwks
-from admin.backend.auth import decode_session_token
-from admin.backend.jwks import verify_jwks_token
+from admin.backend.security import jwks
+from admin.backend.security.authentication import decode_session_token
+from admin.backend.security.jwks import verify_jwks_token
 from pilot.commands.admin.generate_session import issue_token
 
 JWKS_URL = "https://issuer.example.com/.well-known/jwks.json"

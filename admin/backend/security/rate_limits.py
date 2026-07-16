@@ -6,8 +6,8 @@ import time
 
 from flask import current_app
 
-from .api.responses import error_response
-from .client_ip import client_ip
+from ..api.responses import error_response
+from ..client_ip import client_ip
 
 _WINDOWS_EXTENSION = "rate_limit_windows"
 _WINDOWS_LOCK = threading.Lock()

@@ -54,9 +54,11 @@ admin/
     ├── task_response.py         # accepted_task_response() — the one Flask-coupled
     │                               piece of task handling; the engine itself lives in
     │                               pilot/tasks (see docs/tasks.md)
-    ├── auth.py                  # AuthPolicy, session/JWT verification, site-scope checks
-    ├── jwks.py                  # remote JWKS verification for external issuers
-    ├── rate_limit.py            # in-memory sliding-window rate limiting
+    ├── security/
+    │   ├── authentication.py    # AuthPolicy, session/JWT verification, site-scope checks
+    │   ├── jwks.py               # remote JWKS verification for external issuers
+    │   ├── rate_limits.py        # in-memory sliding-window rate limiting
+    │   └── validation.py         # request field validators (site/app names, cron, ...)
     │
     ├── api/
     │   ├── errors.py             # ApiProblem, is_api_path, install_api_error_handlers
@@ -146,7 +148,7 @@ Timestamps are UTC ISO 8601. Canonical URLs never end in a trailing slash. Struc
 
 ### Auth model
 
-Every view has an `AuthPolicy`, set by a decorator in `admin/backend/auth.py`:
+Every view has an `AuthPolicy`, set by a decorator in `admin/backend/security/authentication.py`:
 
 | Policy | Decorator | Meaning |
 |--------|-----------|---------|

@@ -6,13 +6,13 @@ from pathlib import Path
 from flask import Blueprint, current_app, g, jsonify, request, url_for
 
 from admin.backend.api.responses import created_response, error_response, no_content_response
-from admin.backend.auth import (
+from admin.backend.security.authentication import (
     allow_unauthenticated,
     authenticate_request,
     decode_session_token,
     set_session_cookie,
 )
-from admin.backend.rate_limit import rate_limit
+from admin.backend.security.rate_limits import rate_limit
 from pilot.tasks.manager.activity import TaskActivityReader
 from admin.backend.api.v1.setup import wizard_marker_path
 from pilot.config.bench_config import BenchConfig
