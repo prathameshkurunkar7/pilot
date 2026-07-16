@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pilot.config.mariadb_config import MariaDBConfig
@@ -162,9 +162,9 @@ def _parse_one_slow_query(lines: list[str], start: int, time_match) -> SlowQuery
     timestamp_str = time_match.group(1)
 
     try:
-        timestamp = datetime.fromisoformat(timestamp_str)
+        timestamp = datetime.fromisoformat(timestamp_str).replace(tzinfo=timezone.utc)
     except ValueError:
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
 
     return SlowQuery(
         timestamp=timestamp,
