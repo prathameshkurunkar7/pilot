@@ -27,6 +27,10 @@ _VERSION_PATTERN = re.compile(r"^\d+(\.\d+)*$")
 # Lenient hostname: dotted labels of alphanumerics/hyphens. Allows dev names
 # like "admin1.localhost" and real domains like "admin.example.com".
 _HOSTNAME_PATTERN = re.compile(r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
+# A WAF exempt path is interpolated into a ModSecurity SecRule string, so it must
+# be a plain URL path — no quotes, whitespace, backslashes, or control characters
+# that could break out of the rule and inject directives.
+_WAF_EXEMPT_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._~%/-]*$")
 _REDIS_PORT_MIN = 1024
 _REDIS_PORT_MAX = 65535
 _PORT_MIN = 1
@@ -418,6 +422,12 @@ class BenchConfig:
                 f"waf.body_limit '{waf.body_limit}' must be >= nginx.client_max_body_size "
                 f"'{self.nginx.client_max_body_size}', else large uploads bypass inspection."
             )
+        for i, path in enumerate(waf.exempt_paths):
+            if len(path) > 255 or not _WAF_EXEMPT_PATH_PATTERN.match(path):
+                raise ConfigError(
+                    f"waf.exempt_paths[{i}] '{path}' is invalid. Must be a URL path starting "
+                    f"with '/' using only letters, digits, and . _ ~ % / - characters."
+                )
 
     def _validate_gunicorn(self) -> None:
         if not isinstance(self.gunicorn.workers, int) or self.gunicorn.workers < 1:

@@ -58,6 +58,25 @@ def test_invalid_values_rejected(waf: dict, needle: str) -> None:
     assert needle in str(exc.value)
 
 
+@pytest.mark.parametrize("path", ["/", "/files/", "/api/method/frappe.ping", "/private/data-1", "/a/b_c~d%20"])
+def test_valid_exempt_paths_accepted(path: str) -> None:
+    assert _config({"exempt_paths": [path]}).waf.exempt_paths == [path]
+
+
+@pytest.mark.parametrize("path", [
+    '/x" "id:1,phase:1,deny"',  # breaks out of the SecRule string
+    "/x with space",
+    "/x\nSecRule",              # newline injection
+    "/x\\y",                    # backslash
+    "no-leading-slash",
+    "/" + "a" * 300,            # over the length cap
+])
+def test_malicious_exempt_paths_rejected(path: str) -> None:
+    with pytest.raises(ConfigError) as exc:
+        _config({"exempt_paths": [path]})
+    assert "exempt_paths" in str(exc.value)
+
+
 def test_body_limit_below_client_max_rejected_when_enabled() -> None:
     with pytest.raises(ConfigError) as exc:
         _config({"enabled": True, "body_limit": "10m"}, client_max_body_size="50m")
