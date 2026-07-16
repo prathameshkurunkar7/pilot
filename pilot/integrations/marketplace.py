@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Literal
 
-from packaging.specifiers import SpecifierSet
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import Version
 
 from pilot.exceptions import AppNotFoundError, DependencyResolutionError
@@ -145,10 +145,17 @@ class Marketplace:
     @staticmethod
     def _parse_registry(raw: list[dict]) -> list[dict]:
         for app in raw:
-            for target in app.get("targets", []):
-                # prereleases=True so -dev/-rc frappe_core specs match.
-                target["_spec"] = SpecifierSet(target.get("frappe_core") or "", prereleases=True)
+            for target in app.get("targets") or []:
+                target["_spec"] = Marketplace._safe_spec(target.get("frappe_core"))
         return raw
+
+    @staticmethod
+    def _safe_spec(frappe_core: str | None) -> SpecifierSet | None:
+        """None means unparseable — excluded from compatibility matching."""
+        try:
+            return SpecifierSet(frappe_core or "", prereleases=True)
+        except InvalidSpecifier:
+            return None
 
     def _make_resolver(self, app: dict, target: dict, is_installable: bool) -> "Resolver":
         return Resolver(
@@ -177,8 +184,8 @@ class Marketplace:
         current_frappe = Version(self.frappe_version)
 
         for app in self._registry:
-            targets = app.get("targets", [])
-            compatible_targets = [t for t in targets if current_frappe in t["_spec"]]
+            targets = app.get("targets") or []
+            compatible_targets = [t for t in targets if t["_spec"] and current_frappe in t["_spec"]]
             best_match = compatible_targets[0] if compatible_targets else None
             display_target = best_match or (targets[0] if targets else {})
 
