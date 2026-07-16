@@ -1,6 +1,8 @@
 """Tests for the admin Settings WAF endpoints."""
 from __future__ import annotations
 
+import pytest
+
 from pilot.config.bench_config import BenchConfig
 
 from admin.backend.views.settings import ConfigPatcher, _build_settings_response, _waf_payload
@@ -44,6 +46,19 @@ def test_patcher_applies_waf() -> None:
 def test_patcher_rejects_invalid_mode() -> None:
     error = ConfigPatcher(_config(), {"waf": {"mode": "bogus"}}).apply()
     assert error is not None and "waf.mode" in error
+
+
+@pytest.mark.parametrize("field", ["paranoia", "inbound_threshold"])
+def test_patcher_rejects_non_integer_numeric_fields(field: str) -> None:
+    # A malformed value must yield a clean error string, never an unhandled 500.
+    error = ConfigPatcher(_config(), {"waf": {field: "high"}}).apply()
+    assert error is not None and f"waf.{field}" in error
+
+
+def test_patcher_accepts_numeric_string() -> None:
+    # A numeric string still coerces cleanly.
+    error = ConfigPatcher(_config(), {"waf": {"paranoia": "3"}}).apply()
+    assert error is None
 
 
 def test_patcher_leaves_waf_untouched_when_absent() -> None:

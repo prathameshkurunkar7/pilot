@@ -98,6 +98,16 @@ def _restart_trigger_values(config: BenchConfig) -> dict:
 # ── Config patching ───────────────────────────────────────────────────────────
 
 
+def _coerce_int(value):
+    """Best-effort int for API input. A non-numeric value is returned unchanged so
+    the validation layer rejects it with a clean 400, rather than int() raising an
+    unhandled 500 here."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
 class ConfigPatcher:
     def __init__(self, config: BenchConfig, data: dict) -> None:
         self.config = config
@@ -214,9 +224,9 @@ class ConfigPatcher:
         if "mode" in waf:
             w.mode = str(waf["mode"])
         if "paranoia" in waf:
-            w.paranoia = int(waf["paranoia"])
+            w.paranoia = _coerce_int(waf["paranoia"])
         if "inbound_threshold" in waf:
-            w.inbound_threshold = int(waf["inbound_threshold"])
+            w.inbound_threshold = _coerce_int(waf["inbound_threshold"])
         if "body_limit" in waf:
             w.body_limit = str(waf["body_limit"]).strip()
         if "inspect_responses" in waf:
