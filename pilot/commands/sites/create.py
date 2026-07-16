@@ -105,6 +105,8 @@ class NewSiteCommand(Command):
         assets_dir = self.bench.sites_path / "assets"
 
         for app in self.bench.apps():
+            if not self.bench.is_app_installed(app.config.name):
+                continue
             if not (assets_dir / app.config.name).exists():
                 manager.build_assets_for_app(app)
 

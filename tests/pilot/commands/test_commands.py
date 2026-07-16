@@ -365,6 +365,25 @@ def test_new_site_validate_passes_with_no_apps_requested(tmp_path: Path) -> None
     NewSiteCommand(bench, "site1.localhost", [], "secret")._validate()  # no raise
 
 
+def test_build_missing_assets_skips_cloned_but_unregistered_apps(tmp_path: Path) -> None:
+    from pilot.commands.sites.create import NewSiteCommand
+
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    for name in ("frappe", "builder"):
+        (bench.apps_path / name / ".git").mkdir(parents=True)
+    # builder is cloned on disk but never registered — it isn't installed.
+    (bench.sites_path / "apps.txt").write_text("frappe\n")
+
+    with patch(
+        "pilot.managers.python_environment.PythonEnvManager.build_assets_for_app"
+    ) as build:
+        NewSiteCommand(bench, "site1.localhost", ["frappe"], "secret").build_missing_assets()
+
+    built = {call.args[0].config.name for call in build.call_args_list}
+    assert built == {"frappe"}
+
+
 # ── RemoveAppCommand ──────────────────────────────────────────────────────────
 
 
