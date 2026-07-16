@@ -58,6 +58,7 @@ declare module 'vue' {
     UpdateAppsDialog: typeof import('./src/components/UpdateAppsDialog.vue')['default']
     UpdatesAvailableButton: typeof import('./src/components/UpdatesAvailableButton.vue')['default']
     Waf: typeof import('./src/components/settings/Waf.vue')['default']
+    WafAnalytics: typeof import('./src/components/WafAnalytics.vue')['default']
     Workers: typeof import('./src/components/settings/Workers.vue')['default']
   }
 }

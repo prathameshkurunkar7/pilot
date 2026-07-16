@@ -125,6 +125,18 @@ def get_monitor_history():
         return jsonify({"error": str(error)}), 500
 
 
+@stats_bp.route("/waf-analytics")
+def get_waf_analytics():
+    from ..readers.waf_reader import WafReader
+
+    bench_root = Path(current_app.config["BENCH_ROOT"])
+    window = request.args.get("window", "24h")
+    try:
+        return jsonify(WafReader(bench_root, window).read())
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
+
+
 @stats_bp.route("/system-info")
 def system_info():
     from pilot.platform import kernel_version, os_version
