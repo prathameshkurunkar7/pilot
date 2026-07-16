@@ -1,16 +1,16 @@
 # Admin Interface Specification
 
-bench ships a lightweight web-based admin interface built on Flask with no Python dependencies beyond Flask itself. It runs as a process inside the Procfile and starts automatically with `bench start`.
+bench ships a web-based admin backend built on Flask. It exposes a versioned JSON API under `/api/v1` and serves a compiled single-page frontend for everything else. It runs as a process managed by `bench start` / `bench stop`.
 
 ---
 
 ## Design constraints
 
-- **Stateless.** The Flask app stores nothing in memory between requests. Every page reads current state from the filesystem (bench.toml, git, log files, site_config.json) or from MariaDB on each request. There is no cache, no background thread.
-- **No extra Python dependencies.** Only Flask and the Python standard library. No SQLAlchemy, no Celery, no frontend framework.
-- **No frontend framework.** Plain HTML templates with minimal inline CSS. A small amount of vanilla JS is acceptable for auto-refresh and SSE output streaming.
-- **Localhost only by default.** Binds to `127.0.0.1` unless overridden.
-- **Password always required.** The admin will refuse to start (returning a 503 on all requests) if no password is set in `bench.toml`. There is no unauthenticated mode.
+- **Stateless.** The Flask app keeps no request state in memory. Every route reads current state from the filesystem (`bench.toml`, git, `site_config.json`, task directories) or from the database on each request.
+- **Admin-only dependencies.** The `pilot` core CLI has zero dependencies. The Flask backend is installed via the `admin` extra (`pip install .[admin]`): Flask, psutil, PyMySQL, gunicorn, boto3, psycopg2-binary, and `pyjwt[crypto]`. These live only under `admin/backend/` and its own virtualenv (`.admin-venv/`); the CLI itself never imports them.
+- **Compiled single-page frontend.** The UI is a Vite-built SPA under `admin/frontend/`, compiled to `admin/backend/static/dist/`. Flask serves those static assets and falls back to `index.html` for client-side routes; it serves a 503 with a build instruction if `bench build-admin` hasn't produced a build yet. Unknown paths under `/api/` never fall back to the SPA — they return a JSON 404.
+- **Not loopback-restricted by the process itself.** `admin.backend.server` binds a dual-stack socket on all interfaces (`app.run(host="::")`), so restricting access to localhost or a private network is the job of the reverse proxy and the bench's `[firewall]` rules, not a bind-address restriction in the admin process.
+- **Password always required.** The admin refuses every `/api/` request with HTTP 503 (`admin_disabled` or `session_unavailable`) if `[admin] enabled` is false or no password is set in `bench.toml`, except for the small set of endpoints marked open (health, bootstrap, session) and setup endpoints while the bench has no `bench.toml` yet.
 
 ---
 
@@ -18,13 +18,19 @@ bench ships a lightweight web-based admin interface built on Flask with no Pytho
 
 The admin process is part of the Procfile and starts automatically alongside the web server, workers, and Redis when you run `bench start`. No separate command is needed.
 
+In production (`bench start`, process-manager-driven) it runs under gunicorn:
+
 ```
-admin: PYTHONPATH=<cli_root> .admin-venv/bin/python -m admin.backend.server --bench-root <bench> --port 8002
+admin: <cli_root>/.admin-venv/bin/gunicorn -c <bench>/config/admin-gunicorn.conf.py admin.backend.wsgi:application
 ```
 
-The admin UI is always available at `http://localhost:8002` while the bench is running. To stop it, stop the bench (`bench stop` or Ctrl-C in the `bench start` terminal).
+In dev/watch mode it runs the module directly, with auto-reload:
 
-The admin port and password are configured in `bench.toml`:
+```
+admin: PYTHONPATH=<cli_root> <cli_root>/.admin-venv/bin/python -m admin.backend.server --bench-root <bench> --port 8002 --dev
+```
+
+The admin UI is always available at `http://localhost:<admin.port>` (default `8002`) while the bench is running. The port and password are configured in `bench.toml`:
 
 ```toml
 [admin]
@@ -32,7 +38,7 @@ port = 8002
 password = "your-password"
 ```
 
-`password` is mandatory. If it is missing or empty, the admin UI shows an "Admin Unavailable" error and all API routes return HTTP 503 until a password is configured and the bench is restarted.
+`password` is mandatory. If it is missing or empty, every `/api/` route returns HTTP 503 until a password is configured.
 
 ---
 
@@ -40,519 +46,427 @@ password = "your-password"
 
 ```
 admin/
+├── frontend/                    # Vite/React SPA source; builds into backend/static/dist
 └── backend/
     ├── app.py                   # Flask app factory — create_app(bench_root: Path)
-    ├── server.py                # entry point — started by ProcessManager via Procfile
+    ├── server.py                # dev/watch entry point (started via `--dev`/`--wizard`)
+    ├── wsgi.py                  # gunicorn entry point used in production
+    ├── api_contract.py          # response envelope, error handling, pagination helpers
+    ├── auth.py                  # AuthPolicy, session/JWT verification, site-scope checks
+    ├── jwks.py                  # remote JWKS verification for external issuers
+    ├── rate_limit.py            # in-memory sliding-window rate limiting
     │
-    ├── readers/                 # Stateless filesystem/DB readers
-    │   ├── bench_reader.py      # BenchReader
-    │   ├── app_reader.py        # AppReader
-    │   ├── site_reader.py       # SiteReader
-    │   ├── process_reader.py    # ProcessReader
-    │   ├── log_reader.py        # LogReader
-    │   └── database_reader.py   # DatabaseReader
+    ├── readers/                 # Stateless filesystem/DB readers, one per resource
+    │   ├── bench_reader.py      # BenchReader — bench.toml summary
+    │   ├── app_reader.py        # AppReader — cloned apps + git/pip state
+    │   ├── site_reader.py       # SiteReader — sites + site_config.json
+    │   ├── process_reader.py    # ProcessReader — process status/PID/resource use
+    │   ├── log_reader.py        # LogReader — log listing, tail, streaming
+    │   ├── database_reader.py   # DatabaseReader — binlogs, processlist, slow queries
+    │   ├── backup_reader.py     # BackupReader — on-disk and offsite backup sets
+    │   └── monitor_reader.py    # MonitorHistoryReader — monitor log history
     │
-    ├── views/                   # Flask blueprints — one per section
-    │   ├── dashboard.py         # GET /
-    │   ├── apps.py              # GET /apps
-    │   ├── sites.py             # GET /sites, /sites/<name>
-    │   ├── processes.py         # GET /processes, POST /processes/<name>/restart
-    │   ├── logs.py              # GET /logs, /logs/<filename>
-    │   ├── database.py          # GET /database/binlogs, /database/slow-queries
-    │   ├── tasks.py             # GET /tasks, /tasks/<id>, POST /tasks/run, /tasks/<id>/kill
-    │   ├── settings.py          # GET /api/settings/, PATCH /api/settings/
-    │   └── updates.py           # GET /api/updates/, POST /api/updates/apply
+    ├── views/                   # Flask blueprints, one per API area
+    │   ├── core.py               # health, bootstrap, session
+    │   ├── setup.py               # first-run setup wizard API
+    │   ├── dashboard.py           # composed dashboard read
+    │   ├── apps.py, git.py        # installed apps, marketplace, git connection
+    │   ├── benches.py             # multi-bench management
+    │   ├── sites.py, site_login.py # sites, domains, backups, login handoff
+    │   ├── processes.py           # runtime/process control
+    │   ├── logs.py, database.py   # log and database inspection
+    │   ├── tasks.py                # task queue + task worker control
+    │   ├── settings.py             # bench.toml read/patch, audit log, client IP
+    │   ├── ssh_keys.py, stats.py, updates.py
     │
     └── tasks/
-        ├── manager/             # Task infrastructure
-        │   ├── task_runner.py   # TaskRunner — spawns background job subprocesses
-        │   ├── task_reader.py   # TaskReader — reads task state from filesystem
-        │   ├── models.py        # TaskInfo dataclass
-        │   └── wrapper.py       # subprocess entry point for running jobs
-        └── jobs/                # Individual job scripts (OO, one class per file)
-            ├── build_assets.py
-            ├── get_app_task.py
-            ├── install_app_task.py
-            ├── new_site_task.py
-            ├── drop_site_task.py
-            ├── switch_branch_task.py
-            └── update_task.py
+        ├── manager/              # Task infrastructure
+        │   ├── task_runner.py    # TaskRunner — validates + queues a task
+        │   ├── task_reader.py    # TaskReader — reads task state from disk
+        │   ├── task_store.py     # durable queue + idempotent creation
+        │   ├── worker_registry.py, worker.py, worker_state.py  # single task worker
+        │   ├── events.py         # SSE event shapes for task streaming
+        │   └── models.py         # TaskInfo dataclass
+        └── jobs/                 # One class per background job (get_app_task.py, new_site_task.py, ...)
 ```
 
 ---
 
-## App factory
+## The `/api/v1` contract
 
-```python
-def create_app(bench_root: Path) -> Flask:
-    app = Flask(__name__)
-    app.config['BENCH_ROOT'] = bench_root
+### Versioning policy
 
-    app.register_blueprint(dashboard_bp)
-    app.register_blueprint(apps_bp,      url_prefix='/apps')
-    app.register_blueprint(sites_bp,     url_prefix='/sites')
-    app.register_blueprint(processes_bp, url_prefix='/processes')
-    app.register_blueprint(logs_bp,      url_prefix='/logs')
-    app.register_blueprint(database_bp,  url_prefix='/database')
-    app.register_blueprint(tasks_bp,     url_prefix='/tasks')
+- Every product route is registered under one prefix, `API_V1_PREFIX = "/api/v1"`. There is currently no `/api/v2` and no unversioned product route.
+- A future breaking contract change is introduced as `/api/v2` served alongside `/api/v1`, not as a branch inside existing view logic — routes, payloads, errors, pagination, and event shapes are versioned together as one unit, and a new version does not fork request handling on the requested version string.
+- When a route migrates to a new version, the old one is removed in the same change; there is no staged deprecation window with two live copies of a route.
+- Unknown paths under `/api/` return a JSON 404 or 405 (`_method_not_allowed` / the `serve_spa` guard in `app.py`) and never fall through to the single-page app.
+- Whether an endpoint requires authentication is metadata on the view function (`AuthPolicy`), not something inferred from its path.
 
-    return app
-```
+### Response envelope
 
-`bench_root` is injected once at startup and is available to every view via `current_app.config['BENCH_ROOT']`. This is the only persistent state the app holds — it is configuration, not runtime state.
+A successful response is either the resource's JSON directly, or `{"data": [...], "meta": {...}}` for a paginated collection. There is no `{"ok": true}` wrapper.
 
----
-
-## Readers layer
-
-Each reader is instantiated per-request. They have no `__init__`-level side effects beyond storing the path they will read from.
-
-### `BenchReader`
-
-```python
-class BenchReader:
-    def __init__(self, bench_root: Path): ...
-
-    def config(self) -> BenchConfig:
-        """Parse bench.toml. Returns BenchConfig or raises ConfigError."""
-
-    def summary(self) -> BenchSummary:
-        """
-        Return a lightweight summary struct: bench name, python version,
-        process_manager, app count, site count. Reads only bench.toml.
-        """
-```
-
-```python
-@dataclass
-class BenchSummary:
-    name: str
-    python_version: str
-    app_count: int
-    site_count: int
-```
-
-### `AppReader`
-
-```python
-class AppReader:
-    def __init__(self, bench_root: Path): ...
-
-    def read_all(self) -> List[AppInfo]:
-        """
-        For each app in bench.toml: check if cloned, read git state, read installed version.
-        """
-
-    def read_one(self, app_name: str) -> AppInfo: ...
-```
-
-```python
-@dataclass
-class AppInfo:
-    name: str
-    repo: str
-    branch: str
-    is_cloned: bool
-    current_commit: str          # short SHA; empty string if not cloned
-    commit_message: str          # first line of last commit message
-    uncommitted_changes: bool    # True if `git status --porcelain` returns output
-    installed_version: str       # from `pip show <name>` Version field; empty if not installed
-```
-
-Git state is read by running `git` as a subprocess — no Python git library needed.
-
-### `SiteReader`
-
-```python
-class SiteReader:
-    def __init__(self, bench_root: Path): ...
-
-    def read_all(self) -> List[SiteInfo]: ...
-    def read_one(self, site_name: str) -> SiteInfo: ...
-```
-
-```python
-@dataclass
-class SiteInfo:
-    name: str
-    exists: bool                 # True if sites/<name>/site_config.json is present
-    db_name: str                 # from bench.toml
-    db_host: str                 # from site_config.json
-    installed_apps: List[str]    # from sites/<name>/site_config.json "installed_apps"
-    site_config: dict            # full parsed site_config.json; empty dict if not found
-```
-
-### `ProcessReader`
-
-```python
-class ProcessReader:
-    def __init__(self, bench_root: Path): ...
-
-    def read_all(self) -> List[ProcessInfo]:
-        """
-        Check pids/ directory for per-process PID files and verify each
-        PID is alive via os.kill(pid, 0).
-        """
-```
-
-```python
-@dataclass
-class ProcessInfo:
-    name: str
-    status: str          # 'running' | 'stopped' | 'error' | 'unknown'
-    pid: Optional[int]
-    uptime: Optional[str]   # e.g. "0:03:12" — only available from supervisor
-    log_file: Path
-```
-
-### `LogReader`
-
-```python
-class LogReader:
-    def __init__(self, bench_root: Path): ...
-
-    def list_logs(self) -> List[LogFileInfo]:
-        """Scan logs/ directory. Return metadata for each .log file."""
-
-    def read_tail(self, filename: str, lines: int = 200) -> List[str]:
-        """
-        Return the last N lines of logs/<filename>.
-        Raises FileNotFoundError if the file does not exist.
-        Validates that filename stays within logs/ (no path traversal).
-        """
-
-    def stream_tail(self, filename: str) -> Generator[str, None, None]:
-        """
-        Yield lines from the end of the file as they are written.
-        Used for SSE log streaming. Stops after yielding 5000 lines
-        or when the generator is garbage-collected.
-        """
-```
-
-```python
-@dataclass
-class LogFileInfo:
-    filename: str
-    size_bytes: int
-    last_modified: datetime
-    process_name: str     # derived from filename by stripping .log suffix
-```
-
-### `DatabaseReader`
-
-```python
-class DatabaseReader:
-    def __init__(self, mariadb_config: MariaDBConfig): ...
-
-    def _connect(self) -> Connection:
-        """Open a short-lived root connection. Closed after each method call."""
-
-    # Binary log methods
-    def list_binary_logs(self) -> List[BinaryLogInfo]:
-        """Run SHOW BINARY LOGS."""
-
-    def read_binary_log_events(
-        self,
-        log_name: str,
-        limit: int = 200,
-        offset: int = 0,
-    ) -> List[BinlogEvent]:
-        """Run SHOW BINLOG EVENTS IN '<log_name>' LIMIT <offset>,<limit>."""
-
-    # Slow query methods
-    def slow_query_log_path(self) -> Optional[Path]:
-        """
-        Run SHOW VARIABLES LIKE 'slow_query_log_file'.
-        Return the path if slow_query_log is ON, else None.
-        """
-
-    def read_slow_queries(self, limit: int = 50) -> List[SlowQuery]:
-        """
-        Parse the slow query log file from the end.
-        Return up to <limit> most recent entries.
-        """
-```
-
-```python
-@dataclass
-class BinaryLogInfo:
-    log_name: str
-    file_size: int
-
-@dataclass
-class BinlogEvent:
-    log_name: str
-    pos: int
-    event_type: str
-    server_id: int
-    end_log_pos: int
-    info: str
-
-@dataclass
-class SlowQuery:
-    timestamp: datetime
-    query_time: float      # seconds
-    lock_time: float
-    rows_examined: int
-    rows_sent: int
-    user_host: str
-    sql: str
-```
-
----
-
-## Routes
-
-### API conventions
-
-Product routes use a major version prefix such as `/api/v1`. A new major
-version may coexist with the previous version, but services must not branch on
-the requested API version.
-
-- `GET` reads without starting work or refreshing external data.
-- `POST` creates resources or starts explicit actions.
-- `PATCH` changes selected fields; `PUT` replaces a complete resource.
-- `DELETE` identifies the resource in the path and does not require a body.
-- Action routes use an explicit noun under `/actions`, not arbitrary dispatch.
-
-Synchronous creation returns `201` with `Location`; queued work returns `202`
-with the task and `Location`; completed deletion returns `204`. Malformed input
-uses `400`, authentication and authorization use `401` and `403`, missing
-resources use `404`, conflicts use `409`, and invalid fields use `422`.
-
-Errors use one shape:
+Every error uses one shape, produced by `error_response()` in `api_contract.py`:
 
 ```json
 {
   "error": {
-    "code": "stable_code",
-    "message": "Human-readable message",
+    "code": "site_not_found",
+    "message": "Site not found.",
     "details": {}
   }
 }
 ```
 
-Growing collections accept a bounded `limit` and an opaque `cursor`, then
-return the resource list with `meta.next_cursor`. Timestamps use UTC ISO 8601.
-Structured streams use `/events`; raw and downloadable data use `/content`.
-Canonical URLs do not end in `/`.
+`code` is a stable machine-readable string; `message` is for humans; `details` is `{}` unless the error carries extra structured context (for example `{"needs_email": true}` on a certificate-email error, or `{"token_invalid": true}` on a rejected git token).
 
-### `GET /` — Dashboard
+Status codes and where they're actually used:
 
-Reads `BenchReader.summary()`, `AppReader.read_all()`, `SiteReader.read_all()`, `ProcessReader.read_all()`. Displays a single-page overview:
+| Status | Meaning | Example |
+|--------|---------|---------|
+| 200 | Read succeeded, or a synchronous write completed | `GET /sites/{name}`, `PATCH /settings` |
+| 201 | A resource was created synchronously, with `Location` | `POST /session` (login), `POST /ssh-keys`, `POST /sites/{name}/login-links` |
+| 202 | Work was queued as a task; body is the task, `Location` points at it | `POST /sites`, `POST /apps`, `POST /tasks` |
+| 204 | Deletion (or logout) completed; no body | `DELETE /session`, `DELETE /sites/{name}/backup-schedule`, `DELETE /ssh-keys/{fingerprint}` |
+| 400 | Malformed request body (not a JSON object) | any `error_response("malformed_request", ...)` |
+| 401 | Missing/invalid credentials or session | `invalid_credentials`, `invalid_login_token`, `git_auth_required` |
+| 403 | Authenticated but not authorized | wrong JWT scope, `bench_management_forbidden` |
+| 404 | Resource does not exist | `site_not_found`, `task_not_found`, `domain_not_found` |
+| 409 | Lifecycle conflict or duplicate | `task_conflict`, `bench_busy`, `tls_already_enabled`, `app_already_installed` |
+| 422 | Well-formed request, invalid field values | `invalid_bench_name`, `invalid_schedule`, `missing_app` |
+| 429 | Rate limit exceeded | login, login-link issuance, handoff consumption |
+| 500 / 503 | Internal error / dependency unavailable | `settings_unavailable`, `configuration_unavailable` |
 
-- Bench name and Python version
-- Apps table: name, branch, short commit hash, uncommitted changes indicator
-- Sites table: name, installed apps, DB name, exists flag
-- Processes table: name, status (coloured), PID, uptime
+Timestamps are UTC ISO 8601. Canonical URLs never end in a trailing slash. Structured event streams live under `/events`; raw/downloadable payloads live under `/content`.
 
-### `GET /apps` — Apps list
+### Auth model
 
-Full `AppReader.read_all()` output in a table. Shows per-app: repo URL, branch, current commit + message, uncommitted changes, pip-installed version.
+Every view has an `AuthPolicy`, set by a decorator in `admin/backend/auth.py`:
 
-### `GET /sites` — Sites list
+| Policy | Decorator | Meaning |
+|--------|-----------|---------|
+| `AUTHENTICATED` (default) | none — implicit | Requires a valid session cookie or bearer token |
+| `OPEN` | `@allow_unauthenticated` | No auth check at all (health, bootstrap, session endpoints, the login handoff) |
+| `SETUP_CONDITIONAL` | `@allow_during_setup` | Open only while the bench has no admin password yet; once one is set, behaves like `AUTHENTICATED` |
 
-`SiteReader.read_all()` in a table. Shows: name, exists, installed apps, DB name.
+`app.py`'s `before_request` guard runs for every `/api/` path and **fails closed**: any exception loading `bench.toml` returns 503 rather than falling back to open access (the one exception is `SETUP_CONDITIONAL` before `bench.toml` exists at all, which is the wizard's only way to bootstrap). Once authenticated, `authorization_error()` checks the request's JWT claims against the view:
 
-### `GET /sites/<name>` — Site detail
+- Routes registered under `benches_bp` / `bench_readiness_bp` additionally require `admin.allow_bench_management` to be true (`guard_bench_management`, a blueprint-level `before_request`), else every route in that area returns 403.
+- Routes decorated with `@require_scope(...)` (all of `sites_bp`, plus `site-login.create_login_link`) require the caller's JWT to either carry no site restriction (`scope: "bench"`) or match the specific site in the URL (`scope: "site"`, confined by the `site` claim). A JWT confined to one site can never reach another site's routes or any bench-level route.
 
-`SiteReader.read_one(name)`. Shows:
+Sensitive endpoints add a sliding-window rate limit on top (`@rate_limit`): `POST /session` (5/60s per IP), `POST /sites/{name}/login-links` and `POST /site-login-handoffs` (10/60s per IP).
 
-- Installed apps list
-- Full `site_config.json` rendered as a formatted JSON block
-- Action buttons (see Commands section)
+### Pagination
 
-### Custom domains (Sites)
+Growing collections use cursor pagination via `parse_pagination()` / `paginated_response()` in `api_contract.py`:
 
-Backed by `DomainRouteProvider` (see [docs/production.md](production.md#custom-domain-management)):
+- Request: `?limit=N&cursor=<opaque>`. An invalid or out-of-range `limit`/`cursor` silently falls back to the default rather than erroring — pagination inputs are advisory.
+- Response: `{"data": [...], "meta": {"limit": N, "next_cursor": "<opaque>" | null}}`. `next_cursor` is `null` once there's nothing more to fetch.
 
-- `GET /api/sites/<name>/domains` — `{domains, primary}`
-- `POST /api/sites/<name>/domains/dns-records` — step 1 of attaching a domain (CNAME/A options)
-- `POST /api/sites/<name>/domains` — step 2, register the domain
-- `DELETE /api/sites/<name>/domains` — deregister a domain
-- `POST /api/sites/<name>/domains/primary` — set (or clear) the primary domain
-- `GET /api/sites/wildcard-domains` / `GET /api/benches/wildcard-domains` — suffixes (no leading `*`) the Create Site and New Bench dialogs build new names from
+Currently only `GET /audit-events` uses this (default limit 50, max 500); it also accepts `type`, `site`, and `status` filters that are independent of pagination.
 
-In the Create Site dialog, the Site Name field is a plain text box when no wildcard domains are configured; with one, it's a prefix field plus a fixed suffix label; with several, a prefix field plus a dropdown to pick the suffix. The New Bench dialog's Admin domain field works the same way.
+### Task representation
 
-Setting `admin.allow_bench_management = false` in `bench.toml` hides the bench switcher and New Bench dialog and makes every `/api/benches/*` route return 403. Benches are then managed only from the CLI.
-
-### `GET /processes` — Process status
-
-`ProcessReader.read_all()`. Shows name, status, PID, uptime, link to its log file.
-
-Process lifecycle is managed by `bench start` / `bench stop`.
-
-### `GET /logs` — Log file list
-
-`LogReader.list_logs()` in a table: filename, process name, size, last modified time.
-
-### `GET /logs/<filename>` — Log viewer
-
-`LogReader.read_tail(filename, lines=request.args.get('lines', 200))`. Renders the lines in a `<pre>` block.
-
-Query parameters:
-- `?lines=N` — how many lines to show (default 200, max 5000)
-- `?stream=1` — switches the page to live-tail mode (see Streaming section)
-
-### `GET /database/binlogs` — Binary logs list
-
-`DatabaseReader.list_binary_logs()`. Table: log name, file size.
-
-### `GET /database/binlogs/<log_name>` — Binary log detail
-
-`DatabaseReader.read_binary_log_events(log_name, limit, offset)`. Table: pos, event type, server_id, end_log_pos, info. Pagination via `?offset=N&limit=N`.
-
-### `GET /database/slow-queries` — Slow query log
-
-`DatabaseReader.read_slow_queries(limit=50)`. Table: timestamp, query_time, lock_time, rows_examined, rows_sent, user/host, SQL.
-
-Query parameter: `?limit=N` (default 50, max 500).
-
-### `POST /tasks/run` — Execute a command
-
-All command execution goes through the task system (see [specs/tasks.md](tasks.md)). Commands run as detached forked processes; the admin server returns immediately.
-
-Request body (form-encoded):
-```
-command=migrate&site=site1.localhost
-```
-
-Allowed commands are enforced by `TaskRunner._build_argv`. Any unknown command returns HTTP 400. On success, the response is a `303` redirect to `GET /tasks/<task-id>`.
-
-### `GET /tasks` — Task list
-
-See [specs/tasks.md](tasks.md). Lists all tasks, most recent first, with status badges.
-
-### `GET /tasks/<task-id>` — Task detail
-
-See [specs/tasks.md](tasks.md). Shows task metadata, live-streaming output while running, and a kill button for running tasks.
-
-### `GET /api/settings/` — Read current settings
-
-Returns the full settings payload as JSON. The frontend uses this to populate the Settings modal.
+A task is the JSON produced by `TaskInfo.as_dict()`:
 
 ```json
 {
-  "is_linux": true,
-  "bench": { "name": "my-bench", "python": "3.14", "http_port": 8000, "socketio_port": 9000 },
-  "mariadb": { "host": "localhost", "port": 3306, "admin_user": "root", "socket_path": "", "version": "10.6" },
-  "redis": { "cache_port": 13000, "queue_port": 11000, "socketio_port": 12000, "version": "7" },
-  "workers": [{ "queues": ["default", "short", "long"], "count": 1 }],
-  "nginx": { "http_port": 80, "https_port": 443, "config_dir": "/etc/nginx/conf.d", "worker_processes": "auto", "client_max_body_size": "50m" },
-  "letsencrypt": { "email": "", "webroot_path": "/var/www/letsencrypt" },
-  "production": { "process_manager": "none", "nginx": false }
+  "task_id": "20260716-140501-a1b2c3",
+  "command": "migrate",
+  "args": { "site": "site1.localhost" },
+  "status": "running",
+  "pid": 48213,
+  "queued_at": "2026-07-16T14:05:01+00:00",
+  "started_at": "2026-07-16T14:05:01+00:00",
+  "finished_at": null,
+  "exit_code": null,
+  "duration_seconds": null,
+  "queue_position": null,
+  "failure": null
 }
 ```
 
-### `PATCH /api/settings/` — Update settings
+- `status` is one of `queued`, `running`, `success`, `failed`, `killed` (`TaskStatus`). Valid transitions: `queued → running | killed`, `running → success | failed | killed`; terminal states don't transition further.
+- `args` is redacted for display: password- and token-like keys are replaced with `"[redacted]"`, and credentials embedded in URLs are stripped, before the task is ever written to disk (`public_task_args`). A few commands (`new-site`, `new-site-from-backup`, `reinstall-site`) additionally keep their password argument out of `meta.json` entirely, in a private `secrets.json` the wrapper reads at exec time.
+- `failure` is populated only when `status == "failed"`, as `{"code": "command_failed" | "task_interrupted", "message": "..."}`.
+- Every mutating action that starts background work (`POST /sites`, `POST /apps`, `POST /sites/{name}/actions/*`, `POST /site-restores`, `POST /setup/actions/start`, ...) returns **202** with the task JSON above and a `Location: /api/v1/tasks/{task_id}` header, built by `accepted_task_response()`.
+- **Idempotency:** send `Idempotency-Key: <opaque>` on a task-creating POST to make retried requests safe. The key is hashed and checked against a fingerprint of `{command, args}`; a repeat with the same key and same request body returns the original task instead of creating a new one. `POST /setup/actions/start` requires this header (422 `idempotency_key_required` if missing); it's optional elsewhere.
+- **Conflicts:** site-scoped mutations pass a `resource_key` (`site:{name}`) so only one task can be in flight per site; a second concurrent request gets 409 `task_conflict`.
+- **Retry:** `POST /tasks/{task_id}/actions/retry` resubmits the same `command`/`args` as a new task. It refuses (409 `task_not_finished`) if the task is still active, and refuses (409 `fresh_credentials_required`) for commands whose secret arguments (like a generated admin password) aren't retained — `new-site`, `new-site-from-backup`, `reinstall-site`.
+- **Cancel:** `DELETE /tasks/{task_id}` kills a queued or running task (409 `task_not_active` otherwise).
+- **Task worker:** the single background worker that drains the task queue is itself a resource — `GET /task-worker` reports `{"active", "uncertain", "status", "desired", "queued_tasks", "running_tasks"}`; `POST /task-worker/actions/start` and `.../stop` set the desired intent and return 202 with that same resource.
 
-Accepts a JSON body with any subset of the settings sections. Only keys present in the body are updated; omitted keys keep their current values.
+### SSE / events
 
-```json
-{
-  "bench": { "http_port": 8080 },
-  "workers": [
-    { "queues": ["default"], "count": 4 },
-    { "queues": ["short", "long"], "count": 1 }
-  ]
-}
+Two endpoints stream Server-Sent Events, both as one JSON object per `data:` line rather than raw text.
+
+**`GET /tasks/{task_id}/events`** — task output and lifecycle, replayable via `Last-Event-ID`:
+
+```
+id: 42
+data: {"type":"line","line":"Updating site1.localhost..."}
+
+data: {"type":"status","status":"running","queue_position":null}
+
+data: {"type":"done","status":"success","exit_code":0,"failure":null}
 ```
 
-**Response:**
-```json
-{ "ok": true, "restarted": true, "restart_error": null }
+Event `type` is one of `line` (a line of output), `overwrite` (replace the last line — used for progress bars), `status` (queue position or state change), or `done` (terminal, sent once). Only `line`/`overwrite`/`done` events carry an `id:` for resumption; `status` events don't, since they're not meant to be replayed. Headers disable proxy buffering (`X-Accel-Buffering: no`).
+
+**`GET /logs/{filename}/events`** — live log tail:
+
+```
+data: {"line": "2026-07-16 14:05:01 INFO Starting worker..."}
 ```
 
-**Process restart:** If any value in `bench.http_port`, `bench.socketio_port`, `redis.*_port`, `workers.*`, or `production.process_manager` changed, bench regenerates config files and restarts the running process manager (supervisor or systemd) automatically — excluding the admin process itself so the response is delivered before the restart.
+On an invalid filename the stream emits one `{"error": "..."}` message instead of an HTTP error, since the response has already switched to `text/event-stream`. A stream stops after 5000 lines or when the client disconnects.
 
-**Error responses:**
+---
 
-| Condition | HTTP | Body |
-|-----------|------|------|
-| JSON parse error | 400 | `{"ok": false, "error": "..."}` |
-| Validation failure (port out of range, etc.) | 400 | `{"ok": false, "error": "..."}` |
-| bench.toml write failure | 500 | `{"ok": false, "error": "Failed to write config: ..."}` |
+## Full route reference
+
+All paths below are relative to `/api/v1`. "Auth" combines the `AuthPolicy` with any additional guard (bench-management, site-scope).
+
+### Bootstrap and session
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/health` | open | Liveness probe; always `{"status": "ok"}`, CORS-open |
+| GET | `/bootstrap` | open | Tells the SPA which mode to render: `{"mode": "setup"}` before the bench is initialized/passworded, or `{"mode": "admin", "enabled", "name", "db_type", "production", "native_process_manager", "allow_bench_management", "task_worker"}` once it's live |
+| GET | `/session` | open | `{"authenticated": bool, "scope"?: "bench"\|"site"}` for the current cookie/bearer credential |
+| POST | `/session` | open, rate-limited | Log in. Body `{"password": "..."}` or `{"sid": "<jwt>"}` (one-time sign-in token). Sets the `sid` `HttpOnly` cookie; 201 with `{"authenticated": true, "scope": "bench"}` |
+| DELETE | `/session` | open | Log out; clears the `sid` cookie; 204 |
+
+### Setup wizard
+
+Available before `bench.toml`/the admin password exist (`SETUP_CONDITIONAL`); becomes fully authenticated once a password is set.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/setup/configuration` | Current `bench.toml` values pre-filled for the wizard form, plus `running_setup_task_id` and `*_configured` flags for password fields (never the passwords themselves) |
+| PUT | `/setup/configuration` | Write wizard form fields to `bench.toml`; issues the session cookie once `admin_password` is set |
+| GET | `/setup/framework-branches` | `{"branches": [...]}` — selectable Frappe framework branches |
+| POST | `/setup/database-validations` | Body `{"engine": "mariadb"\|"postgres", ...credentials}`; returns `{"engine", "state": "valid"\|"invalid"\|"will_install"}` without starting `init` |
+| POST | `/setup/actions/start` | Requires `Idempotency-Key`; kicks off `bench init` as a task (`wizard-setup`), 202 with the task |
+| POST | `/setup/actions/finish` | Body `{"task_id": "..."}`; verifies the setup task succeeded and the bench is fully initialized, then 204. In the standalone wizard process this also schedules the wizard server's own shutdown |
+
+### Dashboard
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/dashboard` | Composed read: bench summary, apps, sites, processes, 5 most recent tasks, plus `running_count`/`cloned_count`/`online_count` |
+
+### Apps, marketplace, updates
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/apps` | All cloned apps: repo, branch, commit, `has_local_changes`, installed version |
+| POST | `/apps` | Install an app. Body `{"name"?, "repo"?, "branch"?, "sites"?: [...]}` — a bare `name` installs an already-cloned app; `repo` clones by URL; either fetches onto `sites` too if given. 202 (task `get-app` or `get-and-install-app`); 409 `app_already_installed` if already cloned |
+| GET | `/apps/{name}` | One app's detail; 404 if not cloned |
+| PATCH | `/apps/{name}` | Body `{"repo": "..."}`; rewrites the app's git remote (`origin`) |
+| DELETE | `/apps/{name}` | 202, task `remove-app` |
+| POST | `/apps/fetch` | 202, task `fetch-all-app-updates` — fetches every cloned app's remote in the background |
+| GET | `/marketplace/apps` | Full app registry (name, repo, branches, logo, categories, stars) for the catalog view — distinct from installed apps |
+| GET | `/app-updates` | Per-app commits-ahead/behind against its remote, from the **last** fetch (no network call) |
+| POST | `/app-update-checks` | Same shape as `/app-updates`, but runs `git fetch` synchronously first — a request-blocking network refresh, not a task |
+| GET | `/cli-updates` | The CLI's own commits-behind status against its remote (no network call) |
+| POST | `/cli-update-checks` | Same, after a synchronous `git fetch` |
+
+`POST /apps/fetch` and `POST /app-update-checks` both refresh git state but differ in shape: the former is an async task covering every app; the latter is a synchronous, per-request check used to populate the updates view immediately.
+
+### Benches (multi-bench management)
+
+All routes 403 (`bench_management_forbidden`) when `admin.allow_bench_management` is false.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/benches` | Every sibling bench directory next to this one: name, port, domain, `production`, `reachable`, `site_count`, `admin_url` |
+| POST | `/benches` | Create a new bench. Body `{"name", "process_manager", "db_type"?, "admin_domain", "admin_tls"?}`. In a production parent, starts the new bench's admin over nginx immediately and returns 201 with `wizard_at_domain: true`; otherwise spawns a standalone wizard server on its own port and returns 201 with `wizard_at_domain: false` |
+| GET | `/benches/{name}` | One bench's resource (same shape as the list) |
+| DELETE | `/benches/{name}` | Drop a bench; 409 `bench_not_empty` if it still has sites, 204 on success |
+| POST | `/benches/{name}/actions/start` | Start a production bench's workload via its process manager; returns the bench resource |
+| POST | `/benches/{name}/actions/stop` | Stop it |
+| POST | `/benches/{name}/actions/restart` | Restart it |
+| GET | `/benches/domain-options` | Wildcard domain suffixes (no leading `*`) the New Bench dialog can build an admin domain from |
+| POST | `/bench-readiness-checks` | Body `{"domain", "scheme"?}` or `{"port"}`; probes whether a new bench's wizard/admin is reachable yet — `{"ready": bool}` |
+
+Bench-lifecycle routes (`create`, `delete`, `actions/*`) take an exclusive file lock per bench and a bench-management-wide lock; a concurrent request against the same bench gets 409 `bench_busy`.
+
+### Sites
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/sites` | authenticated | All sites: `name`, `exists`, `installed_apps`, `framework_branch`, `broken`, `provisioning` |
+| GET | `/sites/wildcard-domains` | authenticated | Wildcard suffixes the Create Site dialog can build a name from |
+| POST | `/sites` | authenticated | Create a site. Body `{"name", "apps"?: [...]}`; a random admin password is generated server-side. 202, task `new-site` with rollback callbacks that remove a failed/canceled site |
+| GET | `/sites/{name}` | site-scope | Site detail plus `ssl`, `installable_apps`, `http_port`, `nginx_enabled`, `admin_tls` |
+| DELETE | `/sites/{name}` | site-scope | 202, task `drop-site` |
+| POST | `/sites/{name}/actions/reinstall` | site-scope | Body `{"admin_password"?}` (generated if omitted); 202, task `reinstall-site` |
+| POST | `/sites/{name}/actions/clear-cache` | site-scope | 202, task `clear-cache` |
+| POST | `/sites/{name}/actions/migrate` | site-scope | 202, task `migrate` |
+| POST | `/sites/{name}/actions/enable-tls` | site-scope | Body `{"email"?}` (falls back to the bench's Let's Encrypt email); 409 `tls_already_enabled` if already on; 202, task `setup-letsencrypt` with a rollback callback |
+| GET | `/sites/{name}/apps` | site-scope | Installed apps with title/description/branch/commit/version |
+| POST | `/sites/{name}/apps` | site-scope | Install an app on the site. Body `{"app"?, "repo"?, "branch"?}` — a cloned app installs directly (task `install-app`); otherwise it's fetched first (task `get-and-install-app`) |
+| DELETE | `/sites/{name}/apps/{app}` | site-scope | `?force=true` to skip dependency checks; 202, task `uninstall-app` |
+| GET | `/sites/{name}/domains` | site-scope | `{"domains": [...], "primary": "..."}` |
+| POST | `/sites/{name}/domains` | site-scope | Body `{"domain"}`; registers it, then 202 for the nginx/cert task that applies it |
+| GET | `/sites/{name}/domains/{domain}` | site-scope | `{"domain", "is_primary"}`; 404 if not attached |
+| PATCH | `/sites/{name}/domains/{domain}` | site-scope | Only `{"primary": true}` is accepted; sets it primary, 202 for the nginx task |
+| DELETE | `/sites/{name}/domains/{domain}` | site-scope | Deregister; 202 for the nginx task |
+| GET | `/sites/{name}/domains/{domain}/dns-records` | site-scope | Read-only CNAME/A record guidance for attaching the domain |
+| GET | `/sites/{name}/configuration` | site-scope | Allowlisted `site_config.json` fields (protected/secret-like keys filtered out) |
+| PATCH | `/sites/{name}/configuration` | site-scope | Merge-patch the allowlisted fields; `null` removes a key; rejects touching protected/secret-like keys (422 `protected_configuration`) |
+| GET | `/sites/{name}/backups` | site-scope | `?limit=N` (default 20), newest-first backup sets with their files |
+| POST | `/sites/{name}/backups` | site-scope | 202, task `backup-site` (always `--with-files`) |
+| GET | `/sites/{name}/backups/{timestamp}` | site-scope | One backup set; 404 if unknown |
+| GET | `/sites/{name}/backups/{timestamp}/files/{file_id}/content` | site-scope | Streams the backup file as an attachment; validates `file_id` stays within that backup's directory |
+| GET | `/sites/{name}/backups/{timestamp}/download-links` | site-scope | Pre-signed S3 URLs for an offsite backup's files, so the client downloads straight from the bucket |
+| GET | `/sites/{name}/backup-schedule` | site-scope | `{"schedule": "<cron>"\|null, "retention": {...}\|null}` |
+| PUT | `/sites/{name}/backup-schedule` | site-scope | Body `{"schedule", "retention"?}`; validates the cron expression and retention config, writes both, returns the updated schedule |
+| DELETE | `/sites/{name}/backup-schedule` | site-scope | Removes the cron entry and clears retention; 204 |
+| POST | `/site-restores` | authenticated | Multipart form: `name`, `admin_password`?, `db_file`, `public_files`?, `private_files`?. Uploads are staged to a temp directory, then 202, task `new-site-from-backup` with cleanup callbacks on every outcome |
+| POST | `/sites/{name}/login-links` | site-scope, rate-limited | Issues a single-use handoff token redeemable at the site's own origin; 201 `{"url", "method": "POST", "handoff_token", "expires_at"}` |
+| POST | `/site-login-handoffs` | open, rate-limited | Form field `handoff_token`; redeems it (one-time, host-bound) for a Frappe Administrator session, 303 redirect with the session cookie set |
+
+`POST /sites`, `DELETE /sites/{name}`, and the `reinstall`/`clear-cache`/`migrate`/`enable-tls` actions all accept `Idempotency-Key` and are serialized per site via a `site:{name}` resource key (409 `task_conflict` on overlap).
+
+### Tasks and task worker
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/tasks` | All tasks, newest first. `?status=queued\|running\|success\|failed\|killed` filters |
+| POST | `/tasks` | Generic task creation. Body `{"command", ...args}` against the same whitelist `TaskRunner` uses everywhere else; 202. Accepts `Idempotency-Key` |
+| GET | `/tasks/{task_id}` | One task's detail |
+| DELETE | `/tasks/{task_id}` | Cancel a queued or running task; 204. 409 `task_not_active` if already finished |
+| POST | `/tasks/{task_id}/actions/retry` | Resubmit the task's command/args as a new task; 202. 409 if still active or if its secrets weren't retained |
+| GET | `/tasks/{task_id}/events` | SSE task output (see above) |
+| GET | `/tasks/{task_id}/output/content` | Full `output.log` as a downloadable attachment; 404 if not yet written |
+| GET | `/task-worker` | `{"active", "uncertain", "status", "desired", "queued_tasks", "running_tasks"}` |
+| POST | `/task-worker/actions/start` | Set the desired worker intent to running and wake it; 202 with the worker resource |
+| POST | `/task-worker/actions/stop` | Set the desired intent to stopped and wake it; 202 |
+
+### Runtime (processes)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/runtime/processes` | Every managed process: name, status, PID, uptime, CPU%, RSS/PSS memory, log filename; `production: bool` |
+| POST | `/runtime/actions/start` | Production only (409 otherwise); `supervisorctl start` for the bench's program group |
+| POST | `/runtime/actions/stop` | Production only; stops every non-admin program |
+| POST | `/runtime/actions/restart` | Production only; restarts every non-admin program |
+
+Start/stop/restart deliberately exclude the admin's own supervisor program, so the request that triggers the restart can still complete.
+
+### Logs
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/logs` | Every `.log` file under `logs/`: filename, size, last modified, process name, line count |
+| GET | `/logs/{filename}` | Tail as JSON. `?lines=N` (default 200, max 5000), `?search=text` (case-insensitive substring filter applied after the tail) |
+| GET | `/logs/{filename}/content` | Full file as a downloadable `text/plain` attachment |
+| GET | `/logs/{filename}/events` | SSE live tail (see above); stops after 5000 lines |
+
+`filename` is validated to resolve to a plain file directly inside `logs/`; any path separator or traversal attempt returns 422 `invalid_log`.
+
+### Database
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/database/binlogs` | `SHOW BINARY LOGS` — name + file size, MariaDB only |
+| GET | `/database/binlogs/{log_name}` | `SHOW BINLOG EVENTS`, paginated by `?limit=&offset=` (default 200/0) |
+| GET | `/database/processes` | `SHOW FULL PROCESSLIST` rows (the query itself filtered out) |
+| DELETE | `/database/processes/{pid}` | Kill a database connection/query; 409 `database_process_not_active` if already gone |
+| GET | `/database/slow-queries` | Parsed slow query log, newest first, `?limit=N` (default 50, max 500) |
+| GET | `/database/sites` | Sites with a configured database, for the query tool's site picker |
+| GET | `/database/schema` | `?site=` required; that site's table/column schema |
+| POST | `/database/queries` | Body `{"site", "query", "read_only"?: true}`; runs the query against that site's database and returns `{"columns", "rows", "row_count", "duration_ms", "truncated", "affected_rows"}` |
+
+Binlog/processlist/slow-query routes return 409 `unsupported_database_engine` on a non-MariaDB bench.
+
+### Git
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/git/connection` | Connection status: `{"connected", "provider"?, "username"?, "token_preview"?, "is_token_valid"?, "token_expires_at"?, "providers"}` |
+| PUT | `/git/connection` | Body `{"provider", "token", "username"?, "expires_at"?}`; validates the token against the provider before saving (idempotent — replaces any existing connection) |
+| DELETE | `/git/connection` | Disconnect; 204 |
+| GET | `/git/repositories` | Repositories visible to the connected account; 401 `git_auth_required` if not connected |
+| GET | `/git/branches` | `?repo=` required; `{"branches", "default_branch"}`, default branch listed first |
+| POST | `/git/repository-resolutions` | Body `{"repo", "branch"?}`; resolves the Frappe app name from a repository without cloning it |
+
+### Settings, audit, network
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/settings` | The full current-bench settings resource: bench, mariadb, postgres, redis, workers, firewall, production, admin, letsencrypt, s3 (secrets never echoed back), monitor |
+| PATCH | `/settings` | Merge-patch by section; regenerates configs and restarts affected services (excluding the admin process) when a restart-triggering field changes; 422 `invalid_settings` on a rejected value |
+| GET | `/audit-events` | Paginated bench-wide audit log (see Pagination); `?type=&site=&status=` filters |
+| GET | `/network/client` | `{"ip": "..."}` — the requester's own address, for firewall allow-listing |
+
+### SSH keys
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/ssh-keys` | `{"keys": [{"fingerprint", "type", "comment"}, ...]}` |
+| POST | `/ssh-keys` | Body `{"public_key"}`; 201 with `Location: /api/v1/ssh-keys/{fingerprint}`; 409 if already authorized |
+| DELETE | `/ssh-keys/{fingerprint}` | 204; 409 `ssh_key_removal_rejected` if it's the last key |
+
+### Monitoring
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/monitor/status` | System/application monitor log file paths and last-modified times |
+| GET | `/monitor/history` | Parsed monitor history, `?window=1h` (or other supported window) |
+| GET | `/system` | Static host facts: disk/memory/swap totals, CPU count, kernel/OS version, runtime versions |
+| GET | `/metrics` | Live point-in-time metrics: CPU/memory/disk usage and breakdowns, network/disk I/O rates, directory sizes |
 
 ---
 
 ## Settings modal
 
-The frontend presents settings as a tabbed modal dialog. Tabs are:
+The frontend presents settings as a tabbed modal dialog:
 
 | Tab | Editable fields | Read-only fields |
 |-----|----------------|-----------------|
-| **Bench** | HTTP Port, SocketIO Port | Name, Python version |
+| **Bench** | HTTP Port, SocketIO Port, Default Branch | Name, Python version, Database type |
 | **Appearance** | Theme (light/dark/auto) | — |
-| **MariaDB** | — | Host, Port, Admin User, Version, Socket Path |
-| **Redis** | Cache Port, Queue Port, SocketIO Port | — |
-| **Workers** | Default, Short, Long worker counts | — |
-| **Nginx** | Worker Processes, Client Max Body Size, Config Directory | HTTP Port, HTTPS Port |
-| **HTTPS** | Enable HTTPS toggle (`admin.tls`), Let's Encrypt email; "Enable HTTPS & issue certificate" action | — |
-| **Let's Encrypt** | Email, Webroot Path | — |
-| **Production** | Process Manager (none/supervisor + the host's native manager: systemd) | — |
-| **Updates** | — | Current version, update availability badge; Update button |
+| **MariaDB** | — | Host, Port, Admin User, Socket Path |
+| **Postgres** | Host, Port, Admin User, Password | Password-set indicator only (never the password itself) |
+| **Redis** | Cache Port, Queue Port | Version |
+| **Workers** | Queue groups and counts | — |
+| **Firewall** | Enabled toggle, default action, per-IP allow/deny rules | — |
+| **Nginx / HTTPS** | Enable HTTPS toggle (`admin.tls`), Let's Encrypt email | — |
+| **Production** | Process Manager (none/supervisor/the host's native manager) | — |
+| **S3** | Access key, secret key, bucket, provider, region | — |
+| **Updates** | — | Current version, update availability; Update button |
 
-MariaDB fields are read-only because the host, port, credentials, and socket path are set once during `bench init` and cannot be meaningfully changed by editing `bench.toml` after the fact — the database server itself is not reconfigured.
+MariaDB connection fields are read-only because the host/port/credentials/socket are fixed at `bench init` time; the database server itself isn't reconfigured by editing `bench.toml` afterward. S3 and Postgres secret fields are write-only — `GET /settings` reports only whether one is set, never its value.
 
-The Process Manager dropdown lets you switch between `none`, `supervisor`, and the host's native manager — `systemd` on Linux (the backend reports `native_process_manager` so the UI never offers an unavailable option). A change here writes to `bench.toml` and triggers a process restart.
+Changing a restart-triggering field (ports, worker groups, process manager) regenerates config files and restarts the running process manager automatically, skipping the admin process itself so the response is delivered before the restart. The **HTTPS** toggle only records intent in `bench.toml`; call `POST /sites/{name}/actions/enable-tls` (or the equivalent settings flow) to actually run Let's Encrypt and rewrite nginx.
 
-The **HTTPS** toggle sets the server-wide `admin.tls` flag. Enabling it (with a Let's Encrypt email) persists the choice and runs `setup-letsencrypt` to obtain certificates and rewrite nginx with the HTTP→HTTPS redirect; disabling it runs `setup-nginx` to fall back to plain HTTP. `admin.tls` governs HTTPS for both the admin domain and all SSL-enabled sites — per-site SSL is hidden while it is off.
-
-Theme changes are local to the browser session (stored in `localStorage`) and do not touch `bench.toml`.
-
----
-
-## Log streaming (live tail)
-
-`GET /logs/<filename>?stream=1` returns a page whose JavaScript opens an `EventSource` pointing at `GET /logs/<filename>/stream`.
-
-`GET /logs/<filename>/stream` is a streaming Flask response:
-
-```python
-@logs_bp.route('/<filename>/stream')
-def stream_log(filename):
-    reader = LogReader(current_app.config['BENCH_ROOT'])
-    def generate():
-        for line in reader.stream_tail(filename):
-            yield f"data: {line}\n\n"
-    return Response(stream_with_context(generate()), mimetype='text/event-stream')
-```
-
-The JavaScript appends each `data:` line to a `<pre>` block and scrolls to the bottom. No library needed — `EventSource` is built into all modern browsers.
-
----
-
-## Error handling
-
-Views catch `ConfigError`, `FileNotFoundError`, and database connection errors and render a plain error page rather than a 500. This lets the admin remain usable even when the bench is partially broken.
+Theme is local to the browser (`localStorage`) and never touches `bench.toml`.
 
 ---
 
 ## Security notes
 
-- Bind to `127.0.0.1` by default.
-- **Password is mandatory.** The admin refuses all requests with HTTP 503 if `[admin] password` is not set in `bench.toml`. There is no way to bypass authentication.
-- Sessions are Flask cookie-based. The session key is a random 32-byte hex string generated at startup — sessions are invalidated on process restart.
-- `bench generate-admin-session` issues a 5-minute, single-use `?sid=` token that the frontend exchanges for a 1-day `HttpOnly` session cookie — an alternative to password login, signed with `admin.jwt_secret` in `bench.toml`. See [docs/commands.md](commands.md#bench-generate-admin-session).
-- `bench issue-site-token` issues a scoped JWT (`scope: "site"`) for programmatic site-to-bench API calls. The token is restricted to the named site and cannot access other sites or bench-level endpoints. Use it as `Authorization: Bearer <token>`. See [docs/commands.md](commands.md#bench-issue-site-token).
-- Setting `admin.jwks_url` lets a remote issuer mint session tokens with its own private key — the bench trusts them by fetching the matching public keys, with no shared secret. See [Remote login via JWKS](#remote-login-via-jwks).
-
-- `LogReader.read_tail` and `stream_tail` validate that the requested filename contains no path separators and resolves to a file inside `logs/`. Any traversal attempt returns HTTP 400.
-- Command execution uses `TaskRunner._build_argv`, which only accepts whitelisted commands. No user-supplied string is passed to a shell.
-- `task_id` values are validated against `^\d{8}-\d{6}-[0-9a-f]{6}$` before being used as directory names.
-- Root MariaDB credentials come from `bench.toml` — the admin must be run by a user who can read that file.
-
----
+- The admin process itself is not loopback-restricted (see Design constraints); production deployments rely on nginx as the single entry point plus the bench's firewall rules.
+- **Password is mandatory.** Every `/api/` route returns HTTP 503 if `[admin] password` is unset.
+- Sessions are `HttpOnly`, `SameSite=Lax` cookies carrying a signed JWT (`admin.jwt_secret` in `bench.toml`), valid for 24 hours.
+- `bench generate-admin-session` issues a 5-minute, single-use sign-in token; the frontend exchanges it via `POST /api/v1/session` with `{"sid": "<jwt>"}` for the 1-day session cookie.
+- `bench issue-site-token` issues a scoped JWT (`scope: "site"`) restricted to one site, for programmatic site-to-bench calls (`Authorization: Bearer <token>`).
+- `admin.jwks_url` lets a remote issuer mint session/bearer tokens with its own key pair, verified against fetched public keys — see below.
+- Log filenames are validated to resolve inside `logs/`; any traversal returns 422.
+- Task commands run only through `TaskRunner`'s whitelist; no user-supplied string reaches a shell. `task_id` values are validated against `^\d{8}-\d{6}-[0-9a-f]{6}$` before use as a directory name.
+- Repository URLs with embedded credentials (`https://user:pass@host/...`) are rejected outright — use the git connection instead.
 
 ### Site-to-bench API
 
-When a site is created through the admin UI, the bench automatically writes two keys into the site's `site_config.json`:
+When a site is created, the bench writes two keys into its `site_config.json`:
 
-- `pilot_endpoint` — the admin URL of the bench (e.g. `https://admin.example.com`)
-- `pilot_auth_token` — a scoped JWT (`scope: "site"`) valid for 365 days, restricted to that site
+- `pilot_endpoint` — this bench's admin URL
+- `pilot_auth_token` — a 365-day, site-scoped JWT (`scope: "site"`)
 
-The site can use these to call the bench admin API directly — no user login required. For example, from a Frappe hook or background job:
+A site can call its own bench directly with these, no user login required:
 
 ```python
 import frappe
@@ -562,174 +476,78 @@ token = frappe.get_site_config().get("pilot_auth_token")
 headers = {"Authorization": f"Bearer {token}"}
 
 # Install an app on this site
-requests.post(f"{endpoint}/api/sites/{frappe.local.site}/install-app",
-              json={"app_name": "my-app"}, headers=headers)
+requests.post(f"{endpoint}/api/v1/sites/{frappe.local.site}/apps",
+              json={"app": "my-app"}, headers=headers)
 
-# Enable SSL
-requests.post(f"{endpoint}/api/sites/{frappe.local.site}/enable-ssl",
+# Enable TLS
+requests.post(f"{endpoint}/api/v1/sites/{frappe.local.site}/actions/enable-tls",
               json={}, headers=headers)
 
-# Set backup schedule
-requests.post(f"{endpoint}/api/sites/{frappe.local.site}/backup-schedule",
-              json={"cron": "0 2 * * *"}, headers=headers)
+# Set the backup schedule
+requests.put(f"{endpoint}/api/v1/sites/{frappe.local.site}/backup-schedule",
+             json={"schedule": "0 2 * * *"}, headers=headers)
 ```
 
-The token is scoped — it can only act on its own site. Any attempt to access a different site or bench-level endpoints (e.g. `/api/benches`) returns 403.
-
-Both keys are in `PROTECTED_CONFIG_KEYS` — they are never exposed in the admin UI and are preserved across config edits.
+The token is scoped: any attempt to reach a different site, or any bench-level route (`/benches`, `/settings`, ...), returns 403. Both keys are protected `site_config.json` fields — never exposed through `GET /sites/{name}/configuration` and preserved across config patches.
 
 ---
 
 ## Remote login via JWKS
 
-The tokens above are signed with the bench's own `admin.jwt_secret` (HS256), so only something that can read `bench.toml` can mint them. To let an **external control plane** authenticate without sharing that secret, set `admin.jwks_url` to a [JWKS](https://datatracker.ietf.org/doc/html/rfc7517) endpoint the issuer publishes:
+Locally issued tokens are signed with the bench's own `admin.jwt_secret` (HS256) — only something that can read `bench.toml` can mint them. To let an **external control plane** authenticate without sharing that secret, set `admin.jwks_url` to a [JWKS](https://datatracker.ietf.org/doc/html/rfc7517) endpoint the issuer publishes:
 
 ```toml
 [admin]
 jwks_url = "https://control-plane.example.com/.well-known/jwks.json"
 ```
 
-The issuer holds a private key and signs JWTs; the bench fetches the matching **public** keys from that URL and verifies incoming tokens against them. No secret is shared, and a new bench created from the UI or CLI inherits `jwks_url` from a sibling, so the same issuer is trusted everywhere.
+The issuer signs JWTs with a private key; the bench fetches the matching **public** keys from that URL and verifies incoming tokens against them — no shared secret, and a new bench inherits `jwks_url` from a sibling.
 
 A JWKS-signed token has two uses:
 
-- **Log in to the admin UI** — hand it to the browser as `…/?sid=<jwt>`. The frontend exchanges it for a 1-day `HttpOnly` session cookie. A sign-in token **must be bench-scoped and carry a unique `jti`**: the `jti` makes it single-use (it cannot be replayed for further sessions), and site-scoped tokens are refused here so they can never be escalated into a full admin session.
-- **Drive the API** — send it as `Authorization: Bearer <jwt>` to any `/api/*` route: run tasks, manage sites, and call `POST /api/sites/<name>/login` to obtain a Frappe **Administrator** login URL for that site. Bearer tokens don't need a `jti`.
+- **Sign in to the admin UI** — hand it to the browser as `…/?sid=<jwt>`; the frontend exchanges it via `POST /api/v1/session` for the 1-day session cookie. It must be bench-scoped and carry a unique `jti` (makes it single-use; site-scoped tokens are refused here so they can't be escalated into a full admin session).
+- **Drive the API directly** — send it as `Authorization: Bearer <jwt>` to any `/api/v1/*` route. Bearer tokens don't need a `jti`.
 
-Scope claims work exactly as for local tokens: a `scope: "site"` token is confined to its `site` (Bearer use only); a bench-scoped token (the default) can reach every endpoint.
+Scope claims work exactly as for local tokens: `scope: "site"` confines a token to its `site` claim (bearer use only); the bench-scoped default reaches every endpoint.
 
 ### JWKS endpoint format
 
-`admin.jwks_url` must return a standard JSON Web Key Set ([RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517)): a document with a `keys` array of public keys. RSA and EC keys are both accepted — most issuers publish one of these:
+`admin.jwks_url` must return a standard JSON Web Key Set: a document with a `keys` array. RSA and EC keys are both accepted:
 
 ```json
 {
   "keys": [
-    {
-      "kty": "RSA",
-      "use": "sig",
-      "kid": "2026-07-rsa-1",
-      "alg": "RS256",
-      "n": "0vx7ag…<base64url modulus>…Q7yRw",
-      "e": "AQAB"
-    },
-    {
-      "kty": "EC",
-      "use": "sig",
-      "kid": "2026-07-ec-1",
-      "alg": "ES256",
-      "crv": "P-256",
-      "x": "f83OJ3D2…<base64url>",
-      "y": "x_FEzRu9…<base64url>"
-    }
+    { "kty": "RSA", "use": "sig", "kid": "2026-07-rsa-1", "alg": "RS256", "n": "0vx7ag…", "e": "AQAB" },
+    { "kty": "EC", "use": "sig", "kid": "2026-07-ec-1", "alg": "ES256", "crv": "P-256", "x": "f83OJ3D2…", "y": "x_FEzRu9…" }
   ]
 }
 ```
 
 | Key type | Required fields | Notes |
 |----------|-----------------|-------|
-| RSA (`kty: "RSA"`) | `n`, `e` | Modulus and exponent, base64url. `e` is almost always `"AQAB"` (65537). |
-| EC (`kty: "EC"`) | `crv`, `x`, `y` | Curve (`P-256`/`P-384`/`P-521`) and the public point coordinates, base64url. |
+| RSA (`kty: "RSA"`) | `n`, `e` | Modulus and exponent, base64url. `e` is almost always `"AQAB"`. |
+| EC (`kty: "EC"`) | `crv`, `x`, `y` | Curve (`P-256`/`P-384`/`P-521`) and point coordinates, base64url. |
 
-`kid` is recommended on every key: match it in the JWT header so the right key is selected across rotations. `alg`/`use` are advisory — the token header's `alg` is what's enforced.
+`kid` is recommended on every key, matched against the JWT header across rotations.
 
-The signed JWT must use an **asymmetric** algorithm and carry an expiry:
+The signed JWT must use an asymmetric algorithm and carry an expiry:
 
-- **Header:** e.g. `{"alg": "RS256", "typ": "JWT", "kid": "2026-07-rsa-1"}`. Accepted `alg` values: `RS256/384/512`, `PS256/384/512`, `ES256/384/512`, `EdDSA`. Symmetric `HS*` and `none` are rejected, so a published public key can never be replayed as an HMAC secret.
-- **Payload:** a numeric `exp` (Unix seconds) is **required** and enforced. Claims: `scope` (`"bench"` default, or `"site"` with a `site` claim to confine it); `jti` (**required** for `?sid=` login — makes it single-use); `aud` (**required** when `admin.jwks_audience` is set — see below).
-
-By default only the signature and `exp` are verified. To require an audience, set `admin.jwks_audience` and have the issuer put that value in the token's `aud` claim; a token whose `aud` doesn't match (or is absent) is then rejected. Both `jwks_url` and `jwks_audience` are inherited from a sibling when a new bench is created, so the whole fleet trusts the same control plane out of the box. Note that a shared audience binds tokens to the control plane, not to an individual bench — if you need per-bench isolation, give each bench a distinct `jwks_audience`.
+- **Header:** e.g. `{"alg": "RS256", "typ": "JWT", "kid": "2026-07-rsa-1"}`. Accepted: `RS256/384/512`, `PS256/384/512`, `ES256/384/512`, `EdDSA`. Symmetric `HS*` and `none` are rejected.
+- **Payload:** `exp` (Unix seconds) is required and enforced. `scope` (`"bench"` default, or `"site"` with a `site` claim); `jti` (required for `?sid=` sign-in); `aud` (required when `admin.jwks_audience` is set).
 
 ### Operational notes
 
-- **Runs in the admin venv.** Verification uses [PyJWT](https://pyjwt.readthedocs.io/) with the `cryptography` backend (declared in the `admin` extra), which is why RSA, EC, and EdDSA are all supported. The `pilot` core stays dependency-free — this code lives in `admin/backend/`.
-- **Caching & rotation.** The key set is cached with a 5-minute lifespan and refreshed only when that lifespan expires — an unknown `kid` never forces a per-request refetch (which an attacker could use to hammer the issuer). When rotating, publish the new key **before** you start signing with it, and keep the old key in the document until its last token expires; the new key is picked up within 5 minutes.
-- **Fails closed.** An unreachable endpoint, malformed JWKS, unknown `kid`, disallowed algorithm, bad signature, or expired token all result in rejection (HTTP 401/403), never a fallback to unauthenticated access.
+- **Runs in the admin venv.** Verification uses [PyJWT](https://pyjwt.readthedocs.io/) with the `cryptography` backend (part of the `admin` extra); the `pilot` core stays dependency-free.
+- **Caching & rotation.** The key set is cached for 5 minutes; an unknown `kid` never forces an immediate refetch. Publish a new key before signing with it, and keep the old one until its last token expires.
+- **Fails closed.** An unreachable endpoint, malformed JWKS, unknown `kid`, disallowed algorithm, bad signature, or expired token all result in rejection (401/403), never a fallback to unauthenticated access.
 - **HTTPS.** Serve the JWKS endpoint over HTTPS — its integrity is the root of trust for every remote login.
-
----
-
-## Marketplace
-
-`GET /api/apps/registry` returns the full `registry/apps.json` array. The Marketplace page reads this endpoint alongside `GET /api/apps/` (installed apps) to render the app list.
-
-Each registry entry has:
-
-```json
-{
-  "name": "erpnext",
-  "title": "ERPNext",
-  "description": "Open source ERP",
-  "repo": "https://github.com/frappe/erpnext",
-  "branch": "version-16",
-  "branches": ["version-15", "version-16"],
-  "logo_url": "https://cloud.frappe.io/files/erpnext-blue.png",
-  "website": "https://frappe.io/erpnext",
-  "documentation": "https://docs.frappe.io/erpnext",
-  "categories": ["Accounting", "Business", "Featured"],
-  "category": "Applications",
-  "stars": 35439
-}
-```
-
-**`category`** is one of six values: `Applications`, `Extensions`, `Integrations`, `Compliance`, `Developer Tools`, `Utilities`. The frontend sidebar filters by this field.
-
-Apps whose `repo` is under `github.com/frappe/` are sorted to the top by `stars` and labelled "From Frappe". All others appear below under "Community".
-
-Clicking **Add** on an app with a `repo` posts to `POST /api/apps/add` with `{ name, repo, branch }` and redirects to the resulting task.
-
----
-
-## Setup wizard API
-
-When a bench has not been initialized (`config/Procfile` is missing), `bench start` launches a standalone wizard server instead of the normal admin. The wizard exposes these endpoints:
-
-### `GET /api/setup/config`
-
-Returns the current `bench.toml` values pre-populated in the wizard form, plus environment metadata:
-
-```json
-{
-  "bench_name": "my-bench",
-  "is_linux": true,
-  "mariadb_instance": "my-bench",
-  "mariadb_admin_user": "root",
-  ...
-}
-```
-
-### `POST /api/setup/validate-mariadb`
-
-Checks whether the supplied credentials will work before the wizard proceeds.
-
-**Request body:**
-```json
-{
-  "mariadb_password": "secret",
-  "mariadb_admin_user": "root",
-  "dedicated_db": false
-}
-```
-
-**Behaviour:**
-- `dedicated_db: true` (dedicated instance) — if the instance is not yet provisioned, returns `will_install` without attempting a connection; init will create the instance with the supplied password.
-- `dedicated_db: false` (shared system MariaDB) — always attempts a connection using the system socket; returns `valid` or `invalid`.
-- If MariaDB is not installed at all, returns `will_install`.
-
-**Response:** `{ "state": "valid" | "invalid" | "will_install" }`
-
-### `POST /api/setup/save`
-
-Writes the wizard form data to `bench.toml`. The wizard sends the final payload after the last configuration step. Unknown keys are ignored; existing keys not in the payload are preserved.
-
-### `POST /api/setup/init`
-
-Kicks off `bench init` as a background task. Returns `{ "ok": true, "task_id": "..." }`. Progress is streamed via `GET /api/setup/stream/<task_id>` (SSE).
 
 ---
 
 ## CLI commands
 
-- **`bench build-admin`** — rebuilds the admin frontend static assets. Run this after pulling admin UI changes. The server itself is managed by `bench start` / `bench stop` — no separate start/stop commands exist.
+- **`bench build-admin`** — builds the admin frontend static assets (`admin/frontend` → `admin/backend/static/dist`). Run after pulling admin UI changes.
+- **`bench generate-admin-session`** — issues a one-time sign-in token (see Security notes).
+- **`bench issue-site-token`** — issues a site-scoped bearer JWT.
 
-Admin lifecycle is owned by `ProcessManager`: the `admin:` entry is written into `config/Procfile` during `bench init`, and the process is started and stopped alongside all other bench processes.
+Admin lifecycle is owned by `ProcessManager`: its `admin:` Procfile entry is written during `bench init`, and it starts/stops alongside every other bench process.
