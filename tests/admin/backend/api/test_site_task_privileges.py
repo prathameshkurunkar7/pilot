@@ -8,7 +8,7 @@ import pytest
 
 from pilot.tasks.jobs.base_task import BaseTask
 from pilot.exceptions import BenchError
-from tests.test_commands import make_bench
+from tests.pilot.commands.test_commands import make_bench
 
 
 def _task(tmp_path: Path, production: bool) -> BaseTask:

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 from pilot.tasks.jobs.new_site_task import NewSiteTask
 from pilot.integrations.marketplace import Marketplace, Resolver
-from tests.test_commands import make_bench
+from tests.pilot.commands.test_commands import make_bench
 
 
 def resolver(name: str, deps: dict[str, str] | None = None) -> Resolver:

@@ -10,7 +10,7 @@ import pytest
 from pilot.tasks.jobs.setup_letsencrypt_task import SetupLetsEncryptTask
 from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import BenchError
-from tests.test_commands import make_bench
+from tests.pilot.commands.test_commands import make_bench
 
 
 def _task(tmp_path: Path, *, production: bool, email: str = "") -> SetupLetsEncryptTask:

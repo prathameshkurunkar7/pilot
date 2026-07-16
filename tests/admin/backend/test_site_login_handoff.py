@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from admin.backend.site_login_handoff import SiteLoginHandoffStore
-from tests.test_admin_app import _client
+from tests.admin.backend.test_admin_app import _client
 
 
 def _write_site(bench_root: Path, name: str = "s.localhost", **config) -> None:

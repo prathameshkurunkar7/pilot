@@ -8,7 +8,7 @@ from pilot.config.bench_config import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 
 
-FIXTURES = Path(__file__).parent / "fixtures" / "bench_toml"
+FIXTURES = Path(__file__).parent.parent.parent / "fixtures" / "bench_toml"
 
 
 @pytest.mark.parametrize(

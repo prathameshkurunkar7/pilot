@@ -1,7 +1,7 @@
 import json
 
 from admin.backend.api.v1.sites import _public_config
-from tests.test_admin_app import _client
+from tests.admin.backend.test_admin_app import _client
 
 
 def test_public_site_config_hides_system_and_secret_like_fields() -> None:

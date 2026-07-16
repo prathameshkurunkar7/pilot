@@ -8,7 +8,7 @@ from pilot.config.production_config import ProductionConfig
 from pilot.config.bench_toml import dumps_config as bench_config_to_toml
 from pilot.exceptions import ConfigError
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
+FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
 
 
 def load_from_dict(data: dict) -> BenchConfig:

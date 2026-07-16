@@ -16,7 +16,7 @@ from pilot.exceptions import BenchError
 from pilot.managers.processes.local import ProcessManager
 
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
+FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
 
 
 def make_bench(tmp_path: Path) -> Bench:
