@@ -1,4 +1,3 @@
-import subprocess
 import sys
 
 from .base_task import BaseTask
@@ -18,20 +17,36 @@ class InstallAppTask(BaseTask):
         self.app = args.app
 
     def run(self) -> None:
-        sites_dir = self.bench_root / "sites"
+        from pilot.config.site_config import SiteConfig
+        from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
+        from pilot.core.site import Site
+        from pilot.exceptions import BenchError
+        from pilot.managers.python_env_manager import PythonEnvManager
+
         app = self.bench.app(self.app)
+        site = Site(SiteConfig(name=self.site, apps=[]), self.bench)
 
         self._step("install", f"Install {self.app} into {self.site}")
-        result = subprocess.run(
-            [*self.bench.frappe_call, "frappe", "--site", self.site, "install-app", app.config.name],
-            cwd=str(sites_dir),
-        )
-        if result.returncode != 0:
-            sys.exit(result.returncode)
+        try:
+            site.install_app(app)
+        except BenchError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
 
-        self._step("assets", f"Build assets for {self.app}")
-        from pilot.managers.python_env_manager import PythonEnvManager
-        PythonEnvManager(self.bench).build_assets_for_app(app)
+        # site.install_app cascades installing hooks.py's required_apps onto
+        # the site itself, but never builds their assets — do that here.
+        required = DependencyDeclarationsCheck()._get_hooks_required_apps(app)
+        apps = [app]
+        for name in required:
+            try:
+                apps.append(self.bench.app(name))
+            except BenchError:
+                continue
+
+        env = PythonEnvManager(self.bench)
+        for a in apps:
+            self._step(f"assets_{a.config.name}", f"Build assets for {a.config.name}")
+            env.build_assets_for_app(a)
         self._step("done")
 
 
