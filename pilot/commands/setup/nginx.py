@@ -42,7 +42,7 @@ class SetupNginxCommand(Command):
 
         if not is_linux():
             return
-        from pilot.managers.waf_manager import WafManager
+        from pilot.managers.waf import WafManager
 
         try:
             WafManager(self.bench).install()
