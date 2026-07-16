@@ -466,7 +466,7 @@ bench build-admin
 
 The admin server starts automatically as part of `bench start` (via the `admin:` entry in the Procfile) and is always available at `http://localhost:8002` while the bench is running. This command only rebuilds the static assets — it does not start or stop the server.
 
-See [docs/admin.md](admin.md) for the full interface specification.
+See [docs/admin-api.md](admin-api.md) for the full interface specification.
 
 ---
 
@@ -481,7 +481,7 @@ bench generate-admin-session --full-path  # prints the full admin URL with ?sid=
 
 Open the `--full-path` URL in a browser within **5 minutes**: the frontend exchanges the `?sid=` token for a 1-day `HttpOnly` session cookie, and the sign-in token is consumed (single-use). Both are HS256 JWTs signed with `admin.jwt_secret` in `bench.toml` (generated on first run). Requires `admin.password` to be set.
 
-A remote control plane can mint its own `?sid=` tokens (and Bearer tokens) instead of using this command, by signing them with a key published at `admin.jwks_url` — see [Remote login via JWKS](admin.md#remote-login-via-jwks).
+A remote control plane can mint its own `?sid=` tokens (and Bearer tokens) instead of using this command, by signing them with a key published at `admin.jwks_url` — see [Remote login via JWKS](admin-api.md#remote-login-via-jwks).
 
 ---
 
@@ -500,7 +500,7 @@ Use the token as a Bearer token in the `Authorization` header:
 curl -H "Authorization: Bearer <token>" https://admin.example.com/api/sites/site-name
 ```
 
-Requires `admin.jwt_secret` to be set in `bench.toml`. See [docs/admin.md](admin.md) for scoped authentication details.
+Requires `admin.jwt_secret` to be set in `bench.toml`. See [docs/admin-api.md](admin-api.md) for scoped authentication details.
 
 ---
 

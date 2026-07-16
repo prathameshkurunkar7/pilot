@@ -377,7 +377,7 @@ The built-in admin UI runs on port 8002 (configurable via `[admin] port`).
 
 All forms validate input before submission — site names are checked for valid hostname format, repository URLs for valid git URL format, branch names for legal characters, cron expressions for valid 5-field syntax, and port numbers for the 1–65535 range.
 
-**Remote access.** Beyond the password and `bench generate-admin-session` sign-in link, an external control plane can log in and drive the whole API by signing JWTs with a key published at `[admin] jwks_url` — no shared secret. See [Remote login via JWKS](docs/admin.md#remote-login-via-jwks).
+**Remote access.** Beyond the password and `bench generate-admin-session` sign-in link, an external control plane can log in and drive the whole API by signing JWTs with a key published at `[admin] jwks_url` — no shared secret. See [Remote login via JWKS](docs/admin-api.md#remote-login-via-jwks).
 
 ## Directory layout
 

@@ -56,14 +56,14 @@ pilot/
     │       ├── letsencrypt.py   # SetupLetsEncryptCommand
     │       └── production.py    # SetupProductionCommand
     │
-    ├── tasks/                   # Task execution and tracking (see specs/tasks.md)
+    ├── tasks/                   # Task execution and tracking (see tasks.md)
     │   ├── __init__.py
     │   ├── models.py            # TaskInfo dataclass
     │   ├── task_runner.py       # TaskRunner — forks child, writes task directory
     │   ├── task_reader.py       # TaskReader — reads task directory (stateless)
     │   └── wrapper.py           # entry point for the forked child (stdlib only)
     │
-    └── admin/                   # Flask admin interface (see specs/admin.md)
+    └── admin/                   # Flask admin interface (see admin-api.md)
         ├── __init__.py
         ├── app.py               # create_app(bench_root) factory
         ├── readers/             # Stateless filesystem/DB readers
@@ -138,7 +138,7 @@ class BenchConfig:
         """Load and validate bench.toml. Raises ConfigError on any violation."""
 
     def validate(self) -> None:
-        """Run all validation rules defined in config.md. Raises ConfigError."""
+        """Run all validation rules defined in configuration.md. Raises ConfigError."""
 
     @property
     def framework_app(self) -> AppConfig:

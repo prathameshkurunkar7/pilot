@@ -1,6 +1,6 @@
-# Admin Interface Specification
+# Admin API Specification
 
-bench ships a web-based admin backend built on Flask. It exposes a versioned JSON API under `/api/v1` and serves a compiled single-page frontend for everything else. It runs as a process managed by `bench start` / `bench stop`.
+bench ships a web-based admin backend built on Flask. It exposes a versioned JSON API under `/api/v1` and serves a compiled single-page frontend for everything else. It runs as a process managed by `bench start` / `bench stop`. See [admin-ui.md](admin-ui.md) for the frontend that consumes this API.
 
 ---
 
@@ -427,32 +427,6 @@ Binlog/processlist/slow-query routes return 409 `unsupported_database_engine` on
 | GET | `/monitor/history` | Parsed monitor history, `?window=1h` (or other supported window) |
 | GET | `/system` | Static host facts: disk/memory/swap totals, CPU count, kernel/OS version, runtime versions |
 | GET | `/metrics` | Live point-in-time metrics: CPU/memory/disk usage and breakdowns, network/disk I/O rates, directory sizes |
-
----
-
-## Settings modal
-
-The frontend presents settings as a tabbed modal dialog:
-
-| Tab | Editable fields | Read-only fields |
-|-----|----------------|-----------------|
-| **Bench** | HTTP Port, SocketIO Port, Default Branch | Name, Python version, Database type |
-| **Appearance** | Theme (light/dark/auto) | — |
-| **MariaDB** | — | Host, Port, Admin User, Socket Path |
-| **Postgres** | Host, Port, Admin User, Password | Password-set indicator only (never the password itself) |
-| **Redis** | Cache Port, Queue Port | Version |
-| **Workers** | Queue groups and counts | — |
-| **Firewall** | Enabled toggle, default action, per-IP allow/deny rules | — |
-| **Nginx / HTTPS** | Enable HTTPS toggle (`admin.tls`), Let's Encrypt email | — |
-| **Production** | Process Manager (none/supervisor/the host's native manager) | — |
-| **S3** | Access key, secret key, bucket, provider, region | — |
-| **Updates** | — | Current version, update availability; Update button |
-
-MariaDB connection fields are read-only because the host/port/credentials/socket are fixed at `bench init` time; the database server itself isn't reconfigured by editing `bench.toml` afterward. S3 and Postgres secret fields are write-only — `GET /settings` reports only whether one is set, never its value.
-
-Changing a restart-triggering field (ports, worker groups, process manager) regenerates config files and restarts the running process manager automatically, skipping the admin process itself so the response is delivered before the restart. The **HTTPS** toggle only records intent in `bench.toml`; call `POST /sites/{name}/actions/enable-tls` (or the equivalent settings flow) to actually run Let's Encrypt and rewrite nginx.
-
-Theme is local to the browser (`localStorage`) and never touches `bench.toml`.
 
 ---
 
