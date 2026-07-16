@@ -38,9 +38,13 @@ class SystemPackageManager(ABC):
 
 
 class AptPackageManager(SystemPackageManager):
+    package_aliases = {
+        "modsecurity-nginx": "libnginx-mod-http-modsecurity",
+    }
+
     def install(self, *packages: str) -> None:
         subprocess.run(
-            _privileged(["apt-get", "install", "-y", *packages]),
+            _privileged(["apt-get", "install", "-y", *self._resolve(*packages)]),
             env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
             check=True,
         )
@@ -69,6 +73,7 @@ class DnfPackageManager(SystemPackageManager):
         "postgresql": "postgresql-server",
         "postgresql-client": "postgresql",
         "zfsutils-linux": "zfs",
+        "modsecurity-nginx": "nginx-mod-modsecurity",
     }
 
     def install(self, *packages: str) -> None:
@@ -103,6 +108,7 @@ class PacmanPackageManager(SystemPackageManager):
         "postgresql-client": "postgresql",
         # Only available via the third-party archzfs repository.
         "zfsutils-linux": "zfs-utils",
+        "modsecurity-nginx": "nginx-mod-modsecurity",
     }
 
     def install(self, *packages: str) -> None:

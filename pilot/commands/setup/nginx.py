@@ -23,10 +23,20 @@ class SetupNginxCommand(Command):
     def run(self) -> None:
         self._validate_nginx_enabled()
         self.nginx_manager.install()
+        self._install_waf()
         self._ensure_nginx_config_directory()
         self.nginx_manager.generate_config(ssl_ready=True)
         self.nginx_manager.install_config()
         self._print_site_urls()
+
+    def _install_waf(self) -> None:
+        """Install the ModSecurity module + CRS before config is generated, so the
+        WAF's install-gated render actually emits directives on first setup."""
+        if not self.bench.config.waf.enabled:
+            return
+        from pilot.managers.waf_manager import WafManager
+
+        WafManager(self.bench).install()
 
     def _validate_nginx_enabled(self) -> None:
         if not self.bench.config.production.enabled:

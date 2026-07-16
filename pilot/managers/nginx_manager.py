@@ -8,6 +8,7 @@ from string import Template
 from typing import TYPE_CHECKING
 
 from pilot.managers.gunicorn_manager import GunicornManager
+from pilot.managers.waf_manager import SHARED_MODSEC_DIR, WafManager
 from pilot.package_managers import get_package_manager
 from pilot.platform import (
     _privileged,
@@ -162,6 +163,108 @@ class NginxManager:
             lines.append("    deny all;\n")
         return "".join(lines) + "\n" if lines else ""
 
+    def _waf_active(self) -> bool:
+        """Whether to emit ModSecurity directives for this bench. Gated on the
+        module + CRS actually being installed, so a vhost never references an
+        absent module (which would fail nginx -t for every bench)."""
+        return self.bench.config.waf.enabled and WafManager.is_installed()
+
+    def _render_waf(self) -> str:
+        """Per-vhost ModSecurity toggle, emitted next to the firewall block in
+        every server block. Points nginx at this bench's generated rules file;
+        empty when the WAF is inactive."""
+        if not self._waf_active():
+            return ""
+        rules_file = self._modsec_dir() / "main.conf"
+        return f"    modsecurity on;\n    modsecurity_rules_file {rules_file};\n\n"
+
+    def _modsec_dir(self) -> Path:
+        return self.bench.config_path / "modsecurity"
+
+    def _write_waf_files(self) -> None:
+        """Generate this bench's ModSecurity rule files from WafConfig. No-op when
+        the WAF is off. Only the per-bench engine/overrides/exclusions are written
+        here; the CRS baseline and rules are the shared assets under
+        _SHARED_MODSEC_DIR, installed by WafManager."""
+        waf = self.bench.config.waf
+        if not waf.enabled:
+            return
+        modsec_dir = self._modsec_dir()
+        modsec_dir.mkdir(parents=True, exist_ok=True)
+        (self.bench.path / "logs").mkdir(exist_ok=True)
+        (modsec_dir / "modsecurity.conf").write_text(self._render_modsec_engine(waf))
+        (modsec_dir / "overrides.conf").write_text(self._render_modsec_overrides(waf))
+        (modsec_dir / "exclusions.conf").write_text(self._render_modsec_exclusions(waf))
+        (modsec_dir / "main.conf").write_text(self._render_modsec_main(modsec_dir))
+
+    def _render_modsec_main(self, modsec_dir: Path) -> str:
+        """Chain the config layers in the order CRS requires: engine, then the CRS
+        baseline, then per-bench overrides (paranoia/thresholds/exempt paths), then
+        the CRS rules, then user exclusions last."""
+        return (
+            f"Include {modsec_dir}/modsecurity.conf\n"
+            f"Include {SHARED_MODSEC_DIR}/crs-setup.conf\n"
+            f"Include {modsec_dir}/overrides.conf\n"
+            f"Include {SHARED_MODSEC_DIR}/rules/*.conf\n"
+            f"Include {modsec_dir}/exclusions.conf\n"
+        )
+
+    def _render_modsec_engine(self, waf: object) -> str:
+        from pilot.config.waf_config import parse_nginx_size
+
+        audit_log = self.bench.path / "logs" / "modsec_audit.log"
+        # DetectionOnly must never block, so oversized bodies are inspected in part
+        # rather than rejected; only full enforcement rejects them.
+        body_action = "Reject" if waf.mode == "On" else "ProcessPartial"
+        response_access = "On" if waf.inspect_responses else "Off"
+        return (
+            f"SecRuleEngine {waf.mode}\n"
+            "SecRequestBodyAccess On\n"
+            f"SecRequestBodyLimit {parse_nginx_size(waf.body_limit)}\n"
+            "SecRequestBodyNoFilesLimit 131072\n"
+            f"SecRequestBodyLimitAction {body_action}\n"
+            "SecRequestBodyJsonDepthLimit 512\n"
+            f"SecResponseBodyAccess {response_access}\n"
+            "SecResponseBodyMimeType text/plain text/html text/xml application/json\n"
+            "SecResponseBodyLimit 524288\n"
+            "SecAuditEngine RelevantOnly\n"
+            "SecAuditLogFormat JSON\n"
+            "SecAuditLogType Serial\n"
+            f"SecAuditLog {audit_log}\n"
+            "SecAuditLogParts ABIJDEFHZ\n"
+            "SecTmpDir /tmp\n"
+            "SecDataDir /tmp\n"
+            'SecDefaultAction "phase:1,pass,log"\n'
+            'SecDefaultAction "phase:2,pass,log"\n'
+        )
+
+    def _render_modsec_overrides(self, waf: object) -> str:
+        """Per-bench CRS tuning, applied after crs-setup.conf so it wins. Custom
+        rule ids (1000+) stay clear of the CRS 900000-949999 reserved range to
+        avoid duplicate-id errors. paranoia is set under both the CRS 4.x and 3.x
+        variable names so it works across CRS versions. Each exempt path disables
+        the engine for matching requests via a phase-1 ctl action."""
+        lines = [
+            f'SecAction "id:1000,phase:1,pass,nolog,'
+            f"setvar:tx.blocking_paranoia_level={waf.paranoia},"
+            f"setvar:tx.detection_paranoia_level={waf.paranoia},"
+            f'setvar:tx.paranoia_level={waf.paranoia}"',
+            f'SecAction "id:1001,phase:1,pass,nolog,'
+            f'setvar:tx.inbound_anomaly_score_threshold={waf.inbound_threshold}"',
+        ]
+        for index, path in enumerate(waf.exempt_paths):
+            lines.append(
+                f'SecRule REQUEST_URI "@beginsWith {path}" '
+                f'"id:{10000 + index},phase:1,pass,nolog,ctl:ruleEngine=Off"'
+            )
+        return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _render_modsec_exclusions(waf: object) -> str:
+        """User SecLang lines (SecRuleRemoveById etc.), one per line. May be empty;
+        an empty Included file is harmless."""
+        return "\n".join(waf.exclusions) + ("\n" if waf.exclusions else "")
+
     def _xff_header(self) -> str:
         """Behind trusted proxies, pass their X-Forwarded-For through unchanged
         rather than appending the (proxy's own) connecting address to it."""
@@ -179,6 +282,7 @@ class NginxManager:
         sites_dir = nginx_dir / "sites"
         sites_dir.mkdir(parents=True, exist_ok=True)
         self._write_error_pages(nginx_dir)
+        self._write_waf_files()
         # admin.tls = False makes the whole bench HTTP-only: a central proxy
         # terminates TLS, so neither sites nor the admin serve HTTPS here.
         tls = self.bench.config.admin.tls
@@ -334,6 +438,7 @@ class NginxManager:
             f"    server_name {server_name};\n\n"
             + self._render_proxy_trust()
             + self._render_firewall()
+            + self._render_waf()
             + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
             + self._render_acme_location()
@@ -356,6 +461,7 @@ class NginxManager:
             f"    server_name {server_name};\n\n"
             + self._render_proxy_trust()
             + self._render_firewall()
+            + self._render_waf()
             + self._render_acme_location()
             + f"    location / {{\n"
             f"        return 301 https://$host$request_uri;\n"
@@ -395,6 +501,7 @@ class NginxManager:
             f"    server_name {server_name};\n\n"
             + self._render_proxy_trust()
             + self._render_firewall()
+            + self._render_waf()
             + ssl_directives
             + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
@@ -475,6 +582,7 @@ class NginxManager:
 
         acme_block = self._render_acme_location()
         firewall_block = self._render_firewall()
+        waf_block = self._render_waf()
         proxy_block = (
             self._render_error_pages()
             + self._render_open_cors_location("/api/ping")
@@ -493,6 +601,7 @@ class NginxManager:
                 f"    server_name {domain};\n\n"
                 + self._render_proxy_trust()
                 + firewall_block
+                + waf_block
                 + acme_block
                 + proxy_block
                 + f"}}\n"
@@ -506,6 +615,7 @@ class NginxManager:
                 f"    server_name {domain};\n\n"
                 + self._render_proxy_trust()
                 + firewall_block
+                + waf_block
                 + acme_block
                 + proxy_block
                 + f"}}\n"
@@ -530,6 +640,7 @@ class NginxManager:
             f"    server_name {domain};\n\n"
             + self._render_proxy_trust()
             + firewall_block
+            + waf_block
             + acme_block
             + f"    location / {{\n"
             f"        return 301 https://$host$request_uri;\n"
@@ -541,6 +652,7 @@ class NginxManager:
             f"    server_name {domain};\n\n"
             + self._render_proxy_trust()
             + firewall_block
+            + waf_block
             + ssl_directives
             + proxy_block
             + f"}}\n"
@@ -593,8 +705,38 @@ class NginxManager:
             run_command(_privileged(["unlink", str(symlink_path)]))
         run_command(_privileged(["ln", "-s", str(source_path), str(symlink_path)]))
         self._set_worker_user()
+        if self.bench.config.waf.enabled:
+            self._ensure_modsecurity_module()
         self.install_default_server()
         self._reload_or_rollback(symlink_path)
+
+    def _ensure_modsecurity_module(self) -> None:
+        """Idempotently make nginx load the ModSecurity dynamic module. On Debian
+        the package auto-enables it via /etc/nginx/modules-enabled, so we do
+        nothing; elsewhere we inject a load_module line at the top of nginx.conf.
+        No-op when the module isn't installed yet — a later reload's nginx -t /
+        rollback catches a genuinely missing module."""
+        if self._module_already_loaded():
+            return
+        module_path = WafManager.module_path()
+        if module_path is None:
+            return
+        original = _NGINX_CONF.read_text()
+        updated = f"load_module {module_path};\n" + original
+        staged = self.bench.config_path / "nginx" / "nginx.conf"
+        staged.write_text(updated)
+        run_command(_privileged(["cp", str(staged), str(_NGINX_CONF)]))
+        staged.unlink()
+
+    @staticmethod
+    def _module_already_loaded() -> bool:
+        """True when nginx is already set to load the module — a load_module line
+        in nginx.conf or a modules-enabled drop-in. Distinct from the .so merely
+        existing on disk (which may not be loaded)."""
+        if "ngx_http_modsecurity_module" in _NGINX_CONF.read_text():
+            return True
+        modules_dir = Path("/etc/nginx/modules-enabled")
+        return modules_dir.is_dir() and any("modsecurity" in entry.name for entry in modules_dir.iterdir())
 
     @staticmethod
     def _prune_dangling_symlinks(nginx_dir: Path) -> None:
