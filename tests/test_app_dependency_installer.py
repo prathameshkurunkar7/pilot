@@ -75,44 +75,6 @@ def test_install_skips_already_installed_dependency(tmp_path: Path) -> None:
     assert [a.config.name for a in result] == ["telephony"]
 
 
-def test_resolve_never_installs_missing_dependency(tmp_path: Path) -> None:
-    bench = make_bench(tmp_path)
-    bench.create_directories()
-    app = make_app(bench, "helpdesk")  # telephony not on disk, not in apps.txt
-
-    telephony = make_resolver("telephony")
-    helpdesk = make_resolver("helpdesk", deps={"telephony": ""})
-    helpdesk._registry = {"telephony": [telephony]}
-
-    with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch("pilot.commands.get_app.GetAppCommand") as mock_cmd:
-        result = AppDependencyInstaller(bench, app).resolve()
-
-    mock_cmd.assert_not_called()
-    assert result == []
-
-
-def test_resolve_lists_already_installed_dependency(tmp_path: Path) -> None:
-    bench = make_bench(tmp_path)
-    bench.create_directories()
-    (bench.apps_path / "telephony").mkdir(parents=True)
-    (bench.sites_path / "apps.txt").write_text("frappe\ntelephony\n")
-    app = make_app(bench, "helpdesk")
-
-    telephony = make_resolver("telephony")
-    helpdesk = make_resolver("helpdesk", deps={"telephony": ""})
-    helpdesk._registry = {"telephony": [telephony]}
-
-    with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch("pilot.commands.get_app.GetAppCommand") as mock_cmd:
-        result = AppDependencyInstaller(bench, app).resolve()
-
-    mock_cmd.assert_not_called()
-    assert [a.config.name for a in result] == ["telephony"]
-
-
 def test_install_raises_when_app_not_in_marketplace_but_requires_missing_apps(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()

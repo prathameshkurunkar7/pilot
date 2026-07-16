@@ -29,15 +29,6 @@ class AppDependencyInstaller:
         self._install_missing(resolver)
         return self._dependency_apps(resolver)
 
-    def resolve(self) -> list["App"]:
-        """List this app's dependencies without installing anything — for an
-        already-installed app, whose dependencies must already be present
-        too (installed together in an earlier run)."""
-        resolver = self._find_resolver()
-        if resolver is None:
-            return []
-        return self._dependency_apps(resolver)
-
     def _find_resolver(self) -> Resolver | None:
         try:
             return Marketplace(self.bench).find_app(self.app.config.name)

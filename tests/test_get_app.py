@@ -1,5 +1,7 @@
-"""Tests for GetAppCommand.run() short-circuiting altogether when the app is
-already registered in apps.txt — no clone, no validate, no install/build."""
+"""Tests for GetAppCommand.run() — an already-installed app skips clone,
+validate, install, and build, but its dependencies are still installed
+(missing ones) or resolved (already-present ones) so callers can still
+install them onto new sites."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -120,10 +122,11 @@ def test_short_circuit_still_populates_installed_dependencies(tmp_path: Path) ->
     mock_cmd.assert_not_called()
 
 
-def test_short_circuit_never_installs_a_missing_dependency(tmp_path: Path) -> None:
-    """An already-installed app is never re-installed, and neither are its
-    dependencies — even if one is genuinely missing from the bench, the
-    short-circuit path only resolves, it must never install."""
+def test_still_installs_missing_dependency_when_parent_already_installed(tmp_path: Path) -> None:
+    """A dependency can still be missing even when the parent app itself is
+    already installed (e.g. helpdesk was installed before telephony existed,
+    or the app is being added to a new site) — it must still get installed,
+    otherwise that site breaks."""
     bench = make_bench(tmp_path)
     bench.create_directories()
     (bench.apps_path / "helpdesk").mkdir(parents=True)
@@ -139,8 +142,10 @@ def test_short_circuit_never_installs_a_missing_dependency(tmp_path: Path) -> No
         cmd = GetAppCommand(bench, "https://github.com/frappe/helpdesk", install_dependencies=True)
         cmd.run()
 
-    mock_cmd.assert_not_called()
-    assert cmd.installed_dependencies == []
+    mock_cmd.assert_called_once_with(
+        bench, telephony.repo, telephony.target, install_dependencies=False, skip_validations=True
+    )
+    mock_cmd.return_value.run.assert_called_once()
 
 
 def test_skip_validations_flag_still_skips_validate(tmp_path: Path) -> None:

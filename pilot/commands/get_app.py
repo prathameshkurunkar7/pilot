@@ -77,17 +77,28 @@ class GetAppCommand(Command):
         self.installed_dependencies: list[App] = []
 
     def run(self) -> None:
-        if self.bench.is_app_installed(self.name):
-            self._update_installed_app_metadata()
+        already_installed = self.bench.is_app_installed(self.name)
+        if already_installed:
+            # Re-point self.app at the real registered App, not just the name —
+            # self.app's raw (possibly hyphenated) path may not exist on disk
+            # if it was already normalized in an earlier run, and callers (e.g.
+            # get_and_install_app_task) read cmd.app afterward.
+            self.app = self.bench.app(self.app.module_name)
+            self.name = self.app.config.name
+        else:
+            self._clone()
+            self._normalize_folder()
+
+        # Take care in case users install a parent app without it's dependencies.
+        # But then they try and install the app on the site, which would break the site.
+        # Since the dependencies are not installed, let's regardless install the dependencies.
+        if self.install_dependencies:
+            self.installed_dependencies = self._install_dependencies()
+
+        if already_installed:
             print(f"'{self.name}' already installed, skipping.")
             sys.stdout.flush()
             return
-
-        self._clone()
-        self._normalize_folder()
-
-        if self.install_dependencies:
-            self.installed_dependencies = self._install_dependencies()
 
         if not self.skip_validations:
             self._validate()
@@ -96,14 +107,6 @@ class GetAppCommand(Command):
         self._register()
         self._build()
         print(f"\n'{self.name}' installed successfully.")
-
-    def _update_installed_app_metadata(self) -> None:
-        self.app = self.bench.app(self.app.module_name)
-        self.name = self.app.config.name
-        if self.install_dependencies:
-            # Already installed — resolve its dependencies for the caller
-            # (e.g. site installs), but never install anything for it.
-            self.installed_dependencies = self._resolve_dependencies()
 
     def _clone(self) -> None:
         # is_cloned resolves the normalized (module-name) folder too, so a re-run
@@ -149,11 +152,6 @@ class GetAppCommand(Command):
             if self._cloned_this_run:
                 shutil.rmtree(self.app.path, ignore_errors=True)
             raise
-
-    def _resolve_dependencies(self) -> list["App"]:
-        from pilot.core.app_dependency_installer import AppDependencyInstaller
-
-        return AppDependencyInstaller(self.bench, self.app).resolve()
 
     def _install(self) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager
