@@ -1,9 +1,8 @@
 """Provider-agnostic Git integration for cloning private app repositories.
 
-Only GitHub is fully implemented; GitLabProvider is a stub that maps out the
-same surface for a later phase. This package's public surface is re-exported
+Only GitHub is implemented. This package's public surface is re-exported
 here so callers do `from pilot.integrations.git import ...` rather than
-reaching into base/credentials/github/gitlab directly.
+reaching into base/credentials/github directly.
 """
 
 from __future__ import annotations
@@ -20,7 +19,6 @@ from pilot.integrations.git.base import (
 )
 from pilot.integrations.git.credentials import CREDENTIALS_FILENAME, GitCredentialStore
 from pilot.integrations.git.github import GitHubProvider, parse_github_owner_repo
-from pilot.integrations.git.gitlab import GitLabProvider
 
 __all__ = [
     "CREDENTIALS_FILENAME",
@@ -28,7 +26,6 @@ __all__ = [
     "GitAuthError",
     "GitCredentialStore",
     "GitHubProvider",
-    "GitLabProvider",
     "GitProvider",
     "GitProviderError",
     "authenticated_url_for",
@@ -42,7 +39,6 @@ __all__ = [
 
 PROVIDERS: dict[str, type[GitProvider]] = {
     GitHubProvider.name: GitHubProvider,
-    GitLabProvider.name: GitLabProvider,
 }
 
 

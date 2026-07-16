@@ -23,7 +23,6 @@ import urllib.request
 # "Generate token" — no manual scope selection needed.
 TOKEN_HELP_URLS = {
     "github": "https://github.com/settings/tokens/new?scopes=repo&description=Bench+CLI",
-    "gitlab": "https://gitlab.com/-/user_settings/personal_access_tokens",
 }
 
 
