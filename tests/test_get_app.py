@@ -6,7 +6,22 @@ from pathlib import Path
 from unittest.mock import patch
 
 from pilot.commands.get_app import GetAppCommand
+from pilot.core.marketplace import Marketplace, Resolver
 from tests.test_commands import make_bench
+
+
+def make_resolver(name: str, deps: dict[str, str] | None = None) -> Resolver:
+    return Resolver(
+        app=name,
+        repo=f"https://github.com/frappe/{name}",
+        target_type="branch",
+        target="main",
+        version="1.0.0",
+        frappe_version="16.0.0",
+        required_version="",
+        is_installable=True,
+        dependencies=deps or {},
+    )
 
 
 def make_command(tmp_path: Path, name: str = "myapp", **kwargs) -> GetAppCommand:
@@ -80,6 +95,54 @@ def test_short_circuit_adopts_real_on_disk_app_path(tmp_path: Path) -> None:
     assert cmd.name == "india_compliance"
 
 
+def test_short_circuit_still_populates_installed_dependencies(tmp_path: Path) -> None:
+    """Defect: when run() short-circuits on an already-registered app,
+    installed_dependencies must still list its marketplace dependencies —
+    otherwise GetAndInstallAppTask only installs the primary app onto new
+    sites and silently leaves its dependencies uninstalled there."""
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    (bench.apps_path / "helpdesk").mkdir(parents=True)
+    (bench.apps_path / "telephony").mkdir(parents=True)
+    (bench.sites_path / "apps.txt").write_text("frappe\ntelephony\nhelpdesk\n")
+
+    telephony = make_resolver("telephony")
+    helpdesk = make_resolver("helpdesk", deps={"telephony": ""})
+    helpdesk._registry = {"telephony": [telephony]}
+
+    with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
+            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
+            patch("pilot.commands.get_app.GetAppCommand") as mock_cmd:
+        cmd = GetAppCommand(bench, "https://github.com/frappe/helpdesk", install_dependencies=True)
+        cmd.run()
+
+    assert [app.config.name for app in cmd.installed_dependencies] == ["telephony"]
+    mock_cmd.assert_not_called()
+
+
+def test_short_circuit_never_installs_a_missing_dependency(tmp_path: Path) -> None:
+    """An already-installed app is never re-installed, and neither are its
+    dependencies — even if one is genuinely missing from the bench, the
+    short-circuit path only resolves, it must never install."""
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    (bench.apps_path / "helpdesk").mkdir(parents=True)
+    (bench.sites_path / "apps.txt").write_text("frappe\nhelpdesk\n")  # telephony missing
+
+    telephony = make_resolver("telephony")
+    helpdesk = make_resolver("helpdesk", deps={"telephony": ""})
+    helpdesk._registry = {"telephony": [telephony]}
+
+    with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
+            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
+            patch("pilot.commands.get_app.GetAppCommand") as mock_cmd:
+        cmd = GetAppCommand(bench, "https://github.com/frappe/helpdesk", install_dependencies=True)
+        cmd.run()
+
+    mock_cmd.assert_not_called()
+    assert cmd.installed_dependencies == []
+
+
 def test_skip_validations_flag_still_skips_validate(tmp_path: Path) -> None:
     cmd = make_command(tmp_path, skip_validations=True)
 
@@ -89,9 +152,10 @@ def test_skip_validations_flag_still_skips_validate(tmp_path: Path) -> None:
     mock_validate.assert_not_called()
 
 
-def test_is_registered_reflects_apps_txt_contents(tmp_path: Path) -> None:
-    cmd = make_command(tmp_path, name="erpnext")
-    assert cmd._is_registered() is False
+def test_bench_is_app_installed_reflects_apps_txt_contents(tmp_path: Path) -> None:
+    bench = make_bench(tmp_path)
+    bench.create_directories()
+    assert bench.is_app_installed("erpnext") is False
 
-    (cmd.bench.sites_path / "apps.txt").write_text("frappe\nerpnext\n")
-    assert cmd._is_registered() is True
+    (bench.sites_path / "apps.txt").write_text("frappe\nerpnext\n")
+    assert bench.is_app_installed("erpnext") is True

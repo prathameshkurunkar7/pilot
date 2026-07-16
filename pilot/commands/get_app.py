@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from pilot.commands.base import Command
 
 if TYPE_CHECKING:
+    from pilot.core.app import App
     from pilot.core.bench import Bench
 
 
@@ -76,13 +77,8 @@ class GetAppCommand(Command):
         self.installed_dependencies: list[App] = []
 
     def run(self) -> None:
-        if self._is_registered():
-            # Re-point self.app at the real registered App, not just the name —
-            # self.app's raw (possibly hyphenated) path may not exist on disk
-            # if it was already normalized in an earlier run, and callers (e.g.
-            # get_and_install_app_task) read cmd.app afterward.
-            self.app = self.bench.app(self.app.module_name)
-            self.name = self.app.config.name
+        if self.bench.is_app_installed(self.name):
+            self._update_installed_app_metadata()
             print(f"'{self.name}' already installed, skipping.")
             sys.stdout.flush()
             return
@@ -91,7 +87,7 @@ class GetAppCommand(Command):
         self._normalize_folder()
 
         if self.install_dependencies:
-            self._install_dependencies()
+            self.installed_dependencies = self._install_dependencies()
 
         if not self.skip_validations:
             self._validate()
@@ -100,6 +96,14 @@ class GetAppCommand(Command):
         self._register()
         self._build()
         print(f"\n'{self.name}' installed successfully.")
+
+    def _update_installed_app_metadata(self) -> None:
+        self.app = self.bench.app(self.app.module_name)
+        self.name = self.app.config.name
+        if self.install_dependencies:
+            # Already installed — resolve its dependencies for the caller
+            # (e.g. site installs), but never install anything for it.
+            self.installed_dependencies = self._resolve_dependencies()
 
     def _clone(self) -> None:
         # is_cloned resolves the normalized (module-name) folder too, so a re-run
@@ -133,88 +137,23 @@ class GetAppCommand(Command):
             AppConfig(name=name, repo=self.repo, branch=self.app.config.branch), self.bench
         )
 
-    def _install_dependencies(self) -> None:
+    def _install_dependencies(self) -> list["App"]:
         import shutil
 
+        from pilot.core.app_dependency_installer import AppDependencyInstaller
         from pilot.exceptions import BenchError
 
         try:
-            self._resolve_and_install_dependencies()
+            return AppDependencyInstaller(self.bench, self.app).install()
         except BenchError:
             if self._cloned_this_run:
                 shutil.rmtree(self.app.path, ignore_errors=True)
             raise
 
-    def _resolve_and_install_dependencies(self) -> None:
-        """In case the parent app is not present in the registry but has dependencies,
-        we will raise a bench error with a message to the user to install the dependencies manually.
-        In case the dependent app is not present in the registry, we will again raise a bench error
-        with a message to the user to install the dependent app manually.
-        """
-        from pilot.core.marketplace import Marketplace
-        from pilot.exceptions import BenchError
+    def _resolve_dependencies(self) -> list["App"]:
+        from pilot.core.app_dependency_installer import AppDependencyInstaller
 
-        resolver = next(
-            (r for r in Marketplace(self.bench).read_all_apps() if r.app == self.name), None
-        )
-        if resolver is None:
-            # Enter this if the parent is missing from the marketplace registry.
-            missing = self._missing_required_apps()
-            if missing:
-                raise BenchError(
-                    f"'{self.name}' isn't in the marketplace registry, so its dependencies "
-                    f"can't be installed automatically. It requires {missing} — run "
-                    "'bench get-app <repo>' for each of them first, then retry."
-                )
-            return
-
-        if all(self._is_installed(dep) for dep in resolver.dependencies):
-            return
-
-        try:
-            # Enter this if the dependent app is missing from the marketplace registry.
-            dependency_chain = resolver.resolve()
-        except BenchError as exc:
-            raise BenchError(
-                f"Could not resolve dependencies for '{self.name}':\n{exc}\nManually install the dependencies before retrying."
-            ) from exc
-
-        for dep in dependency_chain[:-1]:  # exclude self (last entry)
-            if dep.app == "frappe" or self._is_installed(dep.app):
-                continue
-            print(f"Installing dependency '{dep.app}'...")
-            sys.stdout.flush()
-            # resolve() already returned the full transitive chain, so this
-            # dependency's own deps are already installed by earlier entries.
-            # Only the app the user actually asked for gets validated — a
-            # dependency just needs to be installed, not vetted on its own.
-            dep_cmd = GetAppCommand(
-                self.bench, dep.repo, dep.target, install_dependencies=False, skip_validations=True
-            )
-            dep_cmd.run()
-            self.installed_dependencies.append(dep_cmd.app)
-
-    def _is_installed(self, name: str) -> bool:
-        from pilot.exceptions import BenchError
-
-        try:
-            self.bench.app(name)
-            return True
-        except BenchError:
-            return False
-
-    def _missing_required_apps(self) -> list[str]:
-        from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
-        from pilot.exceptions import BenchError
-
-        required = DependencyDeclarationsCheck()._get_pyproject_required_apps(self.app)
-        missing = []
-        for name in required:
-            try:
-                self.bench.app(name)
-            except BenchError:
-                missing.append(name)
-        return missing
+        return AppDependencyInstaller(self.bench, self.app).resolve()
 
     def _install(self) -> None:
         from pilot.managers.python_env_manager import PythonEnvManager
@@ -226,18 +165,11 @@ class GetAppCommand(Command):
     def _register(self) -> None:
         # apps.txt lists the importable package name; the folder was normalized to
         # that name in _normalize_folder, so self.name is it.
-        existing = self._registered_apps()
+        existing = self.bench.registered_apps()
         if self.name not in existing:
             (self.bench.sites_path / "apps.txt").write_text(
                 "\n".join(existing + [self.name]) + "\n"
             )
-
-    def _is_registered(self) -> bool:
-        return self.app.module_name in self._registered_apps()
-
-    def _registered_apps(self) -> list[str]:
-        apps_txt = self.bench.sites_path / "apps.txt"
-        return apps_txt.read_text().splitlines() if apps_txt.exists() else []
 
     def _validate(self) -> None:
         import shutil
