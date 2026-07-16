@@ -19,6 +19,7 @@ from pilot.managers.platform import _privileged
 from pilot.utils import run_command
 
 _ADMIN_IDLE_TIMEOUT = 60  # seconds of inactivity before socket-activated admin stops
+_SYSTEMCTL_TIMEOUT = 90
 
 class SystemdRenderer(ServiceRenderer):
     """Builds systemd --user unit/socket/target text for a bench."""
@@ -279,15 +280,17 @@ class SystemdProcessManager(ManagedProcessManager):
         elif action == "restart":
             service = self._unit_name("admin")
             if (self.user_unit_dir / service).exists():
-                run_command(self._systemctl("restart", service), env=env)
+                subprocess.run(self._systemctl("reset-failed", service), capture_output=True, env=env)
+                run_command(self._systemctl("restart", service), env=env, timeout=_SYSTEMCTL_TIMEOUT)
 
     def _activate_admin_socket(self, env: dict) -> None:
         # Stop the service first: a stale port hold would make the new socket 502.
         socket = self._admin_socket_name()
         service = self._unit_name("admin")
         subprocess.run(self._systemctl("stop", service), capture_output=True, env=env)
-        run_command(self._systemctl("enable", socket), env=env)
-        run_command(self._systemctl("restart", socket), env=env)
+        subprocess.run(self._systemctl("reset-failed", socket, service), capture_output=True, env=env)
+        run_command(self._systemctl("enable", socket), env=env, timeout=_SYSTEMCTL_TIMEOUT)
+        run_command(self._systemctl("restart", socket), env=env, timeout=_SYSTEMCTL_TIMEOUT)
 
     def _installed_bench_units(self) -> set[str]:
         result = subprocess.run(
