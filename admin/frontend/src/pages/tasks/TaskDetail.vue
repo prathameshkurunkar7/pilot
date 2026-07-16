@@ -71,7 +71,6 @@ const actionError = ref('')
 
 const metadata = computed(() => {
   const items = [
-    { label: 'Submitted', value: fmtDateTime(task.value.queued_at) },
     { label: 'Started', value: fmtDateTime(task.value.started_at) },
     { label: 'Finished', value: task.value.finished_at ? fmtDateTime(task.value.finished_at) : '—' },
     { label: 'Duration', value: fmtDuration(task.value.duration_seconds) || '—' },
