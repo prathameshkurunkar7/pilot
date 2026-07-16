@@ -124,16 +124,16 @@ class Marketplace:
     def __post_init__(self):
         self.frappe_version = self.get_current_frappe_version()
         # Snapshot at construction so callers see a consistent registry for this instance.
-        self._registry = self._parse_registry(json.loads(self._read_apps_v2()))
+        self._registry = self._parse_registry(json.loads(self._read_apps_json()))
 
     @staticmethod
-    def _read_apps_v2() -> str:
+    def _read_apps_json() -> str:
         from pilot.core.registry_cache import RegistryCache
         from pilot.loader import cli_root
 
         cache = RegistryCache(cli_root())
         cache.ensure_fresh()
-        return cache.apps_v2_path.read_text()
+        return cache.apps_json_path.read_text()
 
     def get_current_frappe_version(self) -> str:
         """We need the current framework version to correctly suggest apps for installation"""
@@ -145,7 +145,7 @@ class Marketplace:
     @lru_cache(maxsize=1)
     def registry() -> list[dict]:
         """Parsed registry for callers that don't have a Marketplace/bench (e.g. tasks). Cached once."""
-        return Marketplace._parse_registry(json.loads(Marketplace._read_apps_v2()))
+        return Marketplace._parse_registry(json.loads(Marketplace._read_apps_json()))
 
     @staticmethod
     def _parse_registry(raw: list[dict]) -> list[dict]:

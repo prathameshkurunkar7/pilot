@@ -1,6 +1,6 @@
 """Local git-clone cache of the external marketplace registry repo.
 
-The registry (apps_v2.json) lives in a separate, community-editable GitHub
+The registry (apps.json) lives in a separate, community-editable GitHub
 repo rather than in this codebase. `RegistryCache` keeps one shared clone of
 it per pilot install (under `<cli_root>/registry-cache/`), refreshed at most
 once an hour, and refuses to serve a clone that's been edited by hand.
@@ -16,7 +16,7 @@ from pilot.core.cron_manager import CronManager
 from pilot.exceptions import BenchError, CommandError
 from pilot.utils import run_command
 
-REGISTRY_URL = "https://github.com/frappe/pilot-marketplace"
+REGISTRY_URL = "https://github.com/frappe/marketplace"
 
 _REFRESH_INTERVAL_SECONDS = 60 * 60
 _LS_REMOTE_TIMEOUT_SECONDS = 15
@@ -40,8 +40,8 @@ class RegistryCache:
         return self._cli_root / "registry-cache"
 
     @property
-    def apps_v2_path(self) -> Path:
-        return self.path / "apps_v2.json"
+    def apps_json_path(self) -> Path:
+        return self.path / "apps.json"
 
     @property
     def _last_checked_path(self) -> Path:

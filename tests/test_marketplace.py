@@ -344,7 +344,7 @@ def make_marketplace(frappe_version: str, registry: list | None = None) -> Marke
 
     with (
         patch("pilot.core.marketplace.Marketplace.get_current_frappe_version", return_value=frappe_version),
-        patch("pilot.core.marketplace.Marketplace._read_apps_v2", return_value=json.dumps(registry or SAMPLE_REGISTRY)),
+        patch("pilot.core.marketplace.Marketplace._read_apps_json", return_value=json.dumps(registry or SAMPLE_REGISTRY)),
     ):
         mp = Marketplace(bench)
     return mp

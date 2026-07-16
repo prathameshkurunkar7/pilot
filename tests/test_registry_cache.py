@@ -21,14 +21,14 @@ def make_remote(tmp_path: Path, content: str = '{"apps": []}') -> Path:
     _git(remote, "init", "-q", "-b", "main")
     _git(remote, "config", "user.email", "test@example.com")
     _git(remote, "config", "user.name", "Test")
-    (remote / "apps_v2.json").write_text(content)
-    _git(remote, "add", "apps_v2.json")
+    (remote / "apps.json").write_text(content)
+    _git(remote, "add", "apps.json")
     _git(remote, "commit", "-q", "-m", "init")
     return remote
 
 
 def commit_new_content(remote: Path, content: str) -> None:
-    (remote / "apps_v2.json").write_text(content)
+    (remote / "apps.json").write_text(content)
     _git(remote, "commit", "-q", "-am", "update")
 
 
@@ -51,7 +51,7 @@ def make_cache(tmp_path: Path) -> RegistryCache:
 def test_ensure_fresh_clones_on_first_use(tmp_path: Path) -> None:
     cache = make_cache(tmp_path)
     cache.ensure_fresh()
-    assert cache.apps_v2_path.read_text() == '{"apps": []}'
+    assert cache.apps_json_path.read_text() == '{"apps": []}'
 
 
 def test_ensure_fresh_skips_network_within_refresh_window(tmp_path: Path, _point_at_local_remote) -> None:
@@ -63,7 +63,7 @@ def test_ensure_fresh_skips_network_within_refresh_window(tmp_path: Path, _point
         cache.ensure_fresh()
 
     mock_head.assert_not_called()
-    assert cache.apps_v2_path.read_text() == '{"apps": []}'  # unchanged — stale check skipped
+    assert cache.apps_json_path.read_text() == '{"apps": []}'  # unchanged — stale check skipped
 
 
 def test_ensure_fresh_pulls_when_refresh_window_elapsed(tmp_path: Path, _point_at_local_remote) -> None:
@@ -74,13 +74,13 @@ def test_ensure_fresh_pulls_when_refresh_window_elapsed(tmp_path: Path, _point_a
 
     cache.ensure_fresh()
 
-    assert cache.apps_v2_path.read_text() == '{"apps": ["new"]}'
+    assert cache.apps_json_path.read_text() == '{"apps": ["new"]}'
 
 
 def test_ensure_fresh_raises_on_manual_edit(tmp_path: Path) -> None:
     cache = make_cache(tmp_path)
     cache.ensure_fresh()
-    (cache.path / "apps_v2.json").write_text("tampered")
+    (cache.path / "apps.json").write_text("tampered")
 
     with pytest.raises(BenchError, match="modified manually"):
         cache.ensure_fresh()
@@ -94,7 +94,7 @@ def test_ensure_fresh_falls_back_to_local_clone_when_offline(tmp_path: Path) -> 
     with patch.object(RegistryCache, "_remote_head_sha", return_value=None):
         cache.ensure_fresh()  # must not raise
 
-    assert cache.apps_v2_path.read_text() == '{"apps": []}'
+    assert cache.apps_json_path.read_text() == '{"apps": []}'
 
 
 def test_first_clone_installs_daily_refresh_cron(tmp_path: Path) -> None:
