@@ -7,7 +7,7 @@ setup_complete returns early with {"status": "ok"} if the wizard was already
 run, so re-runs are safe.
 
 Prerequisites (once per developer machine / CI):
-    bench init && bench new-site site1.localhost --admin-password admin
+    bench init && BENCH_SITE_ADMIN_PASSWORD=admin bench new-site site1.localhost
 """
 
 from __future__ import annotations
