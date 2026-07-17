@@ -322,7 +322,7 @@ def create_bench():
             422,
         )
 
-    from pilot.config.production_config import VALID_PROCESS_MANAGERS
+    from pilot.config.production import VALID_PROCESS_MANAGERS
 
     process_manager = (data.get("process_manager") or "").strip().lower()
     if process_manager == "supervisord":

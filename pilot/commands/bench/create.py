@@ -144,7 +144,7 @@ class NewCommand(Command):
         MariaDBManager just starts Homebrew's single shared service via
         `brew services`.
         """
-        from pilot.config.mariadb_config import MariaDBConfig
+        from pilot.config.mariadb import MariaDBConfig
         from pilot.managers.platform import is_macos
 
         port = MariaDBConfig().port
@@ -181,7 +181,7 @@ class NewCommand(Command):
         PostgresManager just starts Homebrew's single shared service via
         `brew services`
         """
-        from pilot.config.postgres_config import PostgresConfig
+        from pilot.config.postgres import PostgresConfig
         from pilot.managers.platform import is_macos
 
         port = PostgresConfig().port

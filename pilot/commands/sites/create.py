@@ -44,8 +44,9 @@ class NewSiteCommand(Command):
         self._via_wildcard = False
 
     def run(self) -> None:
-        from pilot.config.site_config import SiteConfig
+        from pilot.config.site import SiteConfig
         from pilot.core.site import Site
+        from pilot.managers.nginx import NginxManager
 
         self._validate()
         ssl = self._should_enable_ssl()
@@ -60,7 +61,7 @@ class NewSiteCommand(Command):
         print(f"\nSite '{self.name}' created successfully.")
         self.build_missing_assets()
         self._add_to_hosts()
-        self._reload_nginx()
+        NginxManager(self.bench).reload_for_site_change()
         if ssl:
             self._obtain_cert(site)
 
@@ -195,16 +196,3 @@ class NewSiteCommand(Command):
                 f"  Add it manually to reach the site by name.",
                 file=sys.stderr,
             )
-
-    def _reload_nginx(self) -> None:
-        if not self.bench.config.production.enabled:
-            return
-        from pilot.managers.nginx import NginxManager
-
-        mgr = NginxManager(self.bench)
-        if not mgr.is_installed():
-            return
-        print("Updating nginx configuration...")
-        sys.stdout.flush()
-        mgr.generate_config(ssl_ready=True)
-        mgr.reload()
