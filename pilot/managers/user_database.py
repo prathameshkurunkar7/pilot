@@ -4,6 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
+from pilot.exceptions import DatabaseError
 from pilot.managers.packages import get_package_manager
 from pilot.managers.platform import is_macos
 from pilot.utils import run_command
@@ -31,7 +32,7 @@ class UserOwnedDBManager:
         if is_macos():
             get_package_manager().install(self._brew_package())
             return
-        raise RuntimeError(
+        raise DatabaseError(
             f"{self._DISPLAY_NAME} is not installed. Re-run install.sh as root to "
             f"install it (it provisions {self._SYSTEM_PACKAGE} for every supported "
             f"distro), or install '{self._SYSTEM_PACKAGE}' yourself."

@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from pilot.config.postgres_config import PostgresConfig
+from pilot.exceptions import DatabaseError
 from pilot.managers.user_database import UserOwnedDBManager
 from pilot.managers.platform import is_macos, which
 from pilot.utils import run_command
@@ -126,7 +127,7 @@ class PostgresManager(UserOwnedDBManager):
                 pass
         except OSError:
             return  # nothing listening there — free to bind
-        raise RuntimeError(
+        raise DatabaseError(
             f"Port {self.config.port} is already in use by another service "
             f"(e.g. a system-wide PostgreSQL). Free it, or set postgres.port in "
             f"bench.toml to an unused port, then retry."
@@ -163,7 +164,7 @@ class PostgresManager(UserOwnedDBManager):
             return
         self._run_sql_as_superuser(self._ensure_role_sql())
         if not self.check_credentials():
-            raise RuntimeError(
+            raise DatabaseError(
                 f"PostgreSQL is installed but bench could not authenticate as '{self.config.admin_user}' "
                 "over TCP. Ensure the server's pg_hba.conf allows password auth from localhost, or set "
                 "postgres.root_password to the existing superuser password."

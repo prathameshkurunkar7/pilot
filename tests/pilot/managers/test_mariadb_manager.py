@@ -6,6 +6,7 @@ from unittest.mock import patch, PropertyMock
 import pytest
 
 from pilot.config.mariadb_config import MariaDBConfig
+from pilot.exceptions import DatabaseError
 from pilot.managers.mariadb import MariaDBManager
 
 MODULE = "pilot.managers.mariadb"
@@ -45,7 +46,7 @@ def test_install_raises_when_missing_on_linux() -> None:
     m = _manager()
     with patch.object(m, "is_installed", return_value=False), \
          patch(f"{BASE_MODULE}.is_macos", return_value=False):
-        with pytest.raises(RuntimeError, match="install.sh"):
+        with pytest.raises(DatabaseError, match="install.sh"):
             m.install()
 
 

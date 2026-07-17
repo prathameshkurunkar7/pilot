@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import pytest
 
 from pilot.config.postgres_config import PostgresConfig
+from pilot.exceptions import DatabaseError
 from pilot.managers.postgres import PostgresManager
 
 MODULE = "pilot.managers.postgres"
@@ -48,7 +49,7 @@ def test_install_raises_when_missing_on_linux() -> None:
     m = _mgr()
     with patch.object(m, "is_installed", return_value=False), \
          patch(f"{BASE_MODULE}.is_macos", return_value=False):
-        with pytest.raises(RuntimeError, match="install.sh"):
+        with pytest.raises(DatabaseError, match="install.sh"):
             m.install()
 
 
@@ -88,7 +89,7 @@ def test_secure_sets_password_then_verifies() -> None:
 def test_secure_raises_when_still_unauthenticated() -> None:
     m = _mgr(root_password="pw")
     with patch.object(m, "check_credentials", side_effect=[False, False]), patch.object(m, "_run_sql_as_superuser"):
-        with pytest.raises(RuntimeError, match="authenticate"):
+        with pytest.raises(DatabaseError, match="authenticate"):
             m.secure()
 
 
@@ -249,7 +250,7 @@ def test_ensure_port_available_raises_when_port_taken() -> None:
         srv.bind(("127.0.0.1", 0))
         srv.listen(1)
         m.config.port = srv.getsockname()[1]
-        with pytest.raises(RuntimeError, match="already in use"):
+        with pytest.raises(DatabaseError, match="already in use"):
             m._ensure_port_available()
 
 

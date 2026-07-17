@@ -18,6 +18,7 @@ except ImportError:
         pass
 
 from pilot.config.s3_config import S3Config
+from pilot.exceptions import BenchError
 
 # Non-seekable streams (e.g. a subprocess's stdin pipe) still get parallel
 # range GETs: s3transfer buffers out-of-order parts and writes them in order.
@@ -64,7 +65,7 @@ def build_endpoint_url(provider: str, region: str) -> str:
         raise ValueError(f"Unsupported provider: {provider}")
 
 
-class S3IntegrationError(Exception):
+class S3IntegrationError(BenchError):
     pass
 
 
