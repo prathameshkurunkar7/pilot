@@ -12,6 +12,7 @@ from typing import TypedDict
 
 from pilot.tasks.callbacks import validate_callback
 from pilot.tasks.jobs.backup_site_task import BackupSiteTask
+from pilot.tasks.jobs.base_task import BaseTask
 from pilot.tasks.jobs.build_task import BuildTask
 from pilot.tasks.jobs.clear_cache_task import ClearCacheTask
 from pilot.tasks.jobs.delete_backup_task import DeleteBackupTask
@@ -79,7 +80,7 @@ _WHITELIST: dict[str, list[str]] = {
 # command -> job class. Each class's own _parser() is the single source of
 # truth for its CLI shape; argv is derived from it below instead of a second,
 # hand-synced builder per command.
-_JOBS: dict[str, type] = {
+_JOBS: dict[str, type[BaseTask]] = {
     "migrate": MigrateTask,
     "clear-cache": ClearCacheTask,
     "install-app": InstallAppTask,
