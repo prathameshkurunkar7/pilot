@@ -174,7 +174,7 @@ class SetupProductionCommand(Command):
         new_pm = self.bench.config.production.process_manager
         if not old_pm or old_pm == new_pm:
             return
-        print(f"Migrating from {old_pm} to {new_pm}: removing old manager resources...")
+        self.report(f"Migrating from {old_pm} to {new_pm}: removing old manager resources...")
         if old_pm == "supervisor":
             from pilot.managers.processes.supervisor import SupervisorProcessManager
 
@@ -373,15 +373,15 @@ class SetupProductionCommand(Command):
         from pilot.managers.nginx import NginxManager
 
         nginx_manager = NginxManager(self.bench)
-        print("\nProduction setup complete.")
-        print("Sites:")
+        self.report("\nProduction setup complete.")
+        self.report("Sites:")
         for site in self.bench.sites():
             if site.config.ssl and nginx_manager.has_cert(site.config):
-                print(f"  https://{site.config.name}")
+                self.report(f"  https://{site.config.name}")
             else:
                 http_port = self.bench.config.nginx.http_port
                 port_suffix = "" if http_port == 80 else f":{http_port}"
-                print(f"  http://{site.config.name}{port_suffix}")
+                self.report(f"  http://{site.config.name}{port_suffix}")
         admin_https = self.bench.config.admin.tls and nginx_manager.has_admin_cert
         scheme = "https" if admin_https else "http"
-        print(f"Admin:\n  {scheme}://{self.bench.config.admin.domain}")
+        self.report(f"Admin:\n  {scheme}://{self.bench.config.admin.domain}")

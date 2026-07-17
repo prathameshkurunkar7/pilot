@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
@@ -92,8 +91,7 @@ class GetAppCommand(Command):
             self.installed_dependencies = self._install_dependencies()
 
         if already_installed:
-            print(f"'{self.name}' already installed, skipping.")
-            sys.stdout.flush()
+            self.report(f"'{self.name}' already installed, skipping.")
             return
 
         if not self.skip_validations:
@@ -102,17 +100,15 @@ class GetAppCommand(Command):
         self._install()
         self._register()
         self._build()
-        print(f"\n'{self.name}' installed successfully.")
+        self.report(f"\n'{self.name}' installed successfully.")
 
     def _clone(self) -> None:
         # is_cloned resolves the normalized (module-name) folder too, so a re-run
         # finds an existing clone however its folder was named.
         if self.app.is_cloned:
-            print(f"'{self.name}' already cloned, skipping clone.")
-            sys.stdout.flush()
+            self.report(f"'{self.name}' already cloned, skipping clone.")
             return
-        print(f"Cloning {self.name}...")
-        sys.stdout.flush()
+        self.report(f"Cloning {self.name}...")
         self.app.clone()
         self._cloned_this_run = True
 
@@ -150,8 +146,7 @@ class GetAppCommand(Command):
     def _install(self) -> None:
         from pilot.managers.python_environment import PythonEnvManager
 
-        print(f"Installing {self.name}...")
-        sys.stdout.flush()
+        self.report(f"Installing {self.name}...")
         PythonEnvManager(self.bench).install_app(self.app)
 
     def _register(self) -> None:
@@ -180,6 +175,5 @@ class GetAppCommand(Command):
     def _build(self) -> None:
         from pilot.managers.python_environment import PythonEnvManager
 
-        print(f"\nSetting up assets for {self.name}...")
-        sys.stdout.flush()
+        self.report(f"\nSetting up assets for {self.name}...")
         PythonEnvManager(self.bench).build_assets_for_app(self.app)

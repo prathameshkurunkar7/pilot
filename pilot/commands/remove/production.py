@@ -19,7 +19,7 @@ class RemoveProductionCommand(Command):
     def run(self) -> None:
         prod = self.bench.config.production
         if not prod.enabled:
-            print(f"Bench {self.bench.config.name} is not deployed to production. Nothing to remove.")
+            self.report(f"Bench {self.bench.config.name} is not deployed to production. Nothing to remove.")
             return
 
         self._remove_process_manager(prod.process_manager)
@@ -43,7 +43,7 @@ class RemoveProductionCommand(Command):
         try:
             NginxManager(self.bench).uninstall_config()
         except Exception as exc:  # nginx not installed / already gone — non-fatal
-            print(f"  (nginx cleanup skipped: {exc})")
+            self.report(f"  (nginx cleanup skipped: {exc})")
 
     def _persist_disabled(self) -> None:
         """Set production.enabled = false but keep admin.domain so the bench can be
@@ -64,8 +64,8 @@ class RemoveProductionCommand(Command):
         # enabled is now false in-memory too, so admin_url() returns the dev URL.
         self.bench.config.production.enabled = False
         self.bench.config.production.process_manager = ""
-        print(f"\nProduction deployment removed for {name}.")
-        print("\nRun it locally with:")
-        print(f"  bench -b {name} start")
-        print("\nDevelopment admin:")
-        print(f"  {admin_url(self.bench.config)}")
+        self.report(f"\nProduction deployment removed for {name}.")
+        self.report("\nRun it locally with:")
+        self.report(f"  bench -b {name} start")
+        self.report("\nDevelopment admin:")
+        self.report(f"  {admin_url(self.bench.config)}")

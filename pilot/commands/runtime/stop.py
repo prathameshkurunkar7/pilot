@@ -22,4 +22,4 @@ class StopCommand(Command):
         manager = ProcessManager.detect_running(self.bench)
         manager.stop()
         manager.stop_admin()
-        print(f"Stopped bench {self.bench.config.name}.")
+        self.report(f"Stopped bench {self.bench.config.name}.")

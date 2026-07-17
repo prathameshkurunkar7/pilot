@@ -416,7 +416,7 @@ def test_remove_app_confirm_raises_on_negative_answer(tmp_path: Path, monkeypatc
     monkeypatch.setattr("builtins.input", lambda _: "n")
 
     with pytest.raises(BenchError, match="Aborted"):
-        RemoveAppCommand(bench, "myapp")._confirm()
+        RemoveAppCommand(bench, "myapp").confirm("Remove?")
 
 
 def test_remove_app_confirm_passes_on_yes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -425,7 +425,7 @@ def test_remove_app_confirm_passes_on_yes(tmp_path: Path, monkeypatch: pytest.Mo
     bench = make_bench(tmp_path)
     (bench.apps_path / "myapp").mkdir(parents=True)
     monkeypatch.setattr("builtins.input", lambda _: "y")
-    RemoveAppCommand(bench, "myapp")._confirm()  # no raise
+    RemoveAppCommand(bench, "myapp").confirm("Remove?")  # no raise
 
 
 def test_remove_app_confirm_skipped_when_skip_confirm(tmp_path: Path) -> None:
@@ -433,7 +433,7 @@ def test_remove_app_confirm_skipped_when_skip_confirm(tmp_path: Path) -> None:
 
     bench = make_bench(tmp_path)
     (bench.apps_path / "myapp").mkdir(parents=True)
-    RemoveAppCommand(bench, "myapp", skip_confirm=True)._confirm()  # no raise, no input
+    RemoveAppCommand(bench, "myapp", skip_confirm=True).confirm("Remove?", skip=True)  # no raise, no input
 
 
 def test_remove_app_removes_app_from_apps_txt(tmp_path: Path) -> None:

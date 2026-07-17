@@ -70,12 +70,12 @@ class SetupNginxCommand(Command):
         tls = self.bench.config.admin.tls
         for site in self.bench.sites():
             if tls and site.config.ssl and self.nginx_manager.has_cert(site.config):
-                print(f"  https://{site.config.name}")
+                self.report(f"  https://{site.config.name}")
             else:
                 http_port = self.bench.config.nginx.http_port
                 port_suffix = "" if http_port == 80 else f":{http_port}"
-                print(f"  http://{site.config.name}{port_suffix}")
+                self.report(f"  http://{site.config.name}{port_suffix}")
         domain = self.bench.config.admin.domain
         if domain:
             scheme = "https" if tls and self.nginx_manager.has_admin_cert else "http"
-            print(f"  {scheme}://{domain} (admin)")
+            self.report(f"  {scheme}://{domain} (admin)")

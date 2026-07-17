@@ -134,9 +134,9 @@ class GenerateSessionCommand(Command):
             raise BenchError("Admin has no password set; configure [admin].password in bench.toml first.")
         token = issue_login_token(self._jwt_secret())
         if self.full_path:
-            print(f"{admin_url(self.bench.config)}/?sid={urllib.parse.quote(token, safe='')}")
+            self.report(f"{admin_url(self.bench.config)}/?sid={urllib.parse.quote(token, safe='')}")
         else:
-            print(token)
+            self.report(token)
 
     def _jwt_secret(self) -> str:
         secret = ensure_jwt_secret(self.bench.path / "bench.toml")
@@ -166,4 +166,4 @@ class IssueSiteTokenCommand(Command):
     def run(self) -> None:
         secret = ensure_jwt_secret(self.bench.path / "bench.toml")
         self.bench.config.admin.jwt_secret = secret
-        print(issue_site_token(secret, self.site, ttl=self.ttl))
+        self.report(issue_site_token(secret, self.site, ttl=self.ttl))

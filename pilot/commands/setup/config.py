@@ -21,16 +21,16 @@ class UpdateConfigCommand(Command):
         from pilot.managers.processes.local import ProcessManager
         from pilot.managers.redis import RedisManager
 
-        print("Updating Redis configs...")
+        self.report("Updating Redis configs...")
         RedisManager(self.bench.config.redis, self.bench).generate_configs()
 
-        print("Updating process manager config...")
+        self.report("Updating process manager config...")
         ProcessManager.for_bench(self.bench).write_config()
 
-        print("Updating common_site_config.json...")
+        self.report("Updating common_site_config.json...")
         self.bench.write_common_site_config()
 
         if self.bench.config.production.enabled:
-            print("Updating nginx configs...")
+            self.report("Updating nginx configs...")
             NginxManager(self.bench).generate_config()
-            print("  Note: run 'bench setup nginx' to reload nginx with the new config.")
+            self.report("  Note: run 'bench setup nginx' to reload nginx with the new config.")

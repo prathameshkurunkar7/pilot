@@ -52,13 +52,12 @@ class NewSiteCommand(Command):
         ssl = self._should_enable_ssl()
         self._register_with_provider()
         site = Site(SiteConfig(name=self.name, apps=self.apps, admin_password=self.admin_password, ssl=ssl), self.bench)
-        print(f"Creating site '{self.name}'...")
-        sys.stdout.flush()
+        self.report(f"Creating site '{self.name}'...")
         site.create(db_type=self.db_type)
         self._install_apps(site)
         self._write_pilot_communication_config()
         self.bench.write_common_site_config()
-        print(f"\nSite '{self.name}' created successfully.")
+        self.report(f"\nSite '{self.name}' created successfully.")
         self.build_missing_assets()
         self._add_to_hosts()
         NginxManager(self.bench).reload_for_site_change()
@@ -80,8 +79,7 @@ class NewSiteCommand(Command):
         for app_name in self.apps:
             if app_name == framework:
                 continue
-            print(f"Installing app '{app_name}'...")
-            sys.stdout.flush()
+            self.report(f"Installing app '{app_name}'...")
             site.install_app(self.bench.app(app_name))
 
     def _write_pilot_communication_config(self) -> None:
@@ -132,8 +130,7 @@ class NewSiteCommand(Command):
         raw["ssl"] = True
         write_private_text(config_path, json.dumps(raw, indent=1))
 
-        print("Obtaining SSL certificate...")
-        sys.stdout.flush()
+        self.report("Obtaining SSL certificate...")
         nginx_mgr = NginxManager(self.bench)
         # Serve ACME challenges over HTTP before the cert exists.
         nginx_mgr.generate_config(ssl_ready=False)

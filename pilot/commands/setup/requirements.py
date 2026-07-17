@@ -31,7 +31,7 @@ class SetupRequirementsCommand(Command):
         for app in self.bench.apps():
             if not (app.path / "pyproject.toml").exists() and not (app.path / "setup.py").exists():
                 continue
-            print(f"Installing Python requirements for {app.config.name}...")
+            self.report(f"Installing Python requirements for {app.config.name}...")
             run_command(
                 [uv, "pip", "install", "--python", python, "-e", str(app.path)],
                 stream_output=True,
@@ -43,5 +43,5 @@ class SetupRequirementsCommand(Command):
         for app in self.bench.apps():
             if not (app.path / "package.json").exists():
                 continue
-            print(f"Installing JS requirements for {app.config.name}...")
+            self.report(f"Installing JS requirements for {app.config.name}...")
             run_command([get_yarn_bin(), "install"], cwd=app.path, stream_output=True)

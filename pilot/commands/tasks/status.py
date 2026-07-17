@@ -12,14 +12,14 @@ class TaskWorkerStatusCommand(Command):
         from pilot.tasks.manager.activity import TaskActivityReader
 
         activity = TaskActivityReader(self.bench.path).read()
-        print(
+        self.report(
             f"Task worker: {activity.worker_status} "
             f"(desired: {activity.desired_status})"
         )
         state = activity.worker_state
         if state is not None and state.current_task_id:
-            print(f"Current task: {state.current_task_id}")
-        print(
+            self.report(f"Current task: {state.current_task_id}")
+        self.report(
             f"Task activity: {'active' if activity.active else 'idle'} "
             f"(queued: {activity.queued_tasks}, running: {activity.running_tasks})"
         )

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
@@ -43,9 +42,8 @@ class InstallAppCommand(Command):
         for app_name in self.app_names:
             app = self.bench.app(app_name)
             if not self.force and app.config.name in installed:
-                print(f"'{app_name}' is already installed on '{self.site_name}', skipping.")
+                self.report(f"'{app_name}' is already installed on '{self.site_name}', skipping.")
                 continue
-            print(f"Installing '{app_name}' on '{self.site_name}'...")
-            sys.stdout.flush()
+            self.report(f"Installing '{app_name}' on '{self.site_name}'...")
             self.site.install_app(app)
-            print(f"'{app_name}' installed on '{self.site_name}'.")
+            self.report(f"'{app_name}' installed on '{self.site_name}'.")

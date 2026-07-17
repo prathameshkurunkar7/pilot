@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
@@ -46,7 +45,7 @@ class UninstallAppCommand(Command):
             if len(installed_apps) == 0 or app_name in installed_apps:
                 return
 
-        print(f"\nApp {app_name} is not installed on any site removing from bench.")
+        self.report(f"\nApp {app_name} is not installed on any site removing from bench.")
         RemoveAppCommand(self.bench, app_name=app_name, skip_confirm=True).run()
 
     def run(self) -> None:
@@ -58,8 +57,7 @@ class UninstallAppCommand(Command):
             app = self.bench.app(app_name)
             if not self.force and installed and app.config.name not in installed:
                 raise BenchError(f"App '{app_name}' is not installed on site '{self.site_name}'.")
-            print(f"Uninstalling '{app_name}' from site '{self.site_name}'...")
-            sys.stdout.flush()
+            self.report(f"Uninstalling '{app_name}' from site '{self.site_name}'...")
             self.site.uninstall_app(app, force=self.force)
-            print(f"'{app_name}' uninstalled from '{self.site_name}'.")
+            self.report(f"'{app_name}' uninstalled from '{self.site_name}'.")
             self.remove_app_if_not_on_any_site(app_name)

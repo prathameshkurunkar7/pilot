@@ -12,4 +12,4 @@ class StopTaskWorkerCommand(Command):
         from pilot.tasks.manager.worker_state import WorkerIntent, WorkerStore
 
         WorkerStore(self.bench.path).write_intent(WorkerIntent.STOPPED)
-        print("Task worker will stop after its current task.")
+        self.report("Task worker will stop after its current task.")

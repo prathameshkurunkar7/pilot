@@ -28,7 +28,7 @@ class InitCommand(Command):
         try:
             self._do_run()
         except Exception as exc:
-            print(f"\nError: {exc}", flush=True)
+            self.report(f"\nError: {exc}")
             self._rollback()
             raise
 
@@ -40,16 +40,15 @@ class InitCommand(Command):
     def _rollback(self) -> None:
         if not self._rollback_actions:
             return
-        print("\nRolling back changes...", flush=True)
+        self.report("\nRolling back changes...")
         for label, fn in reversed(self._rollback_actions):
-            print(f"  Removing {label}...", flush=True)
+            self.report(f"  Removing {label}...")
             try:
                 fn()
             except Exception as e:
-                print(f"    Warning: rollback step failed — {e}", flush=True)
-        print(
-            "\nRollback complete. bench.toml is preserved — fix the issue and run init again.",
-            flush=True,
+                self.report(f"    Warning: rollback step failed — {e}")
+        self.report(
+            "\nRollback complete. bench.toml is preserved — fix the issue and run init again."
         )
 
     def _remove_bench_dirs(self) -> None:
@@ -93,9 +92,9 @@ class InitCommand(Command):
             self._step(description)
             action()
 
-        print("\nBench initialised. Next steps:")
-        print("  bench new-site site1.example.com   # create your first site")
-        print("  bench start                        # start all processes")
+        self.report("\nBench initialised. Next steps:")
+        self.report("  bench new-site site1.example.com   # create your first site")
+        self.report("  bench start                        # start all processes")
 
     def _create_bench_structure(self) -> None:
         self.bench.create_directories()
@@ -109,9 +108,9 @@ class InitCommand(Command):
     def _install_framework_apps(self, python_env_manager) -> None:
         for app in self.bench.init_apps():
             if not app.is_cloned:
-                print(f"  Cloning {app.config.name}...")
+                self.report(f"  Cloning {app.config.name}...")
                 app.clone()
-            print(f"  Installing {app.config.name}...")
+            self.report(f"  Installing {app.config.name}...")
             python_env_manager.install_app(app)
         self.bench.write_apps_txt()
 
@@ -138,14 +137,14 @@ class InitCommand(Command):
 
     def _step(self, description: str) -> None:
         self._step_counter += 1
-        print(f"[{self._step_counter}/{self._total_steps}] {description}...", flush=True)
+        self.report(f"[{self._step_counter}/{self._total_steps}] {description}...")
 
     def _download_admin_frontend(self) -> None:
         from pilot.commands.admin.start import BuildAdminCommand, download_admin_frontend
         from pilot.loader import cli_root
 
         if not download_admin_frontend(cli_root()):
-            print("  Pre-built download failed — building from source (requires Node.js)...")
+            self.report("  Pre-built download failed — building from source (requires Node.js)...")
             BuildAdminCommand().run()
 
     def _install_system_packages(self) -> None:

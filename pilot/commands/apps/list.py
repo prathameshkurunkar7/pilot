@@ -22,4 +22,4 @@ class ListAppsCommand(Command):
         else:
             apps = [a.config.name for a in self.bench.apps()]
         for app in apps:
-            print(app)
+            self.report(app)

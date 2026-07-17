@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import sys
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
@@ -34,12 +33,12 @@ class RemoveAppCommand(Command):
 
     def run(self) -> None:
         self._validate()
-        self._confirm()
+        self.confirm(f"Remove '{self.app_name}' from all sites and the bench?", skip=self.skip_confirm)
         self._uninstall_from_sites()
         self._remove_from_apps_txt()
         self._pip_uninstall()
         self._delete_app_dir()
-        print(f"\n'{self.app_name}' removed from bench.")
+        self.report(f"\n'{self.app_name}' removed from bench.")
 
     def _validate(self) -> None:
         if not self.app_path.exists():
@@ -48,27 +47,16 @@ class RemoveAppCommand(Command):
         if self.app_name == framework:
             raise BenchError(f"Cannot remove the framework app '{framework}'.")
 
-    def _confirm(self) -> None:
-        if self.skip_confirm:
-            return
-        answer = input(
-            f"Remove '{self.app_name}' from all sites and the bench? [y/N] "
-        )
-        if answer.strip().lower() not in ("y", "yes"):
-            raise BenchError("Aborted.")
-
     def _uninstall_from_sites(self) -> None:
         for site in self.bench.sites():
             installed = site.list_apps()
             if self.app.config.name in installed:
-                print(f"Uninstalling '{self.app_name}' from site '{site.config.name}'...")
-                sys.stdout.flush()
+                self.report(f"Uninstalling '{self.app_name}' from site '{site.config.name}'...")
                 try:
                     site.uninstall_app(self.app, force=self.force)
                 except Exception as e:
                     if self.force:
-                        print(f"Warning: could not cleanly uninstall from '{site.config.name}': {e}")
-                        sys.stdout.flush()
+                        self.report(f"Warning: could not cleanly uninstall from '{site.config.name}': {e}")
                     else:
                         raise
 
@@ -85,11 +73,9 @@ class RemoveAppCommand(Command):
     def _pip_uninstall(self) -> None:
         from pilot.managers.python_environment import PythonEnvManager
 
-        print(f"Removing '{self.app_name}' from Python environment...")
-        sys.stdout.flush()
+        self.report(f"Removing '{self.app_name}' from Python environment...")
         PythonEnvManager(self.bench).uninstall_app(self.app_name)
 
     def _delete_app_dir(self) -> None:
-        print(f"Deleting {self.app_path}...")
-        sys.stdout.flush()
+        self.report(f"Deleting {self.app_path}...")
         shutil.rmtree(self.app_path)

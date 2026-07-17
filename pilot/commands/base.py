@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from typing import TYPE_CHECKING, ClassVar, Optional
+
+from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -49,3 +52,22 @@ class Command:
 
     def run(self) -> None:
         raise NotImplementedError
+
+    def report(self, message: str) -> None:
+        """Print a progress/result message, flushed immediately so it's
+        visible before any subprocess this command spawns writes its own
+        output."""
+        print(message)
+        sys.stdout.flush()
+
+    def confirm(self, prompt: str, *, skip: bool = False, error: type[Exception] = BenchError) -> None:
+        """Ask for interactive y/N confirmation, raising `error` if declined
+        (including on EOF/Ctrl-C). No-op when `skip` is True."""
+        if skip:
+            return
+        try:
+            answer = input(f"{prompt} [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if answer not in ("y", "yes"):
+            raise error("Aborted.")

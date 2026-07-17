@@ -67,18 +67,18 @@ class BuildAdminCommand(Command):
         if not self.force_build and download_admin_frontend(cli_root()):
             return
         if self.force_build:
-            print("Skipping download, building from source...")
+            self.report("Skipping download, building from source...")
         else:
-            print("Download failed, building from source...")
+            self.report("Download failed, building from source...")
         frontend = self._find_frontend()
         self._check_node_version()
-        print(f"Building admin frontend at {frontend}...")
+        self.report(f"Building admin frontend at {frontend}...")
         if self._needs_npm_install(frontend):
-            print("Running npm install...")
+            self.report("Running npm install...")
             run_command(["npm", "install"], cwd=frontend, stream_output=True)
-        print("Running npm build")
+        self.report("Running npm build")
         run_command(["npm", "run", "build"], cwd=frontend, stream_output=True)
-        print("\nAdmin frontend rebuilt successfully.")
+        self.report("\nAdmin frontend rebuilt successfully.")
 
     def _find_frontend(self) -> Path:
         from pilot.loader import cli_root

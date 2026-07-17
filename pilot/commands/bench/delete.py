@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -32,7 +31,7 @@ class DropBenchCommand(Command):
     def run(self) -> None:
         name = self.bench.config.name
         self._validate_no_sites(name)
-        self._confirm(name)
+        self.confirm(f"Permanently delete bench '{name}' and its database?", skip=self.skip_confirm)
 
         self._remove_production()
         self._release_admin_domain()
@@ -45,7 +44,7 @@ class DropBenchCommand(Command):
         # any bench that was never volume-backed.
         self._unmount_legacy_bind_mount(self.bench.path)
         self._delete_bench_dir()
-        print(f"\nBench '{name}' dropped.")
+        self.report(f"\nBench '{name}' dropped.")
 
     def _release_admin_domain(self) -> None:
         """Release the admin domain that setup-production registered with the domain
@@ -65,13 +64,6 @@ class DropBenchCommand(Command):
                 f"Drop them first, then retry."
             )
 
-    def _confirm(self, name: str) -> None:
-        if self.skip_confirm:
-            return
-        answer = input(f"Permanently delete bench '{name}' and its database? [y/N] ")
-        if answer.strip().lower() not in ("y", "yes"):
-            raise BenchError("Aborted.")
-
     def _remove_production(self) -> None:
         if not self.bench.config.production.enabled:
             return
@@ -81,8 +73,7 @@ class DropBenchCommand(Command):
 
     def _delete_bench_dir(self) -> None:
         path = self.bench.path
-        print(f"Deleting {path}...")
-        sys.stdout.flush()
+        self.report(f"Deleting {path}...")
         shutil.rmtree(path, ignore_errors=True)
 
     @staticmethod
@@ -104,8 +95,7 @@ class DropBenchCommand(Command):
         except OSError:
             is_mounted = False
         if is_mounted:
-            print(f"Unmounting legacy bind mount at {target}...")
-            sys.stdout.flush()
+            print(f"Unmounting legacy bind mount at {target}...", flush=True)
             try:
                 subprocess.run(_privileged(["umount", "-l", str(target)]), check=False)
             except Exception as exc:

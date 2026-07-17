@@ -55,11 +55,11 @@ class UpdateCommand(Command):
 
     def _step(self, key: str, label: str) -> None:
         self._current_step = key
-        print(f"STEP {key},{time.time():.3f} {label}", flush=True)
+        self.report(f"STEP {key},{time.time():.3f} {label}")
 
     def _step_failed(self) -> None:
         if self._current_step:
-            print(f"STEP-FAILED {self._current_step},{time.time():.3f}", flush=True)
+            self.report(f"STEP-FAILED {self._current_step},{time.time():.3f}")
 
     def run(self) -> None:
         self._warn_if_running()
@@ -87,14 +87,8 @@ class UpdateCommand(Command):
 
         if not ProcessManager.for_bench(self.bench).is_running():
             return
-        print("Warning: bench processes appear to be running. Updating while running may cause instability.")
-        if not self.skip_confirm:
-            try:
-                answer = input("Continue anyway? [y/N] ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                raise MigrateError("Aborted.")
-            if answer not in ("y", "yes"):
-                raise MigrateError("Aborted.")
+        self.report("Warning: bench processes appear to be running. Updating while running may cause instability.")
+        self.confirm("Continue anyway?", skip=self.skip_confirm, error=MigrateError)
 
     def _update_apps(self) -> None:
         from pilot.integrations.marketplace import Marketplace
@@ -104,7 +98,7 @@ class UpdateCommand(Command):
         for app in self.bench.apps():
             if self._apps_filter is not None and app.config.name not in self._apps_filter:
                 continue
-            print(f"Updating {app.config.name}...")
+            self.report(f"Updating {app.config.name}...")
             try:
                 app.update(pin=self._marketplace_pin(app, marketplace_by_name))
             except CommandError as e:
@@ -140,7 +134,7 @@ class UpdateCommand(Command):
         for app in self.bench.apps():
             if self._apps_filter is not None and app.config.name not in self._apps_filter:
                 continue
-            print(f"Reinstalling {app.config.name}...")
+            self.report(f"Reinstalling {app.config.name}...")
             try:
                 mgr.install_app(app)
             except CommandError as e:
@@ -153,12 +147,12 @@ class UpdateCommand(Command):
         for app in self.bench.apps():
             if self._apps_filter is not None and app.config.name not in self._apps_filter:
                 continue
-            print(f"Updating assets for {app.config.name}...")
+            self.report(f"Updating assets for {app.config.name}...")
             mgr.build_assets_for_app(app)
 
     def _migrate_sites(self) -> None:
         for site in self.bench.sites():
-            print(f"Migrating {site.config.name}...")
+            self.report(f"Migrating {site.config.name}...")
             try:
                 site.migrate(skip_failing=self._skip_failing_patches)
             except CommandError as e:

@@ -67,14 +67,14 @@ class NewCommand(Command):
 
         benches_dir = self.target_directory.parent
         if not benches_dir.exists():
-            print(f"Creating benches directory at {benches_dir}")
+            self.report(f"Creating benches directory at {benches_dir}")
             benches_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"Creating bench directory: {self.target_directory}")
+        self.report(f"Creating bench directory: {self.target_directory}")
         self.target_directory.mkdir(parents=True, exist_ok=True)
 
         offset = self._pick_port_offset(self.target_directory)
-        print("Writing bench.toml")
+        self.report("Writing bench.toml")
         admin_tls = self.admin_tls if self.admin_tls is not None else self._sibling_admin_tls()
         # admin.domain is left empty unless given: development serves the admin on
         # localhost, and 'bench setup production' requires a real domain (via its
@@ -111,10 +111,10 @@ class NewCommand(Command):
         BenchTomlStore(bench_toml).write_flat(self.name, settings, port_offset=offset)
 
         admin_port = default_ports()["admin.port"] + offset
-        print(f"\nBench '{self.name}' created at {self.target_directory}")
-        print("\nNext step:")
-        print("  bench start")
-        print(f"  Then open http://localhost:{admin_port} — the setup wizard takes it from there.")
+        self.report(f"\nBench '{self.name}' created at {self.target_directory}")
+        self.report("\nNext step:")
+        self.report("  bench start")
+        self.report(f"  Then open http://localhost:{admin_port} — the setup wizard takes it from there.")
 
     def _sibling_letsencrypt_email(self) -> str:
         """The Let's Encrypt email from any sibling bench that has one, so a new
