@@ -4,8 +4,6 @@ import argparse
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
-from pilot.commands.apps.remove import RemoveAppCommand
-from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -39,25 +37,5 @@ class UninstallAppCommand(Command):
         self.force = force
         self.site = Site(SiteConfig(name=site_name, apps=[]), bench)
 
-    def remove_app_if_not_on_any_site(self, app_name: str):
-        for site in self.bench.sites():
-            installed_apps = site.list_apps()
-            if len(installed_apps) == 0 or app_name in installed_apps:
-                return
-
-        self.report(f"\nApp {app_name} is not installed on any site removing from bench.")
-        RemoveAppCommand(self.bench, app_name=app_name, skip_confirm=True).run()
-
     def run(self) -> None:
-        if not self.site.exists:
-            raise BenchError(f"Site '{self.site_name}' does not exist.")
-
-        installed = self.site.list_apps()
-        for app_name in self.app_names:
-            app = self.bench.app(app_name)
-            if not self.force and installed and app.config.name not in installed:
-                raise BenchError(f"App '{app_name}' is not installed on site '{self.site_name}'.")
-            self.report(f"Uninstalling '{app_name}' from site '{self.site_name}'...")
-            self.site.uninstall_app(app, force=self.force)
-            self.report(f"'{app_name}' uninstalled from '{self.site_name}'.")
-            self.remove_app_if_not_on_any_site(app_name)
+        self.site.uninstall_apps(self.app_names, force=self.force, on_progress=self.report)

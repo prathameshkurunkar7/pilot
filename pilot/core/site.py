@@ -126,6 +126,35 @@ class Site:
             cmd.append("--skip-failing")
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
+    def uninstall_apps(
+        self,
+        app_names: list[str],
+        force: bool = False,
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> None:
+        """Uninstall each app from this site, then remove any of them from the
+        bench entirely if they end up installed on no site at all."""
+        if not self.exists:
+            raise BenchError(f"Site '{self.config.name}' does not exist.")
+
+        installed = self.list_apps()
+        for app_name in app_names:
+            app = self.bench.app(app_name)
+            if not force and installed and app.config.name not in installed:
+                raise BenchError(f"App '{app_name}' is not installed on site '{self.config.name}'.")
+            on_progress(f"Uninstalling '{app_name}' from site '{self.config.name}'...")
+            self.uninstall_app(app, force=force)
+            on_progress(f"'{app_name}' uninstalled from '{self.config.name}'.")
+            self._remove_app_if_not_on_any_site(app_name, on_progress)
+
+    def _remove_app_if_not_on_any_site(self, app_name: str, on_progress: Callable[[str], None]) -> None:
+        for site in self.bench.sites():
+            installed_apps = site.list_apps()
+            if len(installed_apps) == 0 or app_name in installed_apps:
+                return
+        on_progress(f"\nApp {app_name} is not installed on any site removing from bench.")
+        self.bench.app(app_name).remove(on_progress=on_progress)
+
     def drop(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         from pilot.managers.nginx import NginxManager
 

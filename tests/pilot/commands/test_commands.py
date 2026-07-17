@@ -389,24 +389,20 @@ def test_build_missing_assets_skips_cloned_but_unregistered_apps(tmp_path: Path)
 
 
 def test_remove_app_raises_when_app_directory_missing(tmp_path: Path) -> None:
-    from pilot.commands.apps.remove import RemoveAppCommand
-
     bench = make_bench(tmp_path)
     bench.create_directories()
 
     with pytest.raises(BenchError, match="not found"):
-        RemoveAppCommand(bench, "nonexistent")._validate()
+        bench.app("nonexistent").ensure_removable()
 
 
 def test_remove_app_raises_when_removing_framework_app(tmp_path: Path) -> None:
-    from pilot.commands.apps.remove import RemoveAppCommand
-
     bench = make_bench(tmp_path)
     bench.create_directories()
     (bench.apps_path / "frappe").mkdir()
 
     with pytest.raises(BenchError, match="framework"):
-        RemoveAppCommand(bench, "frappe")._validate()
+        bench.app("frappe").ensure_removable()
 
 
 def test_remove_app_confirm_raises_on_negative_answer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -438,15 +434,13 @@ def test_remove_app_confirm_skipped_when_skip_confirm(tmp_path: Path) -> None:
 
 
 def test_remove_app_removes_app_from_apps_txt(tmp_path: Path) -> None:
-    from pilot.commands.apps.remove import RemoveAppCommand
-
     bench = make_bench(tmp_path)
     bench.create_directories()
     (bench.apps_path / "myapp").mkdir()
     apps_txt = bench.sites_path / "apps.txt"
     apps_txt.write_text("frappe\nmyapp\nerpnext\n")
 
-    RemoveAppCommand(bench, "myapp")._remove_from_apps_txt()
+    bench.app("myapp")._deregister()
 
     lines = [l for l in apps_txt.read_text().splitlines() if l.strip()]
     assert "myapp" not in lines
@@ -455,28 +449,12 @@ def test_remove_app_removes_app_from_apps_txt(tmp_path: Path) -> None:
 
 
 def test_remove_app_removes_from_apps_txt_missing_file(tmp_path: Path) -> None:
-    from pilot.commands.apps.remove import RemoveAppCommand
-
     bench = make_bench(tmp_path)
     bench.create_directories()
     (bench.apps_path / "myapp").mkdir()
     # apps.txt does not exist — should not raise
 
-    RemoveAppCommand(bench, "myapp")._remove_from_apps_txt()
-
-
-def test_remove_app_deletes_app_directory(tmp_path: Path) -> None:
-    from pilot.commands.apps.remove import RemoveAppCommand
-
-    bench = make_bench(tmp_path)
-    bench.create_directories()
-    app_dir = bench.apps_path / "myapp"
-    app_dir.mkdir()
-    (app_dir / "setup.py").write_text("")
-
-    RemoveAppCommand(bench, "myapp")._delete_app_dir()
-
-    assert not app_dir.exists()
+    bench.app("myapp")._deregister()
 
 
 def test_remove_app_full_flow_no_sites(tmp_path: Path) -> None:

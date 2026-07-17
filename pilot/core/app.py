@@ -366,3 +366,48 @@ class App:
         from pilot.managers.python_environment import PythonEnvManager
 
         PythonEnvManager(self.bench).build_assets_for_app(self)
+
+    def ensure_removable(self) -> None:
+        if not self.path.exists():
+            raise BenchError(f"App '{self.config.name}' not found in bench.")
+        framework = self.bench.config.framework_app.name
+        if self.config.name == framework:
+            raise BenchError(f"Cannot remove the framework app '{framework}'.")
+
+    def remove(self, force: bool = False, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Uninstall from every site it's installed on, deregister from
+        apps.txt, uninstall from the Python environment, and delete its
+        folder. With force=True, a site uninstall failure is reported and
+        skipped rather than aborting the whole removal."""
+        self.ensure_removable()
+        self._uninstall_from_all_sites(force, on_progress)
+        self._deregister()
+        on_progress(f"Removing '{self.config.name}' from Python environment...")
+        self._pip_uninstall()
+        on_progress(f"Deleting {self.path}...")
+        shutil.rmtree(self.path)
+        on_progress(f"\n'{self.config.name}' removed from bench.")
+
+    def _uninstall_from_all_sites(self, force: bool, on_progress: Callable[[str], None]) -> None:
+        for site in self.bench.sites():
+            if self.config.name not in site.list_apps():
+                continue
+            on_progress(f"Uninstalling '{self.config.name}' from site '{site.config.name}'...")
+            try:
+                site.uninstall_app(self, force=force)
+            except Exception as e:
+                if not force:
+                    raise
+                on_progress(f"Warning: could not cleanly uninstall from '{site.config.name}': {e}")
+
+    def _deregister(self) -> None:
+        apps_txt = self.bench.sites_path / "apps.txt"
+        if not apps_txt.exists():
+            return
+        lines = [line for line in apps_txt.read_text().splitlines() if line.strip() != self.config.name]
+        apps_txt.write_text("\n".join(lines) + ("\n" if lines else ""))
+
+    def _pip_uninstall(self) -> None:
+        from pilot.managers.python_environment import PythonEnvManager
+
+        PythonEnvManager(self.bench).uninstall_app(self.config.name)
