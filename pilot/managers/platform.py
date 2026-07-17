@@ -133,7 +133,7 @@ def has_passwordless_sudo() -> bool:
         return True
     if which("sudo") is None:
         return False
-    return subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode == 0
+    return subprocess.run(["sudo", "-n", "true"], capture_output=True, timeout=5).returncode == 0
 
 
 def service_command(action: str, name: str) -> list[str]:
@@ -155,9 +155,9 @@ def service_running(name: str) -> bool:
     """Return True if the named system service is currently running."""
     try:
         return subprocess.run(
-            ["systemctl", "is-active", "--quiet", name], capture_output=True
+            ["systemctl", "is-active", "--quiet", name], capture_output=True, timeout=5
         ).returncode == 0
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
 

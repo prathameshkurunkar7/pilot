@@ -40,6 +40,7 @@ def cert_covers(cert_file: Path, domains: list[str]) -> bool:
         _privileged(["openssl", "x509", "-noout", "-ext", "subjectAltName", "-in", str(cert_file)]),
         capture_output=True,
         text=True,
+        timeout=10,
     )
     if result.returncode != 0:
         return False
@@ -190,6 +191,7 @@ class LetsEncryptManager:
             _privileged(["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)]),
             capture_output=True,
             text=True,
+            timeout=10,
         )
         if result.returncode != 0:
             return True

@@ -798,7 +798,7 @@ class NginxManager:
         self.reload()
 
     def reload(self) -> None:
-        run_command(_privileged(["nginx", "-t"]))
+        run_command(_privileged(["nginx", "-t"]), timeout=10)
         if not is_linux():
             run_command(["nginx", "-s", "reload"])
             return

@@ -76,13 +76,17 @@ class PythonEnvManager:
         try:
             env.setdefault(
                 "MYSQLCLIENT_CFLAGS",
-                subprocess.run([config_bin, "--cflags"], capture_output=True, text=True, check=True).stdout.strip(),
+                subprocess.run(
+                    [config_bin, "--cflags"], capture_output=True, text=True, check=True, timeout=5
+                ).stdout.strip(),
             )
             env.setdefault(
                 "MYSQLCLIENT_LDFLAGS",
-                subprocess.run([config_bin, "--libs"], capture_output=True, text=True, check=True).stdout.strip(),
+                subprocess.run(
+                    [config_bin, "--libs"], capture_output=True, text=True, check=True, timeout=5
+                ).stdout.strip(),
             )
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             pass
 
     @staticmethod
@@ -94,8 +98,10 @@ class PythonEnvManager:
         if found := (shutil.which("mariadb_config") or shutil.which("mysql_config")):
             return found
         try:
-            prefix = subprocess.run(["brew", "--prefix", "mariadb"], capture_output=True, text=True, check=True).stdout.strip()
-        except (subprocess.CalledProcessError, FileNotFoundError):
+            prefix = subprocess.run(
+                ["brew", "--prefix", "mariadb"], capture_output=True, text=True, check=True, timeout=5
+            ).stdout.strip()
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
             return None
         candidate = Path(prefix) / "bin" / "mariadb_config"
         return str(candidate) if candidate.exists() else None
