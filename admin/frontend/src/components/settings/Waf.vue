@@ -40,7 +40,7 @@
       </Alert>
     </div>
 
-    <WafCustomRules :rules="customRules" :fields="ruleFields" :operators="ruleOperators" :actions="ruleActions" />
+    <WafCustomRules v-model="customRules" :fields="ruleFields" :operators="ruleOperators" :actions="ruleActions" />
 
     <details class="group">
       <summary class="flex items-center gap-1.5 text-ink-gray-6 text-sm cursor-pointer select-none">

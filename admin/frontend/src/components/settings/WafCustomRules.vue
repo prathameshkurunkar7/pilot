@@ -55,8 +55,9 @@
 import { computed } from 'vue'
 import { Button, Select, Switch, TextInput } from 'frappe-ui'
 
+// Two-way bound so the child owns list edits without mutating a prop.
+const rules = defineModel({ type: Array, default: () => [] })
 const props = defineProps({
-  rules: { type: Array, required: true },
   fields: { type: Array, default: () => [] },
   operators: { type: Array, default: () => [] },
   actions: { type: Array, default: () => [] },
@@ -88,10 +89,10 @@ function newCondition() {
   return { field: 'uri_path', operator: 'contains', value: '', header_name: '' }
 }
 function addRule() {
-  props.rules.push({ name: '', action: 'block', match: 'all', enabled: true, conditions: [newCondition()] })
+  rules.value.push({ name: '', action: 'block', match: 'all', enabled: true, conditions: [newCondition()] })
 }
 function removeRule(index) {
-  props.rules.splice(index, 1)
+  rules.value.splice(index, 1)
 }
 function addCondition(rule) {
   rule.conditions.push(newCondition())
