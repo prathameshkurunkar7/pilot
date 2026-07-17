@@ -204,7 +204,10 @@ class Bench:
         config_path = self.sites_path / "common_site_config.json"
         # Merge over the existing file so keys added via `frappe set-config -g`
         # survive regeneration; bench-owned keys below are always overwritten.
-        config = json.loads(config_path.read_text()) if config_path.exists() else {}
+        try:
+            config = json.loads(config_path.read_text()) if config_path.exists() else {}
+        except json.JSONDecodeError:
+            config = {}
         # Enable monitoring by default on all the sites on the bench
         config.update(
             {
