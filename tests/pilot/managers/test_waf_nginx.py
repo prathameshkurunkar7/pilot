@@ -10,7 +10,7 @@ from pilot.config.site import SiteConfig
 from pilot.config.waf import WafConfig
 from pilot.core.bench import Bench
 from pilot.managers import nginx
-from pilot.managers.nginx import NginxManager
+from pilot.managers.nginx import NginxConfigRenderer, NginxManager
 
 _DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
@@ -27,38 +27,46 @@ def installed(monkeypatch):
     monkeypatch.setattr(nginx.WafManager, "is_installed", staticmethod(lambda: True))
 
 
-def _manager(tmp_path: Path, waf: WafConfig) -> NginxManager:
+def _bench(tmp_path: Path, waf: WafConfig) -> Bench:
     config = BenchConfig._from_dict(_DATA)
     config.waf = waf
-    return NginxManager(Bench(config, tmp_path))
+    return Bench(config, tmp_path)
+
+
+def _manager(tmp_path: Path, waf: WafConfig) -> NginxManager:
+    return NginxManager(_bench(tmp_path, waf))
+
+
+def _renderer(tmp_path: Path, waf: WafConfig) -> NginxConfigRenderer:
+    return NginxConfigRenderer(_bench(tmp_path, waf))
 
 
 def test_render_waf_empty_when_disabled(tmp_path: Path, installed) -> None:
-    assert _manager(tmp_path, WafConfig(enabled=False))._render_waf() == ""
+    assert _renderer(tmp_path, WafConfig(enabled=False))._render_waf() == ""
 
 
 def test_render_waf_empty_when_not_installed(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(nginx.WafManager, "is_installed", staticmethod(lambda: False))
-    assert _manager(tmp_path, WafConfig(enabled=True))._render_waf() == ""
+    assert _renderer(tmp_path, WafConfig(enabled=True))._render_waf() == ""
 
 
 def test_render_waf_emits_directives_when_active(tmp_path: Path, installed) -> None:
-    out = _manager(tmp_path, WafConfig(enabled=True))._render_waf()
+    out = _renderer(tmp_path, WafConfig(enabled=True))._render_waf()
     assert "modsecurity on;" in out
     assert "modsecurity_rules_file" in out and "modsecurity/main.conf" in out
 
 
 def test_site_and_admin_vhosts_carry_waf(tmp_path: Path, installed) -> None:
-    manager = _manager(tmp_path, WafConfig(enabled=True))
-    site = manager._render_http_only_block(_SITE, "test-bench", manager.bench.config.nginx, manager.bench.path)
-    admin = manager._generate_admin_config(ssl_ready=False)
+    renderer = _renderer(tmp_path, WafConfig(enabled=True))
+    site = renderer._render_http_only_block(_SITE, "test-bench", renderer.bench.config.nginx, renderer.bench.path)
+    admin = renderer.generate_admin_config(ssl_ready=False)
     assert "modsecurity on;" in site
     assert "modsecurity on;" in admin
 
 
 def test_vhosts_clean_when_disabled(tmp_path: Path, installed) -> None:
-    manager = _manager(tmp_path, WafConfig(enabled=False))
-    site = manager._render_http_only_block(_SITE, "test-bench", manager.bench.config.nginx, manager.bench.path)
+    renderer = _renderer(tmp_path, WafConfig(enabled=False))
+    site = renderer._render_http_only_block(_SITE, "test-bench", renderer.bench.config.nginx, renderer.bench.path)
     assert "modsecurity" not in site
 
 

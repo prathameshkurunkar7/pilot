@@ -39,7 +39,7 @@ class BenchProvider:
 
         try:
             bench = Bench(BenchTomlStore(self._toml_path).read(), self._bench_dir)
-            return NginxManager(bench).admin_cert_exists()
+            return NginxManager(bench).has_admin_cert
         except Exception:
             return False
 

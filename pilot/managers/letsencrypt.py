@@ -98,7 +98,7 @@ class LetsEncryptManager:
 
         nginx_manager = NginxManager(self.bench)
         if (
-            nginx_manager.cert_exists(site)
+            nginx_manager.has_cert(site)
             and not self._is_near_expiry(site)
             and self._cert_covers(nginx_manager.cert_path(site), domains)
         ):
@@ -156,7 +156,7 @@ class LetsEncryptManager:
         nginx_manager = NginxManager(self.bench)
         domain = self.bench.config.admin.domain
 
-        if nginx_manager.admin_cert_exists() and not self._is_near_expiry_cert(nginx_manager.admin_cert_path()):
+        if nginx_manager.has_admin_cert and not self._is_near_expiry_cert(nginx_manager.admin_cert_path()):
             print(f"Certificate for {domain} already exists and is not near expiry. Skipping.")
             return
 

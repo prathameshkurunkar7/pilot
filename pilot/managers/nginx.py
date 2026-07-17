@@ -27,20 +27,16 @@ _SHARED_ERROR_DIR = Path("/usr/share/nginx/bench-error-pages")
 
 
 def _catchall_conf() -> Path:
-    """Server-wide catch-all so unknown hosts get our 404 instead of nginx's
-    stock welcome page. One default_server per port, shared by every bench, so
-    it lives in the include dir (conf.d)."""
+    """Shared default_server vhost so unknown hosts get our 404, not nginx's."""
     return default_nginx_config_dir() / "00-bench-default.conf"
 
 
 def _stock_default_sites() -> list[Path]:
-    """The distro's own default vhost(s), which also claim default_server on :80
-    and would conflict with our catch-all. Debian symlinks sites-enabled/default
-    (removed on every Linux, as upstream does)."""
+    """The distro's own default vhost(s), which would conflict with our catch-all."""
     return [Path("/etc/nginx/sites-enabled/default")]
 
 # Custom pages for nginx-generated errors (downed upstream, missing static
-# file). App responses pass through unchanged — proxy_intercept_errors is off.
+# file). App responses pass through unchanged - proxy_intercept_errors is off.
 _ERROR_PAGES = {
     403: ("Access blocked", "Your network doesn’t have access to this server."),
     404: ("Page not found", "The page you’re looking for doesn’t exist."),
@@ -56,7 +52,7 @@ _ERROR_PAGE_TEMPLATE = Template(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>$code — $title</title>
+<title>$code - $title</title>
 <style>
 :root{--bg:#fbfbfc;--fg:#1c2024;--muted:#6b7280;--accent:#d1d5db;--font:system-ui,-apple-system,sans-serif}
 *{box-sizing:border-box}
@@ -86,6 +82,18 @@ body{display:flex;align-items:center;justify-content:center;background:var(--bg)
 def _render_error_html(code: int, title: str, message: str) -> str:
     return _ERROR_PAGE_TEMPLATE.substitute(code=code, title=title, message=message)
 
+
+def _cert_files_exist(live_dir: Path) -> bool:
+    # /etc/letsencrypt/live is root-only (0700), so stat with privilege
+    # rather than letting Path.exists() raise EACCES for the bench user.
+    import subprocess
+
+    return subprocess.run(
+        _privileged(["test", "-f", str(live_dir / "fullchain.pem"), "-a", "-f", str(live_dir / "privkey.pem")]),
+        capture_output=True,
+    ).returncode == 0
+
+
 if TYPE_CHECKING:
     from pilot.config.nginx import NginxConfig
     from pilot.config.site import SiteConfig
@@ -93,15 +101,17 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
 
-class NginxManager:
+class NginxConfigRenderer:
+    """Builds nginx vhost/admin config text for a bench. No filesystem writes
+    or service control - NginxManager owns installing what this renders."""
+
     def __init__(self, bench: "Bench") -> None:
         self.bench = bench
         self._proxy_servers_cache: list[str] | None = None
 
     @property
     def _proxy_servers(self) -> list[str]:
-        """Edge-proxy IPs the domain provider (if any) puts in front of this bench.
-        Looked up once; [] when no provider is installed, i.e. direct exposure."""
+        """Edge-proxy IPs in front of this bench, if any; looked up once."""
         if self._proxy_servers_cache is None:
             from pilot.core.domains import DomainRouteProvider
 
@@ -109,8 +119,7 @@ class NginxManager:
         return self._proxy_servers_cache
 
     def _render_acme_location(self) -> str:
-        """ACME HTTP-01 challenge location. `allow all;` overrides any firewall
-        deny so certbot's validation reaches the challenge files."""
+        """`allow all;` overrides any firewall deny so certbot can validate."""
         webroot = self.bench.config.letsencrypt.webroot_path
         return (
             f"    location /.well-known/acme-challenge/ {{\n"
@@ -121,20 +130,11 @@ class NginxManager:
         )
 
     def _render_proxy_trust(self) -> str:
-        """When edge proxies front this bench, accept TCP connections from those IPs
-        alone and read the real client IP from the X-Forwarded-For they set. Empty
-        (no restriction, XFF untrusted) when the bench is directly exposed.
-
-        The connection filter tests $realip_remote_addr — the actual TCP peer, which
-        real_ip preserves — not $remote_addr, which real_ip has already rewritten to
-        the (never-a-proxy) client IP by the access phase. Client-IP filtering stays
-        the firewall's job (_render_firewall), which sees that rewritten client IP.
-
-        The gate runs in the rewrite phase, before location matching, so it exempts
-        the ACME challenge path explicitly — certbot must still reach it on a direct
-        hit (e.g. during setup, before the proxy is in front). The exemption tests
-        $request_uri, not $uri, so it survives the internal redirect to the error
-        page (try_files =404) that a missing challenge file triggers."""
+        """Accept TCP only from trusted proxy IPs and read the real client IP
+        from their X-Forwarded-For; empty (no restriction) when directly exposed.
+        Tests $realip_remote_addr (the real TCP peer) so it runs before
+        _render_firewall rewrites $remote_addr. Exempts the ACME path so a
+        direct certbot hit still passes during setup."""
         proxies = self._proxy_servers
         if not proxies:
             return ""
@@ -150,13 +150,9 @@ class NginxManager:
         )
 
     def _render_firewall(self) -> str:
-        """Per-vhost IP allow/block list (ngx_http_access_module, first-match-wins).
-
-        Trusted proxies are allowed first so the firewall can never block them: a
-        request without X-Forwarded-For leaves $remote_addr as the proxy IP, which an
-        allowlist (or a stray deny rule) would otherwise reject. Then the configured
-        rules run against $remote_addr — the real client IP behind a proxy. A terminal
-        ``deny all;`` follows only in allowlist mode. Empty when the firewall is off."""
+        """First-match-wins allow/deny list. Trusted proxies are allowed first
+        so a request without X-Forwarded-For (proxy IP in $remote_addr) can't
+        be rejected by the configured rules. Empty when the firewall is off."""
         firewall = self.bench.config.firewall
         if not firewall.enabled:
             return ""
@@ -167,18 +163,15 @@ class NginxManager:
         return "".join(lines) + "\n" if lines else ""
 
     def _waf_active(self) -> bool:
-        """Whether to emit ModSecurity directives for this bench. Gated on the
-        module + CRS actually being installed, so a vhost never references an
-        absent module (which would fail nginx -t for every bench)."""
+        """Gated on the module + CRS actually being installed, so a vhost
+        never references an absent module (which would fail nginx -t)."""
         return self.bench.config.waf.enabled and WafManager.is_installed()
 
     def _render_waf(self) -> str:
-        """Per-vhost ModSecurity toggle, emitted next to the firewall block in
-        every server block. Points nginx at this bench's generated rules file;
-        empty when the WAF is inactive."""
+        """Points nginx at this bench's generated ModSecurity rules file."""
         if not self._waf_active():
             return ""
-        rules_file = self._modsec_dir() / "main.conf"
+        rules_file = self.modsec_dir() / "main.conf"
         return f"    modsecurity on;\n    modsecurity_rules_file {rules_file};\n\n"
 
     def _render_security_trio(self) -> str:
@@ -197,29 +190,11 @@ class NginxManager:
             f"    ssl_session_timeout 1d;\n\n"
         )
 
-    def _modsec_dir(self) -> Path:
+    def modsec_dir(self) -> Path:
         return self.bench.config_path / "modsecurity"
 
-    def _write_waf_files(self) -> None:
-        """Generate this bench's ModSecurity rule files from WafConfig. No-op when
-        the WAF is off. Only the per-bench engine/overrides/exclusions are written
-        here; the CRS baseline and rules are the shared assets under
-        _SHARED_MODSEC_DIR, installed by WafManager."""
-        waf = self.bench.config.waf
-        if not waf.enabled:
-            return
-        modsec_dir = self._modsec_dir()
-        modsec_dir.mkdir(parents=True, exist_ok=True)
-        (self.bench.path / "logs").mkdir(exist_ok=True)
-        (modsec_dir / "modsecurity.conf").write_text(self._render_modsec_engine(waf))
-        (modsec_dir / "overrides.conf").write_text(self._render_modsec_overrides(waf))
-        (modsec_dir / "exclusions.conf").write_text(self._render_modsec_exclusions(waf))
-        (modsec_dir / "main.conf").write_text(self._render_modsec_main(modsec_dir))
-
     def _render_modsec_main(self, modsec_dir: Path) -> str:
-        """Chain the config layers in the order CRS requires: engine, then the CRS
-        baseline, then per-bench overrides (paranoia/thresholds/exempt paths), then
-        the CRS rules, then user exclusions last."""
+        """Chain order CRS requires: engine, CRS baseline, overrides, CRS rules, exclusions."""
         return (
             f"Include {modsec_dir}/modsecurity.conf\n"
             f"Include {SHARED_MODSEC_DIR}/crs-setup.conf\n"
@@ -228,7 +203,7 @@ class NginxManager:
             f"Include {modsec_dir}/exclusions.conf\n"
         )
 
-    def _render_modsec_engine(self, waf: WafConfig) -> str:
+    def _render_modsec_engine(self, waf: "WafConfig") -> str:
         from pilot.config.waf import parse_nginx_size
 
         audit_log = self.bench.path / "logs" / "modsec_audit.log"
@@ -257,12 +232,9 @@ class NginxManager:
             'SecDefaultAction "phase:2,pass,log"\n'
         )
 
-    def _render_modsec_overrides(self, waf: WafConfig) -> str:
-        """Per-bench CRS tuning, applied after crs-setup.conf so it wins. Custom
-        rule ids (1000+) stay clear of the CRS 900000-949999 reserved range to
-        avoid duplicate-id errors. paranoia is set under both the CRS 4.x and 3.x
-        variable names so it works across CRS versions. Each exempt path disables
-        the engine for matching requests via a phase-1 ctl action."""
+    def _render_modsec_overrides(self, waf: "WafConfig") -> str:
+        """Per-bench CRS tuning, applied after crs-setup.conf so it wins.
+        Rule ids start at 1000 to stay clear of CRS's reserved range."""
         lines = [
             f'SecAction "id:1000,phase:1,pass,nolog,'
             f"setvar:tx.blocking_paranoia_level={waf.paranoia},"
@@ -279,69 +251,22 @@ class NginxManager:
         return "\n".join(lines) + "\n"
 
     @staticmethod
-    def _render_modsec_exclusions(waf: WafConfig) -> str:
-        """User SecLang lines (SecRuleRemoveById etc.), one per line. May be empty;
-        an empty Included file is harmless."""
+    def _render_modsec_exclusions(waf: "WafConfig") -> str:
+        """User SecLang lines (SecRuleRemoveById etc.), one per line."""
         return "\n".join(waf.exclusions) + ("\n" if waf.exclusions else "")
 
     def _xff_header(self) -> str:
-        """Behind trusted proxies, pass their X-Forwarded-For through unchanged
-        rather than appending the (proxy's own) connecting address to it."""
+        """Behind a trusted proxy, pass its X-Forwarded-For through unchanged
+        rather than appending our own connecting address to it."""
         return "$http_x_forwarded_for" if self._proxy_servers else "$proxy_add_x_forwarded_for"
 
-    def is_installed(self) -> bool:
-        return shutil.which("nginx") is not None
+    def cert_path(self, site: "SiteConfig") -> Path:
+        return Path("/etc/letsencrypt/live") / site.name / "fullchain.pem"
 
-    def install(self) -> None:
-        if not self.is_installed():
-            get_package_manager().install("nginx")
+    def admin_cert_path(self) -> Path:
+        return Path("/etc/letsencrypt/live") / self.bench.config.admin.domain / "fullchain.pem"
 
-    def generate_config(self, ssl_ready: bool = False) -> None:
-        nginx_dir = self.bench.config_path / "nginx"
-        sites_dir = nginx_dir / "sites"
-        sites_dir.mkdir(parents=True, exist_ok=True)
-        self._write_error_pages(nginx_dir)
-        self._write_waf_files()
-        # admin.tls = False makes the whole bench HTTP-only: a central proxy
-        # terminates TLS, so neither sites nor the admin serve HTTPS here.
-        tls = self.bench.config.admin.tls
-        for site in self.bench.sites():
-            site_ssl_ready = tls and ssl_ready and self.cert_covers(site.config)
-            conf_text = self._generate_site_config(site.config, site_ssl_ready)
-            (sites_dir / f"{site.config.name}.conf").write_text(conf_text)
-        # The admin is always reached via its (mandatory) domain in production;
-        # nginx forwards that host to the local admin process.
-        if self.bench.config.admin.domain:
-            conf_text = self._generate_admin_config(ssl_ready)
-            (sites_dir / "_admin.conf").write_text(conf_text)
-        self._write_include_conf(nginx_dir)
-
-    def reload_for_site_change(self) -> None:
-        if not self.bench.config.production.enabled or not self.is_installed():
-            return
-        print("Updating nginx configuration...")
-        sys.stdout.flush()
-        self.generate_config(ssl_ready=True)
-        self.reload()
-
-    def _admin_socket_activated(self) -> bool:
-        return self.bench.config.production.process_manager == "systemd"
-
-    def _admin_proxy_port(self) -> int:
-        """Where the admin actually listens: the socket-activated gunicorn's
-        internal port under systemd, else the Flask process on admin.port."""
-        admin = self.bench.config.admin
-        return admin.internal_port if self._admin_socket_activated() else admin.port
-
-    def _write_include_conf(self, nginx_dir: Path) -> None:
-        bench_name = self.bench.config.name
-        include_path = nginx_dir / "include.conf"
-        include_path.write_text(
-            self._render_upstream_block(bench_name)
-            + f"include {nginx_dir}/sites/*.conf;\n"
-        )
-
-    def _generate_site_config(self, site: "SiteConfig", ssl_ready: bool) -> str:
+    def generate_site_config(self, site: "SiteConfig", ssl_ready: bool) -> str:
         bench_name = self.bench.config.name
         nginx_config = self.bench.config.nginx
         bench_root = self.bench.path
@@ -356,49 +281,14 @@ class NginxManager:
             + self._render_https_block(site, bench_name, nginx_config, bench_root)
         )
 
-    def _error_pages_dir(self) -> Path:
+    def error_pages_dir(self) -> Path:
         return self.bench.config_path / "nginx" / "error_pages"
-
-    def _write_error_pages(self, nginx_dir: Path) -> None:
-        error_dir = nginx_dir / "error_pages"
-        error_dir.mkdir(parents=True, exist_ok=True)
-        for code, (title, message) in _ERROR_PAGES.items():
-            (error_dir / f"{code}.html").write_text(_render_error_html(code, title, message))
-
-    def install_default_server(self) -> None:
-        """Install the server-wide catch-all vhost (and its error pages) so
-        requests for unknown hosts return our 404, not nginx's welcome page.
-        Idempotent; shared by all benches."""
-        staging = self.bench.config_path / "nginx"
-        for code, (title, message) in _ERROR_PAGES.items():
-            staged = staging / f"_catchall_{code}.html"
-            staged.write_text(_render_error_html(code, title, message))
-            run_command(_privileged(["install", "-D", "-m", "644", str(staged), str(_SHARED_ERROR_DIR / f"{code}.html")]))
-            staged.unlink()
-
-        staged = staging / "_catchall.conf"
-        staged.write_text(
-            self._render_catchall(
-                self.bench.config.nginx.http_port,
-                self.bench.config.nginx.https_port,
-                _SHARED_ERROR_DIR,
-            )
-        )
-        run_command(_privileged(["cp", str(staged), str(_catchall_conf())]))
-        staged.unlink()
-
-        # The distro's stock default site also claims default_server on :80;
-        # nginx rejects a duplicate, so drop it and let ours win.
-        for default_site in _stock_default_sites():
-            if default_site.exists() or default_site.is_symlink():
-                run_command(_privileged(["rm", "-f", str(default_site)]))
 
     def _render_catchall(self, http_port: int, https_port: int, error_dir: Path) -> str:
         directives = "".join(f"    error_page {code} /_errors/{code}.html;\n" for code in _ERROR_PAGES)
         return (
-            # 256 fits any single server_name (DNS names max out at 253 chars); the
-            # stock 64-byte bucket overflows on long custom/wildcard domains. Set once
-            # here in the shared default conf — a per-bench copy would be a duplicate.
+            # 256 fits any server_name; the stock 64-byte bucket overflows on
+            # long custom/wildcard domains. Set once here, not per-bench.
             "server_names_hash_bucket_size 256;\n\n"
             "server {\n"
             f"    listen {http_port} default_server;\n"
@@ -413,11 +303,8 @@ class NginxManager:
             + "        return 404;\n"
             + "    }\n"
             "}\n\n"
-            # Without a default_server on the TLS port, an HTTPS request for a
-            # host with no matching server block (e.g. an http-only bench reached
-            # over https) silently falls through to the first 443 vhost defined,
-            # serving the wrong bench's cert and content. ssl_reject_handshake
-            # drops such handshakes outright (needs no certificate).
+            # Without this, an https:// request for an http-only bench falls
+            # through to the first 443 vhost and serves the wrong cert.
             "server {\n"
             f"    listen {https_port} ssl http2 default_server;\n"
             f"    listen [::]:{https_port} ssl http2 default_server;\n"
@@ -433,7 +320,7 @@ class NginxManager:
             + "    location ^~ /_errors/ {\n"
             + "        internal;\n"
             + "        allow all;\n"  # a firewall-denied client must still get its 403 page
-            + f"        alias {self._error_pages_dir()}/;\n"
+            + f"        alias {self.error_pages_dir()}/;\n"
             + "    }\n\n"
         )
 
@@ -541,9 +428,8 @@ class NginxManager:
         )
 
     def _render_socketio_location(self, socketio_port: int, site_name: str) -> str:
-        # X-Frappe-Site-Name must be the site's real directory name, not $host:
-        # a custom domain (host) differs from it and Frappe resolves the site by
-        # this header. Host stays $host for URL building / host_name redirects.
+        # X-Frappe-Site-Name is the site's real directory name, not $host (a
+        # custom domain), since Frappe resolves the site by this header.
         return (
             f"    location /socket.io {{\n"
             f"        proxy_pass         http://127.0.0.1:{socketio_port};\n"
@@ -557,11 +443,9 @@ class NginxManager:
         )
 
     def _render_proxy_location(self, bench_name: str, site: "SiteConfig") -> str:
-        # Send every non-primary host to the canonical (primary) domain. Scoped to
-        # location / so /.well-known/acme-challenge/ (its own location) still works.
-        # Only when a primary was explicitly chosen — otherwise site.primary falls
-        # back to the (possibly internal) site name and would 301 public traffic to
-        # an unreachable host.
+        # Redirect non-primary hosts to the primary domain, only when one was
+        # explicitly chosen - else site.primary falls back to the (possibly
+        # internal) site name and would 301 public traffic to an unreachable host.
         redirect = ""
         if len(site.all_domains) > 1 and site.primary_domain:
             redirect = (
@@ -583,7 +467,7 @@ class NginxManager:
             f"    }}\n"
         )
 
-    def _generate_admin_config(self, ssl_ready: bool = False) -> str:
+    def generate_admin_config(self, ssl_ready: bool = False, has_admin_cert: bool = False) -> str:
         admin = self.bench.config.admin
         nginx_config = self.bench.config.nginx
         http_port = nginx_config.http_port
@@ -600,7 +484,7 @@ class NginxManager:
         )
 
         # admin.tls off, or no cert yet: plain HTTP, never redirect to HTTPS.
-        if not admin.tls or not ssl_ready or not self.admin_cert_exists():
+        if not admin.tls or not ssl_ready or not has_admin_cert:
             return self._render_admin_http_block(http_port, domain, security_trio, acme_block, proxy_block)
 
         cert = self.admin_cert_path()
@@ -654,9 +538,8 @@ class NginxManager:
         )
 
     def _render_open_cors_location(self, path: str) -> str:
-        """The health and status routes are probed cross-origin (e.g. ReconnectOverlay
-        detecting which scheme now serves a bench after a restart), so nginx answers
-        them with a wide-open CORS header regardless of what the admin process sends."""
+        """Probed cross-origin (e.g. ReconnectOverlay after a scheme change),
+        so nginx answers with a wide-open CORS header regardless of the app."""
         return (
             f"    location = {path} {{\n"
             f"        proxy_pass         http://127.0.0.1:{self._admin_proxy_port()};\n"
@@ -684,11 +567,110 @@ class NginxManager:
             f"    }}\n"
         )
 
-    def admin_cert_path(self) -> Path:
-        return Path("/etc/letsencrypt/live") / self.bench.config.admin.domain / "fullchain.pem"
+    def _admin_socket_activated(self) -> bool:
+        return self.bench.config.production.process_manager == "systemd"
 
-    def admin_cert_exists(self) -> bool:
-        return self._cert_files_exist(Path("/etc/letsencrypt/live") / self.bench.config.admin.domain)
+    def _admin_proxy_port(self) -> int:
+        """Socket-activated gunicorn's internal port under systemd, else admin.port."""
+        admin = self.bench.config.admin
+        return admin.internal_port if self._admin_socket_activated() else admin.port
+
+
+class NginxManager:
+    """Installs, configures, and reloads nginx for a bench, via NginxConfigRenderer."""
+
+    def __init__(self, bench: "Bench") -> None:
+        self.bench = bench
+        self._renderer = NginxConfigRenderer(bench)
+
+    def is_installed(self) -> bool:
+        return shutil.which("nginx") is not None
+
+    def install(self) -> None:
+        if not self.is_installed():
+            get_package_manager().install("nginx")
+
+    def generate_config(self, ssl_ready: bool = False) -> None:
+        nginx_dir = self.bench.config_path / "nginx"
+        sites_dir = nginx_dir / "sites"
+        sites_dir.mkdir(parents=True, exist_ok=True)
+        self._write_error_pages(nginx_dir)
+        self._write_waf_files()
+        # admin.tls = False makes the whole bench HTTP-only: a central proxy
+        # terminates TLS, so neither sites nor the admin serve HTTPS here.
+        tls = self.bench.config.admin.tls
+        for site in self.bench.sites():
+            site_ssl_ready = tls and ssl_ready and self.cert_covers(site.config)
+            conf_text = self._renderer.generate_site_config(site.config, site_ssl_ready)
+            (sites_dir / f"{site.config.name}.conf").write_text(conf_text)
+        # The admin is always reached via its (mandatory) domain in production;
+        # nginx forwards that host to the local admin process.
+        if self.bench.config.admin.domain:
+            conf_text = self._renderer.generate_admin_config(ssl_ready, self.has_admin_cert)
+            (sites_dir / "_admin.conf").write_text(conf_text)
+        self._write_include_conf(nginx_dir)
+
+    def reload_for_site_change(self) -> None:
+        if not self.bench.config.production.enabled or not self.is_installed():
+            return
+        print("Updating nginx configuration...")
+        sys.stdout.flush()
+        self.generate_config(ssl_ready=True)
+        self.reload()
+
+    def _write_include_conf(self, nginx_dir: Path) -> None:
+        bench_name = self.bench.config.name
+        include_path = nginx_dir / "include.conf"
+        include_path.write_text(
+            self._renderer._render_upstream_block(bench_name)
+            + f"include {nginx_dir}/sites/*.conf;\n"
+        )
+
+    def _write_error_pages(self, nginx_dir: Path) -> None:
+        error_dir = nginx_dir / "error_pages"
+        error_dir.mkdir(parents=True, exist_ok=True)
+        for code, (title, message) in _ERROR_PAGES.items():
+            (error_dir / f"{code}.html").write_text(_render_error_html(code, title, message))
+
+    def install_default_server(self) -> None:
+        """Install the shared catch-all vhost and error pages. Idempotent."""
+        staging = self.bench.config_path / "nginx"
+        for code, (title, message) in _ERROR_PAGES.items():
+            staged = staging / f"_catchall_{code}.html"
+            staged.write_text(_render_error_html(code, title, message))
+            run_command(_privileged(["install", "-D", "-m", "644", str(staged), str(_SHARED_ERROR_DIR / f"{code}.html")]))
+            staged.unlink()
+
+        staged = staging / "_catchall.conf"
+        staged.write_text(
+            self._renderer._render_catchall(
+                self.bench.config.nginx.http_port,
+                self.bench.config.nginx.https_port,
+                _SHARED_ERROR_DIR,
+            )
+        )
+        run_command(_privileged(["cp", str(staged), str(_catchall_conf())]))
+        staged.unlink()
+
+        # The distro's stock default site also claims default_server on :80;
+        # nginx rejects a duplicate, so drop it and let ours win.
+        for default_site in _stock_default_sites():
+            if default_site.exists() or default_site.is_symlink():
+                run_command(_privileged(["rm", "-f", str(default_site)]))
+
+    def _write_waf_files(self) -> None:
+        """Write this bench's ModSecurity rule files. No-op when the WAF is off;
+        the CRS baseline itself is shared, installed by WafManager."""
+        waf = self.bench.config.waf
+        if not waf.enabled:
+            return
+        modsec_dir = self._renderer.modsec_dir()
+        modsec_dir.mkdir(parents=True, exist_ok=True)
+        (self.bench.path / "logs").mkdir(exist_ok=True)
+        (modsec_dir / "modsecurity.conf").write_text(self._renderer._render_modsec_engine(waf))
+        (modsec_dir / "overrides.conf").write_text(self._renderer._render_modsec_overrides(waf))
+        (modsec_dir / "exclusions.conf").write_text(self._renderer._render_modsec_exclusions(waf))
+        (modsec_dir / "main.conf").write_text(self._renderer._render_modsec_main(modsec_dir))
 
     def install_config(self) -> None:
         nginx_dir = self.bench.config.nginx.config_dir
@@ -706,11 +688,8 @@ class NginxManager:
         self._reload_or_rollback(symlink_path)
 
     def _ensure_modsecurity_module(self) -> None:
-        """Idempotently make nginx load the ModSecurity dynamic module. On Debian
-        the package auto-enables it via /etc/nginx/modules-enabled, so we do
-        nothing; elsewhere we inject a load_module line at the top of nginx.conf.
-        No-op when the module isn't installed yet — a later reload's nginx -t /
-        rollback catches a genuinely missing module."""
+        """Debian auto-enables the module; elsewhere inject a load_module line.
+        No-op when not installed - the reload's nginx -t catches that."""
         if self._module_already_loaded():
             return
         module_path = WafManager.module_path()
@@ -725,15 +704,9 @@ class NginxManager:
 
     @staticmethod
     def _module_already_loaded() -> bool:
-        """True when nginx is already set to load the module — a load_module line
-        in nginx.conf or a modules-enabled drop-in. Distinct from the .so merely
-        existing on disk (which may not be loaded).
-
-        If nginx.conf can't be read (e.g. root-only on a host where the bench runs
-        unprivileged), assume loaded: skip the best-effort injection rather than
-        crash install_config before _reload_or_rollback can run. nginx -t is the
-        authoritative check, and a bench that can't read nginx.conf can't edit it
-        to inject a load_module anyway."""
+        """A load_module line or modules-enabled drop-in, not just the .so on
+        disk. Unreadable nginx.conf (unprivileged bench) counts as loaded -
+        nginx -t is the authoritative check either way."""
         try:
             if "ngx_http_modsecurity_module" in _NGINX_CONF.read_text():
                 return True
@@ -744,12 +717,8 @@ class NginxManager:
 
     @staticmethod
     def _prune_dangling_symlinks(nginx_dir: Path) -> None:
-        """Remove any bench's vhost symlink whose target no longer exists.
-
-        A bench dropped without going through its own teardown (e.g. its
-        directory deleted directly) leaves its symlink here dangling; nginx -t
-        then fails to open it and blocks every bench sharing this config dir,
-        not just the one that was removed."""
+        """A bench dropped without its own teardown leaves a dangling symlink
+        here, which fails nginx -t for every bench sharing this config dir."""
         if not nginx_dir.is_dir():
             return
         for entry in nginx_dir.iterdir():
@@ -757,9 +726,8 @@ class NginxManager:
                 run_command(_privileged(["unlink", str(entry)]))
 
     def _reload_or_rollback(self, symlink_path: Path) -> None:
-        """A bad config for this one bench must not take nginx down for every
-        other bench on the box — undo the symlink we just installed and let the
-        caller see the original failure."""
+        """A bad config for this bench must not take nginx down for every
+        other bench on the box - undo the symlink and re-raise."""
         try:
             self.reload()
         except Exception:
@@ -783,8 +751,7 @@ class NginxManager:
         staged.unlink()
 
     def uninstall_config(self) -> None:
-        """Remove this bench's nginx vhosts (the symlink in the config dir), then
-        validate and reload the remaining machine-wide config. Certs are kept."""
+        """Remove this bench's vhost symlink and reload. Certs are kept."""
         symlink_path = self.bench.config.nginx.config_dir / f"{self.bench.config.name}.conf"
         if symlink_path.exists() or symlink_path.is_symlink():
             run_command(_privileged(["unlink", str(symlink_path)]))
@@ -802,27 +769,22 @@ class NginxManager:
     def cert_path(self, site: "SiteConfig") -> Path:
         return Path("/etc/letsencrypt/live") / site.name / "fullchain.pem"
 
-    def cert_exists(self, site: "SiteConfig") -> bool:
-        return self._cert_files_exist(Path("/etc/letsencrypt/live") / site.name)
+    def has_cert(self, site: "SiteConfig") -> bool:
+        return _cert_files_exist(Path("/etc/letsencrypt/live") / site.name)
 
     def cert_covers(self, site: "SiteConfig") -> bool:
-        """True if a cert exists and, when the site has public domains, its SAN list
-        covers every one — so a failed --expand can't serve a stale cert over HTTPS.
-        Pure-.localhost sites have no public exposure, so cert existence is enough."""
+        """Cert exists and its SAN list covers every public domain, if any -
+        so a failed --expand can't serve a stale cert over HTTPS."""
         from pilot.managers.letsencrypt import cert_covers, public_domains
 
-        if not self.cert_exists(site):
+        if not self.has_cert(site):
             return False
         public = public_domains(site)
         return cert_covers(self.cert_path(site), public) if public else True
 
-    @staticmethod
-    def _cert_files_exist(live_dir: Path) -> bool:
-        # /etc/letsencrypt/live is root-only (0700), so stat with privilege
-        # rather than letting Path.exists() raise EACCES for the bench user.
-        import subprocess
+    def admin_cert_path(self) -> Path:
+        return Path("/etc/letsencrypt/live") / self.bench.config.admin.domain / "fullchain.pem"
 
-        return subprocess.run(
-            _privileged(["test", "-f", str(live_dir / "fullchain.pem"), "-a", "-f", str(live_dir / "privkey.pem")]),
-            capture_output=True,
-        ).returncode == 0
+    @property
+    def has_admin_cert(self) -> bool:
+        return _cert_files_exist(Path("/etc/letsencrypt/live") / self.bench.config.admin.domain)

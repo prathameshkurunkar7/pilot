@@ -376,12 +376,12 @@ class SetupProductionCommand(Command):
         print("\nProduction setup complete.")
         print("Sites:")
         for site in self.bench.sites():
-            if site.config.ssl and nginx_manager.cert_exists(site.config):
+            if site.config.ssl and nginx_manager.has_cert(site.config):
                 print(f"  https://{site.config.name}")
             else:
                 http_port = self.bench.config.nginx.http_port
                 port_suffix = "" if http_port == 80 else f":{http_port}"
                 print(f"  http://{site.config.name}{port_suffix}")
-        admin_https = self.bench.config.admin.tls and nginx_manager.admin_cert_exists()
+        admin_https = self.bench.config.admin.tls and nginx_manager.has_admin_cert
         scheme = "https" if admin_https else "http"
         print(f"Admin:\n  {scheme}://{self.bench.config.admin.domain}")

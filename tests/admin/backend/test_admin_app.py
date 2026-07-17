@@ -254,7 +254,7 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
          patch("pilot.managers.nginx.NginxManager.generate_config") as mock_gen, \
          patch("pilot.managers.nginx.NginxManager.install_config"), \
          patch("pilot.managers.nginx.NginxManager.reload"), \
-         patch("pilot.managers.nginx.NginxManager.admin_cert_exists", return_value=False), \
+         patch("pilot.managers.nginx.NginxManager.has_admin_cert", new_callable=PropertyMock, return_value=False), \
          patch("pilot.core.domains.DomainRouteProvider.register") as mock_register, \
          patch("pilot.core.domains.DomainRouteProvider.wildcard_domains", return_value=[]), \
          patch("pilot.managers.platform.has_passwordless_sudo", return_value=True), \

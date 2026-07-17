@@ -264,7 +264,7 @@ def test_systemd_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
 
 
 def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
-    from pilot.managers.nginx import NginxManager
+    from pilot.managers.nginx import NginxConfigRenderer
 
     config = BenchConfig._from_dict({
         "bench": {"name": "test-bench", "python": "3.14", "http_port": 9000},
@@ -273,9 +273,9 @@ def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
         "redis": {"cache_port": 13000, "queue_port": 11000},
     })
     bench = Bench(config, tmp_path)
-    manager = NginxManager(bench)
+    renderer = NginxConfigRenderer(bench)
 
-    upstream = manager._render_upstream_block("test-bench")
+    upstream = renderer._render_upstream_block("test-bench")
 
     assert "server 127.0.0.1:9000;" in upstream
 
