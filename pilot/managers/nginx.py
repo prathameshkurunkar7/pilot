@@ -413,7 +413,7 @@ class NginxManager:
         )
 
     def _render_upstream_block(self, bench_name: str) -> str:
-        upstream_server = GunicornManager(self.bench).upstream_server()
+        upstream_server = GunicornManager(self.bench).upstream_server
         return (
             f"upstream bench-{bench_name} {{\n"
             f"    server {upstream_server};\n"

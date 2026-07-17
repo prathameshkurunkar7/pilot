@@ -25,12 +25,15 @@ class MariaDBManager(UserOwnedDBManager):
     def __init__(self, config: MariaDBConfig) -> None:
         self.config = config
 
+    @property
     def data_dir(self) -> Path:
         return _STATE_DIR / "data"
 
+    @property
     def pid_file(self) -> Path:
         return _STATE_DIR / "mysqld.pid"
 
+    @property
     def socket_path(self) -> str:
         if self.config.socket_path:
             return self.config.socket_path
@@ -74,8 +77,8 @@ class MariaDBManager(UserOwnedDBManager):
         self.secure_installation()
 
     def _initialize_data_dir(self) -> None:
-        self.data_dir().mkdir(parents=True, exist_ok=True)
-        run_command(["mariadb-install-db", f"--datadir={self.data_dir()}", "--skip-test-db"])
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        run_command(["mariadb-install-db", f"--datadir={self.data_dir}", "--skip-test-db"])
 
     def _install_unit(self) -> None:
         mariadbd = which("mariadbd") or which("mysqld") or "/usr/sbin/mariadbd"
@@ -84,15 +87,15 @@ class MariaDBManager(UserOwnedDBManager):
             "Description=MariaDB (pilot, user-owned)\n\n"
             "[Service]\n"
             "Type=simple\n"
-            f"ExecStart={mariadbd} --datadir={self.data_dir()} --socket={self.socket_path()} "
-            f"--port={self.config.port} --pid-file={self.pid_file()} --bind-address=127.0.0.1\n"
+            f"ExecStart={mariadbd} --datadir={self.data_dir} --socket={self.socket_path} "
+            f"--port={self.config.port} --pid-file={self.pid_file} --bind-address=127.0.0.1\n"
             "Restart=on-failure\n\n"
             "[Install]\n"
             "WantedBy=default.target\n"
         )
         unit_dir = self._user_unit_dir()
         unit_dir.mkdir(parents=True, exist_ok=True)
-        self.unit_path().write_text(content)
+        self.unit_path.write_text(content)
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
 
     def _wait_until_reachable(self, timeout: float = 30.0) -> None:
@@ -113,7 +116,7 @@ class MariaDBManager(UserOwnedDBManager):
             # own _STATE_DIR, only ever created for the Linux systemd unit) —
             # is_running() is the only signal we have.
             return True
-        return Path(self.socket_path()).exists()
+        return Path(self.socket_path).exists()
 
     def is_unsecured(self) -> bool:
         """True if the admin account has no password and is reachable via
@@ -122,7 +125,7 @@ class MariaDBManager(UserOwnedDBManager):
         to connect as its admin account."""
         cmd = ["mariadb"]
         if not is_macos():
-            cmd.append(f"--socket={self.socket_path()}")
+            cmd.append(f"--socket={self.socket_path}")
         cmd += ["-u", self.config.admin_user, "--batch", "--skip-column-names", "-e", "SELECT 1"]
         try:
             result = subprocess.run(
@@ -199,7 +202,7 @@ class MariaDBManager(UserOwnedDBManager):
             # granted that exact OS username full unix_socket-authenticated
             # access, so no privilege escalation or pre-existing account is
             # required to bootstrap from here.
-            cmd.append(f"--socket={self.socket_path()}")
+            cmd.append(f"--socket={self.socket_path}")
         # On macOS, Homebrew's mariadb client already defaults to the same
         # socket its brew-managed server listens on; socket_path() (our own
         # _STATE_DIR) is never used there, so the client's own default applies.
@@ -240,6 +243,6 @@ class MariaDBManager(UserOwnedDBManager):
     def _detect_socket(self) -> str:
         if self.config.socket_path:
             return self.config.socket_path
-        if not is_macos() and Path(self.socket_path()).exists():
-            return self.socket_path()
+        if not is_macos() and Path(self.socket_path).exists():
+            return self.socket_path
         return ""

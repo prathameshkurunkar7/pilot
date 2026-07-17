@@ -33,9 +33,11 @@ class PostgresManager(UserOwnedDBManager):
     def __init__(self, config: PostgresConfig) -> None:
         self.config = config
 
+    @property
     def data_dir(self) -> Path:
         return _STATE_DIR / "data"
 
+    @property
     def socket_dir(self) -> Path:
         # Postgres' compiled-in default (often /var/run/postgresql) is owned by
         # the 'postgres' OS user/group, not the bench user — pin a directory
@@ -68,7 +70,7 @@ class PostgresManager(UserOwnedDBManager):
             f"SELECT rolpassword IS NULL FROM pg_authid WHERE rolname = {role}",
         ]
         if not is_macos():
-            cmd[1:1] = ["-h", str(self.socket_dir())]
+            cmd[1:1] = ["-h", str(self.socket_dir)]
         try:
             result = subprocess.run(
                 cmd,
@@ -102,12 +104,12 @@ class PostgresManager(UserOwnedDBManager):
     def _provision_user_owned(self) -> None:
         if not self.is_provisioned():
             self._ensure_port_available()
-            self.data_dir().parent.mkdir(parents=True, exist_ok=True)
-            self.socket_dir().mkdir(parents=True, exist_ok=True)
+            self.data_dir.parent.mkdir(parents=True, exist_ok=True)
+            self.socket_dir.mkdir(parents=True, exist_ok=True)
             # No --username: the bootstrap superuser matches whoever runs
             # initdb (the bench user), authenticated via unix-socket peer
             # auth — no sudo, no OS-level 'postgres' account involved.
-            run_command([self._server_binary("initdb"), "-D", str(self.data_dir())])
+            run_command([self._server_binary("initdb"), "-D", str(self.data_dir)])
             self._install_unit()
             run_command(
                 self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env()
@@ -137,15 +139,15 @@ class PostgresManager(UserOwnedDBManager):
             "Description=PostgreSQL (pilot, user-owned)\n\n"
             "[Service]\n"
             "Type=simple\n"
-            f"ExecStart={postgres} -D {self.data_dir()} -p {self.config.port} "
-            f"-c listen_addresses=127.0.0.1 -c unix_socket_directories={self.socket_dir()}\n"
+            f"ExecStart={postgres} -D {self.data_dir} -p {self.config.port} "
+            f"-c listen_addresses=127.0.0.1 -c unix_socket_directories={self.socket_dir}\n"
             "Restart=on-failure\n\n"
             "[Install]\n"
             "WantedBy=default.target\n"
         )
         unit_dir = self._user_unit_dir()
         unit_dir.mkdir(parents=True, exist_ok=True)
-        self.unit_path().write_text(content)
+        self.unit_path.write_text(content)
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
 
     def secure(self) -> None:
@@ -233,7 +235,7 @@ class PostgresManager(UserOwnedDBManager):
             "postgres",
         ]
         if not is_macos():
-            cmd[1:1] = ["-h", str(self.socket_dir())]
+            cmd[1:1] = ["-h", str(self.socket_dir)]
         subprocess.run(cmd, input=sql, text=True, check=True)
 
     def _wait_until_reachable(self, timeout: float = 30.0) -> None:

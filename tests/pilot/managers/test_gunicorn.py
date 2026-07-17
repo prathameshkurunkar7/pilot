@@ -148,7 +148,7 @@ def test_gunicorn_manager_bind_uses_bench_http_port(tmp_path: Path) -> None:
     manager = GunicornManager(bench)
 
     assert manager._bind() == "127.0.0.1:9000"
-    assert manager.upstream_server() == "127.0.0.1:9000"
+    assert manager.upstream_server == "127.0.0.1:9000"
 
 
 # ── ProcessManager integration tests ──────────────────────────────────────────

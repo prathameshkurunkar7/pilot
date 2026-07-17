@@ -39,6 +39,7 @@ class UserOwnedDBManager:
 
     # ── service control ──────────────────────────────────────────────────────
 
+    @property
     def unit_path(self) -> Path:
         return self._user_unit_dir() / self._UNIT_NAME
 
@@ -46,7 +47,7 @@ class UserOwnedDBManager:
         """The unit file existing is the single source of truth: once it's
         there, this server has already been set up (by this bench or a
         sibling) — reuse it rather than re-initialising."""
-        return self.unit_path().exists()
+        return self.unit_path.exists()
 
     def is_running(self) -> bool:
         if is_macos():

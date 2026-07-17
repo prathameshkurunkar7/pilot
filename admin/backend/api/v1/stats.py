@@ -81,7 +81,7 @@ def _path_sizes(bench_root: Path, config: BenchConfig) -> list[dict]:
     from pilot.managers.mariadb import MariaDBManager
 
     benches_dir = str(bench_root)
-    mariadb_dir = str(MariaDBManager(config.mariadb).data_dir())
+    mariadb_dir = str(MariaDBManager(config.mariadb).data_dir)
     return [
         {"label": "Benches", "path": benches_dir, "used_bytes": _directory_size(benches_dir)},
         {"label": "MariaDB", "path": mariadb_dir, "used_bytes": _directory_size(mariadb_dir)},

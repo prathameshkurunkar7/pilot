@@ -143,7 +143,7 @@ class ConfigureMonitor:
         run_command(self._systemctl("enable", "--now", self.timer_unit_name), env=env)
 
 
-class ToMonitor:
+class ProcessResolver:
     def __init__(self, bench: "Bench"):
         self.bench = bench
         self.admin_service_name = f"{self.bench.config.name}-admin"
@@ -193,7 +193,7 @@ class ToMonitor:
 
         return pids
 
-    def to_monitor(self):
+    def resolve(self):
         prod_config = self.bench.config.production
         if not prod_config.enabled:
             return {}
@@ -220,10 +220,8 @@ class Monitor:
         self.setup()
 
     def monitored_targets(self) -> dict[str, int]:
-        # `to_monitor()` shells out to systemctl/supervisorctl, so cache it: both
-        # the CPU sampling and the application metrics reuse the same result.
         if self._targets is None:
-            self._targets = ToMonitor(self.bench).to_monitor()
+            self._targets = ProcessResolver(self.bench).resolve()
         return self._targets
 
     def sample_cpu(self) -> None:
@@ -397,14 +395,14 @@ class Monitor:
     def _process_metrics(self, service: str, pid: int) -> dict:
         status = self._read_status(pid)
         # PSS accounts for shared memory pages, unlike RSS.
-        pss_memeory = self._read_pss(pid)
+        pss_memory = self._read_pss(pid)
         read_bytes, write_bytes = self._io_bytes(pid)
         return {
             "service": service,
             "pid": pid,
             "state": status.get("State", "?").split()[0],
             "cpu_percent": self._cpu_percent(pid),
-            "memory_rss_mb": round(pss_memeory / 1024, 2),
+            "memory_rss_mb": round(pss_memory / 1024, 2),
             "read_bytes": read_bytes,
             "write_bytes": write_bytes,
             "open_fds": self._open_fds(pid),
@@ -413,18 +411,6 @@ class Monitor:
     def _load_average(self) -> tuple[float, float, float]:
         parts = Path("/proc/loadavg").read_text().split()
         return float(parts[0]), float(parts[1]), float(parts[2])
-
-    def _system_cpu_percent(self) -> float:
-        return self._system_cpu
-
-    def _system_cpu_breakdown(self) -> dict:
-        return self._cpu_breakdown
-
-    def _system_network(self) -> dict:
-        return self._network
-
-    def _system_disk_io(self) -> dict:
-        return self._disk_io
 
     def _memory_usage(self) -> dict:
         data = {}
@@ -461,7 +447,6 @@ class Monitor:
     def _storage_usage(self) -> dict:
         return {"disk": self._disk_usage(self.bench.path)}
 
-    @property
     def is_system_log_authority(self):
         system_log_authority_path = self.bench.config.monitor.authority_file_path
         if not system_log_authority_path.exists():
@@ -486,19 +471,19 @@ class Monitor:
         return True
 
     def collect_system_metrics(self) -> None:
-        if not self.is_system_log_authority:
+        if not self.is_system_log_authority():
             return
         self._append(
             self.system_log_path,
             {
                 "time": datetime.now(timezone.utc).isoformat(),
                 "load_avg": self._load_average(),
-                "cpu_percent": self._system_cpu_percent(),
-                "cpu_breakdown": self._system_cpu_breakdown(),
+                "cpu_percent": self._system_cpu,
+                "cpu_breakdown": self._cpu_breakdown,
                 "memory": self._memory_usage(),
                 "storage": self._storage_usage(),
-                "network": self._system_network(),
-                "disk_io": self._system_disk_io(),
+                "network": self._network,
+                "disk_io": self._disk_io,
             },
         )
 
