@@ -769,7 +769,10 @@ class NginxManager:
 
     @property
     def config_dir(self) -> Path:
-        return self.bench.config.nginx.config_dir or default_nginx_config_dir()
+        # Path("") is truthy (no __bool__ override), so `or` alone never falls
+        # back here - compare explicitly against the empty-config sentinel.
+        configured = self.bench.config.nginx.config_dir
+        return configured if configured != Path("") else default_nginx_config_dir()
 
     def install_config(self) -> None:
         nginx_dir = self.config_dir

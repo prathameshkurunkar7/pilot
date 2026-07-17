@@ -148,7 +148,7 @@ def _bench_nginx(tmp_path: Path, firewall: dict | None):
     (site / "site_config.json").write_text("{}")
 
     manager = NginxManager(bench)
-    manager._proxy_servers_cache = [_PROXY_SRC]
+    manager._renderer._proxy_servers_cache = [_PROXY_SRC]
     manager.generate_config(ssl_ready=False)
 
     prefix = tmp_path / "bench-run"

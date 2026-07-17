@@ -528,3 +528,20 @@ def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> Non
 
     mock_run.assert_called_once()
     assert mock_run.call_args[0][0][-2:] == ["unlink", str(nginx_dir / "dropped-bench.conf")]
+
+
+def test_config_dir_falls_back_to_platform_default(tmp_path: Path) -> None:
+    """Regression: Path("") is truthy, so `config_dir or default(...)` never
+    falls back - the unconfigured default must resolve to the real directory,
+    not the empty sentinel itself."""
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    manager = NginxManager(bench)
+    with patch("pilot.managers.nginx.default_nginx_config_dir", return_value=Path("/etc/nginx/conf.d")):
+        assert manager.config_dir == Path("/etc/nginx/conf.d")
+
+
+def test_config_dir_honors_explicit_value(tmp_path: Path) -> None:
+    bench = _make_bench(tmp_path, _BASE_DATA)
+    bench.config.nginx.config_dir = Path("/custom/nginx/dir")
+    manager = NginxManager(bench)
+    assert manager.config_dir == Path("/custom/nginx/dir")
