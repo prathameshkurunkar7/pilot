@@ -1161,47 +1161,47 @@ def test_drop_bench_deletes_directory_with_no_sites(tmp_path: Path) -> None:
     assert not bench_dir.exists()
 
 
-# ── BuildAdminCommand node-version guard ──────────────────────────────────────
+# ── admin_frontend node-version guard ──────────────────────────────────────────
 
 
 def test_build_admin_rejects_old_node(monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.commands.admin.start import BuildAdminCommand
+    from pilot.core.admin_frontend import _check_node_version
 
     monkeypatch.setattr("subprocess.run", lambda *a, **k: MagicMock(stdout="v18.20.8\n"))
     with pytest.raises(BenchError, match="Node.js"):
-        BuildAdminCommand(force_build=True)._check_node_version()
+        _check_node_version()
 
 
 def test_build_admin_accepts_supported_node(monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.commands.admin.start import BuildAdminCommand
+    from pilot.core.admin_frontend import _check_node_version
 
     monkeypatch.setattr("subprocess.run", lambda *a, **k: MagicMock(stdout="v20.11.0\n"))
-    BuildAdminCommand(force_build=True)._check_node_version()  # no raise
+    _check_node_version()  # no raise
 
 
 def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.commands.admin.start import BuildAdminCommand
+    from pilot.core.admin_frontend import _check_node_version
 
     def _missing(*a, **k):
         raise FileNotFoundError("node")
 
     monkeypatch.setattr("subprocess.run", _missing)
     with pytest.raises(BenchError, match="Node.js is required"):
-        BuildAdminCommand(force_build=True)._check_node_version()
+        _check_node_version()
 
 
 def test_build_admin_installs_when_node_modules_missing(tmp_path: Path) -> None:
-    from pilot.commands.admin.start import BuildAdminCommand
+    from pilot.core.admin_frontend import _needs_npm_install
 
     (tmp_path / "package.json").write_text("{}")
 
-    assert BuildAdminCommand(force_build=True)._needs_npm_install(tmp_path) is True
+    assert _needs_npm_install(tmp_path) is True
 
 
 def test_build_admin_installs_when_manifest_is_newer_than_installed_deps(tmp_path: Path) -> None:
     import os
 
-    from pilot.commands.admin.start import BuildAdminCommand
+    from pilot.core.admin_frontend import _needs_npm_install
 
     node_modules = tmp_path / "node_modules"
     node_modules.mkdir()
@@ -1215,13 +1215,13 @@ def test_build_admin_installs_when_manifest_is_newer_than_installed_deps(tmp_pat
     os.utime(package_json, (200, 200))
     os.utime(package_lock, (100, 100))
 
-    assert BuildAdminCommand(force_build=True)._needs_npm_install(tmp_path) is True
+    assert _needs_npm_install(tmp_path) is True
 
 
 def test_build_admin_skips_install_when_installed_deps_are_current(tmp_path: Path) -> None:
     import os
 
-    from pilot.commands.admin.start import BuildAdminCommand
+    from pilot.core.admin_frontend import _needs_npm_install
 
     package_json = tmp_path / "package.json"
     package_json.write_text("{}")
@@ -1235,7 +1235,7 @@ def test_build_admin_skips_install_when_installed_deps_are_current(tmp_path: Pat
     os.utime(package_lock, (100, 100))
     os.utime(install_state, (200, 200))
 
-    assert BuildAdminCommand(force_build=True)._needs_npm_install(tmp_path) is False
+    assert _needs_npm_install(tmp_path) is False
 
 
 # ── bench start: rebuild the admin UI when source changed ─────────────────────

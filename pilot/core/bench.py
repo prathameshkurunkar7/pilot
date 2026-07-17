@@ -74,10 +74,6 @@ class Bench:
         return ["--db-root-username", mariadb.admin_user, "--db-root-password", mariadb.root_password]
 
     def postgres_root_password(self) -> str:
-        # frappe's postgres setup falls back to an interactive getpass() — which
-        # hangs the background task — when the password is empty. Pass a non-empty
-        # placeholder instead: trust/peer auth ignores it, while a password-auth
-        # server returns a clear authentication error.
         return self.config.postgres.root_password or "trust_auth"
 
     def app(self, name: str) -> "App":
@@ -235,6 +231,103 @@ class Bench:
         manager.write_config()
         manager.reload_manager_config()
         manager.restart()
+
+    def setup_nginx(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        from pilot.exceptions import ConfigError
+        from pilot.managers.nginx import NginxManager
+
+        if not self.config.production.enabled:
+            raise ConfigError(
+                "production.enabled must be true in bench.toml to run setup nginx. "
+                "Production always uses nginx."
+            )
+        nginx_manager = NginxManager(self)
+        nginx_manager.install()
+        self._install_waf()
+        (self.config_path / "nginx").mkdir(parents=True, exist_ok=True)
+        nginx_manager.generate_config(ssl_ready=True)
+        nginx_manager.install_config()
+        self._report_site_urls(nginx_manager, on_progress)
+
+    def _install_waf(self) -> None:
+        """Install the ModSecurity module + CRS as a standard part of production
+        setup. Best-effort: a package/download hiccup must not abort an
+        otherwise-fine deploy. Linux-only; a no-op elsewhere."""
+        from pilot.managers.platform import is_linux
+
+        if not is_linux():
+            return
+        import sys
+
+        from pilot.managers.waf import WafManager
+
+        try:
+            WafManager(self).install()
+        except Exception as exc:
+            print(
+                f"Warning: could not install the WAF (ModSecurity/CRS): {exc}. "
+                f"Sites are unaffected; re-run setup to retry.",
+                file=sys.stderr,
+            )
+
+    def _report_site_urls(self, nginx_manager, on_progress: Callable[[str], None]) -> None:
+        # HTTPS is only served when TLS termination is enabled for the bench; a
+        # stale cert left on disk must not make us advertise an https:// URL.
+        tls = self.config.admin.tls
+        for site in self.sites():
+            if tls and site.config.ssl and nginx_manager.has_cert(site.config):
+                on_progress(f"  https://{site.config.name}")
+            else:
+                http_port = self.config.nginx.http_port
+                port_suffix = "" if http_port == 80 else f":{http_port}"
+                on_progress(f"  http://{site.config.name}{port_suffix}")
+        domain = self.config.admin.domain
+        if domain:
+            scheme = "https" if tls and nginx_manager.has_admin_cert else "http"
+            on_progress(f"  {scheme}://{domain} (admin)")
+
+    def setup_letsencrypt(self) -> None:
+        from pilot.exceptions import ConfigError
+        from pilot.managers.letsencrypt import LetsEncryptManager
+        from pilot.managers.nginx import NginxManager
+
+        if not self.config.letsencrypt.email:
+            raise ConfigError("letsencrypt.email must be set in bench.toml to run setup letsencrypt.")
+        letsencrypt_manager = LetsEncryptManager(self)
+        nginx_manager = NginxManager(self)
+        letsencrypt_manager.install()
+        letsencrypt_manager.ensure_webroot()
+        # Ensure HTTP blocks exist for all domains so certbot can serve ACME challenges.
+        nginx_manager.generate_config(ssl_ready=False)
+        nginx_manager.reload()
+        letsencrypt_manager.obtain_all()
+        nginx_manager.generate_config(ssl_ready=True)
+        nginx_manager.reload()
+
+    def initialize(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        from pilot.core.bench_initializer import BenchInitializer
+
+        BenchInitializer(self).run(on_progress)
+
+    def setup_production(
+        self,
+        process_manager: str | None = None,
+        admin_domain: str | None = None,
+        admin_tls: bool | None = None,
+        letsencrypt_email: str | None = None,
+        best_effort_tls: bool = False,
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> None:
+        from pilot.core.production_setup import ProductionSetup
+
+        ProductionSetup(
+            self,
+            process_manager=process_manager,
+            admin_domain=admin_domain,
+            admin_tls=admin_tls,
+            letsencrypt_email=letsencrypt_email,
+            best_effort_tls=best_effort_tls,
+        ).run(on_progress)
 
     def reload_workers(self, web_only: bool = False, raises: bool = False):
         from pilot.managers.processes.local import ProcessManager
