@@ -18,19 +18,19 @@ class UpgradeCommand(Command):
 
         root = cli_root()
 
-        self.report("Pulling latest bench-cli...")
+        self.print("Pulling latest bench-cli...")
         run_command(["git", "-C", str(root), "pull"], stream_output=True)
 
-        self.report("Installing admin Python dependencies...")
+        self.print("Installing admin Python dependencies...")
         from pilot.managers.admin_environment import AdminEnvManager
 
         AdminEnvManager(root).install_python_deps()
 
-        self.report("Downloading latest admin frontend...")
+        self.print("Downloading latest admin frontend...")
         if not download_admin_frontend(root):
-            self.report("  Download failed. Run 'bench build-admin' to build from source.")
+            self.print("  Download failed. Run 'bench build-admin' to build from source.")
         else:
-            self.report("bench-cli upgraded successfully.")
+            self.print("bench-cli upgraded successfully.")
 
         self._restart_if_production()
 
@@ -43,7 +43,7 @@ class UpgradeCommand(Command):
             manager = ProcessManager.detect_running(self.bench)
             if type(manager) is ProcessManager:
                 return
-            self.report("Restarting bench processes...")
+            self.print("Restarting bench processes...")
             manager.restart()
         except Exception as exc:
             logging.debug("Post-upgrade process restart failed: %s", exc)

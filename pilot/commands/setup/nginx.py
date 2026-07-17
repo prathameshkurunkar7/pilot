@@ -17,4 +17,4 @@ class SetupNginxCommand(Command):
         self.bench = bench
 
     def run(self) -> None:
-        self.bench.setup_nginx(on_progress=self.report)
+        self.bench.setup_nginx(on_progress=self.print)

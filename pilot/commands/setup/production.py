@@ -75,5 +75,5 @@ class SetupProductionCommand(Command):
             admin_tls=self.admin_tls,
             letsencrypt_email=self.letsencrypt_email,
             best_effort_tls=self.best_effort_tls,
-            on_progress=self.report,
+            on_progress=self.print,
         )

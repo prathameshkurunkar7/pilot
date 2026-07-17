@@ -12,4 +12,4 @@ class StartTaskWorkerCommand(Command):
         from pilot.tasks.manager.worker_state import WorkerIntent, WorkerStore
 
         WorkerStore(self.bench.path).write_intent(WorkerIntent.RUNNING)
-        self.report("Task worker start requested.")
+        self.print("Task worker start requested.")

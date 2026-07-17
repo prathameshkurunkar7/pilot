@@ -31,4 +31,4 @@ class BuildAdminCommand(Command):
     def run(self) -> None:
         from pilot.core.admin_frontend import build_admin_frontend
 
-        build_admin_frontend(self.force_build, on_progress=self.report)
+        build_admin_frontend(self.force_build, on_progress=self.print)

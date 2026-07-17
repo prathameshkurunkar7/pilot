@@ -37,7 +37,7 @@ class RestartCommand(Command):
 
     def run(self) -> None:
         if not self.bench.config.production.enabled:
-            self.report(_DEV_MESSAGE)
+            self.print(_DEV_MESSAGE)
             return
 
         from typing import cast
@@ -49,7 +49,7 @@ class RestartCommand(Command):
         # returns a ManagedProcessManager subclass here, never the plain base.
         manager = cast(ManagedProcessManager, ProcessManager.for_bench(self.bench))
         if not manager.is_configured():
-            self.report(_incomplete_message(self.bench))
+            self.print(_incomplete_message(self.bench))
             return
 
         manager.write_config()

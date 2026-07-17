@@ -46,4 +46,4 @@ class SetCentralConfigCommand(Command):
             raise BenchError(f"{store.path} contains invalid TOML: {exc}") from exc
         self.bench.config.central.endpoint = self.endpoint
         self.bench.config.central.auth_token = self.token
-        self.report("Central config written to bench.toml")
+        self.print("Central config written to bench.toml")

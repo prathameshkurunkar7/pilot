@@ -18,4 +18,4 @@ class InitCommand(Command):
         self.bench = bench
 
     def run(self) -> None:
-        self.bench.initialize(on_progress=self.report)
+        self.bench.initialize(on_progress=self.print)

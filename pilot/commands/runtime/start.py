@@ -67,15 +67,15 @@ class RunCommand(Command):
             from pilot.admin_url import admin_url
 
             manager.start_admin()
-            self.report(f"Admin running at {admin_url(self.bench.config)}")
-            self.report("Finish setup there; the bench starts serving once it's initialized.")
+            self.print(f"Admin running at {admin_url(self.bench.config)}")
+            self.print("Finish setup there; the bench starts serving once it's initialized.")
             return
 
         self._rebuild_config(manager)
         if not manager.is_configured():
             from pilot.commands.runtime.restart import _incomplete_message
 
-            self.report(_incomplete_message(self.bench))
+            self.print(_incomplete_message(self.bench))
             return
         manager.start()
 
@@ -97,7 +97,7 @@ class RunCommand(Command):
         has_source = (frontend / "package.json").exists()
 
         if not (dist / "assets").exists():
-            self.report("Admin UI not built yet; building it now...")
+            self.print("Admin UI not built yet; building it now...")
             if has_source:
                 BuildAdminCommand(force_build=True).run()
             else:
@@ -143,12 +143,12 @@ class RunCommand(Command):
 
         assets = root / "admin" / "backend" / "static" / "dist" / "assets"
         if not assets.exists():
-            self.report("Downloading admin frontend...")
+            self.print("Downloading admin frontend...")
             download_admin_frontend(root)
 
         port = self._admin_port()
-        self.report("\nBench not initialized. Starting setup wizard...")
-        self.report(f"  Open http://localhost:{port} in your browser\n")
+        self.print("\nBench not initialized. Starting setup wizard...")
+        self.print(f"  Open http://localhost:{port} in your browser\n")
 
         env = {**os.environ, "PYTHONPATH": str(root)}
         subprocess.run(
@@ -168,7 +168,7 @@ class RunCommand(Command):
         )
 
         if (self.bench.path / "env" / "bin" / "python").exists():
-            self.report("\nSetup complete. Run 'bench start' to start your bench.\n")
+            self.print("\nSetup complete. Run 'bench start' to start your bench.\n")
 
     def _admin_port(self) -> int:
         import tomllib

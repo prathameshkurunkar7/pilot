@@ -7,7 +7,7 @@ from pilot.exceptions import BenchError
 
 
 def test_report_prints_message(capsys: pytest.CaptureFixture) -> None:
-    Command().report("hello")
+    Command().print("hello")
     assert capsys.readouterr().out == "hello\n"
 
 

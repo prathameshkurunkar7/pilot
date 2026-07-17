@@ -59,7 +59,7 @@ class UpdateCommand(Command):
                 apps_filter=self._apps_filter,
                 skip_failing_patches=self._skip_failing_patches,
                 on_step=self._step,
-                on_progress=self.report,
+                on_progress=self.print,
             )
         except MigrateError:
             self._step_failed()
@@ -69,16 +69,16 @@ class UpdateCommand(Command):
 
     def _step(self, key: str, label: str) -> None:
         self._current_step = key
-        self.report(f"STEP {key},{time.time():.3f} {label}")
+        self.print(f"STEP {key},{time.time():.3f} {label}")
 
     def _step_failed(self) -> None:
         if self._current_step:
-            self.report(f"STEP-FAILED {self._current_step},{time.time():.3f}")
+            self.print(f"STEP-FAILED {self._current_step},{time.time():.3f}")
 
     def _warn_if_running(self) -> None:
         from pilot.managers.processes.local import ProcessManager
 
         if not ProcessManager.for_bench(self.bench).is_running():
             return
-        self.report("Warning: bench processes appear to be running. Updating while running may cause instability.")
+        self.print("Warning: bench processes appear to be running. Updating while running may cause instability.")
         self.confirm("Continue anyway?", skip=self.skip_confirm, error=MigrateError)

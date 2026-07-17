@@ -42,8 +42,8 @@ class InstallAppCommand(Command):
         for app_name in self.app_names:
             app = self.bench.app(app_name)
             if not self.force and app.config.name in installed:
-                self.report(f"'{app_name}' is already installed on '{self.site_name}', skipping.")
+                self.print(f"'{app_name}' is already installed on '{self.site_name}', skipping.")
                 continue
-            self.report(f"Installing '{app_name}' on '{self.site_name}'...")
+            self.print(f"Installing '{app_name}' on '{self.site_name}'...")
             self.site.install_app(app)
-            self.report(f"'{app_name}' installed on '{self.site_name}'.")
+            self.print(f"'{app_name}' installed on '{self.site_name}'.")

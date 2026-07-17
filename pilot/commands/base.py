@@ -11,21 +11,11 @@ if TYPE_CHECKING:
 
 
 class Command:
-    """Base class for self-registering CLI commands.
-
-    A command owns everything about itself in one place: its CLI name, help
-    text, arguments, and execution. The registry discovers every subclass that
-    sets a ``name`` and wires it into the parser automatically — adding a
-    command means creating one file, with no edits to cli.py or the registry.
-
-    Subclasses keep their own ``__init__`` (used directly in tests and by other
-    commands). The registry builds an instance via :meth:`from_args`, which maps
-    the parsed argparse namespace onto that constructor.
-    """
+    """Base class for self-registering CLI commands. The registry discovers
+    every subclass that sets a ``name`` and wires it into the parser."""
 
     #: CLI name, e.g. "remove-app". Subclasses without a name are not registered.
     name: ClassVar[str]
-    #: One-line help shown in `bench --help`.
     help: ClassVar[str] = ""
     #: Parent group for subcommands, e.g. "setup" (None = top level).
     group: ClassVar[Optional[str]] = None
@@ -43,26 +33,21 @@ class Command:
 
     @classmethod
     def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        """Declare this command's argparse arguments. Override as needed."""
+        """Override to declare this command's argparse arguments."""
 
     @classmethod
     def from_args(cls, args: argparse.Namespace, bench: "Bench | None") -> "Command":
-        """Build an instance from parsed args. Default: a bench-only constructor."""
         return cls(bench)
 
     def run(self) -> None:
         raise NotImplementedError
 
-    def report(self, message: str) -> None:
-        """Print a progress/result message, flushed immediately so it's
-        visible before any subprocess this command spawns writes its own
-        output."""
+    def print(self, message: str) -> None:
+        # Flushed immediately so it's visible before any subprocess output.
         print(message)
         sys.stdout.flush()
 
     def confirm(self, prompt: str, *, skip: bool = False, error: type[Exception] = BenchError) -> None:
-        """Ask for interactive y/N confirmation, raising `error` if declined
-        (including on EOF/Ctrl-C). No-op when `skip` is True."""
         if skip:
             return
         try:

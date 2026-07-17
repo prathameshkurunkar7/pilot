@@ -30,4 +30,4 @@ class DropBenchCommand(Command):
             f"Permanently delete bench '{self.bench.config.name}' and its database?",
             skip=self.skip_confirm,
         )
-        self.bench.drop(on_progress=self.report)
+        self.bench.drop(on_progress=self.print)

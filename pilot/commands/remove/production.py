@@ -17,4 +17,4 @@ class RemoveProductionCommand(Command):
         self.bench = bench
 
     def run(self) -> None:
-        self.bench.remove_production(on_progress=self.report)
+        self.bench.remove_production(on_progress=self.print)

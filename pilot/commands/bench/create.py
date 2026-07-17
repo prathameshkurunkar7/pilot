@@ -63,5 +63,5 @@ class NewCommand(Command):
             admin_domain=self.admin_domain,
             admin_tls=self.admin_tls,
             db_type=self.db_type,
-            on_progress=self.report,
+            on_progress=self.print,
         )

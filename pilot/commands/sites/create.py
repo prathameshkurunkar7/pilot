@@ -43,5 +43,5 @@ class NewSiteCommand(Command):
         from pilot.core.site import Site
 
         self.site = Site.provision(
-            self.bench, self.name, self.apps, self.admin_password, db_type=self.db_type, on_progress=self.report
+            self.bench, self.name, self.apps, self.admin_password, db_type=self.db_type, on_progress=self.print
         )

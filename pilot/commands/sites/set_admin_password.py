@@ -38,7 +38,7 @@ class SetAdminPasswordCommand(Command):
         with store.edit_raw() as data:
             data.setdefault("admin", {})["password"] = password
         self.bench.config.admin.password = password
-        self.report("Admin password updated.")
+        self.print("Admin password updated.")
 
     def _prompt(self) -> str:
         password = getpass.getpass("New admin password: ")

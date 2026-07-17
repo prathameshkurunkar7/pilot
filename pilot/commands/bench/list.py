@@ -20,7 +20,7 @@ class ListCommand(Command):
         benches_dir = cli_root() / "benches"
         rows = self._collect(benches_dir)
         if not rows:
-            self.report("No benches yet. Create one with: bench new <name>")
+            self.print("No benches yet. Create one with: bench new <name>")
             return
 
         # Column widths sized to content (with sensible minimums).
@@ -33,10 +33,10 @@ class ListCommand(Command):
             f"  {'':1} {'NAME':<{name_w}}  {'MODE':<{mode_w}}  "
             f"{'MANAGER':<{mgr_w}}  {'SITES':<{sites_w}}  ADDRESS"
         )
-        self.report(_dim(header))
+        self.print(_dim(header))
         for r in rows:
             dot = {"running": _ok("●"), "admin": _warn("●")}.get(r["state"], _dim("○"))
-            self.report(
+            self.print(
                 f"  {dot} {r['name']:<{name_w}}  {r['mode']:<{mode_w}}  "
                 f"{r['manager']:<{mgr_w}}  {str(r['sites']):<{sites_w}}  {r['address']}"
             )

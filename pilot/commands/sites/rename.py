@@ -37,7 +37,7 @@ class RenameSiteCommand(Command):
         old_site = self._validate()
         ssl_enabled = old_site.config.ssl
 
-        self.report(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
+        self.print(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
         old_site.path.rename(self.bench.sites_path / self.new_name)
 
         self._update_default_site()
@@ -46,7 +46,7 @@ class RenameSiteCommand(Command):
         self._add_to_hosts()
         NginxManager(self.bench).reload_for_site_change()
 
-        self.report(f"\nSite renamed to '{self.new_name}'.")
+        self.print(f"\nSite renamed to '{self.new_name}'.")
         self._run_followups(ssl_enabled)
 
     def _validate(self):
@@ -147,9 +147,9 @@ class RenameSiteCommand(Command):
                                  f"bench setup letsencrypt -b {name}")
 
     def _run_or_advise(self, label: str, fn, manual_cmd: str) -> None:
-        self.report(f"\nRunning {label} for the new domain...")
+        self.print(f"\nRunning {label} for the new domain...")
         try:
             fn()
         except (Exception, SystemExit) as exc:
             detail = f" ({exc})" if str(exc) else ""
-            self.report(f"\n{label} did not complete{detail}. Run it yourself once resolved:\n  {manual_cmd}")
+            self.print(f"\n{label} did not complete{detail}. Run it yourself once resolved:\n  {manual_cmd}")
