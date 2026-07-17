@@ -8,7 +8,7 @@ from pilot.config.production import ProductionConfig
 from pilot.config.redis import RedisConfig
 from pilot.config.worker import WorkerConfig
 from pilot.core.bench import Bench
-from pilot.core.monitoring import Monitor
+from pilot.core.monitoring import Monitor, MonitorConfigurator
 
 
 def _make_bench(path: Path, name: str = "my-bench") -> Bench:
@@ -23,7 +23,7 @@ def _make_bench(path: Path, name: str = "my-bench") -> Bench:
 
 
 def _make_monitor(bench: Bench, authority_file: Path | None = None) -> Monitor:
-    with patch.object(Monitor, "setup"):
+    with patch.object(MonitorConfigurator, "setup"):
         monitor = Monitor(bench)
     # Keep the authority sentinel inside tmp_path — never touch /var/log in tests.
     monitor.bench.config.monitor.authority_file_path = authority_file or (

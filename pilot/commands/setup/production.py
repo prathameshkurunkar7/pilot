@@ -187,9 +187,9 @@ class SetupProductionCommand(Command):
     def _setup_monitoring(self):
         """Install the shared bench-monitor timer unit and persist monitor config to bench.toml."""
         from pilot.config.toml_store import BenchTomlStore
-        from pilot.core.monitoring import ConfigureMonitor, resolve_monitor_log_path
+        from pilot.core.monitoring import MonitorConfigurator, resolve_monitor_log_path
 
-        ConfigureMonitor().install()
+        MonitorConfigurator().install()
         self.bench.config.monitor.log_path = resolve_monitor_log_path(self.bench.config)
         BenchTomlStore(self.bench.path).write(self.bench.config)
 

@@ -175,13 +175,13 @@ def test_resolve_monitor_log_path_default(tmp_path: Path) -> None:
 
 def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch) -> None:
     import tomllib
-    from pilot.core.monitoring import ConfigureMonitor
+    from pilot.core.monitoring import MonitorConfigurator
 
     bench = _make_bench(tmp_path, process_manager="systemd")
     bench.config.production.enabled = True
     cmd = SetupProductionCommand(bench)
 
-    monkeypatch.setattr(ConfigureMonitor, "install", lambda self: None)
+    monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
 
     cmd._setup_monitoring()
 
@@ -191,13 +191,13 @@ def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch)
 
 
 def test_setup_monitoring_log_path_is_path_on_config(tmp_path: Path, monkeypatch) -> None:
-    from pilot.core.monitoring import ConfigureMonitor
+    from pilot.core.monitoring import MonitorConfigurator
 
     bench = _make_bench(tmp_path, process_manager="systemd")
     bench.config.production.enabled = True
     cmd = SetupProductionCommand(bench)
 
-    monkeypatch.setattr(ConfigureMonitor, "install", lambda self: None)
+    monkeypatch.setattr(MonitorConfigurator, "install", lambda self: None)
 
     cmd._setup_monitoring()
 
