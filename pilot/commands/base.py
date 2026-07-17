@@ -141,7 +141,7 @@ def _cli_fields(command_class: type) -> list[_CliField]:
             continue
         if field.default is not MISSING:
             has_default, default = True, field.default
-        elif field.default_factory is not MISSING:  # type: ignore[misc]
+        elif field.default_factory is not MISSING:
             has_default, default = True, field.default_factory()
         else:
             has_default, default = False, None
