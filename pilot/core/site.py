@@ -126,6 +126,48 @@ class Site:
             cmd.append("--skip-failing")
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
 
+    def drop(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        from pilot.managers.nginx import NginxManager
+
+        provider_domains = self._provider_domains()
+        cmd = [*self.bench.frappe_call, "frappe", "drop-site", "--force", self.config.name]
+        cmd += self.bench.db_root_args()
+        on_progress(f"Dropping site '{self.config.name}'...")
+        run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
+        self._remove_from_bench_toml()
+        self._release_domains(provider_domains)
+        on_progress(f"\nSite '{self.config.name}' dropped.")
+        NginxManager(self.bench).reload_for_site_change()
+
+    def _provider_domains(self) -> list[str]:
+        """Hostnames this site claimed at the provider — its own name (the route a
+        wildcard create registers) plus its custom domains — captured before the
+        drop removes the site config so nothing is left dangling at the edge."""
+        from pilot.core.domains import DomainRouteProvider
+
+        if not (self.path / "site_config.json").exists():
+            return []
+        return [self.config.name, *DomainRouteProvider(self.bench).domains(self.config.name)]
+
+    def _release_domains(self, domains: list[str]) -> None:
+        """Release the captured domains at the provider, only after the drop has
+        succeeded. Best effort: a teardown failure leaves a stale route, but the
+        site is already gone so it must not turn a successful drop into an error."""
+        if not domains:
+            return
+        from pilot.core.domains import DomainRouteProvider
+
+        routes = DomainRouteProvider(self.bench)
+        for domain in domains:
+            routes.release(domain)
+
+    def _remove_from_bench_toml(self) -> None:
+        from pilot.config.toml_store import BenchTomlStore
+
+        store = BenchTomlStore.for_bench(self.bench.path)
+        with store.edit_raw() as raw:
+            raw["sites"] = [s for s in raw.get("sites", []) if s.get("name") != self.config.name]
+
     @classmethod
     def provision(
         cls,

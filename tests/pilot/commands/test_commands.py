@@ -891,12 +891,13 @@ def test_update_command_migrate_sites_passes_skip_failing_patches(tmp_path: Path
     mock_migrate.assert_called_once_with(skip_failing=True)
 
 
-# ── DropSiteCommand ───────────────────────────────────────────────────────────
+# ── Site.drop ─────────────────────────────────────────────────────────────────
 
 
 def test_drop_site_removes_site_from_bench_toml(tmp_path: Path) -> None:
     import tomllib
-    from pilot.commands.sites.delete import DropSiteCommand
+    from pilot.config.site import SiteConfig
+    from pilot.core.site import Site
 
     bench = make_bench(tmp_path)
     bench_toml = tmp_path / "bench.toml"
@@ -910,8 +911,8 @@ def test_drop_site_removes_site_from_bench_toml(tmp_path: Path) -> None:
         '[[workers]]\nqueues = ["default", "short", "long"]\ncount = 1\n'
     )
 
-    cmd = DropSiteCommand(bench, "site1.localhost")
-    cmd._remove_from_bench_toml()
+    site = Site(SiteConfig(name="site1.localhost", apps=[]), bench)
+    site._remove_from_bench_toml()
 
     with bench_toml.open("rb") as fh:
         raw = tomllib.load(fh)
@@ -921,7 +922,8 @@ def test_drop_site_removes_site_from_bench_toml(tmp_path: Path) -> None:
 
 
 def test_drop_site_removes_from_toml_when_no_sites_key(tmp_path: Path) -> None:
-    from pilot.commands.sites.delete import DropSiteCommand
+    from pilot.config.site import SiteConfig
+    from pilot.core.site import Site
 
     bench = make_bench(tmp_path)
     bench_toml = tmp_path / "bench.toml"
@@ -933,8 +935,8 @@ def test_drop_site_removes_from_toml_when_no_sites_key(tmp_path: Path) -> None:
         '[[workers]]\nqueues = ["default", "short", "long"]\ncount = 1\n'
     )
 
-    cmd = DropSiteCommand(bench, "nonexistent")
-    cmd._remove_from_bench_toml()  # no raise
+    site = Site(SiteConfig(name="nonexistent", apps=[]), bench)
+    site._remove_from_bench_toml()  # no raise
 
 
 # ── RestartCommand / StartCommand routing ───────────────────────────────────────
