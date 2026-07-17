@@ -45,3 +45,21 @@ class WafConfig:
     inspect_responses: bool = False
     exclusions: list[str] = field(default_factory=list)
     exempt_paths: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "WafConfig":
+        if not data:
+            return cls()
+        # paranoia/inbound_threshold pass through unconverted so a hand-edited
+        # non-integer surfaces as a clean ConfigError in _validate_waf rather
+        # than a raw ValueError here.
+        return cls(
+            enabled=bool(data.get("enabled", False)),
+            mode=str(data.get("mode", "DetectionOnly")),
+            paranoia=data.get("paranoia", 1),
+            inbound_threshold=data.get("inbound_threshold", 5),
+            body_limit=str(data.get("body_limit", "50m")),
+            inspect_responses=bool(data.get("inspect_responses", False)),
+            exclusions=[str(line) for line in data.get("exclusions", [])],
+            exempt_paths=[str(path) for path in data.get("exempt_paths", [])],
+        )

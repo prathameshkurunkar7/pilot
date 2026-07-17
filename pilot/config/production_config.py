@@ -10,3 +10,31 @@ class ProductionConfig:
     enabled: bool = False
     process_manager: str = ""  # systemd | supervisor — required when enabled
     use_companion_manager: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "ProductionConfig":
+        if data is None:
+            return cls()
+        pm = cls._normalize_process_manager(str(data.get("process_manager", "")))
+        if "enabled" in data:
+            enabled = bool(data.get("enabled"))
+        else:
+            # Legacy: presence of a real process_manager implied production.
+            enabled = pm != ""
+        # Oldest format derived the manager from a `lightweight` flag.
+        if enabled and not pm and "lightweight" in data:
+            pm = "systemd" if data.get("lightweight", False) else "supervisor"
+        return cls(
+            enabled=enabled,
+            process_manager=pm,
+            use_companion_manager=data.get("use_companion_manager", False),
+        )
+
+    @staticmethod
+    def _normalize_process_manager(value: str) -> str:
+        v = (value or "").strip().lower()
+        if v in ("", "none"):
+            return ""
+        if v == "supervisord":
+            return "supervisor"
+        return v

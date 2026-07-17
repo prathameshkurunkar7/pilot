@@ -182,9 +182,6 @@ class NginxManager:
         return f"    modsecurity on;\n    modsecurity_rules_file {rules_file};\n\n"
 
     def _render_security_trio(self) -> str:
-        """Proxy trust, firewall, and WAF directives, in the order every server
-        block must apply them: trust the edge proxy's XFF before the firewall
-        filters on the (now-correct) client IP, then gate on the WAF."""
         return self._render_proxy_trust() + self._render_firewall() + self._render_waf()
 
     @staticmethod
@@ -320,8 +317,6 @@ class NginxManager:
         self._write_include_conf(nginx_dir)
 
     def reload_for_site_change(self) -> None:
-        """Regenerate and reload nginx after a site is created or dropped.
-        No-op if the bench isn't in production or nginx isn't installed."""
         if not self.bench.config.production.enabled or not self.is_installed():
             return
         print("Updating nginx configuration...")
@@ -604,35 +599,33 @@ class NginxManager:
             + self._render_admin_proxy_location()
         )
 
-        # admin.tls = False: a central proxy terminates TLS, so nginx serves the
-        # admin over plain HTTP on :80 and never redirects to HTTPS, even if a
-        # stale cert is still on disk.
-        if not admin.tls:
-            return (
-                f"server {{\n"
-                f"    listen {http_port};\n"
-                f"    listen [::]:{http_port};\n"
-                f"    server_name {domain};\n\n"
-                + security_trio
-                + acme_block
-                + proxy_block
-                + "}\n"
-            )
-
-        if not ssl_ready or not self.admin_cert_exists():
-            return (
-                f"server {{\n"
-                f"    listen {http_port};\n"
-                f"    listen [::]:{http_port};\n"
-                f"    server_name {domain};\n\n"
-                + security_trio
-                + acme_block
-                + proxy_block
-                + "}\n"
-            )
+        # admin.tls off, or no cert yet: plain HTTP, never redirect to HTTPS.
+        if not admin.tls or not ssl_ready or not self.admin_cert_exists():
+            return self._render_admin_http_block(http_port, domain, security_trio, acme_block, proxy_block)
 
         cert = self.admin_cert_path()
         key = Path("/etc/letsencrypt/live") / domain / "privkey.pem"
+        return self._render_admin_https_redirect_block(
+            http_port, domain, security_trio, acme_block
+        ) + self._render_admin_https_block(https_port, domain, security_trio, cert, key, proxy_block)
+
+    def _render_admin_http_block(
+        self, http_port: int, domain: str, security_trio: str, acme_block: str, proxy_block: str
+    ) -> str:
+        return (
+            f"server {{\n"
+            f"    listen {http_port};\n"
+            f"    listen [::]:{http_port};\n"
+            f"    server_name {domain};\n\n"
+            + security_trio
+            + acme_block
+            + proxy_block
+            + "}\n"
+        )
+
+    def _render_admin_https_redirect_block(
+        self, http_port: int, domain: str, security_trio: str, acme_block: str
+    ) -> str:
         return (
             f"server {{\n"
             f"    listen {http_port};\n"
@@ -644,6 +637,12 @@ class NginxManager:
             f"        return 301 https://$host$request_uri;\n"
             f"    }}\n"
             f"}}\n\n"
+        )
+
+    def _render_admin_https_block(
+        self, https_port: int, domain: str, security_trio: str, cert: Path, key: Path, proxy_block: str
+    ) -> str:
+        return (
             f"server {{\n"
             f"    listen {https_port} ssl http2;\n"
             f"    listen [::]:{https_port} ssl http2;\n"

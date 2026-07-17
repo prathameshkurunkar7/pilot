@@ -16,3 +16,17 @@ class WorkerConfig:
             WorkerGroup(queues=["default", "short", "long"], count=1),
         ]
     )
+
+    @classmethod
+    def from_dict(cls, data: list) -> "WorkerConfig":
+        # [[workers]] array-of-tables: each group lists queues and a count.
+        if not isinstance(data, list) or not data:
+            return cls()
+        groups = [
+            WorkerGroup(
+                queues=entry.get("queues", [entry.get("queue", "default")]),
+                count=entry.get("count", 1),
+            )
+            for entry in data
+        ]
+        return cls(groups=groups)

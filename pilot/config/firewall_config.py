@@ -22,3 +22,21 @@ class FirewallConfig:
     enabled: bool = False
     default: str = "allow"  # "allow" | "deny"
     rules: list[FirewallRule] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "FirewallConfig":
+        if not data:
+            return cls()
+        rules = [
+            FirewallRule(
+                ip=str(rule.get("ip", "")),
+                action=str(rule.get("action", "deny")),
+                description=str(rule.get("description", "")),
+            )
+            for rule in data.get("rules", [])
+        ]
+        return cls(
+            enabled=bool(data.get("enabled", False)),
+            default=str(data.get("default", "allow")),
+            rules=rules,
+        )

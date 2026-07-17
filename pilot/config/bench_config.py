@@ -8,7 +8,7 @@ from pilot.config.admin_config import AdminConfig
 from pilot.config.app_config import AppConfig
 from pilot.config.central_config import CentralConfig
 from pilot.config.config_schema import unknown_config_paths
-from pilot.config.firewall_config import FirewallConfig, FirewallRule
+from pilot.config.firewall_config import FirewallConfig
 from pilot.config.gunicorn_config import GunicornConfig
 from pilot.config.letsencrypt_config import LetsEncryptConfig
 from pilot.config.mariadb_config import MariaDBConfig
@@ -19,7 +19,7 @@ from pilot.config.production_config import ProductionConfig
 from pilot.config.redis_config import RedisConfig
 from pilot.config.s3_config import S3Config
 from pilot.config.waf_config import WAF_MODES, WafConfig, parse_nginx_size
-from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.config.worker_config import WorkerConfig
 from pilot.exceptions import ConfigError
 
 _BENCH_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
@@ -90,16 +90,16 @@ class BenchConfig:
         ]
         mariadb = MariaDBConfig(**cls._known_fields(MariaDBConfig, data.get("mariadb", {})))
         postgres = PostgresConfig(**cls._known_fields(PostgresConfig, data.get("postgres", {})))
-        redis = cls._parse_redis(data.get("redis", {}))
-        workers = cls._parse_workers(data.get("workers", []))
-        production = cls._parse_production(data.get("production"))
-        monitor = cls._parse_monitor(data.get("monitor", {}))
-        gunicorn = cls._parse_gunicorn(data.get("gunicorn", {}), bench_data.get("http_port", 8000))
-        letsencrypt = cls._parse_letsencrypt(data.get("letsencrypt", {}))
-        admin = cls._parse_admin(data.get("admin", {}))
-        central = cls._parse_central(data.get("central", {}))
-        firewall = cls._parse_firewall(data.get("firewall"))
-        waf = cls._parse_waf(data.get("waf"))
+        redis = RedisConfig.from_dict(data.get("redis", {}))
+        workers = WorkerConfig.from_dict(data.get("workers", []))
+        production = ProductionConfig.from_dict(data.get("production"))
+        monitor = MonitorConfig.from_dict(data.get("monitor", {}))
+        gunicorn = GunicornConfig.from_dict(data.get("gunicorn", {}))
+        letsencrypt = LetsEncryptConfig.from_dict(data.get("letsencrypt", {}))
+        admin = AdminConfig.from_dict(data.get("admin", {}))
+        central = CentralConfig.from_dict(data.get("central", {}))
+        firewall = FirewallConfig.from_dict(data.get("firewall"))
+        waf = WafConfig.from_dict(data.get("waf"))
         s3 = S3Config(**cls._known_fields(S3Config, data.get("s3", {})))
         return cls(
             name=bench_data.get("name", ""),
@@ -144,145 +144,6 @@ class BenchConfig:
         paths = unknown_config_paths(data)
         if paths:
             raise ConfigError(f"bench.toml has unrecognized fields: {', '.join(paths)}")
-
-    @staticmethod
-    def _parse_redis(data: dict) -> RedisConfig:
-        return RedisConfig(
-            cache_port=data.get("cache_port", 13000),
-            queue_port=data.get("queue_port", 11000),
-            version=data.get("version"),
-        )
-
-    @staticmethod
-    def _parse_workers(data: list) -> WorkerConfig:
-        # [[workers]] array-of-tables: each group lists queues and a count.
-        if not isinstance(data, list) or not data:
-            return WorkerConfig()
-        groups = [
-            WorkerGroup(
-                queues=entry.get("queues", [entry.get("queue", "default")]),
-                count=entry.get("count", 1),
-            )
-            for entry in data
-        ]
-        return WorkerConfig(groups=groups)
-
-    @staticmethod
-    def _normalize_process_manager(value: str) -> str:
-        v = (value or "").strip().lower()
-        if v in ("", "none"):
-            return ""
-        if v == "supervisord":
-            return "supervisor"
-        return v
-
-    @staticmethod
-    def _parse_production(data: dict | None) -> ProductionConfig:
-        if data is None:
-            return ProductionConfig()
-        pm = BenchConfig._normalize_process_manager(str(data.get("process_manager", "")))
-        if "enabled" in data:
-            enabled = bool(data.get("enabled"))
-        else:
-            # Legacy: presence of a real process_manager implied production.
-            enabled = pm != ""
-        # Oldest format derived the manager from a `lightweight` flag.
-        if enabled and not pm and "lightweight" in data:
-            pm = "systemd" if data.get("lightweight", False) else "supervisor"
-        return ProductionConfig(
-            enabled=enabled,
-            process_manager=pm,
-            use_companion_manager=data.get("use_companion_manager", False),
-        )
-
-    @staticmethod
-    def _parse_monitor(data: dict) -> MonitorConfig:
-        return MonitorConfig(
-            system_log_path=Path(data.get("system_log_path", "/var/log/bench-system-stats.log")),
-            authority_file_path=Path(data.get("authority_file_path", "/var/log/.bench-authority")),
-            system_log_max_size=data.get("system_log_max_size", "500M"),
-            application_log_max_size=data.get("application_log_max_size", "500M"),
-            log_path=Path(data["log_path"]) if "log_path" in data else None,
-        )
-
-    @staticmethod
-    def _parse_gunicorn(data: dict, http_port: int = 8000) -> GunicornConfig:
-        d = GunicornConfig()
-        return GunicornConfig(
-            workers=data.get("workers", d.workers),
-            threads=data.get("threads", d.threads),
-            timeout=data.get("timeout", d.timeout),
-            worker_class=data.get("worker_class", d.worker_class),
-            malloc_arena_max=data.get("malloc_arena_max", d.malloc_arena_max),
-            max_requests=data.get("max_requests", d.max_requests),
-            max_requests_jitter=data.get("max_requests_jitter", d.max_requests_jitter),
-        )
-
-    @staticmethod
-    def _parse_letsencrypt(data: dict) -> LetsEncryptConfig:
-        webroot_path = data.get("webroot_path", "/var/www/letsencrypt")
-        return LetsEncryptConfig(
-            email=data.get("email", ""),
-            webroot_path=Path(webroot_path),
-        )
-
-    @staticmethod
-    def _parse_admin(data: dict) -> AdminConfig:
-        return AdminConfig(
-            port=data.get("port", 7000),
-            timeout=data.get("timeout", 180),
-            enabled=data.get("enabled", False),
-            password=data.get("password", ""),
-            jwt_secret=data.get("jwt_secret", ""),
-            jwks_url=data.get("jwks_url", ""),
-            jwks_audience=data.get("jwks_audience", ""),
-            domain=data.get("domain", ""),
-            tls=data.get("tls", False),
-            allow_bench_management=data.get("allow_bench_management", True),
-        )
-
-    @staticmethod
-    def _parse_central(data: dict) -> CentralConfig:
-        return CentralConfig(
-            endpoint=data.get("endpoint", ""),
-            auth_token=data.get("auth_token", ""),
-        )
-
-    @staticmethod
-    def _parse_firewall(data: dict | None) -> FirewallConfig:
-        if not data:
-            return FirewallConfig()
-        rules = [
-            FirewallRule(
-                ip=str(rule.get("ip", "")),
-                action=str(rule.get("action", "deny")),
-                description=str(rule.get("description", "")),
-            )
-            for rule in data.get("rules", [])
-        ]
-        return FirewallConfig(
-            enabled=bool(data.get("enabled", False)),
-            default=str(data.get("default", "allow")),
-            rules=rules,
-        )
-
-    @staticmethod
-    def _parse_waf(data: dict | None) -> WafConfig:
-        if not data:
-            return WafConfig()
-        # paranoia/inbound_threshold pass through unconverted so a hand-edited
-        # non-integer surfaces as a clean ConfigError in _validate_waf rather
-        # than a raw ValueError here.
-        return WafConfig(
-            enabled=bool(data.get("enabled", False)),
-            mode=str(data.get("mode", "DetectionOnly")),
-            paranoia=data.get("paranoia", 1),
-            inbound_threshold=data.get("inbound_threshold", 5),
-            body_limit=str(data.get("body_limit", "50m")),
-            inspect_responses=bool(data.get("inspect_responses", False)),
-            exclusions=[str(line) for line in data.get("exclusions", [])],
-            exempt_paths=[str(path) for path in data.get("exempt_paths", [])],
-        )
 
     def validate(self) -> None:
         self._validate_required_fields()

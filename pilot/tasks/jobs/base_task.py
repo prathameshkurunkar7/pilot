@@ -43,7 +43,6 @@ class BaseTask:
             )
 
     def _record_audit(self, category: str, fields: dict) -> None:
-        """Append an audit log entry; a logging failure must not fail the task."""
         from pilot.core.audit_log import AuditLog
 
         try:

@@ -120,10 +120,9 @@ class SetupProductionCommand(Command):
     def _resolve_target(self) -> None:
         """Apply --process-manager / --admin-domain to the in-memory config so the
         rest of setup operates on the requested target. The toml is written last."""
-        from pilot.config.bench_config import BenchConfig
-        from pilot.config.production_config import VALID_PROCESS_MANAGERS
+        from pilot.config.production_config import VALID_PROCESS_MANAGERS, ProductionConfig
 
-        pm = BenchConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager) or "systemd"
+        pm = ProductionConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager) or "systemd"
         if pm not in VALID_PROCESS_MANAGERS:
             raise BenchError(f"Invalid process manager '{pm}'. Must be one of {', '.join(VALID_PROCESS_MANAGERS)}.")
         self.bench.config.production.process_manager = pm
