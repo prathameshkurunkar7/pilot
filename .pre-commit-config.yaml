@@ -1,0 +1,36 @@
+exclude: 'node_modules'
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.22
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.3.0
+    hooks:
+      - id: mypy
+        args: [pilot, admin/backend]
+        pass_filenames: false
+        additional_dependencies:
+          - boto3==1.43.39
+          - flask>=3.0
+          - packaging
+          - psutil>=5.9
+          - psycopg2-binary>=2.9
+          - pyjwt[crypto]>=2.8
+          - pymysql>=1.1
+
+  - repo: local
+    hooks:
+      - id: biome-check
+        name: biome check
+        entry: admin/frontend/node_modules/.bin/biome check --write --files-ignore-unknown=true --no-errors-on-unmatched
+        language: system
+        types: [text]
+        files: "\\.(jsx?|tsx?|c(js|ts)|m(js|ts)|d\\.(ts|cts|mts)|jsonc?|css|svelte|vue|astro|graphql|gql)$"
+        require_serial: true

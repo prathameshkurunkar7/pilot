@@ -40,6 +40,25 @@
     "@babel/helper-string-parser" "^7.29.7"
     "@babel/helper-validator-identifier" "^7.29.7"
 
+"@biomejs/biome@2.5.4":
+  version "2.5.4"
+  resolved "https://registry.npmjs.org/@biomejs/biome/-/biome-2.5.4.tgz"
+  integrity sha512-xy5FNE5kQJKyK5MR1gJy6ztXYx4WBAbYGlK04lMEgmyPRWKybY9NFwiG9yo0XdzOU8Xvhj41u034J1ywfoWfMw==
+  optionalDependencies:
+    "@biomejs/cli-darwin-arm64" "2.5.4"
+    "@biomejs/cli-darwin-x64" "2.5.4"
+    "@biomejs/cli-linux-arm64" "2.5.4"
+    "@biomejs/cli-linux-arm64-musl" "2.5.4"
+    "@biomejs/cli-linux-x64" "2.5.4"
+    "@biomejs/cli-linux-x64-musl" "2.5.4"
+    "@biomejs/cli-win32-arm64" "2.5.4"
+    "@biomejs/cli-win32-x64" "2.5.4"
+
+"@biomejs/cli-linux-x64@2.5.4":
+  version "2.5.4"
+  resolved "https://registry.npmjs.org/@biomejs/cli-linux-x64/-/cli-linux-x64-2.5.4.tgz"
+  integrity sha512-FNxojWJkL7EajAuzBgoLe0T2G0y112M4lBrDIFl/DomFTx8yqenYOIdsRLNXvOvBBofE8hJi85LjzLmBDpY7/Q==
+
 "@codemirror/autocomplete@^6.0.0", "@codemirror/autocomplete@^6.20.3", "@codemirror/autocomplete@^6.3.2", "@codemirror/autocomplete@^6.7.1":
   version "6.20.3"
   resolved "https://registry.npmjs.org/@codemirror/autocomplete/-/autocomplete-6.20.3.tgz"
