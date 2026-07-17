@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from pilot.tasks.manager.worker_state import (
+from pilot.managers.task.worker_state import (
     WorkerIntent,
     WorkerStatus,
     WorkerStore,

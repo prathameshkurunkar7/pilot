@@ -16,7 +16,7 @@ class DependencyDeclarationsCheck:
     """Ensure hooks and pyproject.toml have sane dependency requirements."""
 
     def run(self, app: "App") -> None:
-        required_apps_from_hooks = self._get_hooks_required_apps(app)
+        required_apps_from_hooks = self.get_hooks_required_apps(app)
         declared_required_apps_in_pyproject = self._get_pyproject_required_apps(app)
 
         if "frappe" not in declared_required_apps_in_pyproject:
@@ -35,7 +35,7 @@ class DependencyDeclarationsCheck:
                 "missing from pyproject.toml's [tool.bench.frappe-dependencies]."
             )
 
-    def _get_hooks_required_apps(self, app: "App") -> list[str]:
+    def get_hooks_required_apps(self, app: "App") -> list[str]:
         """Parse hooks.py (guaranteed present by RepoStructureCheck) for required_apps."""
         hooks_path = module_path(app) / "hooks.py"
         tree = ast.parse(hooks_path.read_text(), filename=str(hooks_path))

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config.site import SiteConfig
 from pilot.exceptions import BenchError
+from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
@@ -104,6 +106,23 @@ class Site:
             stream_output=True,
         )
         self.bench.reload_workers(raises=True)
+
+    def install_app_with_dependencies(self, app: "App") -> list["App"]:
+        """Install `app` here, then resolve the hooks.py-declared dependencies
+        frappe's own install-app cascades onto this site — returned so callers
+        can build their assets too, since frappe's cascade doesn't report them
+        back."""
+        self.install_app(app)
+        from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
+
+        required = DependencyDeclarationsCheck().get_hooks_required_apps(app)
+        dependencies = []
+        for name in required:
+            try:
+                dependencies.append(self.bench.app(name))
+            except BenchError:
+                continue
+        return dependencies
 
     def uninstall_app(self, app: "App", force: bool = False) -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "uninstall-app", app.config.name, "--yes", "--no-backup")
@@ -298,21 +317,15 @@ class Site:
         add_hosts_entry(self.config.name)
 
     def _obtain_cert(self, on_progress: Callable[[str], None]) -> None:
-        import json
-
         from pilot.managers.letsencrypt import LetsEncryptManager
         from pilot.managers.nginx import NginxManager
-        from pilot.secure_files import write_private_text
 
         if not self.bench.config.production.enabled:
             return
 
         # Persist ssl=True so that generate_config(ssl_ready=True) below
         # produces an HTTPS block for this site (bench.sites() reads from disk).
-        config_path = self.path / "site_config.json"
-        raw = json.loads(config_path.read_text()) if config_path.exists() else {}
-        raw["ssl"] = True
-        write_private_text(config_path, json.dumps(raw, indent=1))
+        self.set_ssl(True)
 
         on_progress("Obtaining SSL certificate...")
         nginx_mgr = NginxManager(self.bench)
@@ -322,6 +335,9 @@ class Site:
         LetsEncryptManager(self.bench).obtain(self.config)
         nginx_mgr.generate_config(ssl_ready=True)
         nginx_mgr.reload()
+
+    def set_ssl(self, enabled: bool) -> None:
+        set_site_ssl_flag(self.bench.sites_path, self.config.name, enabled)
 
 
 def _validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
@@ -450,6 +466,34 @@ def query_installed_apps_via_db(site_config: dict) -> list[str] | None:
         return [line.strip() for line in result.stdout.splitlines() if line.strip()]
     except Exception:
         return None
+
+
+def set_site_ssl_flag(sites_root: Path, site_name: str, enabled: bool) -> None:
+    """Flip a site's `ssl` flag in its site_config.json, guarding against a
+    site name that would escape `sites_root` via a symlink or `..`. A plain
+    function (not a Site method) so it works from contexts — like a task
+    callback — that only have a bench_root and site name, not a live Bench."""
+    config_path = _safe_site_config_path(sites_root, site_name)
+    with exclusive_file_lock(config_path):
+        config = json.loads(config_path.read_text())
+        config["ssl"] = enabled
+        replace_private_text_locked(config_path, json.dumps(config, indent=1))
+
+
+def _safe_site_config_path(sites_root: Path, site_name: str) -> Path:
+    if sites_root.is_symlink():
+        raise BenchError("Site configuration path must stay within the bench.")
+    resolved_root = sites_root.resolve()
+    site_path = resolved_root / site_name
+    config_path = site_path / "site_config.json"
+    if (
+        site_path.is_symlink()
+        or site_path.resolve(strict=False).parent != resolved_root
+        or config_path.is_symlink()
+        or not config_path.is_file()
+    ):
+        raise BenchError("Site configuration is unavailable.")
+    return config_path
 
 
 def _query_installed_apps_via_frappe(bench_root: Path, site_name: str) -> list[str]:

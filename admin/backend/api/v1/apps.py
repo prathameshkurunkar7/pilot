@@ -9,7 +9,7 @@ from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.providers.apps import AppProvider
 from pilot.internal.validators import validate_app_name, validate_repo_url
 from pilot.internal.git import GitRepo
-from pilot.tasks.manager.task_runner import TaskRunner
+from pilot.tasks import TaskRunner
 
 apps_bp = Blueprint("apps", __name__)
 marketplace_bp = Blueprint("marketplace", __name__)

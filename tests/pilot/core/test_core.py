@@ -222,6 +222,83 @@ def test_app_update_with_commit_target_checks_out_advertised_commit(tmp_path: Pa
     assert app.installed_hash == target_sha
 
 
+def test_app_has_marketplace_update_false_when_pinned_tag_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch=""), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")
+    _tag(app.path, "v1.0.0")
+    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    entry = {
+        "repo": "https://github.com/frappe/myapp",
+        "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v1.0.0"}],
+    }
+
+    assert app.has_marketplace_update(entry) is False
+
+
+def test_app_has_marketplace_update_true_when_marketplace_tag_moved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch=""), bench)
+    app.path.mkdir(parents=True)
+    _init_git_repo(app.path)
+    _commit(app.path, "c1")
+    _tag(app.path, "v0.9.0")  # installed at the version's old tag
+    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "1.0.0")
+    entry = {
+        "repo": "https://github.com/frappe/myapp",
+        # Entries only ever advance — the tag for 1.0.0 has since moved.
+        "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v1.0.0"}],
+    }
+
+    assert app.has_marketplace_update(entry) is True
+
+
+def test_app_has_marketplace_update_falls_back_to_remote_check_on_repo_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A fork with a different repo URL isn't the marketplace's app.
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/someone/fork", branch=""), bench)
+    monkeypatch.setattr(App, "has_remote_update", lambda self: True)
+    entry = {
+        "repo": "https://github.com/frappe/myapp",
+        "targets": [{"version": "1.0.0", "target_type": "tag", "target": "v1.0.0"}],
+    }
+
+    assert app.has_marketplace_update(entry) is True
+
+
+def test_app_has_marketplace_update_falls_back_to_remote_check_when_not_in_marketplace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch=""), bench)
+    monkeypatch.setattr(App, "has_remote_update", lambda self: False)
+
+    assert app.has_marketplace_update(None) is False
+
+
+def test_app_has_marketplace_update_falls_back_to_remote_check_for_branch_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench = make_bench(tmp_path)
+    app = App(AppConfig(name="myapp", repo="https://github.com/frappe/myapp", branch="main"), bench)
+    monkeypatch.setattr("pilot.core.app.installed_app_version", lambda *_: "3.0.0")
+    monkeypatch.setattr(App, "has_remote_update", lambda self: True)
+    entry = {
+        "repo": "https://github.com/frappe/myapp",
+        "targets": [{"version": "3.0.0", "target_type": "branch", "target": "main"}],
+    }
+
+    assert app.has_marketplace_update(entry) is True
+
+
 def test_app_path_is_under_apps_directory(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     app_config = AppConfig(name="frappe", repo="https://example.com", branch="main")

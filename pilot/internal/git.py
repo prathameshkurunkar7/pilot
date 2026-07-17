@@ -79,6 +79,23 @@ class GitRepo:
         """Best-effort fetch from origin; returns False instead of raising on failure."""
         return self._run("fetch", "origin", *refspecs, "--quiet", timeout=timeout).returncode == 0
 
+    def abort_merge_rebase(self) -> None:
+        """Best-effort cleanup of an in-progress merge/rebase, e.g. before switching branches."""
+        self._run("merge", "--abort")
+        self._run("rebase", "--abort")
+
+    def stash_all(self) -> bool:
+        """Stash tracked and untracked changes; returns whether anything was stashed."""
+        result = self._run("stash", "--include-untracked")
+        return "No local changes" not in result.stdout
+
+    def stash_pop(self) -> None:
+        self._run("stash", "pop")
+
+    def checkout_new_branch(self, branch: str, start_point: str) -> bool:
+        """Create (or reset) `branch` to start at `start_point` and check it out."""
+        return self._run("checkout", "-B", branch, start_point).returncode == 0
+
     def set_remote_url(self, url: str) -> bool:
         """Point origin at *url*; returns False instead of raising on failure."""
         return self._run("remote", "set-url", "origin", url).returncode == 0

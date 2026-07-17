@@ -6,7 +6,7 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request, url_for
 
-from pilot.tasks.manager.task_reader import TaskReader
+from pilot.managers.task import TaskReader
 
 _MAX_PAGE_OFFSET = 10_000
 

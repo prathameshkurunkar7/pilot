@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from admin.backend.app import configure_idle_watchdog, create_app
-from pilot.tasks.manager.worker_registry import task_workers
+from pilot.managers.task import task_workers
 
 """WSGI entrypoint for running the admin under gunicorn.
 

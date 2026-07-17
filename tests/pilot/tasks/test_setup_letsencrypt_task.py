@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pilot.tasks.jobs.setup_letsencrypt_task import SetupLetsEncryptTask
+from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
 from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import BenchError
 from tests.pilot.commands.test_commands import make_bench
@@ -39,7 +39,7 @@ def test_production_preflight_runs_before_tls_configuration_changes(tmp_path: Pa
 
     with (
         patch(
-            "pilot.tasks.jobs.base_task.has_passwordless_sudo",
+            "pilot.managers.task.base_task.has_passwordless_sudo",
             return_value=False,
         ),
         patch("pilot.core.bench.Bench.setup_letsencrypt") as run,

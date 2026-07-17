@@ -4,8 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from pilot.tasks.manager.task_reader import TaskReader
-from pilot.tasks.manager.task_state import ACTIVE_TASK_STATUSES
+from pilot.managers.task import ACTIVE_TASK_STATUSES, TaskReader
 from pilot.core.site import query_installed_apps_via_db
 from pilot.internal.site_paths import resolve_site_path
 

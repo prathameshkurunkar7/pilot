@@ -13,7 +13,7 @@ from pilot.config.bench import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 from pilot.internal.site_paths import site_config_path, site_exists
 from pilot.internal.validators import validate_site_name
-from pilot.tasks.manager.task_runner import TaskRunner
+from pilot.tasks import TaskRunner
 from pilot.utils import normalize_host
 
 from admin.backend.api.responses import accepted_task_response, created_response, error_response

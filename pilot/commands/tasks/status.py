@@ -13,7 +13,7 @@ class TaskWorkerStatusCommand(Command):
     group: ClassVar[str] = "tasks"
 
     def run(self) -> None:
-        from pilot.tasks.manager.activity import TaskActivityReader
+        from pilot.managers.task.activity import TaskActivityReader
 
         activity = TaskActivityReader(self.bench.path).read()
         self.print(

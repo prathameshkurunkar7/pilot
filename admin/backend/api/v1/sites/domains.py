@@ -8,7 +8,8 @@ from flask import current_app, jsonify, request
 from pilot.exceptions import BenchError, ConfigError, DomainConflictError, DomainProviderError
 from pilot.internal.site_paths import site_config_path, site_exists
 from pilot.internal.validators import validate_email, validate_site_name
-from pilot.tasks.manager.task_runner import TaskCallback, TaskRunner
+from pilot.managers.task.runner import TaskCallback
+from pilot.tasks import TaskRunner
 
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.middleware import require_scope

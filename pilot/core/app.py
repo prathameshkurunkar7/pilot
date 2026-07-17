@@ -105,6 +105,26 @@ class App:
         hash = self.installed_hash
         return bool(hash) and hash.startswith(pin.ref)
 
+    def has_marketplace_update(self, marketplace_entry: dict | None) -> bool:
+        """Whether a newer version is available, per this app's entry in the
+        marketplace registry (matched by name+repo, if any), falling back to a
+        live remote-branch check when no marketplace entry covers the
+        installed version. Marketplace entries only ever advance, so a
+        different pin found there is always a forward one — comparing
+        against it locally is exact, no network round trip needed.
+        """
+        target = self._matching_marketplace_target(marketplace_entry)
+        pin = RevisionPin.from_marketplace_target(target) if target else None
+        if pin is not None:
+            return not self.is_on_revision(pin)
+        return self.has_remote_update()
+
+    def _matching_marketplace_target(self, marketplace_entry: dict | None) -> dict | None:
+        if not marketplace_entry or self.config.repo != marketplace_entry["repo"]:
+            return None
+        version = self.installed_version
+        return next((t for t in marketplace_entry["targets"] if t["version"] == version), None)
+
     def has_remote_update(self) -> bool:
         """Whether the tracked branch has commits on origin not yet pulled locally.
 
@@ -231,6 +251,24 @@ class App:
                 f"origin/{self.config.branch}",
             ]
         )
+
+    def switch_branch(self, branch: str) -> None:
+        """Fetch and move this app's clone to `branch`'s tip, restoring any
+        stashed changes first if the checkout fails. Raises BenchError on
+        failure; does not reinstall or rebuild assets — callers do that
+        afterwards via PythonEnvManager."""
+        if not self.is_cloned:
+            raise BenchError(f"'{self.config.name}' is not cloned at {self.path}")
+
+        repo = self._repo
+        repo.fetch("+refs/heads/*:refs/remotes/origin/*")
+        repo.abort_merge_rebase()
+        stashed = repo.stash_all()
+        if not repo.checkout_new_branch(branch, f"origin/{branch}"):
+            if stashed:
+                repo.stash_pop()
+            raise BenchError(f"Could not switch '{self.config.name}' to branch '{branch}'.")
+        self.config.branch = branch
 
     def _checkout_pinned_target(self, pin: RevisionPin) -> None:
         if pin.kind == "tag":

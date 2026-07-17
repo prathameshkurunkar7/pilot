@@ -1,4 +1,4 @@
-"""Tests for pilot.tasks.jobs.get_and_install_app_task.GetAndInstallAppTask.
+"""Tests for pilot.tasks.get_and_install_app.GetAndInstallAppTask.
 
 Only the requested app itself gets installed on sites — Frappe's own
 `site install-app` already cascades installing declared dependencies onto
@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pilot.tasks.jobs.get_and_install_app_task import GetAndInstallAppTask
+from pilot.tasks.get_and_install_app import GetAndInstallAppTask
 from pilot.core.site import Site
 from tests.pilot.commands.test_commands import make_bench
 

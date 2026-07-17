@@ -8,9 +8,8 @@ from flask import Blueprint, current_app, g, jsonify, request
 
 from admin.backend.api.responses import accepted_task_response, error_response, no_content_response
 from admin.backend.middleware import allow_during_setup, set_session_cookie
-from pilot.tasks.manager.task_reader import TaskReader
-from pilot.tasks.manager.task_runner import TaskRunner
-from pilot.tasks.manager.task_state import ACTIVE_TASK_STATUSES, TaskStatus
+from pilot.managers.task import ACTIVE_TASK_STATUSES, TaskReader, TaskStatus
+from pilot.tasks import TaskRunner
 from pilot.internal.validators import validate_branch_name, validate_repo_url
 from pilot.config.bench_toml_builder import (
     FRAMEWORK_BRANCHES,

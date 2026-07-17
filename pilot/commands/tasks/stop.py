@@ -13,7 +13,7 @@ class StopTaskWorkerCommand(Command):
     group: ClassVar[str] = "tasks"
 
     def run(self) -> None:
-        from pilot.tasks.manager.worker_state import WorkerIntent, WorkerStore
+        from pilot.managers.task.worker_state import WorkerIntent, WorkerStore
 
         WorkerStore(self.bench.path).write_intent(WorkerIntent.STOPPED)
         self.print("Task worker will stop after its current task.")

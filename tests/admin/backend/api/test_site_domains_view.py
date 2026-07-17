@@ -39,7 +39,7 @@ def _mocked_routes(domains=(), primary=None):
 
 def _request(client, method, path, **kwargs):
     with patch(
-        "pilot.tasks.manager.task_runner.task_workers.wake",
+        "pilot.managers.task.runner.task_workers.wake",
         return_value=False,
     ):
         return getattr(client, method)(path, **kwargs)

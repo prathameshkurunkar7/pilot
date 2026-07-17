@@ -31,7 +31,7 @@ def _make_cloned_app(bench_root: Path, name: str) -> None:
 
 def _post_install(client, **payload):
     with patch(
-        "pilot.tasks.manager.task_runner.task_workers.wake",
+        "pilot.managers.task.runner.task_workers.wake",
         return_value=False,
     ):
         return client.post("/api/v1/apps", json=payload)
@@ -160,7 +160,7 @@ def test_delete_app_queues_removal(tmp_path: Path) -> None:
     client = _client(bench_root)
 
     with patch(
-        "pilot.tasks.manager.task_runner.task_workers.wake",
+        "pilot.managers.task.runner.task_workers.wake",
         return_value=False,
     ):
         response = client.delete("/api/v1/apps/suite")

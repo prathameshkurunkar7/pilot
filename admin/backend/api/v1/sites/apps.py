@@ -8,7 +8,7 @@ from pilot.exceptions import BenchError
 from pilot.integrations.git import GitProviderError, resolve_app_name_from_repo
 from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_app_name
-from pilot.tasks.manager.task_runner import TaskRunner
+from pilot.tasks import TaskRunner
 
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.middleware import require_scope

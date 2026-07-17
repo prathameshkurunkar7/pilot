@@ -1,4 +1,4 @@
-"""Tests for pilot.tasks.jobs.install_app_task.InstallAppTask.
+"""Tests for pilot.tasks.install_app.InstallAppTask.
 
 Must delegate to Site.install_app (the standard install-app path — it also
 reloads workers afterward), not a hand-rolled subprocess call. Site's own
@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pilot.tasks.jobs.install_app_task import InstallAppTask
+from pilot.tasks.install_app import InstallAppTask
 from pilot.core.site import Site
 from pilot.exceptions import CommandError
 from tests.pilot.commands.test_commands import make_bench

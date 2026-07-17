@@ -6,7 +6,7 @@ from flask import current_app, jsonify, request, send_file
 
 from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_cron_expression
-from pilot.tasks.manager.task_runner import TaskRunner
+from pilot.tasks import TaskRunner
 
 from admin.backend.api.responses import accepted_task_response, error_response, no_content_response
 from admin.backend.middleware import require_scope
@@ -123,7 +123,7 @@ def _backup_cron_command(bench_root: Path, site: str) -> str:
     import sys
 
     log_file = bench_root / "logs" / f"backup-{site}.log"
-    return f"{sys.executable} -m pilot.tasks.jobs.backup_site_task {bench_root} {site} --with-files >> {log_file} 2>&1"
+    return f"{sys.executable} -m pilot.tasks.backup_site {bench_root} {site} --with-files >> {log_file} 2>&1"
 
 
 def _retention_from_payload(block: dict | None):
