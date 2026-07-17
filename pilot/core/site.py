@@ -120,6 +120,22 @@ class Site:
             return []
         return [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
 
+    def installed_apps(self) -> list[str]:
+        """Installed app names for this site, using the fastest available
+        method (site_config.json's cache, then a direct DB query, then a
+        frappe subprocess) — cheaper than list_apps() for read-heavy callers
+        like the admin API."""
+        import json
+
+        config_path = self.path / "site_config.json"
+        if not config_path.exists():
+            raise BenchError(f"Site '{self.config.name}' does not exist.")
+        try:
+            site_config = json.loads(config_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            site_config = {}
+        return list_installed_apps(site_config, self.bench.path, self.config.name)
+
     def migrate(self, skip_failing: bool = False) -> None:
         cmd = self._frappe_call("frappe", "--site", self.config.name, "migrate")
         if skip_failing:
@@ -385,3 +401,92 @@ def _register_with_provider(bench: "Bench", name: str) -> None:
     from pilot.core.domains import DomainRouteProvider
 
     DomainRouteProvider(bench).register(name, name)
+
+
+_DB_SOCKET_CANDIDATES = [
+    "/var/run/mysqld/mysqld.sock",
+    "/run/mysqld/mysqld.sock",
+    "/tmp/mysql.sock",
+    "/usr/local/var/mysql/mysql.sock",
+]
+
+
+def list_installed_apps(site_config: dict, bench_root: Path, site_name: str) -> list[str]:
+    """Return installed app names for a site, using the fastest available method."""
+    # Fast path: frappe keeps this in sync after install/uninstall (v16+).
+    if isinstance(site_config.get("installed_apps"), list):
+        return site_config["installed_apps"]
+    # Fallback: query DB directly, then frappe subprocess.
+    apps = query_installed_apps_via_db(site_config)
+    if apps is not None:
+        return apps
+    return _query_installed_apps_via_frappe(bench_root, site_name)
+
+
+def query_installed_apps_via_db(site_config: dict) -> list[str] | None:
+    import subprocess
+
+    db_name = site_config.get("db_name", "")
+    db_password = site_config.get("db_password", "")
+    db_host = site_config.get("db_host") or "localhost"
+    db_port = int(site_config.get("db_port") or 3306)
+    if not db_name or not db_password:
+        return None
+
+    import shutil
+
+    cli = shutil.which("mariadb") or shutil.which("mysql")
+    if not cli:
+        return None
+
+    conn_args = [f"--user={db_name}", f"--password={db_password}"]
+    if db_host in ("localhost", "127.0.0.1", ""):
+        socket_path = next((s for s in _DB_SOCKET_CANDIDATES if Path(s).exists()), None)
+        if socket_path:
+            conn_args.append(f"--socket={socket_path}")
+        else:
+            conn_args += [f"--host=127.0.0.1", f"--port={db_port}"]
+    else:
+        conn_args += [f"--host={db_host}", f"--port={db_port}"]
+
+    try:
+        result = subprocess.run(
+            [
+                cli, *conn_args,
+                "--batch", "--skip-column-names",
+                db_name,
+                "-e", "SELECT app_name FROM `tabInstalled Application` ORDER BY idx",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    except Exception:
+        return None
+
+
+def _query_installed_apps_via_frappe(bench_root: Path, site_name: str) -> list[str]:
+    import os
+    import subprocess
+
+    python = str(bench_root / "env" / "bin" / "python")
+    sites_dir = str(bench_root / "sites")
+    try:
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        result = subprocess.run(
+            [python, "-m", "frappe.utils.bench_helper", "frappe", "--site", site_name, "list-apps"],
+            cwd=sites_dir,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=env,
+        )
+        if result.returncode != 0:
+            return []
+        return [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
+    except Exception:
+        return []
