@@ -22,6 +22,28 @@ class Bench:
         self.path = path
         self._db: "Database | None" = None
 
+    @classmethod
+    def create_at(
+        cls,
+        target_directory: Path,
+        name: str,
+        process_manager: str = "",
+        admin_domain: str = "",
+        admin_tls: bool | None = None,
+        db_type: str = "mariadb",
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> "Bench":
+        from pilot.core.bench_creator import BenchCreator
+
+        return BenchCreator(
+            target_directory,
+            name,
+            process_manager=process_manager,
+            admin_domain=admin_domain,
+            admin_tls=admin_tls,
+            db_type=db_type,
+        ).run(on_progress)
+
     @property
     def db(self) -> "Database":
         if self._db is None:
@@ -231,6 +253,150 @@ class Bench:
         manager.write_config()
         manager.reload_manager_config()
         manager.restart()
+
+    def remove_production(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Tear down the production deployment (process manager, nginx) but
+        keep logs, certificates, and the admin domain so it can be
+        redeployed without reconfiguration."""
+        prod = self.config.production
+        if not prod.enabled:
+            on_progress(f"Bench {self.config.name} is not deployed to production. Nothing to remove.")
+            return
+
+        self._remove_process_manager(prod.process_manager)
+        self._remove_nginx(on_progress)
+        self._persist_production_disabled()
+        self._report_removed_production(on_progress)
+
+    def _remove_process_manager(self, pm: str) -> None:
+        if pm == "systemd":
+            from pilot.managers.processes.systemd import SystemdProcessManager
+
+            SystemdProcessManager(self).remove_units()
+        else:
+            from pilot.managers.processes.supervisor import SupervisorProcessManager
+
+            SupervisorProcessManager(self).shutdown()
+
+    def _remove_nginx(self, on_progress: Callable[[str], None]) -> None:
+        from pilot.managers.nginx import NginxManager
+
+        try:
+            NginxManager(self).uninstall_config()
+        except Exception as exc:  # nginx not installed / already gone — non-fatal
+            on_progress(f"  (nginx cleanup skipped: {exc})")
+
+    def _persist_production_disabled(self) -> None:
+        from pilot.config.toml_store import BenchTomlStore
+
+        store = BenchTomlStore.for_bench(self.path)
+        with store.edit_raw() as data:
+            production = data.setdefault("production", {})
+            production["enabled"] = False
+            production.pop("process_manager", None)
+            production.pop("nginx", None)
+
+    def _report_removed_production(self, on_progress: Callable[[str], None]) -> None:
+        from pilot.admin_url import admin_url
+
+        name = self.config.name
+        # enabled is now false in-memory too, so admin_url() returns the dev URL.
+        self.config.production.enabled = False
+        self.config.production.process_manager = ""
+        on_progress(f"\nProduction deployment removed for {name}.")
+        on_progress("\nRun it locally with:")
+        on_progress(f"  bench -b {name} start")
+        on_progress("\nDevelopment admin:")
+        on_progress(f"  {admin_url(self.config)}")
+
+    def drop(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        """Delete this bench (must have no sites): tear down production
+        services, nginx, and the admin domain route, then remove its
+        directory. Raises if any sites still exist."""
+        import shutil
+
+        name = self.config.name
+        self.ensure_no_sites()
+        self.remove_production(on_progress)
+        self._release_admin_domain()
+        # No per-bench database to tear down: every bench for this OS user
+        # shares one MariaDB/PostgreSQL server, and ensure_no_sites above
+        # already guarantees this bench has no sites — and therefore no
+        # databases — left.
+        self._unmount_legacy_bind_mount(self.path)
+        on_progress(f"Deleting {self.path}...")
+        shutil.rmtree(self.path, ignore_errors=True)
+        on_progress(f"\nBench '{name}' dropped.")
+
+    def ensure_no_sites(self) -> None:
+        sites = self.sites()
+        if sites:
+            listed = ", ".join(s.config.name for s in sites)
+            raise BenchError(
+                f"Bench '{self.config.name}' still has {len(sites)} site(s): {listed}. "
+                f"Drop them first, then retry."
+            )
+
+    def _release_admin_domain(self) -> None:
+        """Release the admin domain that setup-production registered with the domain
+        provider, so dropping the bench leaves no dead route at the edge."""
+        from pilot.core.domains import DomainRouteProvider
+
+        domain = self.config.admin.domain
+        if domain:
+            DomainRouteProvider(self).release(domain)
+
+    @staticmethod
+    def _unmount_legacy_bind_mount(target: Path, fstab_path: Path = Path("/etc/fstab")) -> None:
+        """Unmount `target` and drop its fstab entry if present.
+
+        Benches created before ZFS/volume support was removed may still have
+        their directory (or a dedicated MariaDB datadir) bind-mounted from an
+        old dataset, with a matching fstab line so it survived reboots. This
+        doesn't depend on ZFS or any volume-management code being present —
+        it only looks at whether `target` is currently a mountpoint — so it's
+        a no-op, and safe to call unconditionally, for any bench that was
+        never volume-backed.
+        """
+        import subprocess
+
+        from pilot.managers.platform import _privileged
+
+        try:
+            is_mounted = target.is_mount()
+        except OSError:
+            is_mounted = False
+        if is_mounted:
+            print(f"Unmounting legacy bind mount at {target}...", flush=True)
+            try:
+                subprocess.run(_privileged(["umount", "-l", str(target)]), check=False)
+            except Exception as exc:
+                print(f"  (unmount {target} skipped: {exc})")
+
+        try:
+            lines = fstab_path.read_text().splitlines()
+        except OSError:
+            return
+        kept = [
+            line for line in lines
+            if not (
+                len(line.split()) >= 2
+                and not line.lstrip().startswith("#")
+                and line.split()[1] == str(target)
+            )
+        ]
+        if len(kept) == len(lines):
+            return
+        content = "\n".join(kept) + "\n"
+        try:
+            subprocess.run(
+                _privileged(["tee", str(fstab_path)]),
+                input=content.encode(),
+                capture_output=True,
+                check=True,
+            )
+        except Exception as exc:
+            print(f"  (fstab cleanup for {target} skipped: {exc})")
 
     def setup_nginx(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         from pilot.exceptions import ConfigError

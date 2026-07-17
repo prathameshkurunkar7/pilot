@@ -70,9 +70,10 @@ def test_new_command_creates_benches_dir_if_missing(tmp_path: Path, monkeypatch:
 
 def test_new_command_first_bench_uses_default_ports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     target = tmp_path / "benches" / "my-bench"
     NewCommand(target, "my-bench").run()
 
@@ -86,9 +87,10 @@ def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: 
     """Every port field must shift by the same offset — a regression guard
     for a bug where admin_port got the offset applied twice."""
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "first", "first").run()
     NewCommand(benches_dir / "second", "second").run()
@@ -106,10 +108,11 @@ def test_new_command_inherits_sibling_jwks_url_and_audience(tmp_path: Path, monk
     """The remote JWKS issuer is server-wide, so a new bench carries both the
     URL and the audience forward from a sibling that already trusts one."""
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
     from pilot.config.toml_store import BenchTomlStore
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "first", "first").run()
     store = BenchTomlStore.for_bench(benches_dir / "first")
@@ -128,9 +131,10 @@ def test_new_command_inherits_sibling_jwks_url_and_audience(tmp_path: Path, monk
 
 def test_new_command_first_bench_has_no_jwks_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     target = tmp_path / "benches" / "only"
     NewCommand(target, "only").run()
     with open(target / "bench.toml", "rb") as f:
@@ -142,9 +146,10 @@ def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     password (there's no dedicated cluster/instance anymore — one shared
     server per OS user)."""
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "pg", "pg", db_type="postgres").run()
 
@@ -159,9 +164,10 @@ def test_new_command_second_postgres_bench_inherits_password(tmp_path: Path, mon
     bench must reuse the password that already secured it — not a fresh
     random one that would lock it out."""
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "pg1", "pg1", db_type="postgres").run()
     NewCommand(benches_dir / "pg2", "pg2", db_type="postgres").run()
@@ -178,9 +184,10 @@ def test_new_command_postgres_port_is_not_offset_between_benches(tmp_path: Path,
     postgres.port must stay identical across benches — unlike http_port/redis
     ports, which are offset per bench. Mirrors the equivalent mariadb test."""
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "first", "first", db_type="postgres").run()
     NewCommand(benches_dir / "second", "second", db_type="postgres").run()
@@ -196,10 +203,11 @@ def test_new_command_postgres_port_ignores_live_scan_on_macos(tmp_path: Path, mo
     (`brew services start`, no -p override) — the actual server always binds
     to its own default regardless of config. Mirrors the mariadb version."""
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     # 5432 reads as live, which would normally push the picker to 5433+.
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: port == 5432))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: port == 5432))
     with patch("pilot.managers.platform.is_macos", return_value=True):
         NewCommand(tmp_path / "benches" / "pg", "pg", db_type="postgres").run()
 
@@ -210,9 +218,10 @@ def test_new_command_postgres_port_ignores_live_scan_on_macos(tmp_path: Path, mo
 
 def test_new_command_mariadb_bench_has_no_postgres_password(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     NewCommand(tmp_path / "benches" / "m", "m").run()
 
     with open(tmp_path / "benches" / "m" / "bench.toml", "rb") as f:
@@ -226,9 +235,10 @@ def test_new_command_mariadb_port_is_not_offset_between_benches(tmp_path: Path, 
     must stay identical across benches — unlike http_port/redis ports, which
     are offset per bench."""
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "first", "first").run()
     NewCommand(benches_dir / "second", "second").run()
@@ -245,10 +255,11 @@ def test_new_command_mariadb_port_ignores_live_scan_on_macos(tmp_path: Path, mon
     binds to its own default regardless of config. Scanning for a "free" port
     there would record a value nothing will ever actually bind to."""
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     # 3306 reads as live, which would normally push the picker to 3307+.
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: port == 3306))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: port == 3306))
     with patch("pilot.managers.platform.is_macos", return_value=True):
         NewCommand(tmp_path / "benches" / "m", "m").run()
 
@@ -263,9 +274,10 @@ def test_new_command_second_mariadb_bench_inherits_password(tmp_path: Path, monk
     default, which would reset (and lock bench 1 out of) a server a sibling
     already secured with a different password."""
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: False))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     benches_dir = tmp_path / "benches"
     NewCommand(benches_dir / "m1", "m1").run()
     with open(benches_dir / "m1" / "bench.toml", "rb") as f:
@@ -284,9 +296,10 @@ def test_new_command_skips_offset_with_live_port(tmp_path: Path, monkeypatch: py
     """An orphaned process holding a port with no matching bench.toml must
     also be avoided, not just offsets already on disk."""
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: port == 8000))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: port == 8000))
 
     target = tmp_path / "benches" / "my-bench"
     NewCommand(target, "my-bench").run()
@@ -301,13 +314,14 @@ def test_new_command_skips_offset_with_live_admin_internal_port(tmp_path: Path, 
     socket-activated admin — a sibling live there must be avoided even though
     it isn't one of the stored port fields checked directly."""
     from pilot.commands.bench.create import NewCommand
+    from pilot.core.bench_creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     # 7001 is admin.port(7000) + 1 at offset 0 — without the internal-port
     # check, offset 0 would be wrongly accepted since nothing else probes it.
     # (It also collides with the plain admin.port base check one offset later,
     # at offset 1, which is why the picker lands on offset 2, not 1.)
-    monkeypatch.setattr(NewCommand, "_port_is_live", staticmethod(lambda port: port == 7001))
+    monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: port == 7001))
 
     target = tmp_path / "benches" / "my-bench"
     NewCommand(target, "my-bench").run()
@@ -1094,19 +1108,19 @@ def _drop_config(name: str) -> BenchConfig:
 def test_unmount_legacy_bind_mount_noop_when_not_mounted(tmp_path: Path) -> None:
     """A bench that was never volume-backed has nothing mounted at its dir, so
     this must be a silent no-op — no sudo calls, no fstab rewrite."""
-    from pilot.commands.bench.delete import DropBenchCommand
+    from pilot.core.bench import Bench
 
     target = tmp_path / "not-a-mountpoint"
     target.mkdir()
-    with patch("pilot.commands.bench.delete.subprocess.run") as run:
-        DropBenchCommand._unmount_legacy_bind_mount(target)
+    with patch("subprocess.run") as run:
+        Bench._unmount_legacy_bind_mount(target)
     run.assert_not_called()
 
 
 def test_unmount_legacy_bind_mount_unmounts_and_cleans_fstab(tmp_path: Path) -> None:
     """A leftover ZFS-era bind mount must be unmounted and its fstab line
     dropped, without depending on any ZFS/volume code being present."""
-    from pilot.commands.bench.delete import DropBenchCommand
+    from pilot.core.bench import Bench
 
     target = tmp_path / "old-bench"
     target.mkdir()
@@ -1124,9 +1138,9 @@ def test_unmount_legacy_bind_mount_unmounts_and_cleans_fstab(tmp_path: Path) -> 
             fstab.write_bytes(kwargs["input"])
         return MagicMock(returncode=0)
 
-    with patch("pilot.commands.bench.delete.subprocess.run", side_effect=fake_run), \
+    with patch("subprocess.run", side_effect=fake_run), \
          patch.object(Path, "is_mount", return_value=True):
-        DropBenchCommand._unmount_legacy_bind_mount(target, fstab_path=fstab)
+        Bench._unmount_legacy_bind_mount(target, fstab_path=fstab)
 
     assert ["sudo", "umount", "-l", str(target)] in calls
     assert fstab.read_text() == "UUID=abc / ext4 defaults 0 1\n"

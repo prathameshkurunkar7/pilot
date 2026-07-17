@@ -297,7 +297,7 @@ def test_api_benches_create_does_not_prompt_for_system_privileges(tmp_path: Path
     with (
         patch("admin.backend.providers.bench.BenchProvider.is_production", new_callable=PropertyMock, return_value=True),
         patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
-        patch("admin.backend.api.v1.benches.NewCommand.run") as create,
+        patch("admin.backend.api.v1.benches.Bench.create_at") as create,
         patch(
             "pilot.core.domains.DomainRouteProvider.wildcard_domains",
             return_value=[],
@@ -720,7 +720,7 @@ def test_api_benches_drop_runs_pilot(tmp_path: Path) -> None:
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
     with (
-        patch("admin.backend.api.v1.benches.DropBenchCommand.run") as drop,
+        patch("admin.backend.api.v1.benches.Bench.drop") as drop,
         patch("pilot.managers.platform.has_passwordless_sudo", return_value=True),
     ):
         resp = client.delete("/api/v1/benches/prod-bench")
@@ -737,7 +737,7 @@ def test_api_benches_drop_does_not_prompt_for_system_privileges(tmp_path: Path) 
 
     with (
         patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
-        patch("admin.backend.api.v1.benches.DropBenchCommand.run") as drop,
+        patch("admin.backend.api.v1.benches.Bench.drop") as drop,
     ):
         resp = client.delete("/api/v1/benches/prod-bench")
 
