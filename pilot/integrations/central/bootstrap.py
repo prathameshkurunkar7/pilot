@@ -5,7 +5,7 @@ import urllib.error
 import urllib.request
 from typing import TYPE_CHECKING, Any
 
-from pilot.core.central_client import CentralClientError, _message
+from pilot.integrations.central.client import CentralClientError, _message
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench

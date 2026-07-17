@@ -113,7 +113,7 @@ def test_heartbeat_sends_x_pilot_token_and_returns_echo(tmp_path: Path) -> None:
         captured["headers"] = dict(request.headers)
         return _FakeResponse({"ok": True, "team": "TEAM-1", "pilot_credential_id": "pcred-x"})
 
-    with patch("pilot.integrations.central.urllib.request.urlopen", side_effect=fake_urlopen):
+    with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
         result = CentralClient(bench).heartbeat()
 
     assert result["team"] == "TEAM-1"
@@ -136,7 +136,7 @@ def test_forward_unwraps_message_and_targets_method_path(tmp_path: Path) -> None
 		captured["headers"] = dict(request.headers)
 		return _FakeResponse({"message": {"currency": "INR"}})
 
-	with patch("pilot.core.central_client.urllib.request.urlopen", side_effect=fake_urlopen):
+	with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
 		result = CentralClient(bench).forward(
 			"central.billing.api.billing_api.change_plan", "POST", {"plan": "biz"}
 		)
@@ -164,7 +164,7 @@ def test_heartbeat_wraps_non_json_response(tmp_path: Path) -> None:
         def __exit__(self, *exc) -> bool:
             return False
 
-    with patch("pilot.integrations.central.urllib.request.urlopen", return_value=_HtmlResponse()):
+    with patch("pilot.integrations.central.client.urllib.request.urlopen", return_value=_HtmlResponse()):
         with pytest.raises(CentralClientError):
             CentralClient(bench).heartbeat()
 
@@ -174,7 +174,7 @@ def test_heartbeat_wraps_non_json_response(tmp_path: Path) -> None:
 
 def _app_client(bench_root: Path):
 	from admin.backend.app import create_app
-	from pilot.commands.generate_session import ensure_jwt_secret, issue_token
+	from pilot.commands.admin.generate_session import ensure_jwt_secret, issue_token
 	from pilot.config.bench_toml_builder import BenchTomlBuilder
 
 	bench_root.mkdir(parents=True, exist_ok=True)
@@ -192,9 +192,9 @@ def _app_client(bench_root: Path):
 def test_proxy_forwards_allowlisted_billing_method(tmp_path: Path) -> None:
 	client = _app_client(tmp_path / "bench")
 	with patch(
-		"admin.backend.views.central_proxy.CentralClient.forward", return_value={"currency": "INR"}
+		"admin.backend.api.v1.sites.central.CentralClient.forward", return_value={"currency": "INR"}
 	) as fwd:
-		resp = client.get("/api/sites/s1.localhost/central/central.billing.api.billing_api.get_billing_summary")
+		resp = client.get("/api/v1/sites/s1.localhost/central/central.billing.api.billing_api.get_billing_summary")
 
 	assert resp.status_code == 200
 	assert resp.get_json() == {"currency": "INR"}
@@ -204,8 +204,8 @@ def test_proxy_forwards_allowlisted_billing_method(tmp_path: Path) -> None:
 
 def test_proxy_rejects_non_allowlisted_method(tmp_path: Path) -> None:
 	client = _app_client(tmp_path / "bench")
-	with patch("admin.backend.views.central_proxy.CentralClient.forward") as fwd:
-		resp = client.get("/api/sites/s1.localhost/central/central.api.teams.delete_team")
+	with patch("admin.backend.api.v1.sites.central.CentralClient.forward") as fwd:
+		resp = client.get("/api/v1/sites/s1.localhost/central/central.api.teams.delete_team")
 
 	assert resp.status_code == 403
 	fwd.assert_not_called()

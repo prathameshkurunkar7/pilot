@@ -35,7 +35,7 @@ class EnrollCommand(Command):
         self.seed_file = seed_file
 
     def run(self) -> None:
-        from pilot.core.central_bootstrap import default_seed_path, enroll_if_needed, seed, seed_from_metadata
+        from pilot.integrations.central import default_seed_path, enroll_if_needed, seed, seed_from_metadata
 
         # Seed order: explicit args → --seed-file → the canonical metadata path, so a bare
         # `bench enroll` on first boot picks up whatever VM metadata dropped there.

@@ -2,20 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import current_app, jsonify, request
 
-from admin.backend.auth import require_scope
+from admin.backend.api.responses import error_response
+from admin.backend.middleware import require_scope
 
-from pilot.core.central_client import CentralClient, CentralClientError
+from admin.backend.api.v1.sites import sites_bp
+from admin.backend.api.v1.sites.shared import site_name
 
-site_name = lambda kw: kw["name"]
+from pilot.integrations.central import CentralClient, CentralClientError
 
 # Transparent, allowlisted proxy: a site calls `sites/<site>/central/<method>` and the pilot
 # forwards it to Central with its X-Pilot-Token (Central resolves team/asset from the credential).
-central_proxy_bp = Blueprint("central_proxy", __name__)
-
-# A site may reach only Central's billing facade + the heartbeat probe. config/enroll are
-# excluded — those are the pilot's own boot-time calls, not something a site should trigger.
 _ALLOWED_PREFIXES = ("central.billing.api.billing_api.",)
 _ALLOWED_EXACT = frozenset({"central.api.pilot.heartbeat"})
 
@@ -33,13 +31,15 @@ def _central() -> CentralClient:
     return CentralClient(bench)
 
 
-@central_proxy_bp.route("/<name>/central/<path:method_path>", methods=["GET", "POST"])
+@sites_bp.get("/<name>/central/<path:method_path>")
+@sites_bp.post("/<name>/central/<path:method_path>")
 @require_scope(site_name)
-def proxy(name: str, method_path: str):
+def central_proxy(name: str, method_path: str):
+    # config/enroll are excluded — those are the pilot's own boot-time calls, not a site's.
     if not _is_allowed(method_path):
-        return jsonify({"error": f"Central method '{method_path}' is not permitted."}), 403
+        return error_response("central_method_forbidden", f"Central method '{method_path}' is not permitted.", 403)
     data = request.get_json(silent=True) if request.method == "POST" else None
     try:
         return jsonify(_central().forward(method_path, request.method, data))
     except CentralClientError as exc:
-        return jsonify({"error": str(exc)}), 502
+        return error_response("central_unreachable", str(exc), 502)

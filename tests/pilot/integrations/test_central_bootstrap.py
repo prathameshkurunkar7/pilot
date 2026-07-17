@@ -7,9 +7,9 @@ from unittest.mock import patch
 import pytest
 
 from pilot.config.toml_store import BenchTomlStore
-from pilot.core.central_bootstrap import enroll_if_needed, seed, seed_from_metadata
-from pilot.core.central_client import CentralClientError
-from tests.test_central_client import _FakeResponse, _bench
+from pilot.integrations.central import enroll_if_needed, seed, seed_from_metadata
+from pilot.integrations.central import CentralClientError
+from tests.pilot.integrations.test_central_client import _FakeResponse, _bench
 
 # The enroll response Central returns (already unwrapped from Frappe's {"message": ...}).
 _ENROLL_RESULT = {
@@ -49,7 +49,7 @@ def test_enroll_exchanges_seed_and_persists_credential_and_jwks(tmp_path: Path) 
         captured["headers"] = dict(request.headers)
         return _FakeResponse({"message": _ENROLL_RESULT})
 
-    with patch("pilot.core.central_bootstrap.urllib.request.urlopen", side_effect=fake_urlopen):
+    with patch("pilot.integrations.central.bootstrap.urllib.request.urlopen", side_effect=fake_urlopen):
         enrolled = enroll_if_needed(bench)
 
     assert enrolled is True
@@ -79,7 +79,7 @@ def test_seed_then_enroll_from_scratch(tmp_path: Path) -> None:
     seed(bench, "https://central.test", "boot-xyz")
     assert bench.config.central.bootstrap_token == "boot-xyz"
 
-    with patch("pilot.core.central_bootstrap.urllib.request.urlopen",
+    with patch("pilot.integrations.central.bootstrap.urllib.request.urlopen",
                return_value=_FakeResponse({"message": _ENROLL_RESULT})):
         assert enroll_if_needed(bench) is True
 
@@ -105,14 +105,14 @@ def test_seed_from_metadata_stages_a_boot_time_seed(tmp_path: Path) -> None:
 def test_bare_enroll_command_reads_the_canonical_seed_path(tmp_path: Path, monkeypatch) -> None:
     """A bare `bench enroll` (the golden-image boot unit) auto-reads the seed VM metadata
     dropped at the canonical path — no arguments needed."""
-    from pilot.commands.enroll import EnrollCommand
+    from pilot.commands.admin.enroll import EnrollCommand
 
     bench = _bench(tmp_path)
     seed_path = tmp_path / "central-seed.json"
     seed_path.write_text(json.dumps({"central_endpoint": "https://central.test", "bootstrap_token": "boot-boot"}))
     monkeypatch.setenv("PILOT_SEED_PATH", str(seed_path))
 
-    with patch("pilot.core.central_bootstrap.urllib.request.urlopen",
+    with patch("pilot.integrations.central.bootstrap.urllib.request.urlopen",
                return_value=_FakeResponse({"message": _ENROLL_RESULT})):
         EnrollCommand(bench).run()  # no --endpoint / --bootstrap-token / --seed-file
 
@@ -124,7 +124,7 @@ def test_enroll_is_a_noop_when_already_enrolled(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     _seed(bench, bootstrap_token="", auth_token="already-have-one")
 
-    with patch("pilot.core.central_bootstrap.urllib.request.urlopen") as urlopen:
+    with patch("pilot.integrations.central.bootstrap.urllib.request.urlopen") as urlopen:
         assert enroll_if_needed(bench) is False
 
     urlopen.assert_not_called()
@@ -141,7 +141,7 @@ def test_enroll_rejects_an_incomplete_response(tmp_path: Path) -> None:
     _seed(bench)
     incomplete = {"auth_token": "t"}  # no jwks_url / audience_id
 
-    with patch("pilot.core.central_bootstrap.urllib.request.urlopen",
+    with patch("pilot.integrations.central.bootstrap.urllib.request.urlopen",
                return_value=_FakeResponse({"message": incomplete})):
         with pytest.raises(CentralClientError, match="missing"):
             enroll_if_needed(bench)

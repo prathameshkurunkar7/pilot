@@ -15,8 +15,7 @@ class CentralClientError(Exception):
 
 
 def _message(payload: Any) -> Any:
-    """Unwrap Frappe's ``{"message": ...}`` envelope that whitelisted methods return,
-    tolerating a bare body (e.g. the heartbeat's identity echo)."""
+    """Unwrap Frappe's ``{"message": ...}`` envelope that whitelisted methods return"""
     if isinstance(payload, dict) and "message" in payload:
         return payload["message"]
     return payload
