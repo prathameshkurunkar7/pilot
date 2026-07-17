@@ -201,17 +201,22 @@ class Bench:
         redis_cache = f"redis://localhost:{r.cache_port}"
         redis_queue = f"redis://localhost:{r.queue_port}"
         redis_socketio = redis_cache
-        # Enable monitoring by default on all the sites on the bench
-        config = {
-            "redis_cache": redis_cache,
-            "redis_queue": redis_queue,
-            "redis_socketio": redis_socketio,
-            "socketio_port": self.config.socketio_port,
-            "webserver_port": self.config.http_port,
-            "socketio_backend": self.config.socketio_backend,
-            "monitor": True,
-        }
         config_path = self.sites_path / "common_site_config.json"
+        # Merge over the existing file so keys added via `frappe set-config -g`
+        # survive regeneration; bench-owned keys below are always overwritten.
+        config = json.loads(config_path.read_text()) if config_path.exists() else {}
+        # Enable monitoring by default on all the sites on the bench
+        config.update(
+            {
+                "redis_cache": redis_cache,
+                "redis_queue": redis_queue,
+                "redis_socketio": redis_socketio,
+                "socketio_port": self.config.socketio_port,
+                "webserver_port": self.config.http_port,
+                "socketio_backend": self.config.socketio_backend,
+                "monitor": True,
+            }
+        )
         write_private_text(config_path, json.dumps(config, indent=2) + "\n")
 
     def restart(self):
