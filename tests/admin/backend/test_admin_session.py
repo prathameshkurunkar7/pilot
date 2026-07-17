@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pilot.commands.admin.generate_session import (
+from pilot.core.admin_auth import (
     decode_token,
     has_scope,
     issue_login_token,

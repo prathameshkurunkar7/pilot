@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -124,3 +125,177 @@ class Site:
         if skip_failing:
             cmd.append("--skip-failing")
         run_command(cmd, cwd=self.bench.sites_path, stream_output=True)
+
+    @classmethod
+    def provision(
+        cls,
+        bench: "Bench",
+        name: str,
+        apps: list[str],
+        admin_password: str,
+        db_type: str | None = None,
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> "Site":
+        """Create a new site end to end: validate, register a wildcard-derived
+        domain, create via frappe, install the requested apps, write the
+        pilot-communication config, build missing assets, add a dev-mode
+        hosts entry, reload nginx, and obtain a cert if this domain qualifies
+        for Let's Encrypt."""
+        via_wildcard = _validate_new_site(bench, name, apps)
+        ssl = _should_enable_ssl(bench, name)
+        if via_wildcard:
+            _register_with_provider(bench, name)
+
+        site = cls(SiteConfig(name=name, apps=apps, admin_password=admin_password, ssl=ssl), bench)
+        on_progress(f"Creating site '{name}'...")
+        site.create(db_type=db_type)
+        site._install_apps(apps, on_progress)
+        site._write_pilot_communication_config()
+        bench.write_common_site_config()
+        on_progress(f"\nSite '{name}' created successfully.")
+        site._build_missing_assets()
+        site._add_to_hosts()
+        from pilot.managers.nginx import NginxManager
+
+        NginxManager(bench).reload_for_site_change()
+        if ssl:
+            site._obtain_cert(on_progress)
+        return site
+
+    def _install_apps(self, apps: list[str], on_progress: Callable[[str], None]) -> None:
+        """`new-site` only installs the framework app; install the rest explicitly."""
+        framework = self.bench.config.framework_app.name
+        for app_name in apps:
+            if app_name == framework:
+                continue
+            on_progress(f"Installing app '{app_name}'...")
+            self.install_app(self.bench.app(app_name))
+
+    def _write_pilot_communication_config(self) -> None:
+        import json
+
+        from pilot.admin_url import admin_url
+        from pilot.core.admin_auth import ensure_jwt_secret, issue_site_token
+        from pilot.secure_files import write_private_text
+
+        config_path = self.path / "site_config.json"
+        if not config_path.exists():
+            return
+        config = json.loads(config_path.read_text())
+        secret = ensure_jwt_secret(self.bench.path / "bench.toml")
+        config["pilot_endpoint"] = admin_url(self.bench.config)
+        config["pilot_auth_token"] = issue_site_token(secret, self.config.name, ttl=365 * 24 * 3600)
+        write_private_text(config_path, json.dumps(config, indent=1))
+
+    def _build_missing_assets(self) -> None:
+        from pilot.managers.python_environment import PythonEnvManager
+
+        manager = PythonEnvManager(self.bench)
+        assets_dir = self.bench.sites_path / "assets"
+        for app in self.bench.apps():
+            if not self.bench.is_app_installed(app.config.name):
+                continue
+            if not (assets_dir / app.config.name).exists():
+                manager.build_assets_for_app(app)
+
+    def _add_to_hosts(self) -> None:
+        # Only a dev bench (no process manager) needs a synthetic /etc/hosts entry;
+        # production sites resolve via real DNS.
+        if not self.bench.config.production.process_manager == "none":
+            return
+
+        import subprocess
+        import sys
+
+        from pilot.utils import hosts_line_contains
+
+        hosts_path = Path("/etc/hosts")
+        entry = f"127.0.0.1 {self.config.name}"
+        for line in hosts_path.read_text().splitlines():
+            if hosts_line_contains(line, self.config.name):
+                return
+
+        try:
+            subprocess.run(
+                ["sudo", "-n", "tee", "-a", str(hosts_path)],
+                input=f"{entry}\n".encode(),
+                capture_output=True,
+                check=True,
+            )
+        except (subprocess.CalledProcessError, OSError) as e:
+            print(
+                f"Warning: could not add '{entry}' to {hosts_path}: {e}.\n"
+                f"  Add it manually to reach the site by name.",
+                file=sys.stderr,
+            )
+
+    def _obtain_cert(self, on_progress: Callable[[str], None]) -> None:
+        import json
+
+        from pilot.managers.letsencrypt import LetsEncryptManager
+        from pilot.managers.nginx import NginxManager
+        from pilot.secure_files import write_private_text
+
+        if not self.bench.config.production.enabled:
+            return
+
+        # Persist ssl=True so that generate_config(ssl_ready=True) below
+        # produces an HTTPS block for this site (bench.sites() reads from disk).
+        config_path = self.path / "site_config.json"
+        raw = json.loads(config_path.read_text()) if config_path.exists() else {}
+        raw["ssl"] = True
+        write_private_text(config_path, json.dumps(raw, indent=1))
+
+        on_progress("Obtaining SSL certificate...")
+        nginx_mgr = NginxManager(self.bench)
+        # Serve ACME challenges over HTTP before the cert exists.
+        nginx_mgr.generate_config(ssl_ready=False)
+        nginx_mgr.reload()
+        LetsEncryptManager(self.bench).obtain(self.config)
+        nginx_mgr.generate_config(ssl_ready=True)
+        nginx_mgr.reload()
+
+
+def _validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
+    """Validate a candidate new-site name/app-list; returns whether the name
+    was matched via one of the bench's wildcard domains (which then must be
+    registered with the domain provider before creation)."""
+    from pilot.core.domains import DomainRouteProvider
+    from pilot.utils import host_owner, matches_wildcard, normalize_host
+
+    if (bench.sites_path / name / "site_config.json").exists():
+        raise BenchError(f"Site '{name}' already exists.")
+    owner = host_owner(bench.path, name)
+    if owner:
+        raise BenchError(
+            f"'{name}' is already used by bench '{owner}' (as a site or its admin domain). "
+            f"All benches share one nginx, so hostnames must be unique."
+        )
+    if normalize_host(name) == normalize_host(bench.config.admin.domain):
+        raise BenchError(
+            f"Site '{name}' clashes with this bench's admin domain. "
+            f"An admin domain must not match a site domain."
+        )
+    patterns = DomainRouteProvider.wildcard_domains()
+    if patterns and not matches_wildcard(name, patterns):
+        raise BenchError(f"Site name must match one of this bench's wildcard domains: {', '.join(patterns)}.")
+    apps_txt = bench.sites_path / "apps.txt"
+    installed = set(apps_txt.read_text().splitlines()) if apps_txt.exists() else set()
+    for app in apps:
+        if app not in installed:
+            raise BenchError(f"App '{app}' is not installed. Run 'bench get-app <repo>' first.")
+    return bool(patterns)
+
+
+def _should_enable_ssl(bench: "Bench", name: str) -> bool:
+    from pilot.managers.letsencrypt import _is_public_domain, letsencrypt_active
+
+    return letsencrypt_active(bench) and _is_public_domain(name)
+
+
+def _register_with_provider(bench: "Bench", name: str) -> None:
+    """A wildcard-derived name is the provider's to allocate; provision it before
+    creating the site so a provider failure leaves no orphan site."""
+    from pilot.core.domains import DomainRouteProvider
+
+    DomainRouteProvider(bench).register(name, name)

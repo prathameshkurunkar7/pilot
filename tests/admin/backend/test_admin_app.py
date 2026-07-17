@@ -25,7 +25,7 @@ def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:
 
 def _client(bench_root: Path, password: str = "secret", **extra_settings):
     from admin.backend.app import create_app
-    from pilot.commands.admin.generate_session import ensure_jwt_secret, issue_token
+    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
 
     _write_bench_toml(bench_root, bench_root.name, admin_enabled=True, admin_password=password, **extra_settings)
     secret = ensure_jwt_secret(bench_root / "bench.toml")
@@ -242,7 +242,7 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
         toml.replace("enabled = false\nuse_companion_manager",
                      'enabled = true\nprocess_manager = "systemd"\nuse_companion_manager')
     )
-    from pilot.commands.admin.generate_session import ensure_jwt_secret, issue_token
+    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
     secret = ensure_jwt_secret(current / "bench.toml")
     app = create_app(current)
     app.config["TESTING"] = True

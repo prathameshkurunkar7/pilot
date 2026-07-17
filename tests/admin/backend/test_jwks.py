@@ -13,7 +13,7 @@ from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 from admin.backend.internal import jwks
 from admin.backend.internal.jwks import verify_jwks_token
 from admin.backend.middleware import decode_session_token
-from pilot.commands.admin.generate_session import issue_token
+from pilot.core.admin_auth import issue_token
 
 JWKS_URL = "https://issuer.example.com/.well-known/jwks.json"
 AUDIENCE = "bench-a"  # every bench binds remote tokens to its own audience
