@@ -9,7 +9,7 @@ from pilot.managers.platform import _privileged
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
-    from pilot.config.site_config import SiteConfig
+    from pilot.config.site import SiteConfig
     from pilot.core.bench import Bench
 
 _CERT_EXPIRY_THRESHOLD_DAYS = 30

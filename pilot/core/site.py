@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.config.site_config import SiteConfig
+from pilot.config.site import SiteConfig
 from pilot.exceptions import BenchError
 from pilot.utils import run_command
 

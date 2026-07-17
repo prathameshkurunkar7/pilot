@@ -17,7 +17,7 @@ class InstallAppTask(BaseTask):
         self.app = args.app
 
     def run(self) -> None:
-        from pilot.config.site_config import SiteConfig
+        from pilot.config.site import SiteConfig
         from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
         from pilot.core.site import Site
         from pilot.exceptions import BenchError

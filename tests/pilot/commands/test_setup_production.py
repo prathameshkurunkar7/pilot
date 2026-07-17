@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from pilot.commands.setup.production import SetupProductionCommand
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
 from pilot.managers.letsencrypt import needs_letsencrypt

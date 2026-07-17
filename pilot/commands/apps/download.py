@@ -52,7 +52,7 @@ class GetAppCommand(Command):
     ) -> None:
         from pathlib import PurePosixPath
 
-        from pilot.config.app_config import AppConfig
+        from pilot.config.app import AppConfig
         from pilot.core.app import App
 
         name = PurePosixPath(repo.rstrip("/")).name
@@ -128,7 +128,7 @@ class GetAppCommand(Command):
         self._set_app(module)
 
     def _set_app(self, name: str) -> None:
-        from pilot.config.app_config import AppConfig
+        from pilot.config.app import AppConfig
         from pilot.core.app import App
 
         self.name = name  # type: ignore[misc]  # the app's name, distinct from Command.name (the CLI verb)

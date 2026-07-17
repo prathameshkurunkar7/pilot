@@ -1,4 +1,7 @@
+import ipaddress
 from dataclasses import dataclass, field
+
+from pilot.exceptions import ConfigError
 
 
 @dataclass
@@ -40,3 +43,16 @@ class FirewallConfig:
             default=str(data.get("default", "allow")),
             rules=rules,
         )
+
+    def validate(self) -> None:
+        if self.default not in ("allow", "deny"):
+            raise ConfigError(f"firewall.default '{self.default}' is invalid. Must be 'allow' or 'deny'.")
+        for i, rule in enumerate(self.rules):
+            prefix = f"firewall.rules[{i}]"
+            if rule.action not in ("allow", "deny"):
+                raise ConfigError(f"{prefix}.action '{rule.action}' is invalid. Must be 'allow' or 'deny'.")
+            try:
+                # strict=False accepts a host address with a prefix (e.g. 10.0.0.5/8).
+                ipaddress.ip_network(rule.ip, strict=False)
+            except ValueError:
+                raise ConfigError(f"{prefix}.ip '{rule.ip}' is not a valid IPv4/IPv6 address or CIDR range.")

@@ -2,11 +2,11 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from pilot.config.bench_config import BenchConfig
-from pilot.config.mariadb_config import MariaDBConfig
-from pilot.config.production_config import ProductionConfig
-from pilot.config.redis_config import RedisConfig
-from pilot.config.worker_config import WorkerConfig
+from pilot.config.bench import BenchConfig
+from pilot.config.mariadb import MariaDBConfig
+from pilot.config.production import ProductionConfig
+from pilot.config.redis import RedisConfig
+from pilot.config.worker import WorkerConfig
 from pilot.core.bench import Bench
 from pilot.core.monitoring import Monitor
 

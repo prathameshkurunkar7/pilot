@@ -16,7 +16,7 @@ from admin.backend.middleware import (
 )
 from pilot.tasks.manager.activity import TaskActivityReader
 from admin.backend.api.v1.setup import wizard_marker_path
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.platform import native_process_manager

@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
-# Process managers usable in production. "none" is no longer a manager — an
+from pilot.exceptions import ConfigError
+
+# Process managers usable in production. "none" is no longer a manager - an
 # undeployed bench has production.enabled = false and an empty process_manager.
 VALID_PROCESS_MANAGERS = ("systemd", "supervisor")
 
@@ -38,3 +40,16 @@ class ProductionConfig:
         if v == "supervisord":
             return "supervisor"
         return v
+
+    def validate(self, bench_name: str) -> None:
+        pm = self.process_manager
+        if self.enabled:
+            if pm not in VALID_PROCESS_MANAGERS:
+                raise ConfigError(
+                    f"production.process_manager must be one of {', '.join(VALID_PROCESS_MANAGERS)} "
+                    f"when production is enabled (bench '{bench_name}'), got '{pm or '(empty)'}'."
+                )
+        elif pm and pm not in VALID_PROCESS_MANAGERS:
+            raise ConfigError(
+                f"production.process_manager '{pm}' is invalid (bench '{bench_name}'). Must be one of {', '.join(VALID_PROCESS_MANAGERS)}."
+            )

@@ -5,7 +5,7 @@ from unittest.mock import patch, PropertyMock
 
 import pytest
 
-from pilot.config.mariadb_config import MariaDBConfig
+from pilot.config.mariadb import MariaDBConfig
 from pilot.exceptions import DatabaseError
 from pilot.managers.mariadb import MariaDBManager
 

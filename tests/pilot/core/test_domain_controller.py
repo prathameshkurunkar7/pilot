@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.bench_config import BenchConfig
-from pilot.config.site_config import SiteConfig
+from pilot.config.bench import BenchConfig
+from pilot.config.site import SiteConfig
 from pilot.core.bench import Bench
 from pilot.core.domains import DomainRouteProvider
 from pilot.exceptions import BenchError

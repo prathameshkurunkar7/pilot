@@ -10,7 +10,7 @@ from typing import Any, TYPE_CHECKING
 from pilot.exceptions import DatabaseError
 
 if TYPE_CHECKING:
-    from pilot.config.bench_config import BenchConfig
+    from pilot.config.bench import BenchConfig
 
 _MAX_ROWS = 5000
 

@@ -31,7 +31,7 @@ class UninstallAppCommand(Command):
     def __init__(
         self, bench: "Bench", site_name: str, app_names: list[str], force: bool = False
     ) -> None:
-        from pilot.config.site_config import SiteConfig
+        from pilot.config.site import SiteConfig
         from pilot.core.site import Site
 
         self.bench = bench

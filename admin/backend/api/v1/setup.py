@@ -189,7 +189,7 @@ def _database_validation(bench_root: Path, data: dict):
         )
         return engine, MariaDBManager(config), password, existing
 
-    from pilot.config.postgres_config import PostgresConfig
+    from pilot.config.postgres import PostgresConfig
     from pilot.managers.postgres import PostgresManager
 
     config = PostgresConfig(
@@ -229,7 +229,7 @@ def _mariadb_config(
     existing: bool = False,
 ):
     """Build a MariaDBConfig from the bench's toml with the entered credentials applied."""
-    from pilot.config.mariadb_config import MariaDBConfig
+    from pilot.config.mariadb import MariaDBConfig
 
     config = MariaDBConfig(
         root_password=password,

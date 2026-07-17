@@ -4,12 +4,12 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, List
 
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.secure_files import write_private_text
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
-    from pilot.config.s3_config import S3Config
+    from pilot.config.s3 import S3Config
     from pilot.core.app import App
     from pilot.core.database import Database
     from pilot.core.site import Site
@@ -83,7 +83,7 @@ class Bench:
         """Return an App for a cloned app folder by name or module name.
         Accepts either the folder name or the module name for parity with original bench commands.
         """
-        from pilot.config.app_config import AppConfig
+        from pilot.config.app import AppConfig
         from pilot.core.app import App
 
         d = self.apps_path / name
@@ -98,7 +98,7 @@ class Bench:
 
     def apps(self) -> List["App"]:
         """Return all cloned apps by scanning apps/ directory."""
-        from pilot.config.app_config import AppConfig
+        from pilot.config.app import AppConfig
         from pilot.core.app import App
 
         if not self.apps_path.is_dir():
@@ -123,7 +123,7 @@ class Bench:
     def is_app_installed(self, name: str) -> bool:
         """Whether `name` (raw or module form) is installed on this bench —
         i.e. listed in apps.txt, not just cloned under apps/."""
-        from pilot.config.app_config import AppConfig
+        from pilot.config.app import AppConfig
         from pilot.core.app import App
 
         module_name = App(AppConfig(name=name, repo="", branch=""), self).module_name
@@ -139,7 +139,7 @@ class Bench:
         """Return all sites by scanning sites/ directory."""
         import json as _json
 
-        from pilot.config.site_config import SiteConfig
+        from pilot.config.site import SiteConfig
         from pilot.core.site import Site
 
         if not self.sites_path.is_dir():

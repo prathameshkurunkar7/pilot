@@ -312,7 +312,7 @@ class Monitor:
 
     @property
     def log_path(self) -> Path:
-        from pilot.config.monitor_config import MonitorConfig
+        from pilot.config.monitor import MonitorConfig
 
         return self.bench.config.monitor.log_path or MonitorConfig.default_log_path(self.bench.config.name)
 
@@ -510,7 +510,7 @@ class Monitor:
 
 
 def resolve_monitor_log_path(bench_config: "BenchConfig"):
-    from pilot.config.monitor_config import MonitorConfig
+    from pilot.config.monitor import MonitorConfig
 
     return MonitorConfig.default_log_path(bench_config.name)
 

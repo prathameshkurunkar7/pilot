@@ -21,7 +21,7 @@ from threading import Thread
 
 import pytest
 
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.core.bench import Bench
 from pilot.managers.nginx import NginxManager
 

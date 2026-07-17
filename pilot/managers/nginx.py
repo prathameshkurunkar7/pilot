@@ -87,9 +87,9 @@ def _render_error_html(code: int, title: str, message: str) -> str:
     return _ERROR_PAGE_TEMPLATE.substitute(code=code, title=title, message=message)
 
 if TYPE_CHECKING:
-    from pilot.config.nginx_config import NginxConfig
-    from pilot.config.site_config import SiteConfig
-    from pilot.config.waf_config import WafConfig
+    from pilot.config.nginx import NginxConfig
+    from pilot.config.site import SiteConfig
+    from pilot.config.waf import WafConfig
     from pilot.core.bench import Bench
 
 
@@ -229,7 +229,7 @@ class NginxManager:
         )
 
     def _render_modsec_engine(self, waf: WafConfig) -> str:
-        from pilot.config.waf_config import parse_nginx_size
+        from pilot.config.waf import parse_nginx_size
 
         audit_log = self.bench.path / "logs" / "modsec_audit.log"
         # DetectionOnly must never block, so oversized bodies are inspected in part

@@ -44,7 +44,7 @@ class NewSiteCommand(Command):
         self._via_wildcard = False
 
     def run(self) -> None:
-        from pilot.config.site_config import SiteConfig
+        from pilot.config.site import SiteConfig
         from pilot.core.site import Site
         from pilot.managers.nginx import NginxManager
 

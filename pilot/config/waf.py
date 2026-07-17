@@ -1,11 +1,15 @@
+import re
 from dataclasses import dataclass, field
 
+from pilot.exceptions import ConfigError
+
 # The only accepted values for WafConfig.mode, in UI order. Single source of
-# truth: validation (bench_config._validate_waf), the settings API, and the
-# admin UI all reference this rather than repeating the literals.
+# truth: WafConfig.validate(), the settings API, and the admin UI all
+# reference this rather than repeating the literals.
 WAF_MODES = ("Off", "DetectionOnly", "On")
 
 _SIZE_UNITS = {"k": 1024, "m": 1024**2, "g": 1024**3}
+_WAF_EXEMPT_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9._~%/-]*$")
 
 
 def parse_nginx_size(value: str) -> int:
@@ -51,7 +55,7 @@ class WafConfig:
         if not data:
             return cls()
         # paranoia/inbound_threshold pass through unconverted so a hand-edited
-        # non-integer surfaces as a clean ConfigError in _validate_waf rather
+        # non-integer surfaces as a clean ConfigError in validate() rather
         # than a raw ValueError here.
         return cls(
             enabled=bool(data.get("enabled", False)),
@@ -63,3 +67,28 @@ class WafConfig:
             exclusions=[str(line) for line in data.get("exclusions", [])],
             exempt_paths=[str(path) for path in data.get("exempt_paths", [])],
         )
+
+    def validate(self, nginx_max_body_size: str) -> None:
+        if self.mode not in WAF_MODES:
+            raise ConfigError(f"waf.mode '{self.mode}' is invalid. Must be one of: {', '.join(WAF_MODES)}.")
+        if not isinstance(self.paranoia, int) or not 1 <= self.paranoia <= 4:
+            raise ConfigError(f"waf.paranoia '{self.paranoia}' is invalid. Must be an integer between 1 and 4.")
+        if not isinstance(self.inbound_threshold, int) or self.inbound_threshold < 1:
+            raise ConfigError(f"waf.inbound_threshold '{self.inbound_threshold}' is invalid. Must be a positive integer.")
+        try:
+            body_limit = parse_nginx_size(self.body_limit)
+        except ValueError:
+            raise ConfigError(f"waf.body_limit '{self.body_limit}' is not a valid size (e.g. '50m', '13107200').")
+        # Coupling only matters when the WAF is on: a body larger than what
+        # ModSecurity buffers would be proxied to the app uninspected.
+        if self.enabled and body_limit < parse_nginx_size(nginx_max_body_size):
+            raise ConfigError(
+                f"waf.body_limit '{self.body_limit}' must be >= nginx.client_max_body_size "
+                f"'{nginx_max_body_size}', else large uploads bypass inspection."
+            )
+        for i, path in enumerate(self.exempt_paths):
+            if len(path) > 255 or not _WAF_EXEMPT_PATH_PATTERN.match(path):
+                raise ConfigError(
+                    f"waf.exempt_paths[{i}] '{path}' is invalid. Must be a URL path starting "
+                    f"with '/' using only letters, digits, and . _ ~ % / - characters."
+                )

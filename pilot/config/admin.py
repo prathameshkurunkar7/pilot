@@ -1,4 +1,9 @@
+import re
 from dataclasses import dataclass
+
+from pilot.exceptions import ConfigError
+
+_HOSTNAME_PATTERN = re.compile(r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
 
 
 @dataclass
@@ -35,3 +40,15 @@ class AdminConfig:
         the admin is socket-activated. nginx listens on `port` and forwards here.
         Derived for now; promote to a bench.toml field if it needs to be tunable."""
         return self.port + 1
+
+    def validate(self, production_enabled: bool, bench_name: str) -> None:
+        if not self.domain:
+            if production_enabled:
+                raise ConfigError(
+                    f"admin.domain is required in production but is missing for bench '{bench_name}'. "
+                    f"Set it in bench.toml (e.g. admin.example.com) or pass "
+                    f"'bench setup production --admin-domain <domain>'."
+                )
+            return
+        if not _HOSTNAME_PATTERN.match(self.domain):
+            raise ConfigError(f"admin.domain '{self.domain}' is not a valid hostname (bench '{bench_name}').")
