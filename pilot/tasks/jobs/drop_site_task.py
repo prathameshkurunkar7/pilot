@@ -1,4 +1,5 @@
-from pilot.commands.sites.delete import DropSiteCommand
+from pilot.config.site import SiteConfig
+from pilot.core.site import Site
 from pilot.tasks.jobs.base_task import BaseTask
 
 
@@ -16,7 +17,7 @@ class DropSiteTask(BaseTask):
     def run(self) -> None:
         self._require_production_privileges()
         self._step("drop", f"Drop site {self.name}")
-        DropSiteCommand(self.bench, self.name).run()
+        Site(SiteConfig(name=self.name, apps=[]), self.bench).drop(on_progress=self._report)
         self._step("done")
 
 

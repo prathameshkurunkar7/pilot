@@ -1,35 +1,22 @@
 from __future__ import annotations
 
-import argparse
 import json
 import sys
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Annotated, ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands.base import Arg, Command
 from pilot.exceptions import BenchError
 from pilot.secure_files import write_private_text
 
-if TYPE_CHECKING:
-    from pilot.core.bench import Bench
 
-
+@dataclass(kw_only=True)
 class RenameSiteCommand(Command):
-    name = "rename-site"
-    help = "Rename a site in this bench."
+    name: ClassVar[str] = "rename-site"
+    help: ClassVar[str] = "Rename a site in this bench."
 
-    @classmethod
-    def add_arguments(cls, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("old_name", help="Current site name.")
-        parser.add_argument("new_name", help="New site name (hostname).")
-
-    @classmethod
-    def from_args(cls, args, bench):
-        return cls(bench, args.old_name, args.new_name)
-
-    def __init__(self, bench: "Bench", old_name: str, new_name: str) -> None:
-        self.bench = bench
-        self.old_name = old_name
-        self.new_name = new_name
+    old_name: Annotated[str, Arg(help="Current site name.")]
+    new_name: Annotated[str, Arg(help="New site name (hostname).")]
 
     def run(self) -> None:
         from pilot.managers.nginx import NginxManager
@@ -37,8 +24,7 @@ class RenameSiteCommand(Command):
         old_site = self._validate()
         ssl_enabled = old_site.config.ssl
 
-        print(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
-        sys.stdout.flush()
+        self.print(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
         old_site.path.rename(self.bench.sites_path / self.new_name)
 
         self._update_default_site()
@@ -47,7 +33,7 @@ class RenameSiteCommand(Command):
         self._add_to_hosts()
         NginxManager(self.bench).reload_for_site_change()
 
-        print(f"\nSite renamed to '{self.new_name}'.")
+        self.print(f"\nSite renamed to '{self.new_name}'.")
         self._run_followups(ssl_enabled)
 
     def _validate(self):
@@ -148,10 +134,9 @@ class RenameSiteCommand(Command):
                                  f"bench setup letsencrypt -b {name}")
 
     def _run_or_advise(self, label: str, fn, manual_cmd: str) -> None:
-        print(f"\nRunning {label} for the new domain...")
-        sys.stdout.flush()
+        self.print(f"\nRunning {label} for the new domain...")
         try:
             fn()
         except (Exception, SystemExit) as exc:
             detail = f" ({exc})" if str(exc) else ""
-            print(f"\n{label} did not complete{detail}. Run it yourself once resolved:\n  {manual_cmd}")
+            self.print(f"\n{label} did not complete{detail}. Run it yourself once resolved:\n  {manual_cmd}")

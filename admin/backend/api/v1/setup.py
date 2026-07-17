@@ -116,7 +116,7 @@ def _update_configuration(bench_root: Path, data: dict):
 
 
 def _issue_setup_session(resp, toml_path: Path) -> None:
-    from pilot.commands.admin.generate_session import ensure_jwt_secret, issue_token
+    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
 
     set_session_cookie(
         resp,
