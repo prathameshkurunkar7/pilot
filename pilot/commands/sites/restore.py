@@ -30,7 +30,7 @@ class NewSiteFromBackupCommand:
 
     def run(self) -> None:
         from pilot.commands.sites.create import NewSiteCommand
-        from pilot.config.site_config import SiteConfig
+        from pilot.config.site import SiteConfig
         from pilot.core.site import Site
 
         # The site is created with (and restored into) the bench's single engine;

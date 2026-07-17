@@ -120,10 +120,9 @@ class SetupProductionCommand(Command):
     def _resolve_target(self) -> None:
         """Apply --process-manager / --admin-domain to the in-memory config so the
         rest of setup operates on the requested target. The toml is written last."""
-        from pilot.config.bench_config import BenchConfig
-        from pilot.config.production_config import VALID_PROCESS_MANAGERS
+        from pilot.config.production import VALID_PROCESS_MANAGERS, ProductionConfig
 
-        pm = BenchConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager) or "systemd"
+        pm = ProductionConfig._normalize_process_manager(self._pm_arg or self.bench.config.production.process_manager) or "systemd"
         if pm not in VALID_PROCESS_MANAGERS:
             raise BenchError(f"Invalid process manager '{pm}'. Must be one of {', '.join(VALID_PROCESS_MANAGERS)}.")
         self.bench.config.production.process_manager = pm
@@ -188,9 +187,9 @@ class SetupProductionCommand(Command):
     def _setup_monitoring(self):
         """Install the shared bench-monitor timer unit and persist monitor config to bench.toml."""
         from pilot.config.toml_store import BenchTomlStore
-        from pilot.core.monitoring import ConfigureMonitor, resolve_monitor_log_path
+        from pilot.core.monitoring import MonitorConfigurator, resolve_monitor_log_path
 
-        ConfigureMonitor().install()
+        MonitorConfigurator().install()
         self.bench.config.monitor.log_path = resolve_monitor_log_path(self.bench.config)
         BenchTomlStore(self.bench.path).write(self.bench.config)
 
@@ -377,12 +376,12 @@ class SetupProductionCommand(Command):
         print("\nProduction setup complete.")
         print("Sites:")
         for site in self.bench.sites():
-            if site.config.ssl and nginx_manager.cert_exists(site.config):
+            if site.config.ssl and nginx_manager.has_cert(site.config):
                 print(f"  https://{site.config.name}")
             else:
                 http_port = self.bench.config.nginx.http_port
                 port_suffix = "" if http_port == 80 else f":{http_port}"
                 print(f"  http://{site.config.name}{port_suffix}")
-        admin_https = self.bench.config.admin.tls and nginx_manager.admin_cert_exists()
+        admin_https = self.bench.config.admin.tls and nginx_manager.has_admin_cert
         scheme = "https" if admin_https else "http"
         print(f"Admin:\n  {scheme}://{self.bench.config.admin.domain}")

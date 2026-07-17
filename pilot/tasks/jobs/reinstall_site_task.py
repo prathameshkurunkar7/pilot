@@ -1,4 +1,4 @@
-from pilot.config.site_config import SiteConfig
+from pilot.config.site import SiteConfig
 from pilot.core.site import Site
 
 from pilot.tasks.jobs.base_task import BaseTask

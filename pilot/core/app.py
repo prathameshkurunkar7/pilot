@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pilot.config.app_config import AppConfig
+from pilot.config.app import AppConfig
 from pilot.exceptions import BenchError, CommandError
 from pilot.utils import installed_app_version, run_command
 
@@ -119,6 +119,7 @@ class App:
             ["git", "ls-remote", "--symref", remote, "HEAD"],
             capture_output=True,
             text=True,
+            timeout=10,
         )
         for line in result.stdout.splitlines():
             if line.startswith("ref: refs/heads/"):
@@ -128,6 +129,7 @@ class App:
             ["git", "ls-remote", "--heads", remote],
             capture_output=True,
             text=True,
+            timeout=10,
         ).stdout
         for candidate in ("develop", "master", "version-16", "version-15"):
             if f"refs/heads/{candidate}" in refs:

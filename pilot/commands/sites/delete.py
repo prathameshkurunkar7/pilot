@@ -13,6 +13,7 @@ class DropSiteCommand:
         self.name = name
 
     def run(self) -> None:
+        from pilot.managers.nginx import NginxManager
         from pilot.utils import run_command
 
         provider_domains = self._provider_domains()
@@ -24,7 +25,7 @@ class DropSiteCommand:
         self._remove_from_bench_toml()
         self._release_domains(provider_domains)
         print(f"\nSite '{self.name}' dropped.")
-        self._reload_nginx()
+        NginxManager(self.bench).reload_for_site_change()
 
     def _provider_domains(self) -> list[str]:
         """Hostnames this site claimed at the provider — its own name (the route a
@@ -54,15 +55,3 @@ class DropSiteCommand:
         store = BenchTomlStore.for_bench(self.bench.path)
         with store.edit_raw() as raw:
             raw["sites"] = [s for s in raw.get("sites", []) if s.get("name") != self.name]
-
-    def _reload_nginx(self) -> None:
-        if not self.bench.config.production.enabled:
-            return
-        from pilot.managers.nginx import NginxManager
-        mgr = NginxManager(self.bench)
-        if not mgr.is_installed():
-            return
-        print("Updating nginx configuration...")
-        sys.stdout.flush()
-        mgr.generate_config(ssl_ready=True)
-        mgr.reload()

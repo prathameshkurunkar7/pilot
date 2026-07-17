@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from pilot.commands.remove.production import RemoveProductionCommand
-from pilot.config.bench_config import BenchConfig
+from pilot.config.bench import BenchConfig
 from pilot.core.bench import Bench
 
 

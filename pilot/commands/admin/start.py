@@ -103,8 +103,10 @@ class BuildAdminCommand(Command):
         import subprocess
 
         try:
-            output = subprocess.run(["node", "--version"], capture_output=True, text=True, check=True).stdout.strip()
-        except (FileNotFoundError, subprocess.CalledProcessError) as error:
+            output = subprocess.run(
+                ["node", "--version"], capture_output=True, text=True, check=True, timeout=5
+            ).stdout.strip()
+        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
             raise BenchError(
                 "Node.js is required to build the admin frontend but was not found. "
                 "Install Node.js >= 20.11, or run `bench build-admin` (without --force) to download the pre-built frontend."
