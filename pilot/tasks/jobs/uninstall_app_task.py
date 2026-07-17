@@ -1,4 +1,3 @@
-from pilot.config.site import SiteConfig
 from pilot.core.site import Site
 from pilot.tasks.jobs.base_task import BaseTask
 
@@ -20,7 +19,7 @@ class UninstallAppTask(BaseTask):
 
     def run(self) -> None:
         self._step("uninstall", f"Uninstall {self.app} from {self.site}")
-        site = Site(SiteConfig(name=self.site, apps=[]), self.bench)
+        site = Site.for_name(self.site, self.bench)
         site.uninstall_apps([self.app], force=self.force, on_progress=self._report)
         self._step("done")
 

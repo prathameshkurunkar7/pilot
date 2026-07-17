@@ -5,13 +5,35 @@ import json
 import logging
 import secrets
 import sys
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
 from pilot.tasks.callbacks import validate_callback
+from pilot.tasks.jobs.backup_site_task import BackupSiteTask
+from pilot.tasks.jobs.base_task import BaseTask
+from pilot.tasks.jobs.build_task import BuildTask
+from pilot.tasks.jobs.clear_cache_task import ClearCacheTask
+from pilot.tasks.jobs.delete_backup_task import DeleteBackupTask
+from pilot.tasks.jobs.drop_site_task import DropSiteTask
+from pilot.tasks.jobs.fetch_app_updates_task import FetchAppUpdatesTask
+from pilot.tasks.jobs.get_and_install_app_task import GetAndInstallAppTask
+from pilot.tasks.jobs.get_app_task import GetAppTask
+from pilot.tasks.jobs.install_app_task import InstallAppTask
+from pilot.tasks.jobs.migrate_task import MigrateTask
+from pilot.tasks.jobs.new_site_from_backup_task import NewSiteFromBackupTask
+from pilot.tasks.jobs.new_site_task import NewSiteTask
+from pilot.tasks.jobs.reinstall_site_task import ReinstallSiteTask
+from pilot.tasks.jobs.remove_app_task import RemoveAppTask
+from pilot.tasks.jobs.setup_letsencrypt_task import SetupLetsEncryptTask
+from pilot.tasks.jobs.setup_nginx_task import SetupNginxTask
+from pilot.tasks.jobs.setup_production_task import SetupProductionTask
+from pilot.tasks.jobs.switch_branch_task import SwitchBranchTask
+from pilot.tasks.jobs.uninstall_app_task import UninstallAppTask
+from pilot.tasks.jobs.update_cli_task import UpdateCliTask
+from pilot.tasks.jobs.update_task import UpdateTask
+from pilot.tasks.jobs.wizard_setup_task import WizardSetupTask
 from pilot.tasks.manager.task_args import (
     fingerprint_task_args,
     public_task_args,
@@ -55,118 +77,54 @@ _WHITELIST: dict[str, list[str]] = {
     "fetch-all-app-updates": [],
 }
 
-
-def _uninstall_app_argv(args: dict) -> list[str]:
-    argv = [args["site"], args["app"]]
-    if args.get("force"):
-        argv += ["--force"]
-    return argv
-
-
-def _backup_site_argv(args: dict) -> list[str]:
-    argv = [args["site"]]
-    if args.get("with_files"):
-        argv += ["--with-files"]
-    return argv
-
-
-def _build_argv_suffix(args: dict) -> list[str]:
-    argv = []
-    if args.get("app"):
-        argv += ["--app", args["app"]]
-    return argv
-
-
-def _update_argv(args: dict) -> list[str]:
-    argv = []
-    if args.get("apps"):
-        argv += ["--apps"] + list(args["apps"])
-    if args.get("skip_failing_patches"):
-        argv += ["--skip-failing-patches"]
-    return argv
-
-
-def _repo_or_marketplace_argv(args: dict) -> list[str]:
-    if args.get("marketplace_app"):
-        return ["--marketplace-app", args["marketplace_app"]]
-    argv = ["--repo", args["repo"]]
-    if args.get("branch"):
-        argv += ["--branch", args["branch"]]
-    return argv
-
-
-def _new_site_argv(args: dict) -> list[str]:
-    argv = [args["name"]]
-    if args.get("db_type"):
-        argv += ["--db-type", args["db_type"]]
-    if args.get("apps"):
-        argv += ["--apps"] + list(args["apps"])
-    return argv
-
-
-def _get_and_install_app_argv(args: dict) -> list[str]:
-    argv = _repo_or_marketplace_argv(args)
-    sites = args["sites"] if "sites" in args else ([args["site"]] if args.get("site") else [])
-    if sites:
-        argv += ["--sites", *sites]
-    return argv
-
-
-def _setup_letsencrypt_argv(args: dict) -> list[str]:
-    argv = []
-    if args.get("site"):
-        argv += ["--site", args["site"]]
-    if args.get("email"):
-        argv += ["--email", args["email"]]
-    return argv
-
-
-def _new_site_from_backup_argv(args: dict) -> list[str]:
-    argv = [args["name"], args["db_file"]]
-    if args.get("public_files"):
-        argv += ["--public-files", args["public_files"]]
-    if args.get("private_files"):
-        argv += ["--private-files", args["private_files"]]
-    return argv
-
-
-# command -> (job module, function building the argv after bench_root)
-_ARGV_BUILDERS: dict[str, tuple[str, Callable[[dict], list[str]]]] = {
-    "migrate": ("pilot.tasks.jobs.migrate_task", lambda args: [args["site"]]),
-    "clear-cache": ("pilot.tasks.jobs.clear_cache_task", lambda args: [args["site"]]),
-    "uninstall-app": ("pilot.tasks.jobs.uninstall_app_task", _uninstall_app_argv),
-    "backup-site": ("pilot.tasks.jobs.backup_site_task", _backup_site_argv),
-    "build": ("pilot.tasks.jobs.build_task", _build_argv_suffix),
-    "update": ("pilot.tasks.jobs.update_task", _update_argv),
-    "get-app": ("pilot.tasks.jobs.get_app_task", _repo_or_marketplace_argv),
-    "remove-app": ("pilot.tasks.jobs.remove_app_task", lambda args: [args["name"]]),
-    "new-site": ("pilot.tasks.jobs.new_site_task", _new_site_argv),
-    "drop-site": ("pilot.tasks.jobs.drop_site_task", lambda args: [args["site"]]),
-    "reinstall-site": ("pilot.tasks.jobs.reinstall_site_task", lambda args: [args["site"]]),
-    "delete-backup": (
-        "pilot.tasks.jobs.delete_backup_task",
-        lambda args: [args["site"], *args["filenames"]],
-    ),
-    "install-app": (
-        "pilot.tasks.jobs.install_app_task",
-        lambda args: [args["site"], args["app"]],
-    ),
-    "get-and-install-app": ("pilot.tasks.jobs.get_and_install_app_task", _get_and_install_app_argv),
-    "switch-branch": (
-        "pilot.tasks.jobs.switch_branch_task",
-        lambda args: [args["name"], args["branch"]],
-    ),
-    "setup-nginx": ("pilot.tasks.jobs.setup_nginx_task", lambda args: []),
-    "setup-production": ("pilot.tasks.jobs.setup_production_task", lambda args: []),
-    "setup-letsencrypt": ("pilot.tasks.jobs.setup_letsencrypt_task", _setup_letsencrypt_argv),
-    "wizard-setup": ("pilot.tasks.jobs.wizard_setup_task", lambda args: []),
-    "new-site-from-backup": (
-        "pilot.tasks.jobs.new_site_from_backup_task",
-        _new_site_from_backup_argv,
-    ),
-    "update-cli": ("pilot.tasks.jobs.update_cli_task", lambda args: []),
-    "fetch-all-app-updates": ("pilot.tasks.jobs.fetch_app_updates_task", lambda args: []),
+# command -> job class. Each class's own _parser() is the single source of
+# truth for its CLI shape; argv is derived from it below instead of a second,
+# hand-synced builder per command.
+_JOBS: dict[str, type[BaseTask]] = {
+    "migrate": MigrateTask,
+    "clear-cache": ClearCacheTask,
+    "install-app": InstallAppTask,
+    "uninstall-app": UninstallAppTask,
+    "get-app": GetAppTask,
+    "remove-app": RemoveAppTask,
+    "new-site": NewSiteTask,
+    "drop-site": DropSiteTask,
+    "backup-site": BackupSiteTask,
+    "delete-backup": DeleteBackupTask,
+    "build": BuildTask,
+    "update": UpdateTask,
+    "get-and-install-app": GetAndInstallAppTask,
+    "switch-branch": SwitchBranchTask,
+    "setup-nginx": SetupNginxTask,
+    "setup-production": SetupProductionTask,
+    "setup-letsencrypt": SetupLetsEncryptTask,
+    "new-site-from-backup": NewSiteFromBackupTask,
+    "reinstall-site": ReinstallSiteTask,
+    "wizard-setup": WizardSetupTask,
+    "update-cli": UpdateCliTask,
+    "fetch-all-app-updates": FetchAppUpdatesTask,
 }
+
+
+def _argv_suffix(command: str, args: dict) -> list[str]:
+    """Build a job's argv (after bench_root) from its own _parser() actions."""
+    if command == "get-and-install-app" and "sites" not in args and args.get("site"):
+        args = {**args, "sites": [args["site"]]}
+
+    argv: list[str] = []
+    for action in _JOBS[command]._parser()._actions:
+        if action.dest in ("help", "bench_root") or action.dest not in args:
+            continue
+        value = args[action.dest]
+        if not action.option_strings:
+            argv += value if isinstance(value, list) else [str(value)]
+        elif action.nargs == 0:
+            if value:
+                argv.append(action.option_strings[0])
+        elif value:
+            argv.append(action.option_strings[0])
+            argv += value if isinstance(value, list) else [str(value)]
+    return argv
 
 
 class TaskCallback(TypedDict):
@@ -317,8 +275,8 @@ class TaskRunner:
             if not isinstance(password, str) or not password.strip():
                 raise ValueError("admin_password must not be empty")
 
-        module, build_suffix = _ARGV_BUILDERS[command]
-        return [sys.executable, "-m", module, str(self._bench_root), *build_suffix(args)]
+        module = _JOBS[command].__module__
+        return [sys.executable, "-m", module, str(self._bench_root), *_argv_suffix(command, args)]
 
     @staticmethod
     def _generate_task_id() -> str:

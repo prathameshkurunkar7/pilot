@@ -17,10 +17,9 @@ class ListSiteAppsCommand(Command):
     site_name: Annotated[str, Arg(help="Site name (e.g. site1.localhost).", metavar="site")]
 
     def __post_init__(self) -> None:
-        from pilot.config.site import SiteConfig
         from pilot.core.site import Site
 
-        self.site: "Site" = Site(SiteConfig(name=self.site_name, apps=[]), self.bench)
+        self.site: "Site" = Site.for_name(self.site_name, self.bench)
 
     def run(self) -> None:
         for app in self.site.installed_apps():

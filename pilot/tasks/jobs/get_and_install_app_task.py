@@ -1,6 +1,6 @@
 from pilot.config.app import AppConfig
 from pilot.core.app import App
-from pilot.core.site import Site, SiteConfig
+from pilot.core.site import Site
 from pilot.integrations.marketplace import Marketplace
 
 from pilot.tasks.jobs.base_task import BaseTask
@@ -53,7 +53,7 @@ class GetAndInstallAppTask(BaseTask):
             self._step(
                 f"install_{safe_key}_{app.config.name}", f"Install {app.config.name} on {site}"
             )
-            Site(SiteConfig(name=site, apps=[]), self.bench).install_app(app)
+            Site.for_name(site, self.bench).install_app(app)
 
     def _build_assets(self, apps: list[App]) -> None:
         from pilot.managers.python_environment import PythonEnvManager
