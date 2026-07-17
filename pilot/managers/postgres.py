@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import socket
 import subprocess
-import time
 from pathlib import Path
 
 from pilot.config.postgres_config import PostgresConfig
@@ -239,14 +238,7 @@ class PostgresManager(UserOwnedDBManager):
             cmd[1:1] = ["-h", str(self.socket_dir)]
         subprocess.run(cmd, input=sql, text=True, check=True)
 
-    def _wait_until_reachable(self, timeout: float = 30.0) -> None:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self._accepting_connections():
-                return
-            time.sleep(0.5)
-
-    def _accepting_connections(self) -> bool:
+    def is_reachable(self) -> bool:
         ready = which("pg_isready")
         if ready:
             result = subprocess.run(

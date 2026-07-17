@@ -42,6 +42,15 @@ class BaseTask:
                 "Production site operations require non-interactive system privileges."
             )
 
+    def _record_audit(self, category: str, fields: dict) -> None:
+        """Append an audit log entry; a logging failure must not fail the task."""
+        from pilot.core.audit_log import AuditLog
+
+        try:
+            AuditLog(self.bench).append(category, fields)
+        except Exception as e:
+            print(f"Audit log update skipped due to error: {e!s}")
+
     @classmethod
     def _parser(cls) -> argparse.ArgumentParser:
         p = argparse.ArgumentParser()

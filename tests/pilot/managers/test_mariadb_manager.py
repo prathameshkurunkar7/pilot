@@ -184,7 +184,7 @@ def test_is_reachable_on_macos_ignores_local_socket_path() -> None:
     is_running() is a meaningful signal there."""
     m = _manager()
     with patch.object(m, "is_running", return_value=True), patch(f"{MODULE}.is_macos", return_value=True):
-        assert m._is_reachable() is True
+        assert m.is_reachable() is True
 
 
 def test_run_sql_as_superuser_omits_local_socket_on_macos() -> None:

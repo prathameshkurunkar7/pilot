@@ -3,6 +3,7 @@ from __future__ import annotations
 import pwd
 import re
 import shutil
+import sys
 from pathlib import Path
 from string import Template
 from typing import TYPE_CHECKING
@@ -180,6 +181,25 @@ class NginxManager:
         rules_file = self._modsec_dir() / "main.conf"
         return f"    modsecurity on;\n    modsecurity_rules_file {rules_file};\n\n"
 
+    def _render_security_trio(self) -> str:
+        """Proxy trust, firewall, and WAF directives, in the order every server
+        block must apply them: trust the edge proxy's XFF before the firewall
+        filters on the (now-correct) client IP, then gate on the WAF."""
+        return self._render_proxy_trust() + self._render_firewall() + self._render_waf()
+
+    @staticmethod
+    def _render_ssl_directives(cert: Path, key: Path) -> str:
+        return (
+            f"    ssl_certificate     {cert};\n"
+            f"    ssl_certificate_key {key};\n"
+            f"    ssl_protocols       TLSv1.2 TLSv1.3;\n"
+            f"    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
+            f"ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;\n"
+            f"    ssl_prefer_server_ciphers off;\n"
+            f"    ssl_session_cache   shared:SSL:10m;\n"
+            f"    ssl_session_timeout 1d;\n\n"
+        )
+
     def _modsec_dir(self) -> Path:
         return self.bench.config_path / "modsecurity"
 
@@ -298,6 +318,16 @@ class NginxManager:
             conf_text = self._generate_admin_config(ssl_ready)
             (sites_dir / "_admin.conf").write_text(conf_text)
         self._write_include_conf(nginx_dir)
+
+    def reload_for_site_change(self) -> None:
+        """Regenerate and reload nginx after a site is created or dropped.
+        No-op if the bench isn't in production or nginx isn't installed."""
+        if not self.bench.config.production.enabled or not self.is_installed():
+            return
+        print("Updating nginx configuration...")
+        sys.stdout.flush()
+        self.generate_config(ssl_ready=True)
+        self.reload()
 
     def _admin_socket_activated(self) -> bool:
         return self.bench.config.production.process_manager == "systemd"
@@ -438,9 +468,7 @@ class NginxManager:
             f"    listen {http_port};\n"
             f"    listen [::]:{http_port};\n"
             f"    server_name {server_name};\n\n"
-            + self._render_proxy_trust()
-            + self._render_firewall()
-            + self._render_waf()
+            + self._render_security_trio()
             + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
             + self._render_acme_location()
@@ -461,9 +489,7 @@ class NginxManager:
             f"    listen {http_port};\n"
             f"    listen [::]:{http_port};\n"
             f"    server_name {server_name};\n\n"
-            + self._render_proxy_trust()
-            + self._render_firewall()
-            + self._render_waf()
+            + self._render_security_trio()
             + self._render_acme_location()
             + "    location / {\n"
             "        return 301 https://$host$request_uri;\n"
@@ -485,26 +511,13 @@ class NginxManager:
         cert = self.cert_path(site)
         key = Path("/etc/letsencrypt/live") / site.name / "privkey.pem"
 
-        ssl_directives = (
-            f"    ssl_certificate     {cert};\n"
-            f"    ssl_certificate_key {key};\n"
-            f"    ssl_protocols       TLSv1.2 TLSv1.3;\n"
-            f"    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
-            f"ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;\n"
-            f"    ssl_prefer_server_ciphers off;\n"
-            f"    ssl_session_cache   shared:SSL:10m;\n"
-            f"    ssl_session_timeout 1d;\n\n"
-        )
-
         return (
             f"server {{\n"
             f"    listen {https_port} ssl http2;\n"
             f"    listen [::]:{https_port} ssl http2;\n"
             f"    server_name {server_name};\n\n"
-            + self._render_proxy_trust()
-            + self._render_firewall()
-            + self._render_waf()
-            + ssl_directives
+            + self._render_security_trio()
+            + self._render_ssl_directives(cert, key)
             + f"    root {bench_root}/sites;\n"
             f"    client_max_body_size {max_body};\n\n"
             + self._render_error_pages()
@@ -583,8 +596,7 @@ class NginxManager:
         domain = admin.domain
 
         acme_block = self._render_acme_location()
-        firewall_block = self._render_firewall()
-        waf_block = self._render_waf()
+        security_trio = self._render_security_trio()
         proxy_block = (
             self._render_error_pages()
             + self._render_open_cors_location("/api/v1/health")
@@ -601,9 +613,7 @@ class NginxManager:
                 f"    listen {http_port};\n"
                 f"    listen [::]:{http_port};\n"
                 f"    server_name {domain};\n\n"
-                + self._render_proxy_trust()
-                + firewall_block
-                + waf_block
+                + security_trio
                 + acme_block
                 + proxy_block
                 + "}\n"
@@ -615,9 +625,7 @@ class NginxManager:
                 f"    listen {http_port};\n"
                 f"    listen [::]:{http_port};\n"
                 f"    server_name {domain};\n\n"
-                + self._render_proxy_trust()
-                + firewall_block
-                + waf_block
+                + security_trio
                 + acme_block
                 + proxy_block
                 + "}\n"
@@ -625,24 +633,12 @@ class NginxManager:
 
         cert = self.admin_cert_path()
         key = Path("/etc/letsencrypt/live") / domain / "privkey.pem"
-        ssl_directives = (
-            f"    ssl_certificate     {cert};\n"
-            f"    ssl_certificate_key {key};\n"
-            f"    ssl_protocols       TLSv1.2 TLSv1.3;\n"
-            f"    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
-            f"ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;\n"
-            f"    ssl_prefer_server_ciphers off;\n"
-            f"    ssl_session_cache   shared:SSL:10m;\n"
-            f"    ssl_session_timeout 1d;\n\n"
-        )
         return (
             f"server {{\n"
             f"    listen {http_port};\n"
             f"    listen [::]:{http_port};\n"
             f"    server_name {domain};\n\n"
-            + self._render_proxy_trust()
-            + firewall_block
-            + waf_block
+            + security_trio
             + acme_block
             + f"    location / {{\n"
             f"        return 301 https://$host$request_uri;\n"
@@ -652,10 +648,8 @@ class NginxManager:
             f"    listen {https_port} ssl http2;\n"
             f"    listen [::]:{https_port} ssl http2;\n"
             f"    server_name {domain};\n\n"
-            + self._render_proxy_trust()
-            + firewall_block
-            + waf_block
-            + ssl_directives
+            + security_trio
+            + self._render_ssl_directives(cert, key)
             + proxy_block
             + "}\n"
         )

@@ -1,6 +1,5 @@
 import os
 import subprocess
-import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -98,17 +97,7 @@ class MariaDBManager(UserOwnedDBManager):
         self.unit_path.write_text(content)
         run_command(self._systemctl("daemon-reload"), env=self._systemctl_env())
 
-    def _wait_until_reachable(self, timeout: float = 30.0) -> None:
-        """Poll until the server is active and reachable, so securing doesn't
-        race the daemon's startup. Falls through on timeout — the next step
-        surfaces a clear connection error."""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self._is_reachable():
-                return
-            time.sleep(0.5)
-
-    def _is_reachable(self) -> bool:
+    def is_reachable(self) -> bool:
         if not self.is_running():
             return False
         if is_macos():

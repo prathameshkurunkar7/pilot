@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from pathlib import Path
 
 from pilot.exceptions import DatabaseError
@@ -25,6 +26,19 @@ class UserOwnedDBManager:
 
     def is_installed(self) -> bool:
         raise NotImplementedError
+
+    def is_reachable(self) -> bool:
+        raise NotImplementedError
+
+    def _wait_until_reachable(self, timeout: float = 30.0) -> None:
+        """Poll until the server is active and reachable, so securing doesn't
+        race the daemon's startup. Falls through on timeout — the next step
+        surfaces a clear connection error."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.is_reachable():
+                return
+            time.sleep(0.5)
 
     def install(self) -> None:
         if self.is_installed():

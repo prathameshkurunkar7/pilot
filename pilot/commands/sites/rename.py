@@ -32,6 +32,8 @@ class RenameSiteCommand(Command):
         self.new_name = new_name
 
     def run(self) -> None:
+        from pilot.managers.nginx import NginxManager
+
         old_site = self._validate()
         ssl_enabled = old_site.config.ssl
 
@@ -43,7 +45,7 @@ class RenameSiteCommand(Command):
         self._rename_in_bench_toml()
         self._remove_stale_nginx_conf()
         self._add_to_hosts()
-        self._reload_nginx()
+        NginxManager(self.bench).reload_for_site_change()
 
         print(f"\nSite renamed to '{self.new_name}'.")
         self._run_followups(ssl_enabled)
@@ -128,19 +130,6 @@ class RenameSiteCommand(Command):
                 f"  Add it manually to reach the site by name.",
                 file=sys.stderr,
             )
-
-    def _reload_nginx(self) -> None:
-        if not self.bench.config.production.enabled:
-            return
-        from pilot.managers.nginx import NginxManager
-
-        mgr = NginxManager(self.bench)
-        if not mgr.is_installed():
-            return
-        print("Updating nginx configuration...")
-        sys.stdout.flush()
-        mgr.generate_config(ssl_ready=True)
-        mgr.reload()
 
     def _run_followups(self, ssl_enabled: bool) -> None:
         # Auto-run whatever the new domain needs; on failure point the user at the
