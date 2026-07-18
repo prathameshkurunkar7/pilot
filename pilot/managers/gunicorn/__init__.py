@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -69,8 +68,7 @@ class GunicornManager:
             max_requests_jitter=cfg.max_requests_jitter,
             companion=companion,
             control_socket=self.bench.config_path / "gunicorn-companion.sock",
-            # json doubles as a Python literal here: specs hold only strings and ints.
-            companion_workers=json.dumps(workers, indent=4),
+            companion_workers=repr(workers),
         )
 
     def _build_companion_workers(self, sites_dir: Path, logs_dir: Path) -> list[dict]:
