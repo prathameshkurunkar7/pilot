@@ -81,7 +81,7 @@ def new_site_name_error(bench_root: Path, name: str) -> str | None:
     if admin_domain and normalize_host(name) == normalize_host(admin_domain):
         return f"Site '{name}' clashes with this bench's admin domain. An admin domain must not match a site domain."
 
-    from pilot.core.domains import DomainRouteProvider
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
     from pilot.utils import matches_wildcard
 
     patterns = DomainRouteProvider.wildcard_domains()

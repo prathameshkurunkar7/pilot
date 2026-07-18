@@ -5,7 +5,7 @@ import typing
 
 import tomllib
 
-from pilot.core.app_validator.base import module_path
+from pilot.core.app.validator.base import module_path
 from pilot.exceptions import AppValidationError
 
 if typing.TYPE_CHECKING:

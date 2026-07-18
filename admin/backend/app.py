@@ -139,7 +139,7 @@ def secure_cookie_setting(config_store: BenchTomlStore) -> bool:
     if config.admin.tls:
         return True
 
-    from pilot.core.domains import DomainRouteProvider
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
 
     try:
         return bool(DomainRouteProvider.proxy_servers())

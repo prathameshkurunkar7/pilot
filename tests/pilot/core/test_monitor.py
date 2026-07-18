@@ -8,7 +8,7 @@ from pilot.config import ProductionConfig
 from pilot.config import RedisConfig
 from pilot.config import WorkerConfig
 from pilot.core.bench import Bench
-from pilot.core.monitoring import Monitor, MonitorConfigurator
+from pilot.core.server.monitoring import Monitor, MonitorConfigurator
 
 
 def _make_bench(path: Path, name: str = "my-bench") -> Bench:
@@ -70,7 +70,7 @@ def test_authority_false_when_sibling_runs_systemd(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
     with patch(
-        "pilot.core.monitoring_config.iter_sibling_benches",
+        "pilot.core.server.monitoring_config.iter_sibling_benches",
         return_value=iter([_sibling("other-bench", "systemd")]),
     ):
         assert monitor.is_system_log_authority() is False
@@ -82,7 +82,7 @@ def test_authority_false_when_sibling_runs_supervisor(tmp_path: Path) -> None:
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
     with patch(
-        "pilot.core.monitoring_config.iter_sibling_benches",
+        "pilot.core.server.monitoring_config.iter_sibling_benches",
         return_value=iter([_sibling("other-bench", "supervisor")]),
     ):
         assert monitor.is_system_log_authority() is False
@@ -94,7 +94,7 @@ def test_authority_stolen_when_recorded_bench_is_in_dev_mode(tmp_path: Path) -> 
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
     with patch(
-        "pilot.core.monitoring_config.iter_sibling_benches",
+        "pilot.core.server.monitoring_config.iter_sibling_benches",
         return_value=iter([_sibling("other-bench", "")]),
     ):
         assert monitor.is_system_log_authority() is True
@@ -106,7 +106,7 @@ def test_authority_stolen_when_recorded_bench_no_longer_exists(tmp_path: Path) -
     authority_file.write_text("dropped-bench")
     monitor = _make_monitor(_make_bench(tmp_path / "my-bench"), authority_file)
 
-    with patch("pilot.core.monitoring_config.iter_sibling_benches", return_value=iter([])):
+    with patch("pilot.core.server.monitoring_config.iter_sibling_benches", return_value=iter([])):
         assert monitor.is_system_log_authority() is True
     assert authority_file.read_text() == "my-bench"
 
@@ -123,7 +123,7 @@ def test_exactly_one_bench_holds_authority(tmp_path: Path) -> None:
 
     # bench-b sees bench-a as the running authority
     with patch(
-        "pilot.core.monitoring_config.iter_sibling_benches",
+        "pilot.core.server.monitoring_config.iter_sibling_benches",
         return_value=iter([_sibling("bench-a", "systemd")]),
     ):
         assert monitor_b.is_system_log_authority() is False
@@ -182,7 +182,7 @@ def test_collect_system_metrics_skipped_when_not_authority(tmp_path: Path) -> No
     monitor.bench.config.monitor.system_log_path = system_log_file
 
     siblings = [_sibling("other-bench", "systemd")]
-    with patch("pilot.core.monitoring_config.iter_sibling_benches", return_value=iter(siblings)):
+    with patch("pilot.core.server.monitoring_config.iter_sibling_benches", return_value=iter(siblings)):
         monitor.collect_system_metrics()
 
     assert not system_log_file.exists()
@@ -323,7 +323,7 @@ def test_disk_io_fields_ignores_partitions(tmp_path: Path) -> None:
         "  259       0 nvme0n1 10 0 200 0 5 0 100 0 0 0 0\n"
     )
     with patch(
-        "pilot.core.monitoring_proc.Path",
+        "pilot.core.server.monitoring_proc.Path",
         side_effect=lambda p: diskstats if p == "/proc/diskstats" else Path(p),
     ):
         result = monitor._disk_io_fields()

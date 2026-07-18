@@ -17,7 +17,7 @@ class ProductionAdminDomain:
 
     def check(self) -> None:
         """Reject domains that are missing, already claimed, or outside the wildcard set."""
-        from pilot.core.domains import DomainRouteProvider
+        from pilot.core.adapters.domain_provider import DomainRouteProvider
 
         domain = self.bench.config.admin.domain
         if not domain:
@@ -42,7 +42,7 @@ class ProductionAdminDomain:
 
     def register(self) -> None:
         """Provision a new/changed admin domain with the route provider."""
-        from pilot.core.domains import DomainRouteProvider
+        from pilot.core.adapters.domain_provider import DomainRouteProvider
 
         self.registered_domain = None
         domain = self.bench.config.admin.domain
@@ -55,7 +55,7 @@ class ProductionAdminDomain:
         """Release the just-registered admin route after a failed setup."""
         if not self.registered_domain:
             return
-        from pilot.core.domains import DomainRouteProvider
+        from pilot.core.adapters.domain_provider import DomainRouteProvider
 
         DomainRouteProvider(self.bench).release(self.registered_domain)
 
@@ -63,6 +63,6 @@ class ProductionAdminDomain:
         """Free the superseded admin hostname once the switch is committed."""
         if not self.registered_domain or not self.existing_domain:
             return
-        from pilot.core.domains import DomainRouteProvider
+        from pilot.core.adapters.domain_provider import DomainRouteProvider
 
         DomainRouteProvider(self.bench).release(self.existing_domain)

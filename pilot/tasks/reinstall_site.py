@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 from typing import Annotated, ClassVar
 
-from pilot.core.site import Site
-
 from pilot.tasks import Arg, Task, step
 
 
@@ -18,7 +16,7 @@ class ReinstallSiteTask(Task):
 
     @step("reinstall", lambda self: f"Reinstall site {self.site}")
     def reinstall(self) -> None:
-        Site.for_name(self.site, self.bench).reinstall(self.admin_password)
+        self.bench.site(self.site).reinstall(self.admin_password)
 
 
 if __name__ == "__main__":

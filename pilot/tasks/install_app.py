@@ -17,10 +17,8 @@ class InstallAppTask(Task):
     app: str
 
     def run(self) -> None:
-        from pilot.core.site import Site
-
         app = self.bench.app(self.app)
-        site = Site.for_name(self.site, self.bench)
+        site = self.bench.site(self.site)
         dependencies = self.install(site, app)
         self.build_assets([app, *dependencies])
 

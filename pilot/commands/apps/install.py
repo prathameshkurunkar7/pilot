@@ -20,9 +20,7 @@ class InstallAppCommand(Command):
     force: Annotated[bool, Arg(help="Reinstall even if already present.")] = False
 
     def __post_init__(self) -> None:
-        from pilot.core.site import Site
-
-        self.site: "Site" = Site.for_name(self.site_name, self.bench)
+        self.site: "Site" = self.bench.site(self.site_name)
 
     def run(self) -> None:
         if not self.site.exists:

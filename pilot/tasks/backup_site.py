@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from pilot.tasks import Task, step
-from pilot.core.backup_pruning import BackupPruner
+from pilot.core.site import Site
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError
 
@@ -20,8 +20,8 @@ class BackupSiteTask(Task):
     with_files: bool = False
 
     @cached_property
-    def pruner(self) -> BackupPruner:
-        return BackupPruner(self.bench, self.site)
+    def site_record(self) -> Site:
+        return self.bench.site(self.site)
 
     def run(self) -> None:
         self.backup()
@@ -38,7 +38,7 @@ class BackupSiteTask(Task):
             self.record(status="failed", timestamp="", files={}, offsite=False, pruned=[])
             sys.exit(result.returncode)
 
-        timestamp, backup_files = self.pruner.latest_run()
+        timestamp, backup_files = self.site_record.backups.latest_run()
         if not backup_files:
             print("Backup command exited 0 but produced no files.")
             self.record(status="failed", timestamp="", files={}, offsite=False, pruned=[])
@@ -72,7 +72,7 @@ class BackupSiteTask(Task):
     def prune(self) -> list[str]:
         """Retention runs after every backup; a failure here must not fail the backup."""
         try:
-            return self.pruner.prune()
+            return self.site_record.backups.prune()
         except Exception as e:
             print(f"Backup retention skipped due to error: {e!s}")
             return []

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pilot.core.admin_auth import (
+from admin.backend.auth import (
     decode_token,
     has_scope,
     issue_login_token,
@@ -291,19 +291,19 @@ def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> 
     store = SimpleNamespace(read=lambda: config)
 
     monkeypatch.setattr(
-        "pilot.core.domains.DomainRouteProvider.proxy_servers", lambda: []
+        "pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: []
     )
     assert secure_cookie_setting(store) is False
 
     monkeypatch.setattr(
-        "pilot.core.domains.DomainRouteProvider.proxy_servers",
+        "pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers",
         lambda: ["203.0.113.10"],
     )
     assert secure_cookie_setting(store) is True
 
     config.admin.tls = True
     monkeypatch.setattr(
-        "pilot.core.domains.DomainRouteProvider.proxy_servers", lambda: []
+        "pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: []
     )
     assert secure_cookie_setting(store) is True
 

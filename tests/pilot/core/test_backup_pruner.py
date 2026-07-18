@@ -1,8 +1,8 @@
 import json
 from types import SimpleNamespace
 
-from pilot.config import BackupConfig
-from pilot.core.backup_pruning import BackupPruner
+from pilot.config import BackupConfig, SiteConfig
+from pilot.core.site import Site
 
 _RUNS = ["20260101_020000", "20260102_020000", "20260103_020000"]  # oldest → newest
 
@@ -40,14 +40,18 @@ class _FakeOffsite:
         self.deleted.append((timestamp, filename))
 
 
+def _site_backups(bench, name):
+    return Site(SiteConfig(name=name, apps=[]), bench).backups
+
+
 def test_no_retention_keeps_everything(tmp_path) -> None:
     """Automated backups off (no backup_retention in site_config) → never prune."""
     bench = _bench(tmp_path)
     backups = _setup_site(bench, "site1", retention=None)
 
-    pruner = BackupPruner(bench, "site1")
-    pruner._offsite = lambda: None
-    assert pruner.prune() == []
+    site_backups = _site_backups(bench, "site1")
+    site_backups._offsite = lambda: None
+    assert site_backups.prune() == []
     assert all((backups / f"{ts}-site1-database.sql.gz").exists() for ts in _RUNS)
 
 
@@ -56,9 +60,9 @@ def test_offsite_failure_keeps_local_and_is_not_reported(tmp_path) -> None:
     backups = _setup_site(bench, "site1")
     fake = _FakeOffsite(_RUNS, fail_on={"20260102_020000"})
 
-    pruner = BackupPruner(bench, "site1")
-    pruner._offsite = lambda: fake
-    pruned = pruner.prune()
+    site_backups = _site_backups(bench, "site1")
+    site_backups._offsite = lambda: fake
+    pruned = site_backups.prune()
 
     assert pruned == ["20260101_020000"]  # the failing run is not reported as pruned
     assert not (backups / "20260101_020000-site1-database.sql.gz").exists()
@@ -74,12 +78,20 @@ def test_prunes_with_gfs_scheme(tmp_path) -> None:
     backups.mkdir(parents=True)
     for ts in runs:
         (backups / f"{ts}-site1-database.sql.gz").write_text("x")
-    site_config = {"backup_retention": {"scheme": "gfs", "keep_daily": 3, "keep_weekly": 0, "keep_monthly": 0, "keep_yearly": 0}}
+    site_config = {
+        "backup_retention": {
+            "scheme": "gfs",
+            "keep_daily": 3,
+            "keep_weekly": 0,
+            "keep_monthly": 0,
+            "keep_yearly": 0,
+        }
+    }
     (bench.sites_path / "site1" / "site_config.json").write_text(json.dumps(site_config))
 
-    pruner = BackupPruner(bench, "site1")
-    pruner._offsite = lambda: _FakeOffsite(runs)
-    pruned = pruner.prune()
+    site_backups = _site_backups(bench, "site1")
+    site_backups._offsite = lambda: _FakeOffsite(runs)
+    pruned = site_backups.prune()
 
     assert set(pruned) == set(runs[:7])  # keeps the 3 newest days, prunes the rest
     for ts in runs[7:]:
@@ -91,9 +103,9 @@ def test_prunes_local_and_offsite_when_healthy(tmp_path) -> None:
     backups = _setup_site(bench, "site1")
     fake = _FakeOffsite(_RUNS)
 
-    pruner = BackupPruner(bench, "site1")
-    pruner._offsite = lambda: fake
-    pruned = pruner.prune()
+    site_backups = _site_backups(bench, "site1")
+    site_backups._offsite = lambda: fake
+    pruned = site_backups.prune()
 
     assert sorted(pruned) == ["20260101_020000", "20260102_020000"]
     assert {ts for ts, _ in fake.deleted} == {"20260101_020000", "20260102_020000"}

@@ -118,7 +118,7 @@ class BenchInitializer:
         ProcessManager.for_bench(self.bench).write_config()
 
     def _download_admin_frontend(self, on_progress: Callable[[str], None]) -> None:
-        from pilot.core.admin_frontend import build_admin_frontend, download_admin_frontend
+        from admin.backend.frontend import build_admin_frontend, download_admin_frontend
         from pilot.utils import cli_root
 
         if not download_admin_frontend(cli_root()):

@@ -23,7 +23,7 @@ def create_bench_locked(
     admin_domain: str,
     admin_tls: bool | None,
 ):
-    from pilot.core.domains import DomainRouteProvider
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
     from pilot.utils import host_owner, matches_wildcard, normalize_host
 
     try:
@@ -94,7 +94,7 @@ def create_bench_locked(
 
 
 def _start_production_setup_wizard(new_dir: Path, name: str, admin_domain: str):
-    from pilot.core.domains import DomainRouteProvider
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
 
     try:
         from pilot.managers.nginx import NginxManager

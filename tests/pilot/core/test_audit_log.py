@@ -1,7 +1,7 @@
 import stat
 from types import SimpleNamespace
 
-from pilot.core.audit_log import AuditLog
+from pilot.core.bench.audit_log import AuditLog
 
 
 def _bench(tmp_path):

@@ -8,11 +8,11 @@ import pytest
 
 from pilot.config import AppConfig
 from pilot.core.app import App
-from pilot.core.app_validator import Validator
-from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
-from pilot.core.app_validator.imports import ImportCheck
-from pilot.core.app_validator.repo_structure import RepoStructureCheck
-from pilot.core.app_validator.syntax import SyntaxCheck
+from pilot.core.app.validator import Validator
+from pilot.core.app.validator.dependency_declarations import DependencyDeclarationsCheck
+from pilot.core.app.validator.imports import ImportCheck
+from pilot.core.app.validator.repo_structure import RepoStructureCheck
+from pilot.core.app.validator.syntax import SyntaxCheck
 from pilot.exceptions import AppValidationError
 
 

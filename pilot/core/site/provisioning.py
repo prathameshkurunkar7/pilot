@@ -67,7 +67,7 @@ class SiteProvisioner:
 
     def write_pilot_communication_config(self, site: "Site") -> None:
         from pilot.utils import admin_url
-        from pilot.core.admin_auth import ensure_jwt_secret, issue_site_token
+        from admin.backend.auth import ensure_jwt_secret, issue_site_token
         from pilot.utils import write_private_text
 
         config_path = site.path / "site_config.json"
@@ -125,7 +125,7 @@ class SiteProvisioner:
 
 
 def validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
-    from pilot.core.domains import DomainRouteProvider
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
     from pilot.utils import host_owner, matches_wildcard, normalize_host
 
     if (bench.sites_path / name / "site_config.json").exists():
@@ -180,6 +180,4 @@ def should_enable_ssl(bench: "Bench", name: str) -> bool:
 
 
 def register_with_provider(bench: "Bench", name: str) -> None:
-    from pilot.core.domains import DomainRouteProvider
-
-    DomainRouteProvider(bench).register(name, name)
+    bench.site(name).domains.register(name)

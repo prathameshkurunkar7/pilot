@@ -81,7 +81,7 @@ def test_new_command_first_bench_uses_default_ports(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
@@ -100,7 +100,7 @@ def test_new_command_second_bench_gets_next_offset(
     """Every port field must shift by the same offset — a regression guard
     for a bug where admin_port got the offset applied twice."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
@@ -123,7 +123,7 @@ def test_new_command_inherits_sibling_jwks_url_and_audience(
     """The remote JWKS issuer is server-wide, so a new bench carries both the
     URL and the audience forward from a sibling that already trusts one."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
     from pilot.config import BenchTomlStore
 
     monkeypatch.setattr("builtins.input", lambda _: "")
@@ -148,7 +148,7 @@ def test_new_command_first_bench_has_no_jwks_url(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
@@ -163,7 +163,7 @@ def test_new_command_postgres_bench(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     password (there's no dedicated cluster/instance anymore — one shared
     server per OS user)."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
@@ -183,7 +183,7 @@ def test_new_command_second_postgres_bench_inherits_password(
     bench must reuse the password that already secured it — not a fresh
     random one that would lock it out."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
@@ -205,7 +205,7 @@ def test_new_command_postgres_port_is_not_offset_between_benches(
     postgres.port must stay identical across benches — unlike http_port/redis
     ports, which are offset per bench. Mirrors the equivalent mariadb test."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
@@ -230,7 +230,7 @@ def test_new_command_postgres_port_ignores_live_scan_on_macos(
     (`brew services start`, no -p override) — the actual server always binds
     to its own default regardless of config. Mirrors the mariadb version."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     # 5432 reads as live, which would normally push the picker to 5433+.
@@ -249,7 +249,7 @@ def test_new_command_mariadb_bench_has_no_postgres_password(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
@@ -268,7 +268,7 @@ def test_new_command_mariadb_port_is_not_offset_between_benches(
     must stay identical across benches — unlike http_port/redis ports, which
     are offset per bench."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
@@ -290,7 +290,7 @@ def test_new_command_mariadb_port_ignores_live_scan_on_macos(
     binds to its own default regardless of config. Scanning for a "free" port
     there would record a value nothing will ever actually bind to."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     # 3306 reads as live, which would normally push the picker to 3307+.
@@ -311,7 +311,7 @@ def test_new_command_second_mariadb_bench_inherits_password(
     default, which would reset (and lock bench 1 out of) a server a sibling
     already secured with a different password."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
@@ -335,7 +335,7 @@ def test_new_command_skips_offset_with_live_port(
     """An orphaned process holding a port with no matching bench.toml must
     also be avoided, not just offsets already on disk."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: port == 8000))
@@ -355,7 +355,7 @@ def test_new_command_skips_offset_with_live_admin_internal_port(
     socket-activated admin — a sibling live there must be avoided even though
     it isn't one of the stored port fields checked directly."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench_creator import BenchCreator
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     # 7001 is admin.port(7000) + 1 at offset 0 — without the internal-port
@@ -1280,7 +1280,7 @@ def test_drop_bench_deletes_directory_with_no_sites(tmp_path: Path) -> None:
 
 
 def test_build_admin_rejects_old_node(monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.core.admin_frontend import _check_node_version
+    from admin.backend.frontend import _check_node_version
 
     monkeypatch.setattr("subprocess.run", lambda *a, **k: MagicMock(stdout="v18.20.8\n"))
     with pytest.raises(BenchError, match="Node.js"):
@@ -1288,14 +1288,14 @@ def test_build_admin_rejects_old_node(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_build_admin_accepts_supported_node(monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.core.admin_frontend import _check_node_version
+    from admin.backend.frontend import _check_node_version
 
     monkeypatch.setattr("subprocess.run", lambda *a, **k: MagicMock(stdout="v20.11.0\n"))
     _check_node_version()  # no raise
 
 
 def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    from pilot.core.admin_frontend import _check_node_version
+    from admin.backend.frontend import _check_node_version
 
     def _missing(*a, **k):
         raise FileNotFoundError("node")
@@ -1306,7 +1306,7 @@ def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_build_admin_installs_when_node_modules_missing(tmp_path: Path) -> None:
-    from pilot.core.admin_frontend import _needs_npm_install
+    from admin.backend.frontend import _needs_npm_install
 
     (tmp_path / "package.json").write_text("{}")
 
@@ -1316,7 +1316,7 @@ def test_build_admin_installs_when_node_modules_missing(tmp_path: Path) -> None:
 def test_build_admin_installs_when_manifest_is_newer_than_installed_deps(tmp_path: Path) -> None:
     import os
 
-    from pilot.core.admin_frontend import _needs_npm_install
+    from admin.backend.frontend import _needs_npm_install
 
     node_modules = tmp_path / "node_modules"
     node_modules.mkdir()
@@ -1336,7 +1336,7 @@ def test_build_admin_installs_when_manifest_is_newer_than_installed_deps(tmp_pat
 def test_build_admin_skips_install_when_installed_deps_are_current(tmp_path: Path) -> None:
     import os
 
-    from pilot.core.admin_frontend import _needs_npm_install
+    from admin.backend.frontend import _needs_npm_install
 
     package_json = tmp_path / "package.json"
     package_json.write_text("{}")

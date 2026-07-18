@@ -3,7 +3,7 @@ from __future__ import annotations
 import tomllib
 import typing
 
-from pilot.core.app_validator.base import module_path
+from pilot.core.app.validator.base import module_path
 from pilot.exceptions import AppValidationError
 
 if typing.TYPE_CHECKING:

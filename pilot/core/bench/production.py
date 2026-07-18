@@ -98,7 +98,7 @@ class BenchProduction:
         best_effort_tls: bool,
         on_progress: Callable[[str], None],
     ) -> None:
-        from pilot.core.production_setup import ProductionSetup
+        from pilot.core.bench.setup import ProductionSetup
 
         ProductionSetup(
             self.bench,
@@ -150,7 +150,7 @@ class BenchProduction:
         on_progress(f"  {admin_url(self.bench.config)}")
 
     def _release_admin_domain(self) -> None:
-        from pilot.core.domains import DomainRouteProvider
+        from pilot.core.adapters.domain_provider import DomainRouteProvider
 
         domain = self.bench.config.admin.domain
         if domain:

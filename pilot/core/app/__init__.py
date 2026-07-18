@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.config import AppConfig
-from pilot.core.app_install_result import AppInstallResult
-from pilot.core.app_repository import AppRepository
-from pilot.core.app_revisions import RevisionPin
+from pilot.core.app.install_result import AppInstallResult
+from pilot.core.app.repository import AppRepository
+from pilot.core.app.revisions import RevisionPin
 from pilot.exceptions import BenchError
 from pilot.utils import installed_app_version, run_command
 
@@ -217,12 +217,12 @@ class App:
         return renamed, cloned_this_run
 
     def _install_dependencies(self, on_progress: Callable[[str], None]) -> list["App"]:
-        from pilot.core.app_dependency_installer import AppDependencyInstaller
+        from pilot.core.app.dependency_installer import AppDependencyInstaller
 
         return AppDependencyInstaller(self.bench, self).install(on_progress)
 
     def _validate(self) -> None:
-        from pilot.core.app_validator import Validator
+        from pilot.core.app.validator import Validator
 
         Validator(self).validate()
 

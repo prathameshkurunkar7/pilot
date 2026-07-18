@@ -11,19 +11,14 @@ class SiteDropper:
         self.site = site
 
     def provider_domains(self) -> list[str]:
-        from pilot.core.domains import DomainRouteProvider
-
         if not (self.site.path / "site_config.json").exists():
             return []
-        return [
-            self.site.config.name,
-            *DomainRouteProvider(self.site.bench).domains(self.site.config.name),
-        ]
+        return [self.site.config.name, *self.site.domains.names()]
 
     def release_domains(self, domains: list[str]) -> None:
         if not domains:
             return
-        from pilot.core.domains import DomainRouteProvider
+        from pilot.core.adapters.domain_provider import DomainRouteProvider
 
         routes = DomainRouteProvider(self.site.bench)
         for domain in domains:

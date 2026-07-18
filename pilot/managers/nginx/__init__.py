@@ -7,9 +7,9 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.managers.nginx_certs import cert_files_exist
-from pilot.managers.nginx_error_pages import ERROR_PAGES, render_error_html
-from pilot.managers.nginx_render import NginxConfigRenderer
+from pilot.managers.nginx.certs import cert_files_exist
+from pilot.managers.nginx.error_pages import ERROR_PAGES, render_error_html
+from pilot.managers.nginx.render import NginxConfigRenderer
 from pilot.managers.packages import get_package_manager
 from pilot.managers.waf import WafManager
 from pilot.managers.platform import (

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pilot.core.app_revisions import RevisionPin
+from pilot.core.app.revisions import RevisionPin
 from pilot.exceptions import BenchError, CommandError
 from pilot.utils import run_command
 

@@ -48,7 +48,7 @@ def audit_log():
     UI — it's viewed directly, paginated with ``limit``/``cursor`` query params,
     and optionally filtered by ``type``/``status``/``site``."""
     from admin.backend.api.responses import paginated_response, parse_pagination
-    from pilot.core.audit_log import AuditLog
+    from pilot.core.bench.audit_log import AuditLog
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     limit, offset = parse_pagination(_AUDIT_LOG_DEFAULT_LIMIT, _AUDIT_LOG_MAX_LIMIT)

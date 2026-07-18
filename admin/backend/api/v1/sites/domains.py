@@ -91,13 +91,12 @@ def enable_tls(name: str):
     return accepted_task_response(bench_root, task_id)
 
 
-def _domain_routes(bench_root: Path):
+def _site_domains(bench_root: Path, name: str):
     from pilot.config import BenchTomlStore
     from pilot.core.bench import Bench
-    from pilot.core.domains import DomainRouteProvider
 
     bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
-    return DomainRouteProvider(bench)
+    return bench.site(name).domains
 
 
 def _apply_domains(bench_root: Path, name: str) -> str:
@@ -115,8 +114,8 @@ def list_domains(name: str):
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
-        routes = _domain_routes(bench_root)
-        return jsonify({"domains": routes.domains(name), "primary": routes.primary(name)})
+        domains = _site_domains(bench_root, name)
+        return jsonify({"domains": domains.names(), "primary": domains.primary()})
     except BenchError as error:
         return _domain_failure(error, "Could not read site domains.")
     except Exception:
@@ -133,7 +132,7 @@ def domain_dns_records(name: str, domain: str):
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
-        records = _domain_routes(bench_root).generate_dns_records(name, domain)
+        records = _site_domains(bench_root, name).generate_dns_records(domain)
     except BenchError as error:
         return _domain_failure(error, "Could not generate DNS records.")
     except Exception:
@@ -157,7 +156,7 @@ def add_domain(name: str):
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
-        _domain_routes(bench_root).register(name, domain)
+        _site_domains(bench_root, name).register(domain)
         task_id = _apply_domains(bench_root, name)
     except BenchError as error:
         return _domain_failure(error, "Could not attach the domain.")
@@ -175,7 +174,7 @@ def get_domain(name: str, domain: str):
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
-        attached, is_primary = _domain_status(_domain_routes(bench_root), name, domain)
+        attached, is_primary = _domain_status(_site_domains(bench_root, name), name, domain)
     except BenchError as error:
         return _domain_failure(error, "Could not read the domain.")
     except Exception:
@@ -197,7 +196,7 @@ def update_domain(name: str, domain: str):
     if not isinstance(data, dict) or data.get("primary") is not True:
         return error_response("invalid_fields", 'Only setting {"primary": true} is supported.', 422)
     try:
-        _domain_routes(bench_root).set_primary(name, domain)
+        _site_domains(bench_root, name).set_primary(domain)
         task_id = _apply_domains(bench_root, name)
     except BenchError as error:
         return _domain_failure(error, "Could not change the primary domain.")
@@ -216,7 +215,7 @@ def remove_domain(name: str, domain: str):
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
-        _domain_routes(bench_root).deregister(name, domain)
+        _site_domains(bench_root, name).deregister(domain)
         task_id = _apply_domains(bench_root, name)
     except BenchError as error:
         return _domain_failure(error, "Could not detach the domain.")
@@ -229,10 +228,10 @@ def _domain_status(routes, site_name: str, domain: str) -> tuple[bool, bool]:
     from pilot.utils import normalize_host
 
     normalized = normalize_host(domain)
-    primary = routes.primary(site_name)
+    primary = routes.primary()
     if normalized == normalize_host(site_name):
         return True, not primary or normalize_host(primary) == normalized
-    attached = normalized in {normalize_host(d) for d in routes.domains(site_name)}
+    attached = normalized in {normalize_host(d) for d in routes.names()}
     return attached, bool(primary) and normalize_host(primary) == normalized
 
 

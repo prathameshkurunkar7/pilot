@@ -6,9 +6,9 @@ import typing
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-from pilot.core.app_validator.base import python_files
-from pilot.core.app_validator.utils.module_resolver import ModuleResolver
-from pilot.core.app_validator.utils.tmp_env import TmpEnv
+from pilot.core.app.validator.base import python_files
+from pilot.core.app.validator.utils.module_resolver import ModuleResolver
+from pilot.core.app.validator.utils.tmp_env import TmpEnv
 from pilot.exceptions import AppValidationError
 
 if typing.TYPE_CHECKING:
@@ -38,7 +38,7 @@ class ImportCheck:
         This also assumes that the app is already installed in the bench by get-app,
         In case it isn't we will fail anyways saying that the import is unresolved which is true!!
         """
-        from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
+        from pilot.core.app.validator.dependency_declarations import DependencyDeclarationsCheck
         from pilot.exceptions import BenchError
 
         required = DependencyDeclarationsCheck()._get_pyproject_required_apps(app)

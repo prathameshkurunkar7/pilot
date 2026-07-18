@@ -82,7 +82,7 @@ class AppDependencyInstaller:
         return apps
 
     def _missing_required_apps(self) -> list[str]:
-        from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
+        from pilot.core.app.validator.dependency_declarations import DependencyDeclarationsCheck
 
         required = DependencyDeclarationsCheck()._get_pyproject_required_apps(self.app)
         return [name for name in required if not self.bench.is_app_installed(name)]

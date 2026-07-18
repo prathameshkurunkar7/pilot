@@ -50,13 +50,12 @@ def _drop_failed_site(bench_root: Path, site_name: str, site_path: Path) -> bool
     try:
         from pilot.config import BenchTomlStore
         from pilot.core.bench import Bench
-        from pilot.core.site import Site
         from pilot.managers.platform import noninteractive_privileges
 
         config = BenchTomlStore.for_bench(bench_root).read()
         bench = Bench(config, bench_root)
         with noninteractive_privileges():
-            Site.for_name(site_name, bench).drop()
+            bench.site(site_name).drop()
         return True
     except Exception as exc:
         logging.debug("Site drop callback failed for %s: %s", site_name, exc)

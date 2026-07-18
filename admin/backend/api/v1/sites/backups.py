@@ -84,12 +84,20 @@ def download_backup_file(name: str, timestamp: str, file_id: str):
     if not file_id.startswith(timestamp) or "/" in file_id or "\\" in file_id or file_id.startswith("."):
         return error_response("invalid_filename", "Backup filename is invalid.", 422)
 
-    backups_dir = (bench_root / "sites" / name / "private" / "backups").resolve()
+    backups_dir = _site_backups_dir(bench_root, name).resolve()
     target = (backups_dir / file_id).resolve()
     if backups_dir not in target.parents or not target.is_file():
         return error_response("backup_not_found", "Backup file not found.", 404)
 
     return send_file(target, as_attachment=True, download_name=file_id)
+
+
+def _site_backups_dir(bench_root: Path, name: str) -> Path:
+    from pilot.config import BenchTomlStore
+    from pilot.core.bench import Bench
+
+    bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
+    return bench.site(name).backups.directory
 
 
 @sites_bp.get("/<name>/backups/<timestamp>/download-links")

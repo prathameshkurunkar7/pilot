@@ -8,9 +8,9 @@ import typing
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pilot.core.monitoring_config import MonitorConfigurator
-from pilot.core.monitoring_proc import ProcMetricsReader
-from pilot.core.monitoring_processes import ProcessResolver
+from pilot.core.server.monitoring_config import MonitorConfigurator
+from pilot.core.server.monitoring_proc import ProcMetricsReader
+from pilot.core.server.monitoring_processes import ProcessResolver
 from pilot.utils import cli_root
 from pilot.utils import iter_sibling_benches
 

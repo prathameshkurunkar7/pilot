@@ -21,7 +21,7 @@ class GenerateSessionCommand(Command):
 
     def run(self) -> None:
         from pilot.utils import admin_url
-        from pilot.core.admin_auth import issue_login_token
+        from admin.backend.auth import issue_login_token
 
         if not self.bench.config.admin.password:
             raise BenchError(
@@ -34,7 +34,7 @@ class GenerateSessionCommand(Command):
             self.report(token)
 
     def _jwt_secret(self) -> str:
-        from pilot.core.admin_auth import ensure_jwt_secret
+        from admin.backend.auth import ensure_jwt_secret
 
         secret = ensure_jwt_secret(self.bench.path / "bench.toml")
         self.bench.config.admin.jwt_secret = secret
@@ -44,7 +44,7 @@ class GenerateSessionCommand(Command):
 def _default_ttl() -> int:
     # Discovery imports every command module, so this stays lazy — pilot.core
     # must not load just to build --help.
-    from pilot.core.admin_auth import DEFAULT_TTL
+    from admin.backend.auth import DEFAULT_TTL
 
     return DEFAULT_TTL
 
@@ -60,7 +60,7 @@ class IssueSiteTokenCommand(Command):
     )
 
     def run(self) -> None:
-        from pilot.core.admin_auth import ensure_jwt_secret, issue_site_token
+        from admin.backend.auth import ensure_jwt_secret, issue_site_token
 
         secret = ensure_jwt_secret(self.bench.path / "bench.toml")
         self.bench.config.admin.jwt_secret = secret

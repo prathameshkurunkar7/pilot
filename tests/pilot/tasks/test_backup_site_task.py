@@ -4,7 +4,9 @@ import pytest
 
 from pilot.tasks import backup_site as mod
 from pilot.tasks.backup_site import BackupSiteTask
-from pilot.core.audit_log import AuditLog
+from pilot.config import SiteConfig
+from pilot.core.bench.audit_log import AuditLog
+from pilot.core.site import Site
 
 
 def _task(tmp_path):
@@ -14,6 +16,7 @@ def _task(tmp_path):
         frappe_call=["python", "-m", "frappe"],
         config=SimpleNamespace(s3=SimpleNamespace(is_configured=False)),
     )
+    bench.site = lambda name: Site(SiteConfig(name=name, apps=[]), bench)
     (bench.sites_path / "site1" / "private" / "backups").mkdir(parents=True)
     return BackupSiteTask(bench=bench, bench_root=tmp_path, site="site1", with_files=False), bench
 

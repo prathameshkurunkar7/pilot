@@ -16,7 +16,7 @@ def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
 
 def _client(bench_root: Path, password: str = "secret"):
     from admin.backend.app import create_app
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
 
     _write_bench_toml(bench_root, bench_root.name, admin_enabled=True, admin_password=password)
     secret = ensure_jwt_secret(bench_root / "bench.toml")

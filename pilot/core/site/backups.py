@@ -1,10 +1,15 @@
 """Apply a retention policy to one site's backups, local and offsite."""
 
 import re
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pilot.config.site_backup import read_retention
-from pilot.core.backup_retention import BackupRetentionPolicy
+from pilot.core.site.retention import BackupRetentionPolicy
 from pilot.integrations.s3.backups import OffsiteBackup
+
+if TYPE_CHECKING:
+    from pilot.core.site import Site
 
 _TS_RE = re.compile(r"^(\d{8}_\d{6})")
 
@@ -16,18 +21,19 @@ def parse_backup_timestamp(filename: str) -> str | None:
     return match.group(1) if match else None
 
 
-class BackupPruner:
-    def __init__(self, bench, site: str) -> None:
-        self.bench = bench
+class SiteBackups:
+    def __init__(self, site: "Site") -> None:
         self.site = site
-        self._site_dir = bench.sites_path / site
-        self.backups_dir = self._site_dir / "private" / "backups"
 
-    def latest_run(self) -> tuple[str, list]:
+    @property
+    def directory(self) -> Path:
+        return self.site.path / "private" / "backups"
+
+    def latest_run(self) -> tuple[str, list[Path]]:
         """Timestamp and files of the most recently created backup run for this site."""
-        groups: dict[str, list] = {}
-        if self.backups_dir.is_dir():
-            for path in self.backups_dir.iterdir():
+        groups: dict[str, list[Path]] = {}
+        if self.directory.is_dir():
+            for path in self.directory.iterdir():
                 timestamp = parse_backup_timestamp(path.name)
                 if timestamp:
                     groups.setdefault(timestamp, []).append(path)
@@ -39,16 +45,20 @@ class BackupPruner:
     def prune(self) -> list[str]:
         """Delete runs the site's retention policy rejects, returning the timestamps
         actually pruned. With no per-site retention (automated backups off), keep all."""
-        config = read_retention(self._site_dir / "site_config.json")
+        config = read_retention(self.site.path / "site_config.json")
         if config is None:
             return []
 
         offsite = self._offsite()
-        offsite_runs = offsite.list_backups(self.site) if offsite else {}
+        offsite_runs = offsite.list_backups(self.site.config.name) if offsite else {}
         timestamps = sorted(set(self._local_timestamps()) | set(offsite_runs))
 
         policy = BackupRetentionPolicy(config)
-        return [ts for ts in policy.select_deletions(timestamps) if self._delete_run(offsite, offsite_runs, ts)]
+        return [
+            ts
+            for ts in policy.select_deletions(timestamps)
+            if self._delete_run(offsite, offsite_runs, ts)
+        ]
 
     def _delete_run(self, offsite, offsite_runs: dict, timestamp: str) -> bool:
         """Delete one run offsite-first, then local. On an offsite error the run is
@@ -64,21 +74,25 @@ class BackupPruner:
         return True
 
     def _local_timestamps(self) -> list[str]:
-        if not self.backups_dir.is_dir():
+        if not self.directory.is_dir():
             return []
-        return [ts for f in self.backups_dir.iterdir() if f.is_file() and (ts := parse_backup_timestamp(f.name))]
+        return [
+            timestamp
+            for file in self.directory.iterdir()
+            if file.is_file() and (timestamp := parse_backup_timestamp(file.name))
+        ]
 
     def _delete_local(self, timestamp: str) -> None:
-        if not self.backups_dir.is_dir():
+        if not self.directory.is_dir():
             return
-        for f in self.backups_dir.glob(f"{timestamp}-*"):
-            f.unlink(missing_ok=True)
+        for file in self.directory.glob(f"{timestamp}-*"):
+            file.unlink(missing_ok=True)
 
     def _delete_offsite(self, offsite: OffsiteBackup, timestamp: str, files: dict[str, str]) -> None:
         for filename in list(files.values()):
-            offsite.delete(self.site, timestamp, filename)
+            offsite.delete(self.site.config.name, timestamp, filename)
 
     def _offsite(self) -> OffsiteBackup | None:
-        if not self.bench.config.s3.is_configured:
+        if not self.site.bench.config.s3.is_configured:
             return None
-        return OffsiteBackup.from_config(self.bench.config.s3, self.bench.path)
+        return OffsiteBackup.from_config(self.site.bench.config.s3, self.site.bench.path)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from pilot.core.database_base import Database, QueryResult
+from pilot.core.database.base import Database, QueryResult
 from pilot.exceptions import DatabaseError
 
 _MAX_ROWS = 5000

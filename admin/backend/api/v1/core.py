@@ -121,7 +121,7 @@ def create_session():
     if error is not None:
         return error
 
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
 
     response = created_response(
         {"authenticated": True, "scope": "bench"},

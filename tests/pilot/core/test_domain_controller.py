@@ -8,7 +8,7 @@ import pytest
 from pilot.config import BenchConfig
 from pilot.config import SiteConfig
 from pilot.core.bench import Bench
-from pilot.core.domains import DomainRouteProvider
+from pilot.core.adapters.domain_provider import DomainRouteProvider
 from pilot.exceptions import BenchError
 from pilot.managers.nginx import NginxConfigRenderer
 

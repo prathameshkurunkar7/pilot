@@ -1,4 +1,4 @@
-"""Tests for pilot.core.app_dependency_installer.AppDependencyInstaller."""
+"""Tests for pilot.core.app.dependency_installer.AppDependencyInstaller."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from pilot.core.app import App
-from pilot.core.app_dependency_installer import AppDependencyInstaller
+from pilot.core.app.dependency_installer import AppDependencyInstaller
 from pilot.integrations.marketplace import Marketplace, Resolver
 from pilot.exceptions import BenchError, DependencyResolutionError, RegistryUnavailableError
 from tests.pilot.commands.test_commands import make_bench

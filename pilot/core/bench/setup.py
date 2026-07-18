@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Optional
 
 from pilot.exceptions import BenchError
-from pilot.core.production_admin_domain import ProductionAdminDomain
+from pilot.core.bench.admin_domain import ProductionAdminDomain
 from pilot.utils import write_private_text
 
 if TYPE_CHECKING:
@@ -143,7 +143,7 @@ class ProductionSetup:
     def _setup_monitoring(self):
         """Install the shared bench-monitor timer unit and persist monitor config to bench.toml."""
         from pilot.config import BenchTomlStore
-        from pilot.core.monitoring import MonitorConfigurator, resolve_monitor_log_path
+        from pilot.core.server.monitoring import MonitorConfigurator, resolve_monitor_log_path
 
         MonitorConfigurator().install()
         self.bench.config.monitor.log_path = resolve_monitor_log_path(self.bench.config)
@@ -267,7 +267,7 @@ class ProductionSetup:
             )
 
     def _build_admin_for_production(self) -> None:
-        from pilot.core.admin_frontend import build_admin_frontend
+        from admin.backend.frontend import build_admin_frontend
 
         build_admin_frontend()
 

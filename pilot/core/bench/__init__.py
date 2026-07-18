@@ -31,7 +31,7 @@ class Bench:
         db_type: str = "mariadb",
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> "Bench":
-        from pilot.core.bench_creator import BenchCreator
+        from pilot.core.bench.creator import BenchCreator
 
         return BenchCreator(
             target_directory,
@@ -84,44 +84,50 @@ class Bench:
         return [str(self.python), "-m", "frappe.utils.bench_helper"]
 
     def db_root_args(self) -> list[str]:
-        from pilot.core.bench_config_files import BenchConfigFiles
+        from pilot.core.bench.config_files import BenchConfigFiles
 
         return BenchConfigFiles(self).db_root_args()
 
     def postgres_root_password(self) -> str:
-        from pilot.core.bench_config_files import BenchConfigFiles
+        from pilot.core.bench.config_files import BenchConfigFiles
 
         return BenchConfigFiles(self).postgres_root_password()
 
     def app(self, name: str) -> "App":
-        from pilot.core.bench_inventory import BenchInventory
+        from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).app(name)
 
     def apps(self) -> List["App"]:
-        from pilot.core.bench_inventory import BenchInventory
+        from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).apps()
 
     def registered_apps(self) -> List[str]:
-        from pilot.core.bench_inventory import BenchInventory
+        from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).registered_apps()
 
     def is_app_installed(self, name: str) -> bool:
-        from pilot.core.bench_inventory import BenchInventory
+        from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).is_app_installed(name)
 
     def init_apps(self) -> List["App"]:
-        from pilot.core.bench_inventory import BenchInventory
+        from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).init_apps()
 
     def sites(self) -> List["Site"]:
-        from pilot.core.bench_inventory import BenchInventory
+        from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).sites()
+
+    def site(self, name: str) -> "Site":
+        from pilot.config import SiteConfig
+        from pilot.core.site import Site
+
+        return Site(SiteConfig(name=name, apps=[]), self)
 
     def create_directories(self) -> None:
         for directory in [
@@ -135,22 +141,22 @@ class Bench:
             directory.mkdir(parents=True, exist_ok=True)
 
     def write_apps_txt(self) -> None:
-        from pilot.core.bench_inventory import BenchInventory
+        from pilot.core.bench.inventory import BenchInventory
 
         BenchInventory(self).write_apps_txt()
 
     def set_maintenance_mode(self, enabled: bool) -> None:
-        from pilot.core.bench_config_files import BenchConfigFiles
+        from pilot.core.bench.config_files import BenchConfigFiles
 
         BenchConfigFiles(self).set_maintenance_mode(enabled)
 
     def sync_s3_credentials(self, s3_config: S3Config):
-        from pilot.core.bench_config_files import BenchConfigFiles
+        from pilot.core.bench.config_files import BenchConfigFiles
 
         BenchConfigFiles(self).sync_s3_credentials(s3_config)
 
     def write_common_site_config(self) -> None:
-        from pilot.core.bench_config_files import BenchConfigFiles
+        from pilot.core.bench.config_files import BenchConfigFiles
 
         BenchConfigFiles(self).write_common_site_config()
 
@@ -159,17 +165,17 @@ class Bench:
         self.restart_processes()
 
     def restart_processes(self) -> None:
-        from pilot.core.bench_production import BenchProduction
+        from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).restart_processes()
 
     def remove_production(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
-        from pilot.core.bench_production import BenchProduction
+        from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).remove_production(on_progress)
 
     def drop(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
-        from pilot.core.bench_production import BenchProduction
+        from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).drop(on_progress)
 
@@ -183,17 +189,17 @@ class Bench:
             )
 
     def setup_nginx(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
-        from pilot.core.bench_production import BenchProduction
+        from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).setup_nginx(on_progress)
 
     def setup_letsencrypt(self) -> None:
-        from pilot.core.bench_production import BenchProduction
+        from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).setup_letsencrypt()
 
     def initialize(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
-        from pilot.core.bench_initializer import BenchInitializer
+        from pilot.core.bench.initializer import BenchInitializer
 
         BenchInitializer(self).run(on_progress)
 
@@ -206,7 +212,7 @@ class Bench:
         best_effort_tls: bool = False,
         on_progress: Callable[[str], None] = lambda message: None,
     ) -> None:
-        from pilot.core.bench_production import BenchProduction
+        from pilot.core.bench.production import BenchProduction
 
         BenchProduction(self).setup_production(
             process_manager=process_manager,
@@ -250,24 +256,24 @@ class Bench:
         on_step("done", "Done")
 
     def _update_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
-        from pilot.core.bench_update import BenchUpdater
+        from pilot.core.bench.update import BenchUpdater
 
         BenchUpdater(self).update_apps(apps_filter, on_progress)
 
     def _reinstall_apps(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
-        from pilot.core.bench_update import BenchUpdater
+        from pilot.core.bench.update import BenchUpdater
 
         BenchUpdater(self).reinstall_apps(apps_filter, on_progress)
 
     def _rebuild_assets(self, apps_filter: set | None, on_progress: Callable[[str], None]) -> None:
-        from pilot.core.bench_update import BenchUpdater
+        from pilot.core.bench.update import BenchUpdater
 
         BenchUpdater(self).rebuild_assets(apps_filter, on_progress)
 
     def _migrate_sites(
         self, skip_failing_patches: bool, on_progress: Callable[[str], None]
     ) -> None:
-        from pilot.core.bench_update import BenchUpdater
+        from pilot.core.bench.update import BenchUpdater
 
         BenchUpdater(self).migrate_sites(skip_failing_patches, on_progress)
 
@@ -275,6 +281,6 @@ class Bench:
 def _marketplace_pin(app: "App", marketplace_by_name: dict) -> "RevisionPin | None":
     """Marketplace's advertised pin for app's installed version, or None for a
     branch target, unlisted app, or repo mismatch (e.g. a fork)."""
-    from pilot.core.bench_update import marketplace_pin
+    from pilot.core.bench.update import marketplace_pin
 
     return marketplace_pin(app, marketplace_by_name)

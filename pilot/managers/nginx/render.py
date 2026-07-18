@@ -4,17 +4,13 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.managers import nginx_error_pages
 from pilot.managers.gunicorn import GunicornManager
-from pilot.managers.nginx_admin_render import NginxAdminConfigRenderer
-from pilot.managers.nginx_error_pages import NginxErrorPages
-from pilot.managers.nginx_site_locations import NginxSiteLocations
-from pilot.managers.nginx_tls import live_cert_path, live_key_path, render_ssl_directives
-from pilot.managers.nginx_waf_render import ModSecurityRenderer
+from pilot.managers.nginx.admin_render import NginxAdminConfigRenderer
+from pilot.managers.nginx.error_pages import NginxErrorPages
+from pilot.managers.nginx.site_locations import NginxSiteLocations
+from pilot.managers.nginx.tls import live_cert_path, live_key_path, render_ssl_directives
+from pilot.managers.nginx.waf_render import ModSecurityRenderer
 from pilot.managers.waf import WafManager
-
-ERROR_PAGES = nginx_error_pages.ERROR_PAGES
-render_error_html = nginx_error_pages.render_error_html
 
 if TYPE_CHECKING:
     from pilot.config import NginxConfig
@@ -36,7 +32,7 @@ class NginxConfigRenderer:
     def _proxy_servers(self) -> list[str]:
         """Edge-proxy IPs in front of this bench, if any; looked up once."""
         if self._proxy_servers_cache is None:
-            from pilot.core.domains import DomainRouteProvider
+            from pilot.core.adapters.domain_provider import DomainRouteProvider
 
             self._proxy_servers_cache = DomainRouteProvider.proxy_servers()
         return self._proxy_servers_cache

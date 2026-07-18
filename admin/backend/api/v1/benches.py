@@ -200,7 +200,7 @@ def _delete_bench_locked(target_dir: Path, toml_path: Path, name: str):
 @benches_bp.get("/domain-options")
 def get_domain_options():
     """Wildcard domain suffixes new bench admin domains may be built from."""
-    from pilot.core.domains import DomainRouteProvider
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
     from pilot.utils import wildcard_suffix
 
     try:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pilot.managers.nginx_tls import live_cert_path, live_key_path, render_ssl_directives
+from pilot.managers.nginx.tls import live_cert_path, live_key_path, render_ssl_directives
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench

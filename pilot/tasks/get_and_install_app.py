@@ -3,8 +3,7 @@ from typing import ClassVar
 
 from pilot.config import AppConfig
 from pilot.core.app import App
-from pilot.core.app_install_result import AppInstallResult
-from pilot.core.site import Site
+from pilot.core.app.install_result import AppInstallResult
 from pilot.integrations.marketplace import Marketplace
 
 from pilot.tasks import Task, step
@@ -58,7 +57,7 @@ class GetAndInstallAppTask(Task):
             with self.step(
                 f"install_{safe_key}_{app.config.name}", f"Install {app.config.name} on {site}"
             ):
-                Site.for_name(site, self.bench).install_app(app)
+                self.bench.site(site).install_app(app)
 
     def build_assets(self, apps: list[App]) -> None:
         from pilot.managers.python_environment import PythonEnvManager

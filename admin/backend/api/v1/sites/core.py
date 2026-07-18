@@ -90,7 +90,7 @@ def detail(name: str):
 @sites_bp.route("/wildcard-domains", methods=["GET"])
 def wildcard_domains():
     """Wildcard domain suffixes (no leading '*') new site names may be built from."""
-    from pilot.core.domains import DomainRouteProvider
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
     from pilot.utils import wildcard_suffix
 
     try:

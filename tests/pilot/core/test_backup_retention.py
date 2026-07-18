@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
 from pilot.config import BackupConfig
-from pilot.core.backup_retention import BackupRetentionPolicy
+from pilot.core.site.retention import BackupRetentionPolicy
 
 # ── Retention policy ────────────────────────────────────────────────────────────
 

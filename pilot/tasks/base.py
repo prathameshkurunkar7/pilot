@@ -100,7 +100,7 @@ class Task:
             )
 
     def record_audit(self, category: str, fields: dict) -> None:
-        from pilot.core.audit_log import AuditLog
+        from pilot.core.bench.audit_log import AuditLog
 
         try:
             AuditLog(self.bench).append(category, fields)

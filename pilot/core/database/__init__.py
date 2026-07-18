@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.core.database_base import Database, QueryResult
-from pilot.core.database_engines import MariaDB, PostgreSQL, SQLite
+from pilot.core.database.base import Database, QueryResult
+from pilot.core.database.engines import MariaDB, PostgreSQL, SQLite
 from pilot.exceptions import DatabaseError
 
 if TYPE_CHECKING:

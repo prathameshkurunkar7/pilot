@@ -27,7 +27,7 @@ def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:
 
 def _client(bench_root: Path, password: str = "secret", **extra_settings):
     from admin.backend.app import create_app
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
 
     _write_bench_toml(
         bench_root, bench_root.name, admin_enabled=True, admin_password=password, **extra_settings
@@ -188,7 +188,7 @@ def test_api_benches_domain_options_returns_suffixes(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
 
     with patch(
-        "pilot.core.domains.DomainRouteProvider.wildcard_domains",
+        "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
         return_value=["*.example.com", "*-box.example.net"],
     ):
         resp = client.get("/api/v1/benches/domain-options")
@@ -200,7 +200,7 @@ def test_api_benches_domain_options_reports_provider_failure(tmp_path: Path) -> 
     client = _client(tmp_path / "benches" / "current")
 
     with patch(
-        "pilot.core.domains.DomainRouteProvider.wildcard_domains",
+        "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
         side_effect=RuntimeError("provider detail"),
     ):
         resp = client.get("/api/v1/benches/domain-options")
@@ -229,7 +229,7 @@ def test_api_benches_create_creates_bench(tmp_path: Path) -> None:
 
     with (
         patch("subprocess.Popen") as mock_popen,
-        patch("pilot.core.domains.DomainRouteProvider.wildcard_domains", return_value=[]),
+        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains", return_value=[]),
     ):
         resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
 
@@ -269,7 +269,7 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
             'enabled = true\nprocess_manager = "systemd"\nuse_companion_manager',
         )
     )
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
 
     secret = ensure_jwt_secret(current / "bench.toml")
     app = create_app(current)
@@ -290,8 +290,8 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
             new_callable=PropertyMock,
             return_value=False,
         ),
-        patch("pilot.core.domains.DomainRouteProvider.register") as mock_register,
-        patch("pilot.core.domains.DomainRouteProvider.wildcard_domains", return_value=[]),
+        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.register") as mock_register,
+        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains", return_value=[]),
         patch("pilot.managers.platform.has_passwordless_sudo", return_value=True),
         patch("subprocess.Popen") as mock_popen,
     ):
@@ -339,7 +339,7 @@ def test_api_benches_create_does_not_prompt_for_system_privileges(tmp_path: Path
         patch("pilot.managers.platform.has_passwordless_sudo", return_value=False),
         patch("admin.backend.api.v1.benches_create.Bench.create_at") as create,
         patch(
-            "pilot.core.domains.DomainRouteProvider.wildcard_domains",
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
             return_value=[],
         ),
     ):
@@ -483,7 +483,7 @@ def test_api_benches_create_rejects_duplicate_name(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    with patch("pilot.core.domains.DomainRouteProvider.wildcard_domains", return_value=[]):
+    with patch("pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains", return_value=[]):
         resp = client.post("/api/v1/benches", json=_new_payload("current"))
 
     assert resp.status_code == 409

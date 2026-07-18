@@ -4,7 +4,7 @@ import ast
 import typing
 from pathlib import Path
 
-from pilot.core.app_validator.base import python_files
+from pilot.core.app.validator.base import python_files
 from pilot.exceptions import AppValidationError
 
 if typing.TYPE_CHECKING:

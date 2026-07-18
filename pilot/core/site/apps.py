@@ -29,7 +29,7 @@ class SiteApps:
 
     def install_app_with_dependencies(self, app: "App") -> list["App"]:
         self.site.install_app(app)
-        from pilot.core.app_validator.dependency_declarations import DependencyDeclarationsCheck
+        from pilot.core.app.validator.dependency_declarations import DependencyDeclarationsCheck
 
         required = DependencyDeclarationsCheck().get_hooks_required_apps(app)
         dependencies = []
@@ -67,7 +67,7 @@ class SiteApps:
         return [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
 
     def installed_apps(self) -> list[str]:
-        from pilot.core.site_config import list_installed_apps
+        from pilot.core.site.config import list_installed_apps
 
         config_path = self.site.path / "site_config.json"
         if not config_path.exists():

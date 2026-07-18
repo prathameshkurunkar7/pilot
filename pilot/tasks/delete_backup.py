@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import ClassVar
 
 from pilot.tasks import Task, step
-from pilot.core.backup_pruning import BackupPruner, parse_backup_timestamp
+from pilot.core.site import Site
+from pilot.core.site.backups import parse_backup_timestamp
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError
 
@@ -15,6 +17,10 @@ class DeleteBackupTask(Task):
 
     site: str
     filenames: list[str]
+
+    @cached_property
+    def site_record(self) -> Site:
+        return self.bench.site(self.site)
 
     def run(self) -> None:
         self.delete()
@@ -38,7 +44,7 @@ class DeleteBackupTask(Task):
 
     @step("delete", lambda self: f"Delete {len(self.filenames)} backup(s) for {self.site}")
     def delete(self) -> None:
-        backup_dir = BackupPruner(self.bench, self.site).backups_dir
+        backup_dir = self.site_record.backups.directory
         deleted, offsite = [], False
         for filename in self.filenames:
             path = backup_dir / filename

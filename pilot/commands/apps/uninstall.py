@@ -21,9 +21,7 @@ class UninstallAppCommand(Command):
     force: Annotated[bool, Arg(help="Uninstall even if not tracked as installed.")] = False
 
     def __post_init__(self) -> None:
-        from pilot.core.site import Site
-
-        self.site: "Site" = Site.for_name(self.site_name, self.bench)
+        self.site: "Site" = self.bench.site(self.site_name)
 
     def run(self) -> None:
         self.site.uninstall_apps(self.app_names, force=self.force, on_progress=self.report)

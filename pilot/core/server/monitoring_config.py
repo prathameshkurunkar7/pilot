@@ -35,7 +35,7 @@ Description=bench monitor
 Type=oneshot
 WorkingDirectory={cli_root}
 Environment=PYTHONPATH={cli_root}
-ExecStart={python} -m pilot.core.monitoring
+ExecStart={python} -m pilot.core.server.monitoring
 StandardOutput=append:/var/log/bench-monitor.log
 StandardError=append:/var/log/bench-monitor.error.log
 

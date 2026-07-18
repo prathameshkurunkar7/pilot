@@ -32,9 +32,7 @@ class SetupLetsEncryptTask(Task):
     def enable_site_tls(self) -> None:
         if not self.site:
             return
-        from pilot.core.site import Site
-
-        Site.for_name(self.site, self.bench).set_ssl(True)
+        self.bench.site(self.site).set_ssl(True)
 
 
 if __name__ == "__main__":
