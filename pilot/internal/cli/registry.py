@@ -6,7 +6,7 @@ import importlib
 import logging
 import pkgutil
 
-from pilot.commands.base import BenchMode, Command
+from pilot.commands import BenchMode, Command
 from pilot.exceptions import BenchError
 from pilot.internal.cli.command import add_command_arguments, command_from_args
 from pilot.internal.cli.dispatch import CliContext, load_bench

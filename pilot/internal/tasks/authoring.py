@@ -13,7 +13,7 @@ from pilot.internal.cli.fields import (
     to_kebab_case,
     value_from_namespace,
 )
-from pilot.tasks.base import Task
+from pilot.tasks import Task
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench

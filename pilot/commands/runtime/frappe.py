@@ -5,7 +5,7 @@ import sys
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands import Command
 from pilot.exceptions import BenchError
 
 

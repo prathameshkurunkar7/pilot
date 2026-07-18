@@ -4,7 +4,7 @@ import argparse
 from dataclasses import MISSING, fields
 from typing import Annotated, Any, Literal, NamedTuple, get_args, get_origin, get_type_hints
 
-from pilot.commands.base import Arg
+from pilot.commands import Arg
 
 
 class ArgField(NamedTuple):

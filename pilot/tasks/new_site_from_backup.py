@@ -5,7 +5,7 @@ from typing import Annotated, ClassVar
 
 from pilot.core.site import provision_from_backup
 
-from pilot.tasks.base import Arg, Task, step
+from pilot.tasks import Arg, Task, step
 
 
 @dataclass(kw_only=True)

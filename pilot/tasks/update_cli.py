@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from pilot.utils import cli_root
 
-from pilot.tasks.base import Task, step
+from pilot.tasks import Task, step
 
 
 @dataclass(kw_only=True)

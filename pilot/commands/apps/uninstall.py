@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, ClassVar
 
-from pilot.commands.base import Arg, Command
+from pilot.commands import Arg, Command
 
 if TYPE_CHECKING:
     from pilot.core.site import Site

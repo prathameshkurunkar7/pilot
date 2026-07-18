@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from pilot.config.toml_store import BenchTomlStore
-from pilot.tasks.base import Task, step
+from pilot.tasks import Task, step
 
 
 @dataclass(kw_only=True)

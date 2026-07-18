@@ -4,7 +4,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import Annotated, ClassVar
 
-from pilot.commands.base import Arg, Command
+from pilot.commands import Arg, Command
 from pilot.exceptions import BenchError
 
 

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
-from pilot.commands.base import Arg, BenchMode, Command
+from pilot.commands import Arg, BenchMode, Command
 
 
 @dataclass(kw_only=True)

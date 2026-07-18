@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from pilot.exceptions import MigrateError
-from pilot.tasks.base import Task
+from pilot.tasks import Task
 
 
 @dataclass(kw_only=True)

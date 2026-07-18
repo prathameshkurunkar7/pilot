@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, ContextManager
 
-from pilot.commands.base import Arg
+from pilot.commands import Arg
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench

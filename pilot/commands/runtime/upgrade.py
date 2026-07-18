@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.commands.base import BenchMode, Command
+from pilot.commands import BenchMode, Command
 
 
 @dataclass(kw_only=True)

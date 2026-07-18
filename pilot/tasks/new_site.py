@@ -5,7 +5,7 @@ from pilot.core.app import App
 from pilot.core.site import Site
 from pilot.integrations.marketplace import Marketplace
 
-from pilot.tasks.base import Arg, Task, step
+from pilot.tasks import Arg, Task, step
 
 
 @dataclass(kw_only=True)

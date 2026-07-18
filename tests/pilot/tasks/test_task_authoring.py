@@ -12,7 +12,7 @@ from pilot.internal.tasks.authoring import (
     task_from_args,
     task_parser,
 )
-from pilot.tasks.base import Arg, Task, step
+from pilot.tasks import Arg, Task, step
 from tests.pilot.commands.test_commands import make_bench
 
 

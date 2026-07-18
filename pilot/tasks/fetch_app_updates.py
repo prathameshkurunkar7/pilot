@@ -5,7 +5,7 @@ from typing import ClassVar
 
 from pilot.integrations.marketplace import Marketplace
 
-from pilot.tasks.base import Task, step
+from pilot.tasks import Task, step
 
 
 @dataclass(kw_only=True)

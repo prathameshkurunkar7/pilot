@@ -43,7 +43,7 @@ pilot/
     │
     ├── commands/                # One self-registering Command dataclass per file
     │   ├── __init__.py
-    │   ├── base.py              # Command authoring API; re-exports Arg
+    │   ├── command.py           # Command authoring API: Command, Arg
     │   ├── bench/                # new, init, ls, drop
     │   ├── sites/                 # new-site, list-site-apps, rename-site, ...
     │   ├── apps/                  # get-app, install-app, uninstall-app, ...
@@ -67,7 +67,7 @@ pilot/
     │
     ├── tasks/                   # Task definitions and public TaskRunner (see tasks.md)
     │   ├── __init__.py
-    │   ├── base.py              # Task authoring API: Task, step
+    │   ├── task.py              # Task authoring API: Task, step
     │   ├── callbacks.py         # Public task submission callback types
     │   ├── runner.py            # Public TaskRunner and TaskSubmission wrapper
     │   ├── migrate.py, build.py, new_site.py, ...
@@ -530,11 +530,11 @@ declares. It orchestrates managers and core objects in the correct order. Comman
 are the only layer that produces user-visible console output.
 
 Built on `argparse` (stdlib, zero dependencies), but a command never touches
-argparse directly — `Command` (`commands/base.py`) derives the parser from the
-dataclass's own fields, so a command owns everything about itself in one file
-and adding one never touches the CLI layer.
+argparse directly. The internal CLI adapter derives parser arguments from the
+command dataclass fields, so a command owns everything about itself in one file
+and adding one never touches parser plumbing.
 
-### `commands/base.py` — the `Command` base class
+### `commands/command.py` — the `Command` base class
 
 Declare a command as a `@dataclass(kw_only=True)` subclass of `Command`; each
 field becomes a CLI argument (positional if it has no default, `--flag` if it
@@ -601,7 +601,7 @@ Create one file under `commands/` — nothing else:
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands import Command
 
 
 @dataclass(kw_only=True)

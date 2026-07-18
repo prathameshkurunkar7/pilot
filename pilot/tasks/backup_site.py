@@ -6,7 +6,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import ClassVar
 
-from pilot.tasks.base import Task, step
+from pilot.tasks import Task, step
 from pilot.core.backup_pruning import BackupPruner
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError

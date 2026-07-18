@@ -11,7 +11,7 @@ import pilot.tasks as tasks
 
 def test_task_authoring_api_is_public_on_tasks_package() -> None:
     assert tasks.Arg.__name__ == "Arg"
-    assert tasks.Arg.__module__ == "pilot.commands.base"
+    assert tasks.Arg.__module__ == "pilot.commands.command"
     assert tasks.Task.__name__ == "Task"
     assert callable(tasks.step)
 
@@ -24,10 +24,10 @@ def test_task_does_not_expose_subprocess_parser_plumbing() -> None:
 
 
 def test_task_module_does_not_expose_step_implementation() -> None:
-    import pilot.tasks.base as task_base
+    import pilot.tasks.task as task_module
 
-    assert not hasattr(task_base, "Step")
-    assert "_TaskStep" not in str(task_base.Task.step.__annotations__)
+    assert not hasattr(task_module, "Step")
+    assert "_TaskStep" not in str(task_module.Task.step.__annotations__)
 
 
 def test_task_submission_callback_types_are_public_on_tasks_package() -> None:
@@ -50,13 +50,13 @@ def test_task_runner_does_not_forward_engine_internals(tmp_path) -> None:
     assert not hasattr(runner, "_generate_task_id")
 
 
-def test_importing_task_base_does_not_discover_task_modules() -> None:
+def test_importing_task_module_does_not_discover_task_modules() -> None:
     script = (
         "import json, sys; "
-        "import pilot.tasks.base; "
+        "import pilot.tasks.task; "
         "print(json.dumps(sorted("
         "name for name in sys.modules "
-        "if name.startswith('pilot.tasks.') and name != 'pilot.tasks.base'"
+        "if name.startswith('pilot.tasks.') and name != 'pilot.tasks.task'"
         ")))"
     )
 

@@ -2,7 +2,7 @@ import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from pilot.tasks.base import Task, step
+from pilot.tasks import Task, step
 
 if TYPE_CHECKING:
     from pilot.core.app import App

@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.commands.base import Command
+from pilot.commands import Command
 
 
 @dataclass(kw_only=True)

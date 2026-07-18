@@ -356,7 +356,7 @@ def test_restore_idempotency_rejects_different_upload_contents(
         )
 
 
-def test_base_task_loads_secret_arguments_from_handoff_file(
+def test_task_authoring_loads_secret_arguments_from_handoff_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

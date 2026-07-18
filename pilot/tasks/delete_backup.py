@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.tasks.base import Task, step
+from pilot.tasks import Task, step
 from pilot.core.backup_pruning import BackupPruner, parse_backup_timestamp
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError

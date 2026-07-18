@@ -13,9 +13,9 @@ __all__ = [
 ]
 
 _EXPORTS = {
-    "Arg": ("pilot.tasks.base", "Arg"),
-    "Task": ("pilot.tasks.base", "Task"),
-    "step": ("pilot.tasks.base", "step"),
+    "Arg": ("pilot.tasks.task", "Arg"),
+    "Task": ("pilot.tasks.task", "Task"),
+    "step": ("pilot.tasks.task", "step"),
     "TaskCallback": ("pilot.tasks.callbacks", "TaskCallback"),
     "TaskCallbacks": ("pilot.tasks.callbacks", "TaskCallbacks"),
     "TaskRunner": ("pilot.tasks.runner", "TaskRunner"),

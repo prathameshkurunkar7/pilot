@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated, ClassVar, Literal
 
-from pilot.commands.base import Arg, Command
+from pilot.commands import Arg, Command
 
 
 @dataclass(kw_only=True)

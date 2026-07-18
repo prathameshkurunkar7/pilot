@@ -12,7 +12,7 @@ from pathlib import Path
 from pilot.internal.tasks.authoring import required_task_args
 from pilot.internal.tasks.payload import TaskPayloadBuilder
 from pilot.tasks.callbacks import TaskCallback as TaskCallback, TaskCallbacks
-from pilot.tasks.base import Task
+from pilot.tasks import Task
 from pilot.managers.task.models import (
     TaskStatus,
 )

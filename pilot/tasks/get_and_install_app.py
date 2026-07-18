@@ -7,7 +7,7 @@ from pilot.core.app_install_result import AppInstallResult
 from pilot.core.site import Site
 from pilot.integrations.marketplace import Marketplace
 
-from pilot.tasks.base import Task, step
+from pilot.tasks import Task, step
 
 
 @dataclass(kw_only=True)
