@@ -16,14 +16,16 @@ class CentralClientError(BenchError):
     transport failure, or a non-2xx response)."""
 
 
-class CentralClient:
-    """Calls Central's HTTP API on behalf of this bench's pilot.
+def _message(payload: Any) -> Any:
+    """Unwrap Frappe's ``{"message": ...}`` envelope that whitelisted methods return"""
+    if isinstance(payload, dict) and "message" in payload:
+        return payload["message"]
+    return payload
 
-    Reads ``central.endpoint`` + ``central.auth_token`` from ``bench.toml`` (written
-    by ``bench set-central-config`` at deploy) and authenticates with the
-    ``X-Pilot-Token`` header — the reverse of the
-    site→bench ``pilot_auth_token`` (PR #133).
-    """
+
+class CentralClient:
+    """Thin transport for this bench's pilot→Central calls: reads endpoint + auth_token from
+    bench.toml and authenticates with X-Pilot-Token. Methods are forwarded by path, not mirrored."""
 
     TOKEN_HEADER = "X-Pilot-Token"
 
@@ -34,6 +36,11 @@ class CentralClient:
         """Prove this pilot can authenticate to Central; returns Central's identity echo
         (team + pilot_credential_id)."""
         return self._get("/api/method/central.api.pilot.heartbeat")
+
+    def forward(self, method_path: str, http_method: str, data: dict[str, Any] | None = None) -> Any:
+        """Proxy an arbitrary Central pilot-API method with the X-Pilot-Token, returning its
+        result (the ``{"message": ...}`` envelope unwrapped). The caller decides what's reachable."""
+        return _message(self._request(f"/api/method/{method_path}", method=http_method, data=data))
 
     def _credentials(self) -> tuple[str, str]:
         endpoint, token = self._bench_toml_credentials()
@@ -56,8 +63,19 @@ class CentralClient:
         return config.get("central_endpoint"), config.get("central_auth_token")
 
     def _get(self, path: str) -> dict[str, Any]:
+        return self._request(path, method="GET")
+
+    def _post(self, path: str, data: dict[str, Any]) -> dict[str, Any]:
+        return self._request(path, method="POST", data=data)
+
+    def _request(self, path: str, method: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
         endpoint, token = self._credentials()
-        request = urllib.request.Request(f"{endpoint}{path}", method="GET", headers={self.TOKEN_HEADER: token})
+        headers = {self.TOKEN_HEADER: token}
+        body = None
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+            body = json.dumps(data).encode()
+        request = urllib.request.Request(f"{endpoint}{path}", data=body, method=method, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
                 return json.loads(response.read().decode())
