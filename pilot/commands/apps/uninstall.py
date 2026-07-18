@@ -26,4 +26,4 @@ class UninstallAppCommand(Command):
         self.site: "Site" = Site.for_name(self.site_name, self.bench)
 
     def run(self) -> None:
-        self.site.uninstall_apps(self.app_names, force=self.force, on_progress=self.print)
+        self.site.uninstall_apps(self.app_names, force=self.force, on_progress=self.report)

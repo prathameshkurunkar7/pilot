@@ -23,4 +23,4 @@ class ListSiteAppsCommand(Command):
 
     def run(self) -> None:
         for app in self.site.installed_apps():
-            self.print(app)
+            self.report(app)

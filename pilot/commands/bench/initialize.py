@@ -14,4 +14,4 @@ class InitCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.EXPLICIT
 
     def run(self) -> None:
-        self.bench.initialize(on_progress=self.print)
+        self.bench.initialize(on_progress=self.report)

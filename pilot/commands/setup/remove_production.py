@@ -13,4 +13,4 @@ class RemoveProductionCommand(Command):
     group: ClassVar[str] = "remove"
 
     def run(self) -> None:
-        self.bench.remove_production(on_progress=self.print)
+        self.bench.remove_production(on_progress=self.report)

@@ -13,7 +13,7 @@ class StartTaskWorkerCommand(Command):
     group: ClassVar[str] = "tasks"
 
     def run(self) -> None:
-        from pilot.managers.task.worker_state import WorkerIntent, WorkerStore
+        from pilot.managers.task import TaskWorkerControl
 
-        WorkerStore(self.bench.path).write_intent(WorkerIntent.RUNNING)
-        self.print("Task worker start requested.")
+        TaskWorkerControl(self.bench.path).request_start()
+        self.report("Task worker start requested.")

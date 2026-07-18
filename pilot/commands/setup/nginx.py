@@ -13,4 +13,4 @@ class SetupNginxCommand(Command):
     group: ClassVar[str] = "setup"
 
     def run(self) -> None:
-        self.bench.setup_nginx(on_progress=self.print)
+        self.bench.setup_nginx(on_progress=self.report)

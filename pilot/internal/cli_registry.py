@@ -9,6 +9,7 @@ import pkgutil
 from pilot.commands.base import BenchMode, Command
 from pilot.context import CliContext
 from pilot.exceptions import BenchError
+from pilot.internal.cli_command import add_command_arguments, command_from_args
 from pilot.loader import load_bench
 
 # Help text for command groups (e.g. `bench setup ...`).
@@ -51,7 +52,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bench", description="Frappe bench manager")
     parser.add_argument("--verbose", action="store_true", help="Show full tracebacks on error.")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompts.")
-    parser.add_argument("--bench", "-b", metavar="NAME", default=None, help="Bench to operate on (name inside benches/).")
+    parser.add_argument(
+        "--bench",
+        "-b",
+        metavar="NAME",
+        default=None,
+        help="Bench to operate on (name inside benches/).",
+    )
 
     sub = parser.add_subparsers(dest="command")
 
@@ -67,19 +74,21 @@ def build_parser() -> argparse.ArgumentParser:
     for cls in _discover():
         target = group_subparsers[cls.group] if cls.group else sub
         cmd_parser = target.add_parser(cls.name, help=cls.help, description=cls.help)
-        cls.add_arguments(cmd_parser)
+        add_command_arguments(cls, cmd_parser)
         cmd_parser.set_defaults(_command_cls=cls)
 
     return parser
 
 
-def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext) -> None:
+def dispatch(
+    args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext
+) -> None:
     cls: type[Command] | None = getattr(args, "_command_cls", None)
     if cls is None:
         printer = getattr(args, "_help_printer", None)
         (printer or parser.print_help)()
         return
-    cls.from_args(args, _resolve_bench(cls, context)).run()
+    command_from_args(cls, args, _resolve_bench(cls, context)).run()
 
 
 def _resolve_bench(cls: type[Command], context: CliContext):
@@ -95,7 +104,9 @@ def _resolve_bench(cls: type[Command], context: CliContext):
     return load_bench(context, require_explicit=mode is BenchMode.EXPLICIT)
 
 
-def dispatch_all(args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext) -> None:
+def dispatch_all(
+    args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext
+) -> None:
     """Run the command once per production bench (`-b all`); dev benches are skipped
     because their foreground `start` would hang the loop."""
     cls: type[Command] | None = getattr(args, "_command_cls", None)
@@ -104,12 +115,16 @@ def dispatch_all(args: argparse.Namespace, parser: argparse.ArgumentParser, cont
         (printer or parser.print_help)()
         return
     if not cls.supports_all_benches:
-        raise BenchError(f"'-b all' isn't supported for '{cls.name}'. Pass a specific bench name instead.")
+        raise BenchError(
+            f"'-b all' isn't supported for '{cls.name}'. Pass a specific bench name instead."
+        )
 
     benches_dir = context.installation_root / "benches"
-    names = sorted(
-        d.name for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()
-    ) if benches_dir.is_dir() else []
+    names = (
+        sorted(d.name for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists())
+        if benches_dir.is_dir()
+        else []
+    )
     if not names:
         raise BenchError("No benches found.")
 
@@ -121,7 +136,7 @@ def dispatch_all(args: argparse.Namespace, parser: argparse.ArgumentParser, cont
             continue
         print(f"== {name} ==")
         try:
-            cls.from_args(args, bench).run()
+            command_from_args(cls, args, bench).run()
         except BenchError as e:
             failed.append(name)
             print(str(e))

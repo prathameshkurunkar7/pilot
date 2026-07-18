@@ -29,7 +29,7 @@ class GetAppCommand(Command):
         result = self.app.install(
             install_dependencies=self.install_dependencies,
             skip_validations=self.skip_validations,
-            on_progress=self.print,
+            on_progress=self.report,
         )
         self.app = result.app
         self.installed_dependencies = result.installed_dependencies

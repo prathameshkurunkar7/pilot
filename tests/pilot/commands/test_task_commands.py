@@ -3,11 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from pilot.managers.task.worker_state import (
-    WorkerIntent,
-    WorkerStatus,
-    WorkerStore,
-)
+from pilot.internal.tasks.worker_state import WorkerStatus
+from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStore
 from pilot.commands.tasks.start import StartTaskWorkerCommand
 from pilot.commands.tasks.status import TaskWorkerStatusCommand
 from pilot.commands.tasks.stop import StopTaskWorkerCommand

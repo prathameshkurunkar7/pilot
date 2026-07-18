@@ -297,21 +297,26 @@ declare its name/help/arguments, and a registry auto-discovers it:
 
 ```python
 # pilot/commands/hello.py
-from pilot.commands.base import Command
+from dataclasses import dataclass
+from typing import Annotated, ClassVar
+
+from pilot.commands.base import Arg, Command
 
 
+@dataclass(kw_only=True)
 class HelloCommand(Command):
-    name = "hello"
-    help = "Print a greeting."
-    requires_bench = False          # omit to receive the active Bench
+    name: ClassVar[str] = "hello"
+    help: ClassVar[str] = "Print a greeting."
+
+    person: Annotated[str, Arg(help="Who to greet.", metavar="name")]
 
     def run(self) -> None:
-        print("hello")
+        self.report(f"hello {self.person}")
 ```
 
-That's the whole change — `bench hello` now works. Commands that take arguments add an
-`add_arguments(parser)` classmethod and a `from_args(args, bench)` factory; set
-`group = "setup"` to nest under a subcommand group. See
+That's the whole change — `bench hello Ada` now works. The internal CLI registry
+turns annotated dataclass fields into arguments; use `Arg(cli=False)` for
+constructor-only values and `group = "setup"` to nest under a subcommand group. See
 [docs/architecture.md](docs/architecture.md#cli-entry-point-and-command-registry).
 
 ## Production

@@ -8,10 +8,20 @@ import pytest
 
 from pilot.commands.base import Arg, Command
 from pilot.exceptions import BenchError
+from pilot.internal.cli_command import add_command_arguments, command_from_args
+
+
+def test_arg_is_public_authoring_type() -> None:
+    assert Arg.__module__ == "pilot.cli_args"
+
+
+def test_command_public_api_does_not_expose_parser_plumbing() -> None:
+    assert not hasattr(Command, "add_arguments")
+    assert not hasattr(Command, "from_args")
 
 
 def test_report_prints_message(capsys: pytest.CaptureFixture) -> None:
-    Command().print("hello")
+    Command().report("hello")
     assert capsys.readouterr().out == "hello\n"
 
 
@@ -40,7 +50,9 @@ def test_confirm_raises_custom_error_type(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 @pytest.mark.parametrize("exception", [EOFError, KeyboardInterrupt])
-def test_confirm_treats_eof_and_ctrl_c_as_decline(monkeypatch: pytest.MonkeyPatch, exception: type[BaseException]) -> None:
+def test_confirm_treats_eof_and_ctrl_c_as_decline(
+    monkeypatch: pytest.MonkeyPatch, exception: type[BaseException]
+) -> None:
     def raise_exception(_prompt: str) -> str:
         raise exception
 
@@ -52,8 +64,8 @@ def test_confirm_treats_eof_and_ctrl_c_as_decline(monkeypatch: pytest.MonkeyPatc
 def _parse(cls: type[Command], argv: list[str]) -> Command:
     parser = argparse.ArgumentParser()
     parser.add_argument("--yes", "-y", action="store_true")
-    cls.add_arguments(parser)
-    return cls.from_args(parser.parse_args(argv), bench=None)
+    add_command_arguments(cls, parser)
+    return command_from_args(cls, parser.parse_args(argv), bench=None)
 
 
 @dataclass(kw_only=True)
@@ -118,7 +130,10 @@ def test_tuple_field_captures_remaining_args_verbatim() -> None:
     class _Passthrough(Command):
         args: tuple[str, ...] = ()
 
-    assert _parse(_Passthrough, ["migrate", "site1.localhost"]).args == ("migrate", "site1.localhost")
+    assert _parse(_Passthrough, ["migrate", "site1.localhost"]).args == (
+        "migrate",
+        "site1.localhost",
+    )
 
 
 def test_bench_field_is_never_a_cli_argument() -> None:

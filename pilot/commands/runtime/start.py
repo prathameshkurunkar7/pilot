@@ -59,15 +59,15 @@ class RunCommand(Command):
             from pilot.admin_url import admin_url
 
             manager.start_admin()
-            self.print(f"Admin running at {admin_url(self.bench.config)}")
-            self.print("Finish setup there; the bench starts serving once it's initialized.")
+            self.report(f"Admin running at {admin_url(self.bench.config)}")
+            self.report("Finish setup there; the bench starts serving once it's initialized.")
             return
 
         self._rebuild_config(manager)
         if not manager.is_configured():
             from pilot.commands.runtime.restart import _incomplete_message
 
-            self.print(_incomplete_message(self.bench))
+            self.report(_incomplete_message(self.bench))
             return
         manager.start()
 
@@ -89,7 +89,7 @@ class RunCommand(Command):
         has_source = (frontend / "package.json").exists()
 
         if not (dist / "assets").exists():
-            self.print("Admin UI not built yet; building it now...")
+            self.report("Admin UI not built yet; building it now...")
             if has_source:
                 BuildAdminCommand(force=True).run()
             else:
@@ -99,17 +99,16 @@ class RunCommand(Command):
         if has_source and self._admin_source_is_newer(frontend, dist):
             self._rebuild_admin(BuildAdminCommand)
 
-    @staticmethod
-    def _rebuild_admin(build_command) -> None:
+    def _rebuild_admin(self, build_command) -> None:
         from pilot.exceptions import BenchError
 
-        print("Admin UI source changed since last build; rebuilding...")
+        self.report("Admin UI source changed since last build; rebuilding...")
         try:
             build_command(force=True).run()
         except BenchError as error:
             # Never block startup on a build failure (e.g. Node too old) — keep
             # serving the existing dist and surface why.
-            print(f"  Could not rebuild the admin UI ({error}); serving the existing build.")
+            self.report(f"  Could not rebuild the admin UI ({error}); serving the existing build.")
 
     @staticmethod
     def _admin_source_is_newer(frontend, dist) -> bool:
@@ -135,12 +134,12 @@ class RunCommand(Command):
 
         assets = root / "admin" / "backend" / "static" / "dist" / "assets"
         if not assets.exists():
-            self.print("Downloading admin frontend...")
+            self.report("Downloading admin frontend...")
             download_admin_frontend(root)
 
         port = self._admin_port()
-        self.print("\nBench not initialized. Starting setup wizard...")
-        self.print(f"  Open http://localhost:{port} in your browser\n")
+        self.report("\nBench not initialized. Starting setup wizard...")
+        self.report(f"  Open http://localhost:{port} in your browser\n")
 
         env = {**os.environ, "PYTHONPATH": str(root)}
         subprocess.run(
@@ -160,7 +159,7 @@ class RunCommand(Command):
         )
 
         if (self.bench.path / "env" / "bin" / "python").exists():
-            self.print("\nSetup complete. Run 'bench start' to start your bench.\n")
+            self.report("\nSetup complete. Run 'bench start' to start your bench.\n")
 
     def _admin_port(self) -> int:
         import tomllib
@@ -168,6 +167,11 @@ class RunCommand(Command):
         from pilot.config.toml_store import BenchTomlStore
 
         try:
-            return BenchTomlStore.for_bench(self.bench.path).read_raw().get("admin", {}).get("port", 7000)
+            return (
+                BenchTomlStore.for_bench(self.bench.path)
+                .read_raw()
+                .get("admin", {})
+                .get("port", 7000)
+            )
         except (OSError, tomllib.TOMLDecodeError):
             return 7000

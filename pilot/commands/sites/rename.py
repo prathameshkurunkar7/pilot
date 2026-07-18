@@ -23,7 +23,7 @@ class RenameSiteCommand(Command):
         old_site = self._validate()
         ssl_enabled = old_site.config.ssl
 
-        self.print(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
+        self.report(f"Renaming site '{self.old_name}' -> '{self.new_name}'...")
         old_site.path.rename(self.bench.sites_path / self.new_name)
 
         self._update_default_site()
@@ -32,7 +32,7 @@ class RenameSiteCommand(Command):
         self._add_to_hosts()
         NginxManager(self.bench).reload_for_site_change()
 
-        self.print(f"\nSite renamed to '{self.new_name}'.")
+        self.report(f"\nSite renamed to '{self.new_name}'.")
         self._run_followups(ssl_enabled)
 
     def _validate(self):
@@ -87,7 +87,9 @@ class RenameSiteCommand(Command):
 
     def _remove_stale_nginx_conf(self) -> None:
         # generate_config writes per-site confs but never prunes; drop the old one.
-        (self.bench.config_path / "nginx" / "sites" / f"{self.old_name}.conf").unlink(missing_ok=True)
+        (self.bench.config_path / "nginx" / "sites" / f"{self.old_name}.conf").unlink(
+            missing_ok=True
+        )
 
     def _add_to_hosts(self) -> None:
         if not self.bench.config.production.process_manager == "none":
@@ -105,18 +107,26 @@ class RenameSiteCommand(Command):
         if self.bench.config.production.enabled:
             from pilot.commands.setup.production import SetupProductionCommand
 
-            self._run_or_advise("production setup", lambda: SetupProductionCommand(self.bench).run(),
-                                 f"bench setup production -b {name}")
+            self._run_or_advise(
+                "production setup",
+                lambda: SetupProductionCommand(self.bench).run(),
+                f"bench setup production -b {name}",
+            )
         elif ssl_enabled:
             from pilot.commands.setup.letsencrypt import SetupLetsEncryptCommand
 
-            self._run_or_advise("Let's Encrypt setup", lambda: SetupLetsEncryptCommand(self.bench).run(),
-                                 f"bench setup letsencrypt -b {name}")
+            self._run_or_advise(
+                "Let's Encrypt setup",
+                lambda: SetupLetsEncryptCommand(self.bench).run(),
+                f"bench setup letsencrypt -b {name}",
+            )
 
     def _run_or_advise(self, label: str, fn, manual_cmd: str) -> None:
-        self.print(f"\nRunning {label} for the new domain...")
+        self.report(f"\nRunning {label} for the new domain...")
         try:
             fn()
         except (Exception, SystemExit) as exc:
             detail = f" ({exc})" if str(exc) else ""
-            self.print(f"\n{label} did not complete{detail}. Run it yourself once resolved:\n  {manual_cmd}")
+            self.report(
+                f"\n{label} did not complete{detail}. Run it yourself once resolved:\n  {manual_cmd}"
+            )

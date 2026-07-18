@@ -20,7 +20,7 @@ class ListCommand(Command):
         benches_dir = cli_root() / "benches"
         rows = self._collect(benches_dir)
         if not rows:
-            self.print("No benches yet. Create one with: bench new <name>")
+            self.report("No benches yet. Create one with: bench new <name>")
             return
 
         # Column widths sized to content (with sensible minimums).
@@ -33,10 +33,10 @@ class ListCommand(Command):
             f"  {'':1} {'NAME':<{name_w}}  {'MODE':<{mode_w}}  "
             f"{'MANAGER':<{mgr_w}}  {'SITES':<{sites_w}}  ADDRESS"
         )
-        self.print(_dim(header))
+        self.report(_dim(header))
         for r in rows:
             dot = {"running": _ok("●"), "admin": _warn("●")}.get(r["state"], _dim("○"))
-            self.print(
+            self.report(
                 f"  {dot} {r['name']:<{name_w}}  {r['mode']:<{mode_w}}  "
                 f"{r['manager']:<{mgr_w}}  {str(r['sites']):<{sites_w}}  {r['address']}"
             )
@@ -76,14 +76,23 @@ class ListCommand(Command):
             sites = self._site_count(bench_dir)
         except Exception as exc:
             logging.debug("Failed to describe bench %s: %s", bench_dir, exc)
-        return {"name": name, "mode": mode, "manager": manager, "address": address, "state": state, "sites": sites}
+        return {
+            "name": name,
+            "mode": mode,
+            "manager": manager,
+            "address": address,
+            "state": state,
+            "sites": sites,
+        }
 
     def _site_count(self, bench_dir: Path) -> int:
         """A sites/ subdir counts as a site iff it has a site_config.json."""
         sites_dir = bench_dir / "sites"
         if not sites_dir.is_dir():
             return 0
-        return sum(1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists())
+        return sum(
+            1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists()
+        )
 
     def _state(self, bench, production: bool) -> str:
         """Match the admin UI's view: 'running' when the workload is up, 'admin'

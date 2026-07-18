@@ -21,11 +21,13 @@ class RestartCommand(Command):
     help: ClassVar[str] = "Restart the production workload (production mode only)."
     supports_all_benches: ClassVar[bool] = True
 
-    admin: Annotated[bool, Arg(help="Also restart the admin control plane, if it's installed.")] = False
+    admin: Annotated[bool, Arg(help="Also restart the admin control plane, if it's installed.")] = (
+        False
+    )
 
     def run(self) -> None:
         if not self.bench.config.production.enabled:
-            self.print(_DEV_MESSAGE)
+            self.report(_DEV_MESSAGE)
             return
 
         from typing import cast
@@ -37,7 +39,7 @@ class RestartCommand(Command):
         # returns a ManagedProcessManager subclass here, never the plain base.
         manager = cast(ManagedProcessManager, ProcessManager.for_bench(self.bench))
         if not manager.is_configured():
-            self.print(_incomplete_message(self.bench))
+            self.report(_incomplete_message(self.bench))
             return
 
         manager.write_config()
