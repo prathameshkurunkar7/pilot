@@ -3,11 +3,11 @@ import platform
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from enum import Enum
 from pathlib import Path
-from typing import Iterator
 
 # sbin/bin dirs a minimal PATH often omits (e.g. /usr/sbin for mariadbd/nginx).
 _EXTRA_BIN_DIRS = ("/usr/local/sbin", "/usr/sbin", "/sbin", "/usr/local/bin", "/usr/bin", "/bin")
@@ -102,9 +102,7 @@ def _privileged(command: list[str]) -> list[str]:
     """Prefix a command with sudo unless we are already root."""
     if is_root():
         return command
-    noninteractive = (
-        _NONINTERACTIVE_PRIVILEGES.get() or os.environ.get(NONINTERACTIVE_PRIVILEGES_ENV) == "1"
-    )
+    noninteractive = _NONINTERACTIVE_PRIVILEGES.get() or os.environ.get(NONINTERACTIVE_PRIVILEGES_ENV) == "1"
     sudo = ["sudo", "-n"] if noninteractive else ["sudo"]
     return [*sudo, *command]
 
@@ -232,9 +230,7 @@ def unmount_legacy_bind_mount(target: Path, fstab_path: Path = Path("/etc/fstab"
         line
         for line in lines
         if not (
-            len(line.split()) >= 2
-            and not line.lstrip().startswith("#")
-            and line.split()[1] == str(target)
+            len(line.split()) >= 2 and not line.lstrip().startswith("#") and line.split()[1] == str(target)
         )
     ]
     if len(kept) == len(lines):

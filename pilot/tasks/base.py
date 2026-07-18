@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import functools
 import time
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, ContextManager
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pilot.commands import Arg
 
@@ -117,9 +119,7 @@ class Task:
     @classmethod
     def _constructor_args(cls, args: dict) -> dict:
         valid = {
-            field.name
-            for field in fields(cls)
-            if field.init and field.name not in {"bench", "bench_root"}
+            field.name for field in fields(cls) if field.init and field.name not in {"bench", "bench_root"}
         }
         return {key: value for key, value in args.items() if key in valid}
 
@@ -127,7 +127,7 @@ class Task:
         self._current_step: str | None = None
         self._failed_steps: set[str] = set()
 
-    def step(self, key: str, label: str = "") -> ContextManager[None]:
+    def step(self, key: str, label: str = "") -> AbstractContextManager[None]:
         self._current_step = key
         print(f"STEP {key},{time.time():.3f} {label}", flush=True)
         return _TaskStep(self, key)
@@ -158,9 +158,7 @@ class Task:
         from pilot.managers.platform import has_passwordless_sudo
 
         if self.bench.config.production.enabled and not has_passwordless_sudo():
-            raise BenchError(
-                "Production site operations require non-interactive system privileges."
-            )
+            raise BenchError("Production site operations require non-interactive system privileges.")
 
     def record_audit(self, category: str, fields: dict) -> None:
         from pilot.core.bench.audit_log import AuditLog

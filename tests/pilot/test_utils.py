@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from pilot.internal.toml import Toml
-from pilot.utils import hosts_line_contains, host_owner, normalize_host
+from pilot.utils import host_owner, hosts_line_contains, normalize_host
 
 
 @pytest.mark.parametrize(
@@ -24,9 +24,7 @@ def test_hosts_line_contains_exact_hostname_token(line: str, expected: bool) -> 
     assert hosts_line_contains(line, "site.localhost") is expected
 
 
-def _make_bench(
-    benches: Path, name: str, *, admin_domain: str, sites: list[str] | None = None
-) -> Path:
+def _make_bench(benches: Path, name: str, *, admin_domain: str, sites: list[str] | None = None) -> Path:
     bench = benches / name
     (bench / "sites").mkdir(parents=True, exist_ok=True)
     (bench / "bench.toml").write_text(
@@ -63,9 +61,7 @@ def test_host_owner_free_host_returns_none(tmp_path: Path) -> None:
 
 def test_host_owner_ignores_self(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
-    bench = _make_bench(
-        benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"]
-    )
+    bench = _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
     # Scanning from alpha itself must not report alpha as the owner.
     assert host_owner(bench, "shop.localhost") is None
 
@@ -78,9 +74,7 @@ def test_host_owner_normalizes_case_and_trailing_dot(tmp_path: Path) -> None:
 
 def test_host_owner_detects_site_alias(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
-    bench = _make_bench(
-        benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"]
-    )
+    bench = _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
     site_cfg = bench / "sites" / "shop.localhost" / "site_config.json"
     site_cfg.write_text('{"domains": ["www.shop.example.com"]}')
     assert host_owner(benches / "beta", "www.shop.example.com") == "alpha"

@@ -76,8 +76,8 @@ def _validate(public_key: str) -> tuple[str, str, str]:
         raw = base64.b64decode(blob, validate=True)
         length = struct.unpack(">I", raw[:4])[0]
         algorithm = raw[4 : 4 + length].decode()
-    except (ValueError, struct.error, UnicodeDecodeError):
-        raise InvalidSSHKeyError("The public key is malformed.")
+    except (ValueError, struct.error, UnicodeDecodeError) as exc:
+        raise InvalidSSHKeyError("The public key is malformed.") from exc
     if algorithm != key_type:
         raise InvalidSSHKeyError("The key type does not match the key data.")
     return key_type, blob, comment
@@ -102,7 +102,7 @@ class AuthorizedKeysStore:
             if any(_fingerprint(p[1]) == fingerprint for p in self._parse_lines(lines)):
                 raise SSHKeyAlreadyExistsError("That key is already authorized.")
             line = " ".join(part for part in (key_type, blob, comment) if part)
-            self._write(lines + [line])
+            self._write([*lines, line])
         return SSHKey(key_type=key_type, fingerprint=fingerprint, comment=comment)
 
     def remove(self, fingerprint: str) -> None:

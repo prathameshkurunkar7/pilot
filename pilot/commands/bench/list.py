@@ -38,7 +38,7 @@ class ListCommand(Command):
             dot = {"running": _ok("●"), "admin": _warn("●")}.get(r["state"], _dim("○"))
             self.report(
                 f"  {dot} {r['name']:<{name_w}}  {r['mode']:<{mode_w}}  "
-                f"{r['manager']:<{mgr_w}}  {str(r['sites']):<{sites_w}}  {r['address']}"
+                f"{r['manager']:<{mgr_w}}  {r['sites']!s:<{sites_w}}  {r['address']}"
             )
 
     def _collect(self, benches_dir: Path) -> list[dict]:
@@ -90,9 +90,7 @@ class ListCommand(Command):
         sites_dir = bench_dir / "sites"
         if not sites_dir.is_dir():
             return 0
-        return sum(
-            1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists()
-        )
+        return sum(1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists())
 
     def _state(self, bench, production: bool) -> str:
         """Return running/admin/stopped using the same states as the admin UI."""

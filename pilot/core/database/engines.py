@@ -79,7 +79,7 @@ class MariaDB(Database):
         try:
             with conn.cursor() as cursor:
                 cursor.execute("SHOW TABLES")
-                return [list(r.values())[0] for r in cursor.fetchall()]
+                return [next(iter(r.values())) for r in cursor.fetchall()]
         finally:
             conn.close()
 
@@ -98,7 +98,7 @@ class MariaDB(Database):
         try:
             with conn.cursor() as cursor:
                 cursor.execute("SHOW TABLES")
-                tables = [list(r.values())[0] for r in cursor.fetchall()]
+                tables = [next(iter(r.values())) for r in cursor.fetchall()]
                 cursor.execute(
                     "SELECT TABLE_NAME AS tbl, COLUMN_NAME AS col, COLUMN_TYPE AS typ "
                     "FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
@@ -106,9 +106,7 @@ class MariaDB(Database):
                 )
                 columns_by_table: dict[str, list[dict]] = {}
                 for r in cursor.fetchall():
-                    columns_by_table.setdefault(r["tbl"], []).append(
-                        {"name": r["col"], "type": r["typ"]}
-                    )
+                    columns_by_table.setdefault(r["tbl"], []).append({"name": r["col"], "type": r["typ"]})
             return [{"name": t, "columns": columns_by_table.get(t, [])} for t in tables]
         finally:
             conn.close()
@@ -125,8 +123,8 @@ class PostgreSQL(Database):
     def _connect(self):
         try:
             import psycopg2
-        except ImportError:
-            raise DatabaseError("psycopg2 is not installed. Run: pip install psycopg2-binary")
+        except ImportError as exc:
+            raise DatabaseError("psycopg2 is not installed. Run: pip install psycopg2-binary") from exc
         return psycopg2.connect(
             host=self._host,
             port=self._port,
@@ -282,9 +280,7 @@ class SQLite(Database):
             )
             columns_by_table: dict[str, list[dict]] = {}
             for r in cursor.fetchall():
-                columns_by_table.setdefault(r["tbl"], []).append(
-                    {"name": r["col"], "type": r["typ"]}
-                )
+                columns_by_table.setdefault(r["tbl"], []).append({"name": r["col"], "type": r["typ"]})
             return [{"name": t, "columns": cols} for t, cols in columns_by_table.items()]
         finally:
             conn.close()

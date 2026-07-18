@@ -2,7 +2,7 @@
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pilot.utils import open_private
 
@@ -30,16 +30,14 @@ class AuditLog:
         return matched
 
     def _current_file(self):
-        year, week, _ = datetime.now(timezone.utc).isocalendar()
+        year, week, _ = datetime.now(UTC).isocalendar()
         return self._dir / f"audit_{year}_{week:02d}.jsonl"
 
     def _weekly_files(self) -> list:
         if not self._dir.is_dir():
             return []
         files = [p for p in self._dir.iterdir() if _FILE_RE.match(p.name)]
-        return sorted(
-            files, key=lambda p: p.name, reverse=True
-        )  # zero-padded, so name sort == time sort
+        return sorted(files, key=lambda p: p.name, reverse=True)  # zero-padded, so name sort == time sort
 
     def _read_newest_first(self):
         for path in self._weekly_files():
@@ -78,4 +76,4 @@ class AuditLog:
 
     @staticmethod
     def _now() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()

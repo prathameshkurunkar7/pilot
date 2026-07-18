@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import subprocess
@@ -9,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from pilot.internal.tasks.worker import TaskWorker
 from pilot.internal.tasks.store import TaskStore
-from pilot.tasks import TaskRunner
+from pilot.internal.tasks.worker import TaskWorker
 from pilot.managers.processes.local import ProcessDefinition
 from pilot.managers.processes.supervisor import SupervisorRenderer
 from pilot.managers.processes.systemd import SystemdRenderer
+from pilot.tasks import TaskRunner
 
 
 def wait_for_pid(path: Path) -> int:
@@ -37,10 +38,8 @@ def pid_is_running(pid: int) -> bool:
 
 
 def stop_process_group(pid: int) -> None:
-    try:
+    with contextlib.suppress(ProcessLookupError):
         os.killpg(os.getpgid(pid), signal.SIGTERM)
-    except ProcessLookupError:
-        pass
 
 
 @pytest.mark.parametrize("mode", ["dev", "systemd", "supervisor"])
@@ -159,9 +158,7 @@ def test_task_cancel_stops_wrapper_and_workload_group(
             raise AssertionError("task workload survived cancellation")
     finally:
         if wrapper_pid is not None:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.killpg(wrapper_pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
         worker.request_drain()
         worker.join(5)

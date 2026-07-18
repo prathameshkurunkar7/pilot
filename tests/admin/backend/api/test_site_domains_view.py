@@ -15,9 +15,7 @@ def _client(bench_root: Path, password: str = "secret"):
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(
-            bench_root.name, {"admin_enabled": True, "admin_password": password}
-        ).render()
+        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -116,9 +114,7 @@ def test_update_domain_sets_primary_and_queues_nginx(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site.localhost", domains=["custom.example.com"])
     client = _client(bench_root)
-    site_domains = _mocked_site_domains(
-        bench_root, "site.localhost", domains=["custom.example.com"]
-    )
+    site_domains = _mocked_site_domains(bench_root, "site.localhost", domains=["custom.example.com"])
 
     with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
         response = _request(
@@ -153,14 +149,10 @@ def test_delete_domain_queues_removal(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site.localhost", domains=["custom.example.com"])
     client = _client(bench_root)
-    site_domains = _mocked_site_domains(
-        bench_root, "site.localhost", domains=["custom.example.com"]
-    )
+    site_domains = _mocked_site_domains(bench_root, "site.localhost", domains=["custom.example.com"])
 
     with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
-        response = _request(
-            client, "delete", "/api/v1/sites/site.localhost/domains/custom.example.com"
-        )
+        response = _request(client, "delete", "/api/v1/sites/site.localhost/domains/custom.example.com")
 
     body = response.get_json()
     assert response.status_code == 202
@@ -186,12 +178,8 @@ def test_domain_routes_reject_missing_site(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
 
+    assert client.get("/api/v1/sites/missing.localhost/domains/custom.example.com").status_code == 404
     assert (
-        client.get("/api/v1/sites/missing.localhost/domains/custom.example.com").status_code == 404
-    )
-    assert (
-        _request(
-            client, "delete", "/api/v1/sites/missing.localhost/domains/custom.example.com"
-        ).status_code
+        _request(client, "delete", "/api/v1/sites/missing.localhost/domains/custom.example.com").status_code
         == 404
     )

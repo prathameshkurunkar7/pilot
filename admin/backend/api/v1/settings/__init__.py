@@ -5,9 +5,8 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
-from admin.backend.middleware import client_ip
-
 from admin.backend.api.v1.settings.config import ConfigPatcher
+from admin.backend.middleware import client_ip
 from pilot.config import (
     WAF_MODES,
     WAF_RULE_ACTIONS,

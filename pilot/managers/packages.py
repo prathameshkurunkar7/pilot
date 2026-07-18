@@ -3,13 +3,14 @@
 import os
 import subprocess
 from abc import ABC, abstractmethod
+from typing import ClassVar
 
 from pilot.managers.platform import Distro, _privileged, detect_distro, is_macos
 
 
 class SystemPackageManager(ABC):
     # Canonical (Debian/apt) name -> native name(s). Unmapped names pass through.
-    package_aliases: dict[str, str | tuple[str, ...]] = {}
+    package_aliases: ClassVar[dict[str, str | tuple[str, ...]]] = {}
 
     def _resolve(self, *packages: str) -> list[str]:
         resolved: list[str] = []
@@ -33,7 +34,7 @@ class SystemPackageManager(ABC):
 
 
 class AptPackageManager(SystemPackageManager):
-    package_aliases = {
+    package_aliases: ClassVar[dict[str, str | tuple[str, ...]]] = {
         "modsecurity-nginx": "libnginx-mod-http-modsecurity",
     }
 
@@ -56,7 +57,7 @@ class AptPackageManager(SystemPackageManager):
 
 
 class DnfPackageManager(SystemPackageManager):
-    package_aliases = {
+    package_aliases: ClassVar[dict[str, str | tuple[str, ...]]] = {
         "build-essential": ("gcc", "gcc-c++", "make"),
         "pkg-config": "pkgconf-pkg-config",
         "python3-dev": "python3-devel",
@@ -90,7 +91,7 @@ class DnfPackageManager(SystemPackageManager):
 
 
 class PacmanPackageManager(SystemPackageManager):
-    package_aliases = {
+    package_aliases: ClassVar[dict[str, str | tuple[str, ...]]] = {
         "build-essential": "base-devel",
         "pkg-config": "pkgconf",
         "python3-dev": "python",

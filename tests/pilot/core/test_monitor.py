@@ -2,11 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from pilot.config import BenchConfig
-from pilot.config import MariaDBConfig
-from pilot.config import ProductionConfig
-from pilot.config import RedisConfig
-from pilot.config import WorkerConfig
+from pilot.config import BenchConfig, MariaDBConfig, ProductionConfig, RedisConfig, WorkerConfig
 from pilot.core.bench import Bench
 from pilot.core.server.monitoring import Monitor, MonitorConfigurator
 
@@ -176,9 +172,7 @@ def test_collect_system_metrics_skipped_when_not_authority(tmp_path: Path) -> No
     monitor.bench.config.monitor.system_log_path = system_log_file
 
     siblings = [_sibling("other-bench", "systemd")]
-    with patch(
-        "pilot.core.server.monitoring_config.iter_sibling_benches", return_value=iter(siblings)
-    ):
+    with patch("pilot.core.server.monitoring_config.iter_sibling_benches", return_value=iter(siblings)):
         monitor.collect_system_metrics()
 
     assert not system_log_file.exists()
@@ -277,9 +271,7 @@ def test_memory_usage_breakdown_sums_to_total(tmp_path: Path) -> None:
     result = monitor._memory_usage()
 
     assert set(result) >= {"total_mb", "used_mb", "cached_mb", "free_mb", "swap_used_mb", "percent"}
-    assert (
-        abs(result["total_mb"] - result["used_mb"] - result["cached_mb"] - result["free_mb"]) < 1.0
-    )
+    assert abs(result["total_mb"] - result["used_mb"] - result["cached_mb"] - result["free_mb"]) < 1.0
 
 
 def test_compute_io_reports_bytes_per_sec(tmp_path: Path) -> None:

@@ -69,8 +69,6 @@ class TaskInfo:
             "duration_seconds": self.duration_seconds,
             "queue_position": self.queue_position,
             "failure": (
-                {"code": self.failure.code, "message": self.failure.message}
-                if self.failure
-                else None
+                {"code": self.failure.code, "message": self.failure.message} if self.failure else None
             ),
         }

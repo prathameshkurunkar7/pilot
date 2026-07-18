@@ -7,12 +7,12 @@ import socket
 import subprocess
 import sys
 import tomllib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.internal.tasks.callbacks import run_callback, trigger_for_task_status
-from pilot.managers.task.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
+from pilot.managers.task.models import TaskStatus
 from pilot.utils import open_private
 
 _HOSTNAME = socket.gethostname()
@@ -59,18 +59,14 @@ def run_with_syslog_output(
     redactions: list[str] | None = None,
 ) -> int:
     """Run a command and write merged output as syslog-framed lines."""
-    process = subprocess.Popen(
-        command_argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-    )
+    process = subprocess.Popen(command_argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     assert process.stdout is not None
     fd = process.stdout.fileno()
     head, tail = _syslog_prefix_parts(tag, process.pid)
-    secret_bytes = sorted(
-        {value.encode() for value in redactions or [] if value}, key=len, reverse=True
-    )
+    secret_bytes = sorted({value.encode() for value in redactions or [] if value}, key=len, reverse=True)
 
     def write_prefix(log_file) -> None:
-        ts = datetime.now(timezone.utc).isoformat(timespec="microseconds").encode()
+        ts = datetime.now(UTC).isoformat(timespec="microseconds").encode()
         log_file.write(head)
         log_file.write(ts)
         log_file.write(tail)
@@ -109,7 +105,7 @@ def callback_handler(
     redactions: list[str] | None = None,
 ) -> None:
     head, tail = _syslog_prefix_parts(meta["command"], os.getpid())
-    ts = datetime.now(timezone.utc).isoformat(timespec="microseconds").encode()
+    ts = datetime.now(UTC).isoformat(timespec="microseconds").encode()
     prefix = (head + ts + tail).decode()
     with open_private(output_log, "a") as log_file:
         try:
@@ -130,11 +126,7 @@ def _secret_values(value, key: str = "") -> list[str]:
     if sensitive and isinstance(value, (str, int, float)):
         return [str(value)] if str(value) else []
     if isinstance(value, dict):
-        return [
-            secret
-            for child_key, child in value.items()
-            for secret in _secret_values(child, child_key)
-        ]
+        return [secret for child_key, child in value.items() for secret in _secret_values(child, child_key)]
     if isinstance(value, list):
         return [secret for child in value for secret in _secret_values(child, key)]
     return []
@@ -223,11 +215,11 @@ def _finalize_task(store: TaskStore, task_id: str, exit_code: int) -> TaskStatus
     updates: dict[str, object]
     if _cancel_requested:
         target = TaskStatus.KILLED
-        updates = {"finished_at": datetime.now(timezone.utc).isoformat()}
+        updates = {"finished_at": datetime.now(UTC).isoformat()}
     else:
         target = TaskStatus.SUCCESS if exit_code == 0 else TaskStatus.FAILED
         updates = {
-            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "finished_at": datetime.now(UTC).isoformat(),
             "exit_code": exit_code,
             "failure": None if exit_code == 0 else {"code": "command_failed"},
         }

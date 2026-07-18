@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-from pilot.config import BenchConfig
-
 from admin.backend.api.v1.settings import ConfigPatcher, build_settings_response, firewall_payload
+from pilot.config import BenchConfig
 
 
 def _config() -> BenchConfig:
     return BenchConfig._from_dict(
         {
             "bench": {"name": "test-bench", "python": "3.14"},
-            "apps": [
-                {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}
-            ],
+            "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
             "mariadb": {"root_password": "root"},
             "admin": {"domain": "admin.example.com"},
         }
@@ -65,8 +62,9 @@ def test_patcher_leaves_firewall_untouched_when_absent() -> None:
 
 
 def test_my_ip_route_ignores_x_real_ip_from_untrusted_peer() -> None:
-    from admin.backend.api.v1.settings import network_bp
     from flask import Flask
+
+    from admin.backend.api.v1.settings import network_bp
 
     app = Flask(__name__)
     app.config["TRUSTED_PROXY_PEERS"] = ()
@@ -78,8 +76,9 @@ def test_my_ip_route_ignores_x_real_ip_from_untrusted_peer() -> None:
 
 
 def test_my_ip_route_reads_x_real_ip_from_trusted_peer() -> None:
-    from admin.backend.api.v1.settings import network_bp
     from flask import Flask
+
+    from admin.backend.api.v1.settings import network_bp
 
     app = Flask(__name__)
     app.config["TRUSTED_PROXY_PEERS"] = ("127.0.0.1",)

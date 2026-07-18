@@ -3,12 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config import AppConfig
-from pilot.config import BenchConfig
-from pilot.config import MariaDBConfig
-from pilot.config import RedisConfig
-from pilot.config import SiteConfig
-from pilot.config import WorkerConfig, WorkerGroup
+from pilot.config import (
+    AppConfig,
+    BenchConfig,
+    MariaDBConfig,
+    RedisConfig,
+    SiteConfig,
+    WorkerConfig,
+    WorkerGroup,
+)
 from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.core.app import App, RevisionPin
 from pilot.core.bench import Bench
@@ -16,7 +19,6 @@ from pilot.core.server import Server
 from pilot.core.site import Site
 from pilot.exceptions import BenchError
 from pilot.managers.processes.local import ProcessManager
-
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
 
@@ -568,12 +570,14 @@ def test_honcho_start_writes_per_process_pid_files(tmp_path: Path) -> None:
     def fake_popen(cmd, **kwargs):
         return fake_proc
 
-    with patch("pilot.managers.processes.local.subprocess.Popen", side_effect=fake_popen):
-        with patch.object(process_manager, "_stop_all"):
-            for pd in process_manager._process_definitions():
-                proc = fake_popen(pd.argv)
-                process_manager._procs[pd.name] = proc
-                (bench.pids_path / f"{pd.name}.pid").write_text(str(proc.pid))
+    with (
+        patch("pilot.managers.processes.local.subprocess.Popen", side_effect=fake_popen),
+        patch.object(process_manager, "_stop_all"),
+    ):
+        for pd in process_manager._process_definitions():
+            proc = fake_popen(pd.argv)
+            process_manager._procs[pd.name] = proc
+            (bench.pids_path / f"{pd.name}.pid").write_text(str(proc.pid))
 
     for name in process_manager._procs:
         pid_file = bench.pids_path / f"{name}.pid"
@@ -597,9 +601,7 @@ def _postgres_bench(tmp_path: Path, **postgres):
     return bench
 
 
-def test_site_create_postgres_builds_db_args(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_site_create_postgres_builds_db_args(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgsecret", port=5433)
     captured = _capture_site_cmd(monkeypatch)
 
@@ -614,14 +616,10 @@ def test_site_create_postgres_builds_db_args(
     assert "--db-socket" not in cmd
 
 
-def test_site_create_mariadb_when_bench_is_mariadb(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_site_create_mariadb_when_bench_is_mariadb(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = make_bench(tmp_path)  # bench db_type defaults to mariadb
     captured = _capture_site_cmd(monkeypatch)
-    monkeypatch.setattr(
-        "pilot.managers.database.mariadb.MariaDBManager._detect_socket", lambda self: ""
-    )
+    monkeypatch.setattr("pilot.managers.database.mariadb.MariaDBManager._detect_socket", lambda self: "")
 
     Site(SiteConfig(name="mdb.localhost", apps=["frappe"], admin_password="secret"), bench).create()
 
@@ -632,9 +630,7 @@ def test_site_create_mariadb_when_bench_is_mariadb(
     assert "--db-host" in cmd
 
 
-def test_site_restore_uses_postgres_root_creds(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_site_restore_uses_postgres_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
     captured = _capture_site_cmd(monkeypatch)
 
@@ -647,9 +643,7 @@ def test_site_restore_uses_postgres_root_creds(
     assert cmd[cmd.index("--db-root-password") + 1] == "pgpw"
 
 
-def test_site_restore_uses_mariadb_root_creds(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_site_restore_uses_mariadb_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = make_bench(tmp_path)  # mariadb bench, root_password="root"
     captured = _capture_site_cmd(monkeypatch)
 
@@ -664,9 +658,7 @@ def test_site_restore_uses_mariadb_root_creds(
     assert cmd[cmd.index("--with-private-files") + 1] == "/tmp/priv.tar"
 
 
-def test_site_reinstall_postgres_root_creds(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_site_reinstall_postgres_root_creds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = _postgres_bench(tmp_path, root_password="pgpw")
     captured = _capture_site_cmd(monkeypatch)
 
@@ -699,9 +691,7 @@ def test_site_create_and_reinstall_reject_empty_admin_password(tmp_path: Path) -
         site.reinstall("   ")
 
 
-def test_site_migrate_skip_failing_adds_flag(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_site_migrate_skip_failing_adds_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bench = make_bench(tmp_path)
     captured = _capture_site_cmd(monkeypatch)
 

@@ -36,9 +36,7 @@ def complete_dev_wizard(
     # Root username only renders when it isn't implied (a fresh install
     # defaults to root/postgres).
     if page.get_by_label("Root username").is_visible():
-        page.get_by_label("Root username").fill(
-            postgres_admin_user if db_type == "postgres" else "root"
-        )
+        page.get_by_label("Root username").fill(postgres_admin_user if db_type == "postgres" else "root")
     page.get_by_label("Root user password").fill(
         postgres_password if db_type == "postgres" else mariadb_password
     )

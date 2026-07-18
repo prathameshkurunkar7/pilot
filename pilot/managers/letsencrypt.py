@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -96,9 +97,7 @@ class LetsEncryptManager:
             and not self._is_near_expiry(site)
             and self._cert_covers(nginx_manager.cert_path(site), domains)
         ):
-            print(
-                f"Certificate for {site.name} already covers all domains and is not near expiry. Skipping."
-            )
+            print(f"Certificate for {site.name} already covers all domains and is not near expiry. Skipping.")
             return
 
         domain_args = []
@@ -142,9 +141,7 @@ class LetsEncryptManager:
                 try:
                     self.obtain(site.config)
                 except CommandError as exc:
-                    print(
-                        f"Could not obtain a certificate for '{site.config.name}', skipping: {exc}"
-                    )
+                    print(f"Could not obtain a certificate for '{site.config.name}', skipping: {exc}")
                     failed.append(site.config.name)
         if _is_public_domain(self.bench.config.admin.domain):
             try:
@@ -165,9 +162,7 @@ class LetsEncryptManager:
         nginx_manager = NginxManager(self.bench)
         domain = self.bench.config.admin.domain
 
-        if nginx_manager.has_admin_cert and not self._is_near_expiry_cert(
-            nginx_manager.admin_cert_path()
-        ):
+        if nginx_manager.has_admin_cert and not self._is_near_expiry_cert(nginx_manager.admin_cert_path()):
             print(f"Certificate for {domain} already exists and is not near expiry. Skipping.")
             return
 
@@ -205,7 +200,7 @@ class LetsEncryptManager:
 
     def _is_near_expiry_cert(self, cert_file: Path) -> bool:
         import subprocess
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         result = subprocess.run(
             _privileged(["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)]),
@@ -217,6 +212,6 @@ class LetsEncryptManager:
             return True
 
         date_str = result.stdout.strip().replace("notAfter=", "")
-        expiry = datetime.strptime(date_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
-        now = datetime.now(tz=timezone.utc)
+        expiry = datetime.strptime(date_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=UTC)
+        now = datetime.now(tz=UTC)
         return (expiry - now).days < _CERT_EXPIRY_THRESHOLD_DAYS

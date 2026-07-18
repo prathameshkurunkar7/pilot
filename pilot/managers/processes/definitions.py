@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.utils import cli_root
 from pilot.managers.environment import AdminEnvManager
+from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -32,9 +32,7 @@ class ProcessDefinitionBuilder:
         if self.bench.config.production.use_companion_manager:
             defs = [self.web_definition(), self.admin_definition()]
         elif self.bench.config.production.process_manager == "systemd":
-            all_queues = ",".join(
-                q for group in self.bench.config.workers.groups for q in group.queues
-            )
+            all_queues = ",".join(q for group in self.bench.config.workers.groups for q in group.queues)
             num_workers = sum(group.count for group in self.bench.config.workers.groups)
             defs = [
                 self.web_definition(),

@@ -5,22 +5,9 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request
 
-from pilot.internal.site_paths import site_config_path, site_exists
-from pilot.internal.validators import validate_site_name
-from pilot.tasks.clear_cache import ClearCacheTask
-from pilot.tasks.drop_site import DropSiteTask
-from pilot.tasks.migrate import MigrateTask
-from pilot.tasks.new_site import NewSiteTask
-from pilot.tasks.reinstall_site import ReinstallSiteTask
-
 from admin.backend.api.responses import accepted_task_response, created_response, error_response
-from admin.backend.middleware import rate_limit, require_scope
-
-from admin.backend.api.v1.sites.login import no_store as _no_store
-from admin.backend.providers.apps import AppProvider
-from admin.backend.providers.sites import SiteInfo, SiteProvider
 from admin.backend.api.v1.sites import sites_bp
-from pilot.core.bench import Bench
+from admin.backend.api.v1.sites.login import no_store as _no_store
 from admin.backend.api.v1.sites.shared import (
     internal_error,
     invalid_fields,
@@ -32,6 +19,17 @@ from admin.backend.api.v1.sites.shared import (
     task_failure,
     text_fields,
 )
+from admin.backend.middleware import rate_limit, require_scope
+from admin.backend.providers.apps import AppProvider
+from admin.backend.providers.sites import SiteInfo, SiteProvider
+from pilot.core.bench import Bench
+from pilot.internal.site_paths import site_config_path, site_exists
+from pilot.internal.validators import validate_site_name
+from pilot.tasks.clear_cache import ClearCacheTask
+from pilot.tasks.drop_site import DropSiteTask
+from pilot.tasks.migrate import MigrateTask
+from pilot.tasks.new_site import NewSiteTask
+from pilot.tasks.reinstall_site import ReinstallSiteTask
 
 
 @sites_bp.get("")

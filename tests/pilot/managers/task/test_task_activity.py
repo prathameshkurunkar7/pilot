@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from pilot.managers.task.activity import TaskActivityReader
-from pilot.managers.task.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker_state import (
     WorkerIntent,
     WorkerStatus,
     WorkerStore,
 )
+from pilot.managers.task.activity import TaskActivityReader
+from pilot.managers.task.models import TaskStatus
 
 TASK_ID = "20260715-120000-aabbcc"
 

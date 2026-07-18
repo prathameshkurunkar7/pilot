@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import subprocess
-from unittest.mock import patch, PropertyMock
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
@@ -22,10 +22,7 @@ def test_socket_path_defaults_under_state_dir() -> None:
 
 
 def test_socket_path_honors_explicit_value() -> None:
-    assert (
-        MariaDBManager(MariaDBConfig(socket_path="/tmp/custom.sock")).socket_path
-        == "/tmp/custom.sock"
-    )
+    assert MariaDBManager(MariaDBConfig(socket_path="/tmp/custom.sock")).socket_path == "/tmp/custom.sock"
 
 
 def test_existing_defaults_to_false() -> None:
@@ -41,9 +38,9 @@ def test_install_raises_when_missing_on_linux() -> None:
     with (
         patch.object(m, "is_installed", return_value=False),
         patch(f"{BASE_MODULE}.is_macos", return_value=False),
+        pytest.raises(DatabaseError, match=r"install\.sh"),
     ):
-        with pytest.raises(DatabaseError, match="install.sh"):
-            m.install()
+        m.install()
 
 
 def test_start_targets_systemctl_user_on_linux() -> None:
@@ -61,9 +58,7 @@ def test_provision_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
     with (
         patch(f"{MODULE}.is_macos", return_value=False),
         patch.object(m, "install"),
-        patch.object(
-            type(m), "data_dir", new_callable=PropertyMock, return_value=tmp_path / "data"
-        ),
+        patch.object(type(m), "data_dir", new_callable=PropertyMock, return_value=tmp_path / "data"),
         patch.object(m, "is_provisioned", return_value=False),
         patch.object(m, "is_running", return_value=False),
         patch.object(m, "_install_unit") as install_unit,

@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
-from pilot.tasks.install_app import InstallAppTask
 from pilot.core.site import Site
 from pilot.exceptions import CommandError
+from pilot.tasks.install_app import InstallAppTask
 from tests.pilot.commands.test_commands import make_bench
 
 
@@ -74,8 +74,10 @@ def test_install_app_task_exits_nonzero_when_site_install_fails(tmp_path: Path) 
     task = make_task(tmp_path, "site1.localhost", "helpdesk")
     make_app_dir(task.bench, "helpdesk")
 
-    with patch.object(Site, "install_app", side_effect=CommandError("boom")):
-        with pytest.raises(SystemExit) as exc:
-            task.run()
+    with (
+        patch.object(Site, "install_app", side_effect=CommandError("boom")),
+        pytest.raises(SystemExit) as exc,
+    ):
+        task.run()
 
     assert exc.value.code == 1

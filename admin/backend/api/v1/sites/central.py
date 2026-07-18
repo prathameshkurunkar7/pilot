@@ -5,11 +5,9 @@ from pathlib import Path
 from flask import current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
-from admin.backend.middleware import require_scope
-
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import site_name
-
+from admin.backend.middleware import require_scope
 from pilot.integrations.central import CentralClient, CentralClientError
 
 _ALLOWED_PREFIXES = ("central.billing.api.billing_api.",)
@@ -17,9 +15,7 @@ _ALLOWED_EXACT = frozenset({"central.api.pilot.heartbeat"})
 
 
 def _is_allowed(method_path: str) -> bool:
-    return method_path in _ALLOWED_EXACT or any(
-        method_path.startswith(p) for p in _ALLOWED_PREFIXES
-    )
+    return method_path in _ALLOWED_EXACT or any(method_path.startswith(p) for p in _ALLOWED_PREFIXES)
 
 
 def _central() -> CentralClient:

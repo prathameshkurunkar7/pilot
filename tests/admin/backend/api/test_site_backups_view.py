@@ -15,9 +15,7 @@ def _client(bench_root: Path, password: str = "secret"):
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(
-            bench_root.name, {"admin_enabled": True, "admin_password": password}
-        ).render()
+        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -141,9 +139,7 @@ def test_download_backup_file_rejects_a_dotfile(tmp_path: Path) -> None:
     _make_site(bench_root, "site.localhost")
     client = _client(bench_root)
 
-    response = client.get(
-        "/api/v1/sites/site.localhost/backups/20240101_000000/files/.hidden/content"
-    )
+    response = client.get("/api/v1/sites/site.localhost/backups/20240101_000000/files/.hidden/content")
 
     assert response.status_code == 422
 

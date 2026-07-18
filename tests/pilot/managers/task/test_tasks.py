@@ -10,11 +10,11 @@ from unittest.mock import patch
 
 import pytest
 
-import pilot.managers.task.reader as task_reader_module
-from pilot.managers.task.models import TaskStatus
 import pilot.internal.tasks.runner as task_runner_module
-from pilot.internal.tasks.store import TaskStore
+import pilot.managers.task.reader as task_reader_module
 from pilot.internal.tasks.runner import TASK_RETENTION_LIMIT
+from pilot.internal.tasks.store import TaskStore
+from pilot.managers.task.models import TaskStatus
 from pilot.managers.task.reader import TaskReader, collapse_cr
 from pilot.tasks import TaskRunner
 
@@ -108,9 +108,7 @@ def test_site_tasks_reject_empty_admin_password(tmp_path: Path, password) -> Non
 
 
 def test_command_argv_get_app(tmp_path: Path) -> None:
-    argv = task_argv(
-        tmp_path, "get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext"}
-    )
+    argv = task_argv(tmp_path, "get-app", {"name": "erpnext", "repo": "https://github.com/frappe/erpnext"})
     assert argv[0] == sys.executable
     assert argv[1:3] == ["-m", "pilot.tasks.get_app"]
     assert str(tmp_path) in argv

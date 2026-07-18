@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
-from pilot.managers.python_assets import PythonAssetBuilder
 from pilot.managers.platform import is_macos, which
+from pilot.managers.python_assets import PythonAssetBuilder
 from pilot.utils import get_yarn_bin, run_command
 
 if TYPE_CHECKING:
@@ -191,8 +191,7 @@ class PythonEnvManager:
             run_command(["brew", "install", "node"])
             return
         raise BenchError(
-            "Node.js is not installed. Re-run install.sh as root to install it, "
-            "or install it yourself."
+            "Node.js is not installed. Re-run install.sh as root to install it, or install it yourself."
         )
 
     def _install_yarn(self) -> None:
@@ -221,9 +220,7 @@ class PythonEnvManager:
     def _ensure_yarn_install(self, path: Path) -> None:
         self._assets.ensure_yarn_install(path)
 
-    def _try_download_prebuilt_assets(
-        self, app: "App", app_public_dir: Path, dist_dir: Path
-    ) -> bool:
+    def _try_download_prebuilt_assets(self, app: "App", app_public_dir: Path, dist_dir: Path) -> bool:
         return self._assets.try_download_prebuilt_assets(app, app_public_dir, dist_dir)
 
     @staticmethod
@@ -277,6 +274,4 @@ class PythonEnvManager:
         if uv:
             return uv
 
-        raise BenchError(
-            "uv was installed but cannot be found. Add ~/.local/bin to your PATH and re-run."
-        )
+        raise BenchError("uv was installed but cannot be found. Add ~/.local/bin to your PATH and re-run.")

@@ -14,9 +14,7 @@ class SetCentralConfigCommand(Command):
     name: ClassVar[str] = "set-central-config"
     help: ClassVar[str] = "Store the Central endpoint + pilot auth token in bench.toml."
 
-    endpoint: Annotated[
-        str, Arg(help="Central API base URL the pilot calls back on", required=True)
-    ]
+    endpoint: Annotated[str, Arg(help="Central API base URL the pilot calls back on", required=True)]
     token: Annotated[str, Arg(help="Opaque token the pilot presents to Central", required=True)]
 
     def run(self) -> None:

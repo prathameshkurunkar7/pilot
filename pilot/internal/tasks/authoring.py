@@ -42,9 +42,7 @@ def task_parser(cls: type[Task]) -> argparse.ArgumentParser:
         if arg_field.metadata.cli:
             add_argument(parser, arg_field)
         else:
-            parser.set_defaults(
-                **{arg_field.name: arg_field.default if arg_field.has_default else None}
-            )
+            parser.set_defaults(**{arg_field.name: arg_field.default if arg_field.has_default else None})
     return parser
 
 
@@ -54,9 +52,7 @@ def task_from_args(
     bench_root: Path,
     args: argparse.Namespace,
 ) -> Task:
-    kwargs = {
-        arg_field.name: value_from_namespace(args, arg_field) for arg_field in task_fields(cls)
-    }
+    kwargs = {arg_field.name: value_from_namespace(args, arg_field) for arg_field in task_fields(cls)}
     return cls(bench=bench, bench_root=bench_root, **kwargs)
 
 

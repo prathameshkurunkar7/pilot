@@ -1,15 +1,15 @@
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import cached_property
 from pathlib import Path
 from typing import ClassVar
 
-from pilot.tasks import Task, step
 from pilot.core.site import Site
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError
+from pilot.tasks import Task, step
 
 
 @dataclass(kw_only=True)
@@ -46,9 +46,7 @@ class BackupSiteTask(Task):
         files = {path.name: path.stat().st_size for path in backup_files}
         offsite = self.upload(timestamp, backup_files)
         pruned = self.prune()
-        self.record(
-            status="success", timestamp=timestamp, files=files, offsite=offsite, pruned=pruned
-        )
+        self.record(status="success", timestamp=timestamp, files=files, offsite=offsite, pruned=pruned)
 
     def upload(self, timestamp: str, backup_files: list[Path]) -> bool:
         if not self.bench.config.s3.is_configured:
@@ -63,9 +61,7 @@ class BackupSiteTask(Task):
                 offsite_backup.upload(self.site, timestamp, backup_file)
             return True
         except S3IntegrationError as e:
-            print(
-                f"Something seems wrong with s3 integration currently skipping remote upload: {e!s}"
-            )
+            print(f"Something seems wrong with s3 integration currently skipping remote upload: {e!s}")
             return False
 
     @step("retention", "Applying backup retention")
@@ -77,16 +73,14 @@ class BackupSiteTask(Task):
             print(f"Backup retention skipped due to error: {e!s}")
             return []
 
-    def record(
-        self, status: str, timestamp: str, files: dict, offsite: bool, pruned: list[str]
-    ) -> None:
+    def record(self, status: str, timestamp: str, files: dict, offsite: bool, pruned: list[str]) -> None:
         self.record_audit(
             "backup",
             {
                 "site": self.site,
                 "event": "backup",
                 "timestamp": timestamp,
-                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "finished_at": datetime.now(UTC).isoformat(),
                 "status": status,
                 "with_files": self.with_files,
                 "files": files,

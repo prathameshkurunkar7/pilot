@@ -95,8 +95,7 @@ class BenchInventory:
         from pilot.config import SiteConfig
 
         raw_domains = [
-            entry.get("domain") if isinstance(entry, dict) else entry
-            for entry in (raw.get("domains") or [])
+            entry.get("domain") if isinstance(entry, dict) else entry for entry in (raw.get("domains") or [])
         ]
         domains = [domain for domain in raw_domains if isinstance(domain, str) and domain]
         host_name = (raw.get("host_name") or "").strip()

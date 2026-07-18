@@ -7,15 +7,14 @@ from pathlib import Path
 
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
-from pilot.utils import cli_root
-from pilot.managers.processes.local import ProcessDefinition
 from pilot.managers.processes.base import (
     ManagedProcessManager,
-    UnitGroup,
     ServiceRenderer,
+    UnitGroup,
     override,
 )
-from pilot.utils import run_command
+from pilot.managers.processes.local import ProcessDefinition
+from pilot.utils import cli_root, run_command
 
 
 class SupervisorRenderer(ServiceRenderer):
@@ -50,9 +49,7 @@ class SupervisorRenderer(ServiceRenderer):
     def conf(self, defs: list[ProcessDefinition], sock, pid) -> str:
         workload = [pd for pd in defs if pd.name != "admin"]
         admin = [pd for pd in defs if pd.name == "admin"]
-        admin_group = (
-            f"[group:{self.bench_name}-admin]\nprograms={self._csv(admin)}\n\n" if admin else ""
-        )
+        admin_group = f"[group:{self.bench_name}-admin]\nprograms={self._csv(admin)}\n\n" if admin else ""
         programs = "\n".join(self.render(pd) for pd in defs)
         return (
             f"[unix_http_server]\n"
@@ -118,9 +115,7 @@ class SupervisorProcessManager(ManagedProcessManager):
         self.supervisor_dir.mkdir(parents=True, exist_ok=True)
         renderer = SupervisorRenderer(self.bench.config.name, self.bench.logs_path)
         self.supervisor_conf_path.write_text(
-            renderer.conf(
-                self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid
-            )
+            renderer.conf(self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid)
         )
 
     @override
@@ -144,9 +139,7 @@ class SupervisorProcessManager(ManagedProcessManager):
     @override
     def apply_unit_action(self, action: str, role: UnitGroup) -> None:
         # stop/admin-restart are no-ops when the daemon is down to avoid supervisorctl errors.
-        if (
-            action == "stop" or (action == "restart" and role is UnitGroup.ADMIN)
-        ) and not self.is_alive():
+        if (action == "stop" or (action == "restart" and role is UnitGroup.ADMIN)) and not self.is_alive():
             return
         run_command([*self._supervisorctl(), action, self._target(role)])
 

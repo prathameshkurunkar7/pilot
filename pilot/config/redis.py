@@ -1,6 +1,5 @@
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 from pilot.exceptions import ConfigError
 
@@ -13,7 +12,7 @@ _PORT_MAX = 65535
 class RedisConfig:
     cache_port: int = 13000
     queue_port: int = 11000
-    version: Optional[str] = None
+    version: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "RedisConfig":

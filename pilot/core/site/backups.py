@@ -55,20 +55,13 @@ class SiteBackups:
 
         policy = BackupRetentionPolicy(config)
         return [
-            ts
-            for ts in policy.select_deletions(timestamps)
-            if self._delete_run(offsite, offsite_runs, ts)
+            ts for ts in policy.select_deletions(timestamps) if self._delete_run(offsite, offsite_runs, ts)
         ]
 
     def download_file_path(self, timestamp: str, file_id: str) -> Path:
         from pilot.exceptions import BenchError
 
-        if (
-            not file_id.startswith(timestamp)
-            or "/" in file_id
-            or "\\" in file_id
-            or file_id.startswith(".")
-        ):
+        if not file_id.startswith(timestamp) or "/" in file_id or "\\" in file_id or file_id.startswith("."):
             raise BenchError("Backup filename is invalid.")
 
         backups_dir = self.directory.resolve()
@@ -140,9 +133,7 @@ class SiteBackups:
         for file in self.directory.glob(f"{timestamp}-*"):
             file.unlink(missing_ok=True)
 
-    def _delete_offsite(
-        self, offsite: OffsiteBackup, timestamp: str, files: dict[str, str]
-    ) -> None:
+    def _delete_offsite(self, offsite: OffsiteBackup, timestamp: str, files: dict[str, str]) -> None:
         for filename in list(files.values()):
             offsite.delete(self.site.config.name, timestamp, filename)
 

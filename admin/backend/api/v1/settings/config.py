@@ -2,11 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pilot.config import BenchConfig
-from pilot.config import FirewallRule
-from pilot.config import S3Config
-from pilot.config import WafCondition, WafRule
-from pilot.config import WorkerGroup
+from pilot.config import BenchConfig, FirewallRule, S3Config, WafCondition, WafRule, WorkerGroup
 
 
 def _coerce_int(value):
@@ -158,9 +154,7 @@ class ConfigPatcher:
                 str(path).strip() for path in (waf["exempt_paths"] or []) if str(path).strip()
             ]
         if "custom_rules" in waf:
-            waf_config.custom_rules = [
-                self._parse_waf_rule(rule) for rule in (waf["custom_rules"] or [])
-            ]
+            waf_config.custom_rules = [self._parse_waf_rule(rule) for rule in (waf["custom_rules"] or [])]
 
     @staticmethod
     def _parse_waf_rule(data: dict) -> WafRule:
@@ -247,9 +241,7 @@ class ConfigPatcher:
         if s3_config.provider not in SUPPORTED_REGIONS:
             return f"s3.provider must be one of: {', '.join(SUPPORTED_REGIONS)}"
         if s3_config.region not in SUPPORTED_REGIONS[s3_config.provider]:
-            return (
-                f"s3.region '{s3_config.region}' is not valid for provider '{s3_config.provider}'."
-            )
+            return f"s3.region '{s3_config.region}' is not valid for provider '{s3_config.provider}'."
 
         return None
 
@@ -265,13 +257,8 @@ class ConfigPatcher:
             monitor_config.log_path = Path(value) if value else None
         if "system_log_max_size" in monitor and str(monitor["system_log_max_size"]).strip():
             monitor_config.system_log_max_size = str(monitor["system_log_max_size"]).strip()
-        if (
-            "application_log_max_size" in monitor
-            and str(monitor["application_log_max_size"]).strip()
-        ):
-            monitor_config.application_log_max_size = str(
-                monitor["application_log_max_size"]
-            ).strip()
+        if "application_log_max_size" in monitor and str(monitor["application_log_max_size"]).strip():
+            monitor_config.application_log_max_size = str(monitor["application_log_max_size"]).strip()
 
     def _apply_production(self) -> str | None:
         production = self.data.get("production") or {}

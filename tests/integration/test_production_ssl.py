@@ -133,9 +133,7 @@ def _request(
     return code.strip(), body
 
 
-def _request_ok(
-    domain: str, path: str, *, tries: int = 20, delay: float = 0.5, **kwargs
-) -> tuple[str, str]:
+def _request_ok(domain: str, path: str, *, tries: int = 20, delay: float = 0.5, **kwargs) -> tuple[str, str]:
     """Poll _request until it returns 200, to ride out the brief window where the
     workload is restarting (e.g. just after a process-manager migration)."""
     status, body = "000", ""
@@ -368,9 +366,7 @@ class TestProductionSSL:
         if not _site_dir(production, SITE_NO_SSL).is_dir():
             pytest.skip(f"{SITE_NO_SSL} not present in this bench")
         code, target = _http_redirect(SITE_NO_SSL)
-        assert code not in ("301", "308"), (
-            f"plain site unexpectedly redirected ({code} -> {target})"
-        )
+        assert code not in ("301", "308"), f"plain site unexpectedly redirected ({code} -> {target})"
 
     def test_unknown_host_handshake_rejected(self, production: Path) -> None:
         # Catch-all default server uses ssl_reject_handshake, so an unconfigured
@@ -469,9 +465,7 @@ def http_only_production(bench_root: Path, bench_bin: str):
         ADMIN_DOMAIN,
         cwd=bench_root,  # no --tls: keeps admin.tls=false from bench.toml
     )
-    assert result.returncode == 0, (
-        f"http-only setup production failed:\n{result.stdout}\n{result.stderr}"
-    )
+    assert result.returncode == 0, f"http-only setup production failed:\n{result.stdout}\n{result.stderr}"
 
     yield bench_root
 
@@ -517,9 +511,7 @@ def systemd_production(bench_root: Path, bench_bin: str):
         "--tls",
         cwd=bench_root,
     )
-    assert result.returncode == 0, (
-        f"systemd setup production failed:\n{result.stdout}\n{result.stderr}"
-    )
+    assert result.returncode == 0, f"systemd setup production failed:\n{result.stdout}\n{result.stderr}"
 
     yield bench_root
 
@@ -574,13 +566,9 @@ class TestMultiBench:
         _install_self_signed_cert(admin2)
         _set_site_ssl(root1, SITE, True)
         try:
-            r1 = _run(
-                bench_bin, "setup", "production", "--admin-domain", ADMIN_DOMAIN, "--tls", cwd=root1
-            )
+            r1 = _run(bench_bin, "setup", "production", "--admin-domain", ADMIN_DOMAIN, "--tls", cwd=root1)
             assert r1.returncode == 0, f"first bench deploy failed:\n{r1.stdout}\n{r1.stderr}"
-            r2 = _run(
-                bench_bin, "setup", "production", "--admin-domain", admin2, "--tls", cwd=root2
-            )
+            r2 = _run(bench_bin, "setup", "production", "--admin-domain", admin2, "--tls", cwd=root2)
             assert r2.returncode == 0, f"second bench deploy failed:\n{r2.stdout}\n{r2.stderr}"
             status, _ = _request(SITE, "/api/method/frappe.ping")
             assert status == "200", f"first bench broke after second deploy ({status})"

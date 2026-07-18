@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Iterator, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
 from pilot.utils import cli_root
@@ -65,16 +66,12 @@ def _cwd_bench_root() -> Path | None:
 
 def _implicit_bench_root(benches_dir: Path) -> Path:
     if benches_dir.is_dir():
-        candidates = [
-            d for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()
-        ]
+        candidates = [d for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()]
         if len(candidates) == 1:
             return candidates[0]
         if len(candidates) > 1:
             names = ", ".join(d.name for d in sorted(candidates))
-            raise BenchError(
-                f"Multiple benches found: {names}\nSpecify one with: bench -b <name> <command>"
-            )
+            raise BenchError(f"Multiple benches found: {names}\nSpecify one with: bench -b <name> <command>")
 
     raise BenchError("No bench found. Create one with: bench new <name>")
 

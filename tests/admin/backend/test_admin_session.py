@@ -99,9 +99,7 @@ def _initialized_bench(bench_dir: Path, password: str, jwt_secret: str) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
     toml_path = bench_dir / "bench.toml"
     toml_path.write_text(
-        BenchTomlBuilder(
-            bench_dir.name, {"admin_enabled": True, "admin_password": password}
-        ).render()
+        BenchTomlBuilder(bench_dir.name, {"admin_enabled": True, "admin_password": password}).render()
     )
     config = BenchConfig.from_file(toml_path)
     config.admin.jwt_secret = jwt_secret
@@ -281,9 +279,7 @@ def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> 
     )
     store = SimpleNamespace(read=lambda: config)
 
-    monkeypatch.setattr(
-        "pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: []
-    )
+    monkeypatch.setattr("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: [])
     assert secure_cookie_setting(store) is False
 
     monkeypatch.setattr(
@@ -293,9 +289,7 @@ def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> 
     assert secure_cookie_setting(store) is True
 
     config.admin.tls = True
-    monkeypatch.setattr(
-        "pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: []
-    )
+    monkeypatch.setattr("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: [])
     assert secure_cookie_setting(store) is True
 
 
@@ -375,12 +369,8 @@ def test_login_rate_limit_ignores_spoofed_forwarded_ips(tmp_path: Path) -> None:
 def test_forwarded_headers_are_trusted_only_behind_production_nginx() -> None:
     from admin.backend.app import trusted_proxy_peers
 
-    development = SimpleNamespace(
-        read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=False))
-    )
-    production = SimpleNamespace(
-        read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=True))
-    )
+    development = SimpleNamespace(read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=False)))
+    production = SimpleNamespace(read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=True)))
 
     assert trusted_proxy_peers(development) == ()
     assert trusted_proxy_peers(production) == ("127.0.0.1", "::1", "")
@@ -492,6 +482,7 @@ def test_non_bench_token_cannot_access_bench_route(
 
 def test_require_scope_allows_unscoped_token(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 
@@ -512,6 +503,7 @@ def test_require_scope_allows_unscoped_token(tmp_path: Path) -> None:
 
 def test_require_scope_allows_matching_scoped_token(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 
@@ -532,6 +524,7 @@ def test_require_scope_allows_matching_scoped_token(tmp_path: Path) -> None:
 
 def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 
@@ -552,6 +545,7 @@ def test_require_scope_rejects_mismatched_scoped_token(tmp_path: Path) -> None:
 
 def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import current_site_scope, require_scope
 
@@ -572,6 +566,7 @@ def test_current_site_scope_returns_site_from_claims(tmp_path: Path) -> None:
 
 def test_current_site_scope_returns_none_for_unscoped(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import current_site_scope
 
@@ -598,6 +593,7 @@ def test_bearer_token_authenticates(tmp_path: Path) -> None:
 
 def test_bearer_token_with_site_scope(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 
@@ -619,6 +615,7 @@ def test_bearer_token_with_site_scope(tmp_path: Path) -> None:
 
 def test_bearer_token_wrong_site_rejected(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 
@@ -640,6 +637,7 @@ def test_bearer_token_wrong_site_rejected(tmp_path: Path) -> None:
 
 def test_require_scope_with_callable(tmp_path: Path) -> None:
     from flask import jsonify
+
     from admin.backend.app import create_app
     from admin.backend.middleware import require_scope
 

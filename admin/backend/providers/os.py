@@ -6,8 +6,8 @@ from pathlib import Path
 
 from pilot.config import BenchConfig
 from pilot.exceptions import CommandError
-from pilot.managers.redis import RedisManager
 from pilot.managers.platform import which
+from pilot.managers.redis import RedisManager
 from pilot.utils import run_command
 
 
@@ -50,9 +50,7 @@ class OSProvider:
             return ""
 
         try:
-            result = run_command(
-                [str(python_bin), "-c", "import frappe; print(frappe.__version__)"]
-            )
+            result = run_command([str(python_bin), "-c", "import frappe; print(frappe.__version__)"])
         except CommandError:
             return ""
 

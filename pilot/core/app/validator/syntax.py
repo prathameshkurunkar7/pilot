@@ -22,8 +22,7 @@ class SyntaxCheck:
         ]
         if broken:
             raise AppValidationError(
-                f"'{app.config.name}' has Python syntax errors:\n"
-                + "\n".join(f"  {b}" for b in broken)
+                f"'{app.config.name}' has Python syntax errors:\n" + "\n".join(f"  {b}" for b in broken)
             )
 
     @staticmethod

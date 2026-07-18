@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from pilot.core.app import App
-from pilot.tasks.new_site import NewSiteTask
 from pilot.integrations.marketplace import Marketplace, Resolver
+from pilot.tasks.new_site import NewSiteTask
 from tests.pilot.commands.test_commands import make_bench
 
 

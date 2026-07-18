@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import subprocess
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -47,9 +47,9 @@ def test_install_raises_when_missing_on_linux() -> None:
     with (
         patch.object(m, "is_installed", return_value=False),
         patch(f"{BASE_MODULE}.is_macos", return_value=False),
+        pytest.raises(DatabaseError, match=r"install\.sh"),
     ):
-        with pytest.raises(DatabaseError, match="install.sh"):
-            m.install()
+        m.install()
 
 
 def test_install_uses_brew_formula_on_macos() -> None:
@@ -100,9 +100,9 @@ def test_secure_raises_when_still_unauthenticated() -> None:
     with (
         patch.object(m, "check_credentials", side_effect=[False, False]),
         patch.object(m, "_run_sql_as_superuser"),
+        pytest.raises(DatabaseError, match="authenticate"),
     ):
-        with pytest.raises(DatabaseError, match="authenticate"):
-            m.secure()
+        m.secure()
 
 
 def test_ensure_role_sql_creates_or_alters_with_quoting() -> None:
@@ -260,9 +260,7 @@ def test_is_unsecured_true_when_role_does_not_exist_yet() -> None:
 def test_provision_user_owned_initialises_and_installs_unit_when_fresh(tmp_path) -> None:
     m = _mgr(port=5440)
     with (
-        patch.object(
-            type(m), "data_dir", new_callable=PropertyMock, return_value=tmp_path / "data"
-        ),
+        patch.object(type(m), "data_dir", new_callable=PropertyMock, return_value=tmp_path / "data"),
         patch.object(m, "is_provisioned", return_value=False),
         patch.object(m, "_ensure_port_available"),
         patch.object(m, "is_running", return_value=False),
@@ -410,12 +408,8 @@ def test_install_unit_pins_unix_socket_directories_to_owned_dir(tmp_path) -> Non
 def test_provision_user_owned_creates_socket_dir(tmp_path) -> None:
     m = _mgr(port=5440)
     with (
-        patch.object(
-            type(m), "data_dir", new_callable=PropertyMock, return_value=tmp_path / "data"
-        ),
-        patch.object(
-            type(m), "socket_dir", new_callable=PropertyMock, return_value=tmp_path / "run"
-        ),
+        patch.object(type(m), "data_dir", new_callable=PropertyMock, return_value=tmp_path / "data"),
+        patch.object(type(m), "socket_dir", new_callable=PropertyMock, return_value=tmp_path / "run"),
         patch.object(m, "is_provisioned", return_value=False),
         patch.object(m, "_ensure_port_available"),
         patch.object(m, "is_running", return_value=False),

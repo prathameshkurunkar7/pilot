@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from pilot.integrations.marketplace import Marketplace
-
 from pilot.tasks import Task, step
 
 
@@ -31,9 +30,7 @@ class FetchAppUpdatesTask(Task):
     @step("fetch", "Check for app updates")
     def fetch(self) -> dict[str, bool]:
         apps_dir = self.bench_root / "apps"
-        app_names = [
-            d.name for d in sorted(apps_dir.iterdir()) if d.is_dir() and (d / ".git").exists()
-        ]
+        app_names = [d.name for d in sorted(apps_dir.iterdir()) if d.is_dir() and (d / ".git").exists()]
 
         updates: dict[str, bool] = {}
         with ThreadPoolExecutor(max_workers=8) as pool:

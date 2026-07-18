@@ -35,9 +35,7 @@ def setup_handoff_task(bench_root: Path):
             task = TaskReader(bench_root).read_task(task_id)
         except TaskNotFoundError:
             return running_setup_task(bench_root)
-        if task.command == "wizard-setup" and (
-            task.status.is_active or task.status == TaskStatus.SUCCESS
-        ):
+        if task.command == "wizard-setup" and (task.status.is_active or task.status == TaskStatus.SUCCESS):
             return task
         return None
 
@@ -45,8 +43,7 @@ def setup_handoff_task(bench_root: Path):
         (
             task
             for task in TaskReader(bench_root).list_tasks(limit=None)
-            if task.command == "wizard-setup"
-            and (task.status.is_active or task.status == TaskStatus.SUCCESS)
+            if task.command == "wizard-setup" and (task.status.is_active or task.status == TaskStatus.SUCCESS)
         ),
         None,
     )

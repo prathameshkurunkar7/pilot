@@ -6,19 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config import BenchConfig
-from pilot.config import SiteConfig
-from pilot.core.bench import Bench
+from pilot.config import BenchConfig, SiteConfig
 from pilot.core.adapters.domain_provider import DomainRouteProvider
+from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
 from pilot.managers.nginx import NginxConfigRenderer
 
-
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
-    "apps": [
-        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
-    ],
+    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
@@ -94,9 +90,7 @@ def test_generate_dns_records_passes_site_then_domain(tmp_path: Path, monkeypatc
     assert _calls(log) == ["generate-dns-records mysite app.example.com"]
 
 
-def test_generate_dns_records_validates_locally_before_provider(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_generate_dns_records_validates_locally_before_provider(tmp_path: Path, monkeypatch) -> None:
     """Local duplicate checks run before provider calls."""
     log = _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)

@@ -23,7 +23,5 @@ class RemoveAppCommand(Command):
 
     def run(self) -> None:
         self.app.ensure_removable()
-        self.confirm(
-            f"Remove '{self.app_name}' from all sites and the bench?", skip=self.skip_confirm
-        )
+        self.confirm(f"Remove '{self.app_name}' from all sites and the bench?", skip=self.skip_confirm)
         self.app.remove(force=self.force, on_progress=self.report)

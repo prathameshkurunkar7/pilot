@@ -14,9 +14,7 @@ def _client(bench_root: Path, password: str = "secret"):
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(
-            bench_root.name, {"admin_enabled": True, "admin_password": password}
-        ).render()
+        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -137,9 +135,7 @@ def test_update_app_sets_the_upstream_remote(tmp_path: Path) -> None:
 
     with patch("admin.backend.api.v1.apps.GitRepo") as git_repo:
         git_repo.return_value.set_remote_url.return_value = True
-        response = client.patch(
-            "/api/v1/apps/suite", json={"repo": "https://github.com/frappe/suite"}
-        )
+        response = client.patch("/api/v1/apps/suite", json={"repo": "https://github.com/frappe/suite"})
 
     assert response.status_code == 200
     assert response.get_json()["name"] == "suite"

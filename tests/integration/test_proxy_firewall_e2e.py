@@ -28,9 +28,7 @@ _EDGE_PORT = 8963
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14", "http_port": _BACKEND_PORT},
-    "apps": [
-        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
-    ],
+    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
@@ -88,13 +86,12 @@ def _run_nginx(prefix: Path, body: str) -> subprocess.Popen:
     prefix.mkdir(parents=True, exist_ok=True)
     conf = prefix / "nginx.conf"
     conf.write_text(body)
-    proc = subprocess.Popen(
+    return subprocess.Popen(
         ["nginx", "-p", str(prefix), "-c", str(conf), "-g", "daemon off;"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
-    return proc
 
 
 def _stop(proc: subprocess.Popen) -> None:

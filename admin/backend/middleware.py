@@ -7,11 +7,10 @@ from enum import StrEnum
 
 from flask import Flask, current_app, g, request
 
-from pilot.config import BenchTomlStore
-
 from admin.backend.api.responses import error_response
 from admin.backend.api.routes import is_api_path
 from admin.backend.internal.rate_limiter import SlidingWindow
+from pilot.config import BenchTomlStore
 
 _AUTH_POLICY = "_auth_policy"
 _SITE_SCOPE_RESOLVER = "_site_scope_resolver"
@@ -102,9 +101,7 @@ def get_authorization_error(claims: dict | None, view, view_args: dict) -> str |
 
     resolve_site = getattr(view, _SITE_SCOPE_RESOLVER, None)
     if resolve_site is not None:
-        return (
-            None if has_scope(claims, resolve_site(view_args)) else "Not authorized for this site"
-        )
+        return None if has_scope(claims, resolve_site(view_args)) else "Not authorized for this site"
     if claims and claims.get("scope") == "bench":
         return None
     return "Not authorized for this bench"

@@ -18,7 +18,7 @@ class BenchProduction:
         from pilot.managers.processes.base import ManagedProcessManager
         from pilot.managers.processes.local import ProcessManager
 
-        manager = cast(ManagedProcessManager, ProcessManager.for_bench(self.bench))
+        manager = cast("ManagedProcessManager", ProcessManager.for_bench(self.bench))
         if not manager.is_configured():
             return
         manager.write_config()
@@ -28,9 +28,7 @@ class BenchProduction:
     def remove_production(self, on_progress: Callable[[str], None]) -> None:
         production = self.bench.config.production
         if not production.enabled:
-            on_progress(
-                f"Bench {self.bench.config.name} is not deployed to production. Nothing to remove."
-            )
+            on_progress(f"Bench {self.bench.config.name} is not deployed to production. Nothing to remove.")
             return
 
         self._remove_process_manager(production.process_manager)
@@ -76,9 +74,7 @@ class BenchProduction:
         from pilot.managers.nginx import NginxManager
 
         if not self.bench.config.letsencrypt.email:
-            raise ConfigError(
-                "letsencrypt.email must be set in bench.toml to run setup letsencrypt."
-            )
+            raise ConfigError("letsencrypt.email must be set in bench.toml to run setup letsencrypt.")
         letsencrypt_manager = LetsEncryptManager(self.bench)
         nginx_manager = NginxManager(self.bench)
         letsencrypt_manager.install()

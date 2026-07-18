@@ -68,22 +68,17 @@ def _purge_testapp(bench_root: Path, bench_bin: str, site: str) -> None:
 
 @pytest.mark.integration
 class TestAppLifecycle:
-    def test_get_app_clones_and_installs(
-        self, bench_root: Path, bench_bin: str, testapp_repo: Path
-    ) -> None:
+    def test_get_app_clones_and_installs(self, bench_root: Path, bench_bin: str, testapp_repo: Path) -> None:
         """get-app clones testapp and installs it editable."""
         result = _run(bench_bin, "get-app", str(testapp_repo), cwd=bench_root)
         assert result.returncode == 0, (
-            f"get-app failed (exit {result.returncode}):\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            f"get-app failed (exit {result.returncode}):\nstdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
         assert (bench_root / "apps" / APP_NAME).is_dir(), (
             f"apps/{APP_NAME} directory not created after get-app"
         )
-        assert _app_in_venv(bench_root), (
-            f"{APP_NAME} not importable from bench virtualenv after get-app"
-        )
+        assert _app_in_venv(bench_root), f"{APP_NAME} not importable from bench virtualenv after get-app"
 
     def test_install_app_on_site(self, bench_root: Path, bench_bin: str, site_name: str) -> None:
         """install-app registers testapp on the site."""
@@ -112,8 +107,7 @@ class TestAppLifecycle:
         """migrate succeeds with testapp installed."""
         result = _run(bench_bin, "--site", site_name, "migrate", cwd=bench_root)
         assert result.returncode == 0, (
-            f"migrate failed (exit {result.returncode}):\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            f"migrate failed (exit {result.returncode}):\nstdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
     def test_remove_app_from_site(self, bench_root: Path, bench_bin: str, site_name: str) -> None:

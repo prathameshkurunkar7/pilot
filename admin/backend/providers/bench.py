@@ -19,9 +19,7 @@ class BenchProvider:
         sites_dir = self._bench_dir / "sites"
         if not sites_dir.is_dir():
             return 0
-        return sum(
-            1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists()
-        )
+        return sum(1 for d in sites_dir.iterdir() if d.is_dir() and (d / "site_config.json").exists())
 
     @property
     def is_production(self) -> bool:
@@ -72,10 +70,7 @@ class BenchProvider:
         """Whether a production bench's wizard answers at its admin domain."""
         try:
             port = int(
-                BenchTomlStore.for_bench(self._bench_dir)
-                .read_raw()
-                .get("nginx", {})
-                .get("http_port", 80)
+                BenchTomlStore.for_bench(self._bench_dir).read_raw().get("nginx", {}).get("http_port", 80)
             )
         except Exception:
             port = 80

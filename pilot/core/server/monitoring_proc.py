@@ -15,9 +15,7 @@ class ProcMetricsReader:
         self.bench_path = bench_path
 
     def cpu_fields(self) -> dict[str, int]:
-        values = [
-            int(value) for value in Path("/proc/stat").read_text().splitlines()[0].split()[1:]
-        ]
+        values = [int(value) for value in Path("/proc/stat").read_text().splitlines()[0].split()[1:]]
         return dict(zip(CPU_STAT_FIELDS, values, strict=False))
 
     def proc_ticks(self, pid: int) -> int:
@@ -49,10 +47,7 @@ class ProcMetricsReader:
 
     def read_status(self, pid: int) -> dict[str, str]:
         lines = Path(f"/proc/{pid}/status").read_text().splitlines()
-        return {
-            key: value.strip()
-            for key, value in (line.split(":", 1) for line in lines if ":" in line)
-        }
+        return {key: value.strip() for key, value in (line.split(":", 1) for line in lines if ":" in line)}
 
     def read_pss(self, pid: int) -> int:
         lines = Path(f"/proc/{pid}/smaps_rollup").read_text().splitlines()
@@ -65,10 +60,7 @@ class ProcMetricsReader:
 
     def io_bytes(self, pid: int) -> tuple[int, int]:
         lines = Path(f"/proc/{pid}/io").read_text().splitlines()
-        data = {
-            key: int(value)
-            for key, value in (line.split(": ", 1) for line in lines if ": " in line)
-        }
+        data = {key: int(value) for key, value in (line.split(": ", 1) for line in lines if ": " in line)}
         return data.get("read_bytes", 0), data.get("write_bytes", 0)
 
     def open_fds(self, pid: int) -> int:

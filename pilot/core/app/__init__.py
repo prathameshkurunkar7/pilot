@@ -158,9 +158,7 @@ class App:
             app = self.bench.app(self.module_name)
             dependencies = app._install_dependencies(on_progress) if install_dependencies else []
             on_progress(f"'{app.config.name}' already installed, skipping.")
-            return AppInstallResult(
-                app, already_installed=True, installed_dependencies=dependencies
-            )
+            return AppInstallResult(app, already_installed=True, installed_dependencies=dependencies)
 
         app, cloned_this_run = self._clone_and_normalize(on_progress)
         try:
@@ -196,9 +194,7 @@ class App:
         target = self.bench.apps_path / module
         if not target.exists():
             self.path.rename(target)
-        renamed = App(
-            AppConfig(name=module, repo=self.config.repo, branch=self.config.branch), self.bench
-        )
+        renamed = App(AppConfig(name=module, repo=self.config.repo, branch=self.config.branch), self.bench)
         return renamed, cloned_this_run
 
     def _install_dependencies(self, on_progress: Callable[[str], None]) -> list["App"]:
@@ -219,9 +215,7 @@ class App:
     def _register(self) -> None:
         existing = self.bench.registered_apps()
         if self.config.name not in existing:
-            (self.bench.sites_path / "apps.txt").write_text(
-                "\n".join(existing + [self.config.name]) + "\n"
-            )
+            (self.bench.sites_path / "apps.txt").write_text("\n".join([*existing, self.config.name]) + "\n")
 
     def _build_assets_via_env_manager(self) -> None:
         from pilot.managers.environment import PythonEnvManager
@@ -235,9 +229,7 @@ class App:
         if self.config.name == framework:
             raise BenchError(f"Cannot remove the framework app '{framework}'.")
 
-    def remove(
-        self, force: bool = False, on_progress: Callable[[str], None] = lambda message: None
-    ) -> None:
+    def remove(self, force: bool = False, on_progress: Callable[[str], None] = lambda message: None) -> None:
         """Uninstall from sites, deregister, pip-uninstall, and delete the clone."""
         self.ensure_removable()
         self._uninstall_from_all_sites(force, on_progress)
@@ -264,9 +256,7 @@ class App:
         apps_txt = self.bench.sites_path / "apps.txt"
         if not apps_txt.exists():
             return
-        lines = [
-            line for line in apps_txt.read_text().splitlines() if line.strip() != self.config.name
-        ]
+        lines = [line for line in apps_txt.read_text().splitlines() if line.strip() != self.config.name]
         apps_txt.write_text("\n".join(lines) + ("\n" if lines else ""))
 
     def _pip_uninstall(self) -> None:

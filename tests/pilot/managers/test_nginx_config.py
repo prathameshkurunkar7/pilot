@@ -2,22 +2,18 @@
 
 import copy
 from pathlib import Path
-from unittest.mock import patch, PropertyMock
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
-from pilot.config import BenchConfig
-from pilot.config import SiteConfig
+from pilot.config import BenchConfig, SiteConfig
 from pilot.core.bench import Bench
 from pilot.exceptions import CommandError
 from pilot.managers.nginx import NginxConfigRenderer, NginxManager
 
-
 _BASE_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
-    "apps": [
-        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
-    ],
+    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
@@ -298,10 +294,7 @@ def test_proxy_servers_gate_tcp_peer_and_trust_xff(tmp_path: Path) -> None:
     )
     assert "if ($bench_from_proxy = 0) { return 403; }" in config
     # ACME challenges stay reachable directly, so cert issuance never 403s.
-    assert (
-        r'if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }'
-        in config
-    )
+    assert r'if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }' in config
     # The old allow-proxy/deny-all (which tested the rewritten client IP) is gone.
     assert "allow              203.0.113.5;" not in config
     assert "deny               all;" not in config
@@ -434,9 +427,7 @@ def test_catchall_default_server(tmp_path: Path) -> None:
     from pathlib import Path as _P
 
     bench = _make_bench(tmp_path, _BASE_DATA)
-    conf = NginxConfigRenderer(bench)._render_catchall(
-        80, 443, _P("/usr/share/nginx/bench-error-pages")
-    )
+    conf = NginxConfigRenderer(bench)._render_catchall(80, 443, _P("/usr/share/nginx/bench-error-pages"))
 
     assert "listen 80 default_server;" in conf
     assert "server_name _;" in conf
@@ -456,9 +447,7 @@ def _firewall_data(enabled: bool, default: str, rules: list) -> dict:
 
 
 def test_firewall_master_switch_off_renders_nothing(tmp_path: Path) -> None:
-    bench = _make_bench(
-        tmp_path, _firewall_data(False, "deny", [{"ip": "1.2.3.4", "action": "deny"}])
-    )
+    bench = _make_bench(tmp_path, _firewall_data(False, "deny", [{"ip": "1.2.3.4", "action": "deny"}]))
     assert NginxConfigRenderer(bench)._render_firewall() == ""
 
 
@@ -516,9 +505,9 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
     with (
         patch.object(manager, "reload", side_effect=CommandError("nginx -t failed", returncode=1)),
         patch("pilot.managers.nginx.run_command") as mock_run,
+        pytest.raises(CommandError),
     ):
-        with pytest.raises(CommandError):
-            manager._reload_or_rollback(symlink_path)
+        manager._reload_or_rollback(symlink_path)
 
     mock_run.assert_called_once()
     assert mock_run.call_args[0][0][-2:] == ["unlink", str(symlink_path)]
@@ -545,9 +534,7 @@ def test_config_dir_falls_back_to_platform_default(tmp_path: Path) -> None:
     """Empty config_dir falls back to the platform default."""
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
-    with patch(
-        "pilot.managers.nginx.default_nginx_config_dir", return_value=Path("/etc/nginx/conf.d")
-    ):
+    with patch("pilot.managers.nginx.default_nginx_config_dir", return_value=Path("/etc/nginx/conf.d")):
         assert manager.config_dir == Path("/etc/nginx/conf.d")
 
 

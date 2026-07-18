@@ -6,9 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config import BenchConfig
-from pilot.config import SiteConfig
-from pilot.config import WafCondition, WafConfig, WafRule
+from pilot.config import BenchConfig, SiteConfig, WafCondition, WafConfig, WafRule
 from pilot.core.bench import Bench
 from pilot.managers import nginx
 from pilot.managers.nginx import NginxConfigRenderer, NginxManager
@@ -24,9 +22,7 @@ def _cond(field, operator, value, header_name=""):
 
 _DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
-    "apps": [
-        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
-    ],
+    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
     "admin": {"domain": "admin.example.com", "tls": False},
 }
 _SITE = SiteConfig(name="site1.example.com", apps=["frappe"])
@@ -184,8 +180,7 @@ def test_compile_any_rule_is_one_rule_per_condition() -> None:
         ]
     )
     assert (
-        'SecRule REQUEST_HEADERS:User-Agent "@rx (sqlmap|nikto)" "id:100000,phase:1,pass,log,auditlog'
-        in out
+        'SecRule REQUEST_HEADERS:User-Agent "@rx (sqlmap|nikto)" "id:100000,phase:1,pass,log,auditlog' in out
     )
     assert 'SecRule REQUEST_HEADERS:X-Debug "@streq 1" "id:100001,phase:1,pass,log,auditlog' in out
     assert "chain" not in out
@@ -193,11 +188,7 @@ def test_compile_any_rule_is_one_rule_per_condition() -> None:
 
 def test_compile_skip_action() -> None:
     out = _compile(
-        [
-            WafRule(
-                name="Skip health", action="skip", conditions=[_cond("uri_path", "is", "/healthz")]
-            )
-        ]
+        [WafRule(name="Skip health", action="skip", conditions=[_cond("uri_path", "is", "/healthz")])]
     )
     assert "pass,ctl:ruleEngine=Off" in out
 
@@ -214,25 +205,18 @@ def test_compile_source_ip_normalizes_and_ids_step_by_100() -> None:
 
 
 def test_compile_skips_disabled_rules() -> None:
-    assert (
-        _compile([WafRule(name="off", enabled=False, conditions=[_cond("method", "is", "TRACE")])])
-        == ""
-    )
+    assert _compile([WafRule(name="off", enabled=False, conditions=[_cond("method", "is", "TRACE")])]) == ""
 
 
 def test_custom_rules_file_written_and_included_before_crs(tmp_path: Path, installed) -> None:
     config = BenchConfig._from_dict(_DATA)
     config.waf = WafConfig(
         enabled=True,
-        custom_rules=[
-            WafRule(name="block", conditions=[_cond("uri_path", "starts_with", "/blocked")])
-        ],
+        custom_rules=[WafRule(name="block", conditions=[_cond("uri_path", "starts_with", "/blocked")])],
     )
     manager = NginxManager(Bench(config, tmp_path))
     manager._write_waf_files()
     modsec = manager.bench.config_path / "modsecurity"
     assert (modsec / "custom_rules.conf").read_text().startswith("SecRule REQUEST_FILENAME")
     main = (modsec / "main.conf").read_text()
-    assert (
-        main.index("overrides.conf") < main.index("custom_rules.conf") < main.index("rules/*.conf")
-    )
+    assert main.index("overrides.conf") < main.index("custom_rules.conf") < main.index("rules/*.conf")

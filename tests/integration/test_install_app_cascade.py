@@ -33,10 +33,7 @@ def _uninstall_if_present(bench_bin: str, bench_root: Path, site: str, app: str)
 def test_install_app_cascades_telephony_for_helpdesk(
     bench_root: Path, bench_bin: str, site_name: str
 ) -> None:
-    if (
-        not (bench_root / "apps" / HELPDESK).is_dir()
-        or not (bench_root / "apps" / TELEPHONY).is_dir()
-    ):
+    if not (bench_root / "apps" / HELPDESK).is_dir() or not (bench_root / "apps" / TELEPHONY).is_dir():
         pytest.skip(
             f"{HELPDESK}/{TELEPHONY} not cloned on this bench — run "
             f"'bench get-app {HELPDESK}' first to exercise this cascade check."

@@ -8,9 +8,7 @@ from admin.backend.api.v1.setup import read_defaults, validate_configuration
 
 
 def test_validate_configuration_requires_postgres_password() -> None:
-    error = validate_configuration(
-        {"admin_password": "x", "db_type": "postgres", "postgres_password": ""}
-    )
+    error = validate_configuration({"admin_password": "x", "db_type": "postgres", "postgres_password": ""})
     assert error and "postgres_password" in error
 
 
@@ -20,9 +18,7 @@ def test_validate_configuration_accepts_postgres_password() -> None:
 
 
 def test_validate_configuration_requires_mariadb_password() -> None:
-    error = validate_configuration(
-        {"admin_password": "x", "db_type": "mariadb", "mariadb_password": ""}
-    )
+    error = validate_configuration({"admin_password": "x", "db_type": "mariadb", "mariadb_password": ""})
     assert error and "mariadb_password" in error
 
 

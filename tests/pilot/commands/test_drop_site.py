@@ -4,17 +4,13 @@ import json
 import os
 from pathlib import Path
 
-from pilot.config import BenchConfig
-from pilot.config import SiteConfig
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig, BenchTomlStore, SiteConfig
 from pilot.core.bench import Bench
 from pilot.core.site import Site
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
-    "apps": [
-        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
-    ],
+    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
@@ -112,9 +108,7 @@ def _capture_drop_cmd(tmp_path: Path, monkeypatch, bench: Bench) -> dict:
     BenchTomlStore.for_bench(bench.path).write(bench.config)
     _write_site(bench, "mysite", {})
     captured: dict = {}
-    monkeypatch.setattr(
-        "pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd)
-    )
+    monkeypatch.setattr("pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
     Site(SiteConfig(name="mysite", apps=[]), bench).drop()
     return captured
 

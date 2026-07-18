@@ -4,19 +4,7 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request
 
-from pilot.core.bench import Bench
-from pilot.core.site.config import (
-    PROTECTED_CONFIG_KEYS as _PROTECTED_CONFIG_KEYS,
-    config_patch_error as _config_patch_error,
-    merge_public_config as _merge_public_config,
-    public_config as _public_config,
-)
-from pilot.exceptions import BenchError
-from pilot.internal.site_paths import site_config_path
-
 from admin.backend.api.responses import error_response
-from admin.backend.middleware import require_scope
-
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
     internal_error,
@@ -24,6 +12,22 @@ from admin.backend.api.v1.sites.shared import (
     site_name,
     site_not_found,
 )
+from admin.backend.middleware import require_scope
+from pilot.core.bench import Bench
+from pilot.core.site.config import (
+    PROTECTED_CONFIG_KEYS as _PROTECTED_CONFIG_KEYS,
+)
+from pilot.core.site.config import (
+    config_patch_error as _config_patch_error,
+)
+from pilot.core.site.config import (
+    merge_public_config as _merge_public_config,
+)
+from pilot.core.site.config import (
+    public_config as _public_config,
+)
+from pilot.exceptions import BenchError
+from pilot.internal.site_paths import site_config_path
 
 PROTECTED_CONFIG_KEYS = _PROTECTED_CONFIG_KEYS
 _CONFIG_ALIASES = (_config_patch_error, _merge_public_config, _public_config)

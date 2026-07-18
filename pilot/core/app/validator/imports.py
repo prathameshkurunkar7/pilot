@@ -120,7 +120,7 @@ class ImportCheck:
     def _resolve_module(app: "App", path: Path, node: ast.ImportFrom) -> str:
         if node.level == 0:
             # `from module import ...` — always has a module name (never bare).
-            return typing.cast(str, node.module)
+            return typing.cast("str", node.module)
 
         parts = path.relative_to(app.path).with_suffix("").parts[:-1]
         cut = node.level - 1

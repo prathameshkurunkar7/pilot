@@ -8,11 +8,7 @@ from pathlib import Path
 import pytest
 
 from pilot.commands.sites.rename import RenameSiteCommand
-from pilot.config import AppConfig
-from pilot.config import BenchConfig
-from pilot.config import MariaDBConfig
-from pilot.config import RedisConfig
-from pilot.config import WorkerConfig, WorkerGroup
+from pilot.config import AppConfig, BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
 from pilot.core.site.rename import SiteRename
 from pilot.exceptions import BenchError
@@ -24,9 +20,7 @@ def _bench(root: Path, name: str, admin_domain: str = "") -> Bench:
     config = BenchConfig(
         name=name,
         python_version="3.14",
-        apps=[
-            AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")
-        ],
+        apps=[AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")],
         mariadb=MariaDBConfig(root_password="root"),
         redis=RedisConfig(cache_port=13000, queue_port=11000),
         workers=WorkerConfig(groups=[WorkerGroup(queues=["default"], count=1)]),
@@ -78,9 +72,7 @@ def test_rename_raises_if_new_claimed_by_sibling_bench(tmp_path: Path) -> None:
 def test_rename_moves_dir_and_updates_default_site(tmp_path: Path) -> None:
     bench = _bench(tmp_path, "b1")
     _make_site(bench, "old.localhost")
-    (bench.sites_path / "common_site_config.json").write_text(
-        json.dumps({"default_site": "old.localhost"})
-    )
+    (bench.sites_path / "common_site_config.json").write_text(json.dumps({"default_site": "old.localhost"}))
 
     RenameSiteCommand(bench, old_name="old.localhost", new_name="new.localhost").run()
 
@@ -101,9 +93,7 @@ def test_rename_followup_runs_setup_production_when_prod(tmp_path: Path, monkeyp
     assert calls == ["prod"]  # prod path covers TLS; letsencrypt not run separately
 
 
-def test_rename_followup_runs_letsencrypt_when_ssl_and_not_prod(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_rename_followup_runs_letsencrypt_when_ssl_and_not_prod(tmp_path: Path, monkeypatch) -> None:
     bench = _bench(tmp_path, "b1")
     calls = []
     monkeypatch.setattr(Bench, "setup_letsencrypt", lambda self: calls.append("le"))

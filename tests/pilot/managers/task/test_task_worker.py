@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 import pilot.internal.tasks.worker as worker_module
-from pilot.managers.task.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker import TaskWorker, WorkerRegistry
 from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStatus, WorkerStore
+from pilot.managers.task.models import TaskStatus
 
 
 def enqueue(store: TaskStore, task_id: str, sequence: int) -> None:

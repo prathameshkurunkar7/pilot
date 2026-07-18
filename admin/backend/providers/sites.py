@@ -4,9 +4,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from pilot.managers.task import TaskReader
 from pilot.core.site import query_installed_apps_via_db
 from pilot.internal.site_paths import resolve_site_path
+from pilot.managers.task import TaskReader
 
 # These write site_config.json well before the DB is queryable, so a failed
 # DB probe during one means "not ready yet", not "broken".

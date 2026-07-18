@@ -52,6 +52,4 @@ class AdminConfig:
                 )
             return
         if not _HOSTNAME_PATTERN.match(self.domain):
-            raise ConfigError(
-                f"admin.domain '{self.domain}' is not a valid hostname (bench '{bench_name}')."
-            )
+            raise ConfigError(f"admin.domain '{self.domain}' is not a valid hostname (bench '{bench_name}').")

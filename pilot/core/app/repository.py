@@ -101,8 +101,8 @@ class AppRepository:
         run_command(["git", "clone", self.remote_url, str(self.app.path)], stream_output=True)
         try:
             run_command(["git", "-C", str(self.app.path), "checkout", commit])
-        except CommandError:
-            raise BenchError(f"Commit '{commit}' not found in {self.app.config.repo}.")
+        except CommandError as exc:
+            raise BenchError(f"Commit '{commit}' not found in {self.app.config.repo}.") from exc
 
     def clone(self) -> None:
         target = self.app.config.branch or self.detect_default_branch()
@@ -183,9 +183,7 @@ class AppRepository:
 
     def checkout_pinned_target(self, pin: RevisionPin) -> None:
         if pin.kind == "tag":
-            run_command(
-                ["git", "-C", str(self.app.path), "fetch", "--depth", "1", "origin", pin.ref]
-            )
+            run_command(["git", "-C", str(self.app.path), "fetch", "--depth", "1", "origin", pin.ref])
             run_command(["git", "-C", str(self.app.path), "checkout", "FETCH_HEAD"])
         else:
             self.checkout_pinned_commit(pin.ref)

@@ -5,9 +5,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from admin.backend.app import create_app
-from pilot.managers.task.models import TaskStatus
-from pilot.internal.tasks.store import TaskStore
 from pilot.config import BenchTomlStore
+from pilot.internal.tasks.store import TaskStore
+from pilot.managers.task.models import TaskStatus
 
 
 def setup_client(bench_root: Path):

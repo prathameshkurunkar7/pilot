@@ -103,14 +103,10 @@ class TestSetupWizard:
                 )
             },
         )
-        assert response.status_code == 200, (
-            f"setup_complete returned {response.status_code}: {response.text}"
-        )
+        assert response.status_code == 200, f"setup_complete returned {response.status_code}: {response.text}"
 
         body = response.json()
-        assert not body.get("exc"), (
-            f"setup_complete raised a server-side exception:\n{body.get('exc')}"
-        )
+        assert not body.get("exc"), f"setup_complete raised a server-side exception:\n{body.get('exc')}"
 
     def test_setup_wizard_idempotent(self, bench_root: Path, gunicorn_proc) -> None:
         """A second setup_complete call returns ok without rerunning."""
@@ -132,9 +128,7 @@ class TestSetupWizard:
         )
 
         body = response.json()
-        assert not body.get("exc"), (
-            f"Second call raised a server-side exception:\n{body.get('exc')}"
-        )
+        assert not body.get("exc"), f"Second call raised a server-side exception:\n{body.get('exc')}"
         assert body.get("message", {}).get("status") == "ok", (
             f'Expected {{"status": "ok"}} on second call, got: {body.get("message")}'
         )

@@ -3,8 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config import BenchConfig
-from pilot.config import ProductionConfig
+from pilot.config import BenchConfig, ProductionConfig
 from pilot.config.bench_toml import dumps_config as bench_config_to_toml
 from pilot.exceptions import ConfigError
 
@@ -19,9 +18,7 @@ def load_from_dict(data: dict) -> BenchConfig:
 
 MINIMAL_VALID_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
-    "apps": [
-        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
-    ],
+    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
     "admin": {"domain": "admin.test.localhost"},

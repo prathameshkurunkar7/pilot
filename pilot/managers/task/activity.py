@@ -13,9 +13,7 @@ from pilot.internal.tasks.worker_state import (
 )
 from pilot.managers.task.models import TaskStatus
 
-_ACTIVE_WORKER_STATUSES = frozenset(
-    {WorkerStatus.STARTING, WorkerStatus.RUNNING, WorkerStatus.DRAINING}
-)
+_ACTIVE_WORKER_STATUSES = frozenset({WorkerStatus.STARTING, WorkerStatus.RUNNING, WorkerStatus.DRAINING})
 
 
 @dataclass(frozen=True)
@@ -90,9 +88,7 @@ class TaskActivityReader:
             return 0, 0, True
         for task_dir in entries:
             try:
-                status = parse_task_status(
-                    (task_dir / "status").read_text(encoding="utf-8").strip()
-                )
+                status = parse_task_status((task_dir / "status").read_text(encoding="utf-8").strip())
             except (OSError, ValueError):
                 uncertain = True
                 continue

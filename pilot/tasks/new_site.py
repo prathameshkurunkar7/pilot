@@ -4,7 +4,6 @@ from typing import Annotated, ClassVar
 from pilot.core.app import App
 from pilot.core.site import Site
 from pilot.integrations.marketplace import Marketplace
-
 from pilot.tasks import Arg, Task, on_cancel, on_failure, step
 
 

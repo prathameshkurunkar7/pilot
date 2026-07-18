@@ -18,6 +18,7 @@ from admin.backend.api.responses import (
     error_response,
     no_content_response,
 )
+from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
 from pilot.managers.task import (
     TaskActivityReader,
     TaskReader,
@@ -27,7 +28,6 @@ from pilot.managers.task import (
     task_requires_secrets,
 )
 from pilot.tasks import TaskRunner
-from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
 
 tasks_bp = Blueprint("tasks", __name__)
 task_worker_bp = Blueprint("task_worker", __name__)

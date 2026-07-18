@@ -184,5 +184,5 @@ def test_install_node_raises_on_other_linux(monkeypatch) -> None:
 
     manager = module.PythonEnvManager(bench=None)
     monkeypatch.setattr(module, "is_macos", lambda: False)
-    with pytest.raises(BenchError, match="install.sh"):
+    with pytest.raises(BenchError, match=r"install\.sh"):
         manager._install_node()

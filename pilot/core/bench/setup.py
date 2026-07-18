@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-from pilot.exceptions import BenchError
 from pilot.core.bench.admin_domain import ProductionAdminDomain
+from pilot.exceptions import BenchError
 from pilot.utils import write_private_text
 
 if TYPE_CHECKING:
@@ -19,10 +19,10 @@ class ProductionSetup:
     def __init__(
         self,
         bench: "Bench",
-        process_manager: Optional[str] = None,
-        admin_domain: Optional[str] = None,
-        admin_tls: Optional[bool] = None,
-        letsencrypt_email: Optional[str] = None,
+        process_manager: str | None = None,
+        admin_domain: str | None = None,
+        admin_tls: bool | None = None,
+        letsencrypt_email: str | None = None,
         best_effort_tls: bool = False,
     ) -> None:
         self.bench = bench
@@ -114,7 +114,7 @@ class ProductionSetup:
                 "A contact email is required with --tls for Let's Encrypt. Pass --letsencrypt-email <email>, or set letsencrypt.email in bench.toml."
             )
 
-    def _installed_manager(self) -> Optional[str]:
+    def _installed_manager(self) -> str | None:
         """Return the process manager already deployed on disk, if any."""
         from pilot.managers.processes.supervisor import SupervisorProcessManager
         from pilot.managers.processes.systemd import SystemdProcessManager
@@ -125,7 +125,7 @@ class ProductionSetup:
             return "supervisor"
         return None
 
-    def _migrate_from(self, old_pm: Optional[str], on_progress: Callable[[str], None]) -> None:
+    def _migrate_from(self, old_pm: str | None, on_progress: Callable[[str], None]) -> None:
         """Tear down the previous manager before the new one binds ports."""
         new_pm = self.bench.config.production.process_manager
         if not old_pm or old_pm == new_pm:

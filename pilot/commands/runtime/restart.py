@@ -12,9 +12,7 @@ class RestartCommand(Command):
     help: ClassVar[str] = "Restart the production workload (production mode only)."
     supports_all_benches: ClassVar[bool] = True
 
-    admin: Annotated[bool, Arg(help="Also restart the admin control plane, if it's installed.")] = (
-        False
-    )
+    admin: Annotated[bool, Arg(help="Also restart the admin control plane, if it's installed.")] = False
 
     def run(self) -> None:
         self.bench.restart_workload(include_admin=self.admin, on_progress=self.report)

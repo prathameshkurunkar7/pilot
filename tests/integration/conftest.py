@@ -34,8 +34,7 @@ def bench_root() -> Path:
     # bench-cli installs no `bench` into the bench venv; probe the interpreter.
     if not (BENCH_TEST_ROOT / "env" / "bin" / "python").exists():
         pytest.skip(
-            f"Bench env not initialised at {BENCH_TEST_ROOT}. "
-            "Run 'bench init' inside that directory first."
+            f"Bench env not initialised at {BENCH_TEST_ROOT}. Run 'bench init' inside that directory first."
         )
     return BENCH_TEST_ROOT
 

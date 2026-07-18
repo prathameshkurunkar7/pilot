@@ -93,15 +93,11 @@ class UserOwnedDBManager:
         return Path.home() / ".config" / "systemd" / "user"
 
     def _brew_package(self) -> str:
-        return (
-            self._installed_brew_formula() or f"{self._BREW_FORMULA_BASE}@{self._DEFAULT_VERSION}"
-        )
+        return self._installed_brew_formula() or f"{self._BREW_FORMULA_BASE}@{self._DEFAULT_VERSION}"
 
     def _installed_brew_formula(self) -> str | None:
         """Return the installed Homebrew formula name, versioned or unversioned."""
-        result = subprocess.run(
-            ["brew", "list", "--formula"], capture_output=True, text=True, timeout=10
-        )
+        result = subprocess.run(["brew", "list", "--formula"], capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
             return None
         formulae = result.stdout.split()
@@ -110,9 +106,7 @@ class UserOwnedDBManager:
         return next((f for f in formulae if f.startswith(f"{self._BREW_FORMULA_BASE}@")), None)
 
     def _brew_service_running(self) -> bool:
-        result = subprocess.run(
-            ["brew", "services", "list"], capture_output=True, text=True, timeout=10
-        )
+        result = subprocess.run(["brew", "services", "list"], capture_output=True, text=True, timeout=10)
         for line in result.stdout.splitlines():
             parts = line.split()
             if parts and parts[0] == self._brew_package() and "started" in parts:

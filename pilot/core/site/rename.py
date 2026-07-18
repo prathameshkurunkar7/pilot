@@ -98,9 +98,7 @@ class SiteRename:
                     site["name"] = self.new_name
 
     def _remove_stale_nginx_conf(self) -> None:
-        (self.bench.config_path / "nginx" / "sites" / f"{self.old_name}.conf").unlink(
-            missing_ok=True
-        )
+        (self.bench.config_path / "nginx" / "sites" / f"{self.old_name}.conf").unlink(missing_ok=True)
 
     def _add_to_hosts(self) -> None:
         if self.bench.config.production.process_manager != "none":
@@ -126,6 +124,4 @@ class SiteRename:
             fn()
         except (Exception, SystemExit) as exc:
             detail = f" ({exc})" if str(exc) else ""
-            on_progress(
-                f"\n{label} did not complete{detail}. Run it yourself once resolved:\n  {manual_cmd}"
-            )
+            on_progress(f"\n{label} did not complete{detail}. Run it yourself once resolved:\n  {manual_cmd}")

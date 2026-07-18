@@ -70,9 +70,7 @@ def marketplace_pin(app: "App", marketplace_by_name: dict) -> "RevisionPin | Non
     if not entry or app.config.repo != entry.get("repo"):
         return None
     version = app.installed_version
-    target = next(
-        (target for target in entry.get("targets", []) if target["version"] == version), None
-    )
+    target = next((target for target in entry.get("targets", []) if target["version"] == version), None)
     if target is None:
         return None
 

@@ -33,6 +33,7 @@ def guard_bench_management():
             "Bench management is disabled on this server.",
             403,
         )
+    return None
 
 
 def bench_resource(bench_dir: Path) -> dict:

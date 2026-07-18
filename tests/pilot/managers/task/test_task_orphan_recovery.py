@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import subprocess
@@ -10,11 +11,11 @@ from pathlib import Path
 import pytest
 
 import pilot.internal.tasks.worker as worker_module
-from pilot.internal.tasks.process_identity import ProcessInspector
 from pilot.internal.tasks.process import TaskProcessRecord
-from pilot.managers.task.models import TaskStatus
+from pilot.internal.tasks.process_identity import ProcessInspector
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker import TaskWorker
+from pilot.managers.task.models import TaskStatus
 
 RUNNING_TASK = "20260715-120000-111111"
 QUEUED_TASK = "20260715-120000-222222"
@@ -90,10 +91,8 @@ def test_worker_waits_for_live_orphan_group_before_next_claim(
         orphan.wait(timeout=5)
         assert completed.wait(2)
     finally:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(orphan.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
         worker.request_drain()
         worker.join(2)
 

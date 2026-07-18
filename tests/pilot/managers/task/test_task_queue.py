@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from pilot.internal.tasks.queue import TaskQueue
-from pilot.managers.task.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
+from pilot.managers.task.models import TaskStatus
 
 
 def task_metadata(task_id: str) -> dict:

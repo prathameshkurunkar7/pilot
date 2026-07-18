@@ -5,7 +5,6 @@ from admin.backend.api.routes import API_ROOT_PREFIX, API_V1_PREFIX
 from admin.backend.app import create_app
 from admin.backend.middleware import AuthPolicy, get_auth_policy
 
-
 SITE_SCOPED_ENDPOINTS = {
     "sites.add_domain",
     "sites.backup_site",
@@ -65,8 +64,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
     unversioned = [
         rule.rule
         for rule in app.url_map.iter_rules()
-        if rule.rule.startswith(f"{API_ROOT_PREFIX}/")
-        and not rule.rule.startswith(f"{API_V1_PREFIX}/")
+        if rule.rule.startswith(f"{API_ROOT_PREFIX}/") and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
     assert len(routes) == 101

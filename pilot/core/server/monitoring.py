@@ -5,14 +5,13 @@ from __future__ import annotations
 import json
 import time
 import typing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.core.server.monitoring_config import MonitorConfigurator
 from pilot.core.server.monitoring_proc import ProcMetricsReader
 from pilot.core.server.monitoring_processes import ProcessResolver
-from pilot.utils import cli_root
-from pilot.utils import iter_sibling_benches
+from pilot.utils import cli_root, iter_sibling_benches
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench, BenchConfig
@@ -119,7 +118,7 @@ class Monitor:
         self._append(
             self.system_log_path,
             {
-                "time": datetime.now(timezone.utc).isoformat(),
+                "time": datetime.now(UTC).isoformat(),
                 "load_avg": self._load_average(),
                 "cpu_percent": self._system_cpu,
                 "cpu_breakdown": self._cpu_breakdown,
@@ -141,7 +140,7 @@ class Monitor:
         self._append(
             self.log_path,
             {
-                "time": datetime.now(timezone.utc).isoformat(),
+                "time": datetime.now(UTC).isoformat(),
                 "bench": self.bench.config.name,
                 "processes": processes,
             },

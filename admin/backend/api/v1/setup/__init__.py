@@ -7,16 +7,18 @@ from flask import Blueprint, current_app, g, jsonify, request
 from admin.backend.api.responses import accepted_task_response, error_response, no_content_response
 from admin.backend.api.v1.setup.config import read_defaults, validate_configuration
 from admin.backend.api.v1.setup.database import database_validation, database_validation_state
-from admin.backend.api.v1.setup.state import clear_wizard_marker_if_idle
-from admin.backend.api.v1.setup.state import running_setup_task
-from admin.backend.api.v1.setup.state import setup_handoff_task
-from admin.backend.api.v1.setup.state import wizard_marker_path
+from admin.backend.api.v1.setup.state import (
+    clear_wizard_marker_if_idle,
+    running_setup_task,
+    setup_handoff_task,
+    wizard_marker_path,
+)
 from admin.backend.middleware import allow_during_setup, set_session_cookie
+from pilot.config import BenchTomlStore
 from pilot.config.bench_toml_builder import (
     FRAMEWORK_BRANCHES,
     current_port_offset,
 )
-from pilot.config import BenchTomlStore
 from pilot.core.bench import Bench
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked

@@ -13,9 +13,7 @@ from pilot.managers.nginx.waf_render import ModSecurityRenderer
 from pilot.managers.waf import WafManager
 
 if TYPE_CHECKING:
-    from pilot.config import NginxConfig
-    from pilot.config import SiteConfig
-    from pilot.config import WafConfig
+    from pilot.config import NginxConfig, SiteConfig, WafConfig
     from pilot.core.bench import Bench
 
 
@@ -151,12 +149,7 @@ class NginxConfigRenderer:
 
     def _render_upstream_block(self, bench_name: str) -> str:
         upstream_server = GunicornManager(self.bench).upstream_server
-        return (
-            f"upstream bench-{bench_name} {{\n"
-            f"    server {upstream_server};\n"
-            f"    keepalive 32;\n"
-            f"}}\n\n"
-        )
+        return f"upstream bench-{bench_name} {{\n    server {upstream_server};\n    keepalive 32;\n}}\n\n"
 
     def _render_http_only_block(
         self,

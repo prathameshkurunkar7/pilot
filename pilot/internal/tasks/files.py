@@ -36,11 +36,7 @@ class TaskFiles:
         if not self.tasks_root.exists():
             return
         for task_dir in self.tasks_root.iterdir():
-            if (
-                not self.is_valid_task_id(task_dir.name)
-                or task_dir.is_symlink()
-                or not task_dir.is_dir()
-            ):
+            if not self.is_valid_task_id(task_dir.name) or task_dir.is_symlink() or not task_dir.is_dir():
                 continue
             yield task_dir
 

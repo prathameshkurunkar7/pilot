@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.internal.tasks.files import TaskFiles
-from pilot.managers.task.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
+from pilot.managers.task.models import TaskStatus
 
 
 class TaskQueue:
@@ -18,9 +18,7 @@ class TaskQueue:
             return [task_id for _, task_id in self._queued_tasks_locked()]
 
     def positions(self) -> dict[str, int]:
-        return {
-            task_id: position for position, task_id in enumerate(self.queued_task_ids(), start=1)
-        }
+        return {task_id: position for position, task_id in enumerate(self.queued_task_ids(), start=1)}
 
     def claim_next(self) -> str | None:
         with self._store.locked():
@@ -28,7 +26,7 @@ class TaskQueue:
             if not queued:
                 return None
             task_id = queued[0][1]
-            started_at = datetime.now(timezone.utc).isoformat()
+            started_at = datetime.now(UTC).isoformat()
             claimed = self._store.transition_locked(
                 task_id,
                 TaskStatus.QUEUED,

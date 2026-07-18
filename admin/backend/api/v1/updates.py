@@ -4,11 +4,10 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify
 
+from admin.backend.api.responses import error_response
 from pilot.core.bench import Bench
 from pilot.internal.git import GitRepo
 from pilot.utils import cli_root
-
-from admin.backend.api.responses import error_response
 
 updates_bp = Blueprint("updates", __name__)
 

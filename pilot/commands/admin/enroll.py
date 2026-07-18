@@ -32,10 +32,7 @@ class EnrollCommand(Command):
             seed(self.bench, self.endpoint, self.bootstrap_token)
         elif self.seed_file:
             seed_from_metadata(self.bench, self.seed_file)
-        elif (
-            not self.bench.config.central.auth_token
-            and not self.bench.config.central.bootstrap_token
-        ):
+        elif not self.bench.config.central.auth_token and not self.bench.config.central.bootstrap_token:
             seed_from_metadata(self.bench, default_seed_path())
         if enroll_if_needed(self.bench):
             print("Enrolled with Central; credential + JWKS config written to bench.toml.")

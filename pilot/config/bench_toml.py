@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pilot.internal.toml import ConfigDict, Toml, TomlDataclassCodec
 from pilot.config.bench import BenchConfig
 from pilot.config.waf import WafConfig
+from pilot.internal.toml import ConfigDict, Toml, TomlDataclassCodec
 
 
 def _bench_config_from_dict(data: ConfigDict, *, strict: bool = False) -> BenchConfig:

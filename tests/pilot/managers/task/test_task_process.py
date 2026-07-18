@@ -9,14 +9,14 @@ from pathlib import Path
 import pytest
 
 import pilot.internal.tasks.process as task_process_module
-from pilot.internal.tasks.process_identity import ProcessIdentity
 from pilot.internal.tasks.process import (
     TaskProcess,
     TaskProcessRecord,
     TaskProcessStartError,
 )
-from pilot.managers.task.models import TaskStatus
+from pilot.internal.tasks.process_identity import ProcessIdentity
 from pilot.internal.tasks.store import TaskStore
+from pilot.managers.task.models import TaskStatus
 
 TASK_ID = "20260715-120000-aabbcc"
 

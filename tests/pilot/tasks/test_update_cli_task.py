@@ -30,6 +30,6 @@ def test_run_raises_on_git_failure(tmp_path: Path) -> None:
     with (
         patch("pilot.tasks.update_cli.cli_root", return_value=tmp_path),
         patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "git")),
+        pytest.raises(subprocess.CalledProcessError),
     ):
-        with pytest.raises(subprocess.CalledProcessError):
-            task.run()
+        task.run()

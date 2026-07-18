@@ -79,9 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def dispatch(
-    args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext
-) -> None:
+def dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext) -> None:
     cls: type[Command] | None = getattr(args, "_command_cls", None)
     if cls is None:
         printer = getattr(args, "_help_printer", None)
@@ -103,9 +101,7 @@ def _resolve_bench(cls: type[Command], context: CliContext):
     return load_bench(context, require_explicit=mode is BenchMode.EXPLICIT)
 
 
-def dispatch_all(
-    args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext
-) -> None:
+def dispatch_all(args: argparse.Namespace, parser: argparse.ArgumentParser, context: CliContext) -> None:
     """Run the command once per production bench (`-b all`); dev benches are skipped
     because their foreground `start` would hang the loop."""
     cls: type[Command] | None = getattr(args, "_command_cls", None)
@@ -114,9 +110,7 @@ def dispatch_all(
         (printer or parser.print_help)()
         return
     if not cls.supports_all_benches:
-        raise BenchError(
-            f"'-b all' isn't supported for '{cls.name}'. Pass a specific bench name instead."
-        )
+        raise BenchError(f"'-b all' isn't supported for '{cls.name}'. Pass a specific bench name instead.")
 
     benches_dir = context.installation_root / "benches"
     names = (

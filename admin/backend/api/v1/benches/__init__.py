@@ -4,11 +4,6 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, request
 
-from admin.backend.providers.bench import BenchProvider
-from pilot.config import BenchTomlStore
-from pilot.core.bench import Bench
-from pilot.internal.atomic_file import exclusive_file_lock
-
 from admin.backend.api.responses import error_response, no_content_response
 from admin.backend.api.v1.benches.create import create_bench_locked
 from admin.backend.api.v1.benches.readiness import bench_readiness_bp
@@ -22,6 +17,10 @@ from admin.backend.api.v1.benches.support import (
     guard_bench_management,
     target_bench_dir,
 )
+from admin.backend.providers.bench import BenchProvider
+from pilot.config import BenchTomlStore
+from pilot.core.bench import Bench
+from pilot.internal.atomic_file import exclusive_file_lock
 
 benches_bp = Blueprint("benches", __name__)
 
@@ -203,9 +202,7 @@ def get_domain_options():
     try:
         patterns = DomainRouteProvider.wildcard_domains()
     except Exception:
-        return error_response(
-            "wildcard_domains_unavailable", "Could not read wildcard domains.", 500
-        )
+        return error_response("wildcard_domains_unavailable", "Could not read wildcard domains.", 500)
     return jsonify({"domains": [wildcard_suffix(p) for p in patterns]})
 
 
@@ -289,9 +286,7 @@ def _admin_domain_request(data):
         )
     if ADMIN_DOMAIN_RE.match(admin_domain):
         return admin_domain, None
-    return "", error_response(
-        "invalid_admin_domain", f"'{admin_domain}' is not a valid hostname.", 422
-    )
+    return "", error_response("invalid_admin_domain", f"'{admin_domain}' is not a valid hostname.", 422)
 
 
 def _process_manager_request(data):

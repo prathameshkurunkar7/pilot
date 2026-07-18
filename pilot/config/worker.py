@@ -43,6 +43,4 @@ class WorkerConfig:
             if not all(isinstance(q, str) and q for q in group.queues):
                 raise ConfigError(f"{prefix}.queues must contain non-empty strings.")
             if not isinstance(group.count, int) or group.count < 1:
-                raise ConfigError(
-                    f"{prefix}.count must be a positive integer, got '{group.count}'."
-                )
+                raise ConfigError(f"{prefix}.count must be a positive integer, got '{group.count}'.")

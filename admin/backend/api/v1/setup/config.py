@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 
 from admin.backend.api.v1.setup.state import setup_handoff_task
-from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.config import BenchTomlStore
+from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.internal.validators import validate_branch_name, validate_repo_url
 
 _PASSWORD_KEYS = ("admin_password", "mariadb_password", "postgres_password")
@@ -68,9 +68,7 @@ def _validate_existing_database(data: dict) -> str | None:
         if not data.get(f"{db_type}_host"):
             return f"{db_type}_host is required when connecting to an existing database server"
         if not data.get(f"{db_type}_admin_user"):
-            return (
-                f"{db_type}_admin_user is required when connecting to an existing database server"
-            )
+            return f"{db_type}_admin_user is required when connecting to an existing database server"
     return None
 
 
@@ -87,9 +85,7 @@ def read_defaults(bench_root: Path) -> dict:
 
     # This is a read endpoint the wizard polls before login - it must never echo
     # a DB password back, default or real, whether or not bench.toml has one set.
-    defaults = {
-        key: value for key, value in BenchTomlBuilder.DEFAULTS.items() if key not in _PASSWORD_KEYS
-    }
+    defaults = {key: value for key, value in BenchTomlBuilder.DEFAULTS.items() if key not in _PASSWORD_KEYS}
 
     result = {
         "bench_name": bench_root.name,

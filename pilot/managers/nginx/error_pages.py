@@ -6,11 +6,11 @@ from string import Template
 # Custom pages for nginx-generated errors (downed upstream, missing static
 # file). App responses pass through unchanged - proxy_intercept_errors is off.
 ERROR_PAGES = {
-    403: ("Access blocked", "Your network doesn’t have access to this server."),
-    404: ("Page not found", "The page you’re looking for doesn’t exist."),
+    403: ("Access blocked", "Your network doesn't have access to this server."),
+    404: ("Page not found", "The page you're looking for doesn't exist."),
     502: (
         "Temporarily unavailable",
-        "The server isn’t responding right now. Please try again in a moment.",
+        "The server isn't responding right now. Please try again in a moment.",
     ),
     503: (
         "Service unavailable",

@@ -5,11 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pilot.config import AppConfig
-from pilot.config import BenchConfig
-from pilot.config import MariaDBConfig
-from pilot.config import RedisConfig
-from pilot.config import WorkerConfig, WorkerGroup
+from pilot.config import AppConfig, BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
 from pilot.managers.redis import RedisManager
 
@@ -18,9 +14,7 @@ def make_bench(tmp_path: Path) -> Bench:
     config = BenchConfig(
         name="test-bench",
         python_version="3.14",
-        apps=[
-            AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")
-        ],
+        apps=[AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")],
         mariadb=MariaDBConfig(root_password="root"),
         redis=RedisConfig(cache_port=13000, queue_port=11000),
         workers=WorkerConfig(
@@ -175,7 +169,7 @@ def test_supervisor_conf_separates_admin_group(tmp_path: Path) -> None:
     assert "[group:test-bench]" in conf
     assert "[group:test-bench-admin]" in conf
     # The workload group must not include the admin program.
-    workload_line = [ln for ln in conf.splitlines() if ln.startswith("programs=")][0]
+    workload_line = next(ln for ln in conf.splitlines() if ln.startswith("programs="))
     assert "test-bench-admin" not in workload_line
     assert "test-bench-web" in workload_line
 
@@ -211,9 +205,7 @@ def test_supervisor_conf_redis_gets_stop_timeout(tmp_path: Path) -> None:
     from pilot.managers.processes.supervisor import SupervisorRenderer
 
     fake_defs = [
-        ProcessDefinition(
-            "redis_cache", ["redis-server", "x.conf"], tmp_path / "r.log", stop_timeout=300
-        )
+        ProcessDefinition("redis_cache", ["redis-server", "x.conf"], tmp_path / "r.log", stop_timeout=300)
     ]
     conf = SupervisorRenderer("test-bench", tmp_path / "logs").conf(
         fake_defs, tmp_path / "s.sock", tmp_path / "s.pid"
@@ -238,9 +230,11 @@ def test_supervisor_pid_path(tmp_path: Path) -> None:
 
 def test_supervisor_generate_config_writes_file(tmp_path: Path) -> None:
     mgr = _make_supervisor_manager(tmp_path)
-    with patch("pilot.managers.processes.supervisor.AdminEnvManager"):
-        with patch.object(mgr, "_prod_process_definitions", return_value=[]):
-            mgr.write_config()
+    with (
+        patch("pilot.managers.processes.supervisor.AdminEnvManager"),
+        patch.object(mgr, "_prod_process_definitions", return_value=[]),
+    ):
+        mgr.write_config()
     assert mgr.supervisor_conf_path.exists()
 
 
@@ -366,9 +360,7 @@ def test_systemd_unit_redis_gets_stop_timeout(tmp_path: Path) -> None:
     from pilot.managers.processes.local import ProcessDefinition
     from pilot.managers.processes.systemd import SystemdRenderer
 
-    pd = ProcessDefinition(
-        "redis_cache", ["redis-server", "x.conf"], tmp_path / "r.log", stop_timeout=300
-    )
+    pd = ProcessDefinition("redis_cache", ["redis-server", "x.conf"], tmp_path / "r.log", stop_timeout=300)
     unit = SystemdRenderer("test-bench").render(pd)
     assert "TimeoutStopSec=300" in unit
 
@@ -385,12 +377,12 @@ def test_systemd_generate_config_writes_unit_files(tmp_path: Path) -> None:
 
     mgr = _make_systemd_manager(tmp_path)
     mgr.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
-    fake_defs = [
-        ProcessDefinition("web", ["/env/bin/python", "serve"], tmp_path / "logs" / "web.log")
-    ]
-    with patch("pilot.managers.environment.AdminEnvManager"):
-        with patch.object(mgr, "_prod_process_definitions", return_value=fake_defs):
-            mgr.write_config()
+    fake_defs = [ProcessDefinition("web", ["/env/bin/python", "serve"], tmp_path / "logs" / "web.log")]
+    with (
+        patch("pilot.managers.environment.AdminEnvManager"),
+        patch.object(mgr, "_prod_process_definitions", return_value=fake_defs),
+    ):
+        mgr.write_config()
     assert (mgr.systemd_conf_dir / "test-bench-web.service").exists()
     assert (mgr.systemd_conf_dir / "test-bench.target").exists()
 
@@ -437,13 +429,13 @@ def test_systemd_generate_config_writes_admin_socket(tmp_path: Path) -> None:
     mgr.systemd_conf_dir.mkdir(parents=True, exist_ok=True)
     fake_defs = [
         ProcessDefinition("web", ["/env/bin/python", "serve"], tmp_path / "logs" / "web.log"),
-        ProcessDefinition(
-            "admin", ["/env/bin/python", "-m", "admin"], tmp_path / "logs" / "admin.log"
-        ),
+        ProcessDefinition("admin", ["/env/bin/python", "-m", "admin"], tmp_path / "logs" / "admin.log"),
     ]
-    with patch("pilot.managers.environment.AdminEnvManager"):
-        with patch.object(mgr, "_prod_process_definitions", return_value=fake_defs):
-            mgr.write_config()
+    with (
+        patch("pilot.managers.environment.AdminEnvManager"),
+        patch.object(mgr, "_prod_process_definitions", return_value=fake_defs),
+    ):
+        mgr.write_config()
     assert (mgr.systemd_conf_dir / "test-bench-admin.socket").exists()
     assert (mgr.systemd_conf_dir / "test-bench-admin.service").exists()
     assert (mgr.bench.config_path / "admin-gunicorn.conf.py").exists()
@@ -545,7 +537,6 @@ def test_supervisor_multiqueue_worker_name_has_no_commas(tmp_path: Path) -> None
     """A worker group serving several queues must not produce a comma in the
     program name — commas break supervisor's `programs=` CSV (regression)."""
     from pilot.config import WorkerConfig, WorkerGroup
-
     from pilot.managers.processes.supervisor import SupervisorRenderer
 
     mgr = _make_supervisor_manager(tmp_path)
@@ -554,7 +545,7 @@ def test_supervisor_multiqueue_worker_name_has_no_commas(tmp_path: Path) -> None
     )
     renderer = SupervisorRenderer("test-bench", mgr.bench.logs_path)
     conf = renderer.conf(mgr._prod_process_definitions(), mgr.supervisor_sock, mgr.supervisor_pid)
-    workload_line = [ln for ln in conf.splitlines() if ln.startswith("programs=")][0]
+    workload_line = next(ln for ln in conf.splitlines() if ln.startswith("programs="))
     # Every program named in the group must exist as a [program:...] section.
     named = workload_line.split("=", 1)[1].split(",")
     for prog in named:

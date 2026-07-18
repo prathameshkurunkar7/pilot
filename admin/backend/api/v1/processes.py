@@ -5,10 +5,9 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify
 
-from pilot.config import BenchTomlStore
-
 from admin.backend.api.responses import error_response
 from admin.backend.providers.processes import ProcessProvider
+from pilot.config import BenchTomlStore
 
 processes_bp = Blueprint("processes", __name__)
 

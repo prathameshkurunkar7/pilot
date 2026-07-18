@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import subprocess
@@ -27,10 +28,8 @@ def owned_process():
     try:
         yield process, argv, launch_id
     finally:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
         process.wait(timeout=5)
 
 
@@ -137,10 +136,8 @@ def test_live_descendant_keeps_owned_group_after_leader_exits() -> None:
         leader.wait(timeout=5)
         assert inspector.inspect(identity, argv) == ProcessOwnership.OWNED
     finally:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(identity.pgid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
 
 
 def test_permission_failure_is_unknown(
@@ -150,9 +147,7 @@ def test_permission_failure_is_unknown(
     process, argv, launch_id = owned_process
     inspector = ProcessInspector()
     identity = inspector.capture(process.pid, argv, launch_id)
-    monkeypatch.setattr(
-        inspector, "_read_process", lambda pid: (_ for _ in ()).throw(PermissionError())
-    )
+    monkeypatch.setattr(inspector, "_read_process", lambda pid: (_ for _ in ()).throw(PermissionError()))
 
     assert inspector.inspect(identity, argv) == ProcessOwnership.UNKNOWN
 

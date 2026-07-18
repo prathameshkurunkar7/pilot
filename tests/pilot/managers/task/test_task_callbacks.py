@@ -91,9 +91,7 @@ def test_remove_from_hosts_matches_address_and_hostname_tokens(
     callbacks._remove_from_hosts("failed.localhost")
 
     assert captured["argv"] == ["sudo", "-n", "tee", str(hosts_path)]
-    assert captured["input"].decode() == (
-        "127.0.0.1 keep.localhost\n127.0.0.1 failed.localhost.example\n"
-    )
+    assert captured["input"].decode() == ("127.0.0.1 keep.localhost\n127.0.0.1 failed.localhost.example\n")
 
 
 def test_disable_site_ssl_operation_uses_json_args(tmp_path: Path) -> None:

@@ -20,9 +20,7 @@ def add_command_arguments(cls: type[Command], parser: argparse.ArgumentParser) -
 
 
 def command_from_args(cls: type[Command], args: argparse.Namespace, bench: Bench | None) -> Command:
-    kwargs = {
-        cli_field.name: value_from_namespace(args, cli_field) for cli_field in command_fields(cls)
-    }
+    kwargs = {cli_field.name: value_from_namespace(args, cli_field) for cli_field in command_fields(cls)}
     if any(field.name == "skip_confirm" for field in fields(cls)):
         kwargs["skip_confirm"] = args.yes
     return cls(bench=bench, **kwargs)

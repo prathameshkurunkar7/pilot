@@ -21,12 +21,10 @@ class RepoStructureCheck:
             with open((app.path / "pyproject.toml"), "rb") as f:
                 tomllib.load(f)
         except tomllib.TOMLDecodeError as exc:
-            raise AppValidationError(f"'{app.config.name}' has an invalid pyproject.toml: {exc}")
+            raise AppValidationError(f"'{app.config.name}' has an invalid pyproject.toml: {exc}") from exc
 
         path = module_path(app)
         if not path.is_dir():
-            raise AppValidationError(
-                f"'{app.config.name}' has no '{app.module_name}' package directory."
-            )
+            raise AppValidationError(f"'{app.config.name}' has no '{app.module_name}' package directory.")
         if not (path / "hooks.py").exists():
             raise AppValidationError(f"'{app.config.name}' is missing {app.module_name}/hooks.py.")

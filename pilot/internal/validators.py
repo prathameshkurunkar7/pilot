@@ -18,7 +18,9 @@ def validate_app_name(name: str) -> str | None:
     if not name:
         return "App name is required."
     if not _APP_NAME_RE.match(name):
-        return "App name must start with a letter and contain only letters, numbers, hyphens, and underscores."
+        return (
+            "App name must start with a letter and contain only letters, numbers, hyphens, and underscores."
+        )
     return None
 
 

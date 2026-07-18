@@ -67,9 +67,7 @@ def test_concurrent_add_and_remove_do_not_corrupt(tmp_path) -> None:
     for ts in timestamps:
         metadata.add(ts, f"{ts}-database.sql.gz")
 
-    _run_concurrently(
-        lambda i: metadata.remove(timestamps[i], f"{timestamps[i]}-database.sql.gz"), 3
-    )
+    _run_concurrently(lambda i: metadata.remove(timestamps[i], f"{timestamps[i]}-database.sql.gz"), 3)
 
     stored = s3.objects[keys.month(timestamps[0])]
     assert set(stored) == set(timestamps[3:])

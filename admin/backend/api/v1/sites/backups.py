@@ -4,15 +4,7 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request, send_file
 
-from pilot.core.bench import Bench
-from pilot.exceptions import BenchError
-from pilot.internal.site_paths import site_exists
-from pilot.internal.validators import validate_cron_expression
-from pilot.tasks.backup_site import BackupSiteTask
-
 from admin.backend.api.responses import accepted_task_response, error_response, no_content_response
-from admin.backend.middleware import require_scope
-
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
     internal_error,
@@ -23,6 +15,12 @@ from admin.backend.api.v1.sites.shared import (
     task_failure,
     text_fields,
 )
+from admin.backend.middleware import require_scope
+from pilot.core.bench import Bench
+from pilot.exceptions import BenchError
+from pilot.internal.site_paths import site_exists
+from pilot.internal.validators import validate_cron_expression
+from pilot.tasks.backup_site import BackupSiteTask
 
 _DEFAULT_BACKUPS_PAGE_SIZE = 20
 

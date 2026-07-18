@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import json
 import shutil
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
@@ -58,9 +57,7 @@ class TaskStore:
             if existing is not None:
                 existing_fingerprint = self.read_metadata(existing).get("request_fingerprint")
                 if existing_fingerprint != request_fingerprint:
-                    raise TaskConflictError(
-                        "Idempotency key is already in use for another active task"
-                    )
+                    raise TaskConflictError("Idempotency key is already in use for another active task")
                 return TaskCreation(existing, self.task_dir(existing), False)
 
             self._reject_active_resource_locked(resource_key)
@@ -112,9 +109,7 @@ class TaskStore:
     def task_ids_with_process(self) -> list[str]:
         with self.locked():
             return sorted(
-                task_dir.name
-                for task_dir in self._files.task_dirs()
-                if (task_dir / "process.json").exists()
+                task_dir.name for task_dir in self._files.task_dirs() if (task_dir / "process.json").exists()
             )
 
     def terminal_task_ids_with_callbacks(self) -> list[str]:
@@ -223,9 +218,7 @@ class TaskStore:
             include_cleanup_pending=True,
         )
         if existing is not None:
-            raise TaskConflictError(
-                f"Another active task is already using resource {resource_key!r}"
-            )
+            raise TaskConflictError(f"Another active task is already using resource {resource_key!r}")
 
     def _active_task_with_metadata_locked(
         self,
@@ -250,9 +243,7 @@ class TaskStore:
         return None
 
     @staticmethod
-    def _with_resource_key(
-        metadata: Mapping[str, object], resource_key: str | None
-    ) -> dict[str, object]:
+    def _with_resource_key(metadata: Mapping[str, object], resource_key: str | None) -> dict[str, object]:
         stored_metadata = dict(metadata)
         if resource_key is not None:
             stored_metadata["resource_key"] = resource_key

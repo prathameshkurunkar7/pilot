@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import secrets
@@ -73,9 +74,7 @@ class Bench:
     def create(self) -> None:
         """`bench new <name>` then read the generated admin port."""
         if self.dir.exists():
-            raise RuntimeError(
-                f'Bench "{self.name}" already exists at {self.dir} — clean it up first'
-            )
+            raise RuntimeError(f'Bench "{self.name}" already exists at {self.dir} — clean it up first')
         self._run(["new", self.name])
         if not (self.dir / "bench.toml").exists():
             # `bench` resolves its benches dir as <dir containing pilot>/benches.
@@ -238,9 +237,10 @@ class Bench:
             return
         print("[e2e] Building admin UI from source (E2E_BUILD_ADMIN)...")
         frontend = REPO_ROOT / "admin" / "frontend"
-        if not (frontend / "node_modules").exists():
-            if subprocess.run(["npm", "install"], cwd=frontend).returncode != 0:
-                raise RuntimeError("admin frontend `npm install` failed")
+        if not (frontend / "node_modules").exists() and (
+            subprocess.run(["npm", "install"], cwd=frontend).returncode != 0
+        ):
+            raise RuntimeError("admin frontend `npm install` failed")
         if subprocess.run(["npm", "run", "build"], cwd=frontend).returncode != 0:
             raise RuntimeError("admin frontend `npm run build` failed")
 
@@ -309,10 +309,8 @@ class Bench:
             # Negative pgid targets the whole process group.
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
         except OSError:
-            try:
+            with contextlib.suppress(OSError):
                 proc.terminate()
-            except OSError:
-                pass  # already gone
         self._proc = None
 
     def _wait_for_admin(self, expect_wizard: bool, timeout: float = 5 * 60) -> None:

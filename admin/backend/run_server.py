@@ -24,9 +24,7 @@ def main() -> None:
     parser.add_argument(
         "--dev", action="store_true", help="Enable auto-reload on code changes (development only)"
     )
-    parser.add_argument(
-        "--wizard", action="store_true", help="Running as the standalone setup-wizard server"
-    )
+    parser.add_argument("--wizard", action="store_true", help="Running as the standalone setup-wizard server")
     args = parser.parse_args()
 
     from admin.backend.app import create_app

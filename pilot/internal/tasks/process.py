@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -8,9 +9,10 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
+from pilot.exceptions import BenchError, TaskNotFoundError, TaskNotRunningError
 from pilot.internal.tasks.callbacks import run_stored_callback, trigger_for_task_status
 from pilot.internal.tasks.process_identity import (
     ProcessIdentity,
@@ -18,10 +20,9 @@ from pilot.internal.tasks.process_identity import (
     ProcessOwnership,
     TaskProcessRecord,
 )
-from pilot.managers.task.models import TaskStatus
 from pilot.internal.tasks.store import TaskStore
-from pilot.exceptions import BenchError, TaskNotFoundError, TaskNotRunningError
 from pilot.managers.platform import NONINTERACTIVE_PRIVILEGES_ENV
+from pilot.managers.task.models import TaskStatus
 
 _READY_FD_ENV = "BENCH_TASK_READY_FD"
 _LAUNCH_ID_ENV = "BENCH_TASK_LAUNCH_ID"
@@ -153,7 +154,7 @@ class TaskProcess:
             task_id,
             TaskStatus.RUNNING,
             TaskStatus.KILLED,
-            {"finished_at": datetime.now(timezone.utc).isoformat()},
+            {"finished_at": datetime.now(UTC).isoformat()},
         )
         if not transitioned:
             status = self._store.read_status(task_id)
@@ -174,10 +175,8 @@ class TaskProcess:
 
     def _abort_start(self, task_id: str, process: subprocess.Popen | None) -> None:
         if process is not None:
-            try:
+            with contextlib.suppress(OSError):
                 process.kill()
-            except OSError:
-                pass
             process.wait()
         self._store.remove_private_files(task_id, "process.json", "pid")
         self._interrupt(task_id)
@@ -188,7 +187,7 @@ class TaskProcess:
             TaskStatus.RUNNING,
             TaskStatus.FAILED,
             {
-                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "finished_at": datetime.now(UTC).isoformat(),
                 "failure": {"code": "task_interrupted"},
             },
         )

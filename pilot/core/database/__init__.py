@@ -67,9 +67,7 @@ def make_site_database(bench_root: Path | str, site_name: str) -> Database:
         )
     if db_type == "sqlite":
         # Frappe stores SQLite under sites/<site>/db/, not directly in the site folder.
-        db_file = (
-            Path(bench_root) / "sites" / site_name / "db" / f"{cfg.get('db_name', site_name)}.db"
-        )
+        db_file = Path(bench_root) / "sites" / site_name / "db" / f"{cfg.get('db_name', site_name)}.db"
         return SQLite(db_path=str(db_file))
     return MariaDB(
         host=cfg.get("db_host", "localhost"),

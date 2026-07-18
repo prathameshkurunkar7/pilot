@@ -5,15 +5,7 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request
 
-from pilot.core.bench import Bench
-from pilot.exceptions import BenchError, ConfigError, DomainConflictError, DomainProviderError
-from pilot.internal.site_paths import site_config_path, site_exists
-from pilot.internal.validators import validate_email, validate_site_name
-from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
-
 from admin.backend.api.responses import accepted_task_response, error_response
-from admin.backend.middleware import require_scope
-
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
     internal_error,
@@ -24,6 +16,12 @@ from admin.backend.api.v1.sites.shared import (
     task_failure,
     text_fields,
 )
+from admin.backend.middleware import require_scope
+from pilot.core.bench import Bench
+from pilot.exceptions import BenchError, ConfigError, DomainConflictError, DomainProviderError
+from pilot.internal.site_paths import site_config_path, site_exists
+from pilot.internal.validators import validate_email, validate_site_name
+from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
 
 
 @sites_bp.post("/<name>/actions/enable-tls")
@@ -227,9 +225,7 @@ def remove_domain(name: str, domain: str):
 
 
 def _domain_conflict():
-    return error_response(
-        "domain_conflict", "The domain conflicts with the current site state.", 409
-    )
+    return error_response("domain_conflict", "The domain conflicts with the current site state.", 409)
 
 
 def _domain_failure(error: BenchError, message: str):

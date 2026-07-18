@@ -3,7 +3,6 @@ from typing import ClassVar
 
 from pilot.core.app import App
 from pilot.integrations.marketplace import Marketplace
-
 from pilot.tasks import Task, step
 
 

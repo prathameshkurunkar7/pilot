@@ -8,9 +8,8 @@ import urllib.request
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError, DomainConflictError, DomainProviderError
-from pilot.utils import write_private_text
 from pilot.managers.platform import which
-from pilot.utils import host_owner, normalize_host
+from pilot.utils import host_owner, normalize_host, write_private_text
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -60,9 +59,7 @@ class DomainRouteProvider:
             return
         primary = self.primary(site_name)
         if primary and normalize_host(primary) == domain:
-            raise DomainConflictError(
-                "Cannot remove the primary domain. Make another domain primary first."
-            )
+            raise DomainConflictError("Cannot remove the primary domain. Make another domain primary first.")
         self._ask_provider("deregister", domain)
         config = self._read(site_name)
         config["domains"] = [
@@ -179,9 +176,7 @@ class DomainRouteProvider:
         if ip := self._server_ip():
             expected.add(ip)
         if not (candidate & expected):
-            raise DomainConflictError(
-                f"{domain} doesn't point here yet. Retry once DNS has updated."
-            )
+            raise DomainConflictError(f"{domain} doesn't point here yet. Retry once DNS has updated.")
 
     @staticmethod
     def _server_ip() -> str:

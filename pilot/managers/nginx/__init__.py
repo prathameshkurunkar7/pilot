@@ -11,7 +11,6 @@ from pilot.managers.nginx.certs import cert_files_exist
 from pilot.managers.nginx.error_pages import ERROR_PAGES, render_error_html
 from pilot.managers.nginx.render import NginxConfigRenderer
 from pilot.managers.packages import get_package_manager
-from pilot.managers.waf import WafManager
 from pilot.managers.platform import (
     _privileged,
     default_nginx_config_dir,
@@ -19,6 +18,7 @@ from pilot.managers.platform import (
     service_command,
     service_running,
 )
+from pilot.managers.waf import WafManager
 from pilot.utils import run_command
 
 _NGINX_CONF = Path("/etc/nginx/nginx.conf")
@@ -88,8 +88,7 @@ class NginxManager:
         bench_name = self.bench.config.name
         include_path = nginx_dir / "include.conf"
         include_path.write_text(
-            self._renderer._render_upstream_block(bench_name)
-            + f"include {nginx_dir}/sites/*.conf;\n"
+            self._renderer._render_upstream_block(bench_name) + f"include {nginx_dir}/sites/*.conf;\n"
         )
 
     def _write_error_pages(self, nginx_dir: Path) -> None:
@@ -146,9 +145,7 @@ class NginxManager:
         (self.bench.path / "logs").mkdir(exist_ok=True)
         (modsec_dir / "modsecurity.conf").write_text(self._renderer._render_modsec_engine(waf))
         (modsec_dir / "overrides.conf").write_text(self._renderer._render_modsec_overrides(waf))
-        (modsec_dir / "custom_rules.conf").write_text(
-            self._renderer._render_modsec_custom_rules(waf)
-        )
+        (modsec_dir / "custom_rules.conf").write_text(self._renderer._render_modsec_custom_rules(waf))
         (modsec_dir / "exclusions.conf").write_text(self._renderer._render_modsec_exclusions(waf))
         (modsec_dir / "main.conf").write_text(self._renderer._render_modsec_main(modsec_dir))
 
@@ -198,9 +195,7 @@ class NginxManager:
         except OSError:
             return True
         modules_dir = Path("/etc/nginx/modules-enabled")
-        return modules_dir.is_dir() and any(
-            "modsecurity" in entry.name for entry in modules_dir.iterdir()
-        )
+        return modules_dir.is_dir() and any("modsecurity" in entry.name for entry in modules_dir.iterdir())
 
     @staticmethod
     def _prune_dangling_symlinks(nginx_dir: Path) -> None:

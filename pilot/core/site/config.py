@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import copy
+import json
 import re
 from pathlib import Path
 
@@ -76,9 +76,7 @@ def query_installed_apps_via_db(site_config: dict) -> list[str] | None:
 
     conn_args = [f"--user={db_name}", f"--password={db_password}"]
     if db_host in ("localhost", "127.0.0.1", ""):
-        socket_path = next(
-            (socket for socket in _DB_SOCKET_CANDIDATES if Path(socket).exists()), None
-        )
+        socket_path = next((socket for socket in _DB_SOCKET_CANDIDATES if Path(socket).exists()), None)
         if socket_path:
             conn_args.append(f"--socket={socket_path}")
         else:
@@ -142,11 +140,7 @@ def read_site_config(site_path: Path) -> dict:
 
 
 def public_config(config: dict) -> dict:
-    return {
-        key: _public_config_value(value)
-        for key, value in config.items()
-        if is_public_config_key(key)
-    }
+    return {key: _public_config_value(value) for key, value in config.items() if is_public_config_key(key)}
 
 
 def merge_public_config(current: dict, submitted: dict) -> dict:
@@ -272,8 +266,7 @@ def _submitted_config_value_error(value) -> str | None:
 def _contains_protected_config(value) -> bool:
     if isinstance(value, dict):
         return any(
-            not is_public_config_key(key) or _contains_protected_config(child)
-            for key, child in value.items()
+            not is_public_config_key(key) or _contains_protected_config(child) for key, child in value.items()
         )
     if isinstance(value, list):
         return any(_contains_protected_config(child) for child in value)

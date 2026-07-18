@@ -44,8 +44,7 @@ class ProcessResolver:
         services = [
             service.name
             for service in systemd_dir.iterdir()
-            if service.name.endswith(".service")
-            and service.name != f"{self.admin_service_name}.service"
+            if service.name.endswith(".service") and service.name != f"{self.admin_service_name}.service"
         ]
         if not services:
             return {}
@@ -59,9 +58,7 @@ class ProcessResolver:
         from pilot.managers.processes.supervisor import SupervisorProcessManager
 
         bench_process_manager = SupervisorProcessManager(self.bench)
-        result = run_command(
-            ["supervisorctl", "-c", bench_process_manager.supervisor_conf_path, "status"]
-        )
+        result = run_command(["supervisorctl", "-c", bench_process_manager.supervisor_conf_path, "status"])
         supervised_processes = result.stdout.decode().strip()
         return self._supervisor_pids(supervised_processes)
 

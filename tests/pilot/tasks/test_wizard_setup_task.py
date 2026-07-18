@@ -29,6 +29,4 @@ def test_run_finishes_production_setup_when_process_manager_chosen() -> None:
     task.run()
 
     task.bench.initialize.assert_called_once()
-    task.bench.setup_production.assert_called_once_with(
-        best_effort_tls=True, on_progress=task.report
-    )
+    task.bench.setup_production.assert_called_once_with(best_effort_tls=True, on_progress=task.report)

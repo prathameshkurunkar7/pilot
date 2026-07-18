@@ -7,9 +7,8 @@ import typing
 from pathlib import Path
 
 from pilot.exceptions import BenchError
-from pilot.utils import cli_root
 from pilot.managers.platform import is_linux
-from pilot.utils import iter_sibling_benches, run_command
+from pilot.utils import cli_root, iter_sibling_benches, run_command
 
 if typing.TYPE_CHECKING:
     from pilot.core.bench import Bench

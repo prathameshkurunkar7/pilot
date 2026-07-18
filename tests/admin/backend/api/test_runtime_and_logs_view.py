@@ -16,9 +16,7 @@ def _client(bench_root: Path, password: str = "secret"):
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(
-            bench_root.name, {"admin_enabled": True, "admin_password": password}
-        ).render()
+        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -138,9 +136,7 @@ def test_log_events_emits_structured_json_lines(tmp_path: Path) -> None:
         response = client.get("/api/v1/logs/web.log/events")
         body = response.get_data(as_text=True)
 
-    events = [
-        json.loads(chunk.removeprefix("data: ")) for chunk in body.strip().split("\n\n") if chunk
-    ]
+    events = [json.loads(chunk.removeprefix("data: ")) for chunk in body.strip().split("\n\n") if chunk]
     assert events == [{"line": "first line"}, {"line": "second line"}]
 
 

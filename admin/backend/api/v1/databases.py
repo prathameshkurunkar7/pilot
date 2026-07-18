@@ -16,9 +16,7 @@ def list_query_sites():
     sites_path = bench_root / "sites"
     if not sites_path.is_dir():
         return jsonify([])
-    site_dirs = sorted(
-        d for d in sites_path.iterdir() if d.is_dir() and (d / "site_config.json").exists()
-    )
+    site_dirs = sorted(d for d in sites_path.iterdir() if d.is_dir() and (d / "site_config.json").exists())
     sites = []
     for d in site_dirs:
         try:

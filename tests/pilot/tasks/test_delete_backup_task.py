@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 
-from pilot.tasks.delete_backup import DeleteBackupTask
 from pilot.config import SiteConfig
 from pilot.core.bench.audit_log import AuditLog
 from pilot.core.site import Site
+from pilot.tasks.delete_backup import DeleteBackupTask
 
 
 def _task(tmp_path, filenames):
@@ -13,9 +13,7 @@ def _task(tmp_path, filenames):
         config=SimpleNamespace(s3=SimpleNamespace(is_configured=False)),
     )
     bench.site = lambda name: Site(SiteConfig(name=name, apps=[]), bench)
-    return DeleteBackupTask(
-        bench=bench, bench_root=tmp_path, site="site1", filenames=filenames
-    ), bench
+    return DeleteBackupTask(bench=bench, bench_root=tmp_path, site="site1", filenames=filenames), bench
 
 
 def test_delete_removes_local_files_and_logs(tmp_path) -> None:

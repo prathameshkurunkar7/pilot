@@ -49,8 +49,7 @@ def download_admin_frontend(cli_root: Path) -> bool:
 def build_admin_frontend(
     force_build: bool = False, on_progress: Callable[[str], None] = lambda message: None
 ) -> None:
-    from pilot.utils import cli_root
-    from pilot.utils import run_command
+    from pilot.utils import cli_root, run_command
 
     if not force_build and download_admin_frontend(cli_root()):
         return

@@ -19,9 +19,7 @@ class SiteApps:
 
     def install_app(self, app: "App") -> None:
         run_command(
-            self.site._frappe_call(
-                "frappe", "--site", self.site.config.name, "install-app", app.config.name
-            ),
+            self.site._frappe_call("frappe", "--site", self.site.config.name, "install-app", app.config.name),
             cwd=self.site.bench.sites_path,
             stream_output=True,
         )
@@ -91,9 +89,7 @@ class SiteApps:
         for app_name in app_names:
             app = self.site.bench.app(app_name)
             if not force and installed and app.config.name not in installed:
-                raise BenchError(
-                    f"App '{app_name}' is not installed on site '{self.site.config.name}'."
-                )
+                raise BenchError(f"App '{app_name}' is not installed on site '{self.site.config.name}'.")
             on_progress(f"Uninstalling '{app_name}' from site '{self.site.config.name}'...")
             self.site.uninstall_app(app, force=force)
             on_progress(f"'{app_name}' uninstalled from '{self.site.config.name}'.")

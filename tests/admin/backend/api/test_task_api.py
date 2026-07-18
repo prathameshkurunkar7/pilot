@@ -5,12 +5,11 @@ from unittest.mock import patch
 
 from flask import Flask
 
-from pilot.managers.task.models import TaskStatus
-from pilot.internal.tasks.store import TaskStore
-from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStore
 from admin.backend.api.v1.tasks import task_worker_bp, tasks_bp
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
-
+from pilot.internal.tasks.store import TaskStore
+from pilot.internal.tasks.worker_state import WorkerIntent, WorkerStore
+from pilot.managers.task.models import TaskStatus
 
 TASK_ID = "20260715-120000-aabbcc"
 RETRY_TASK_ID = "20260715-120100-ddeeff"

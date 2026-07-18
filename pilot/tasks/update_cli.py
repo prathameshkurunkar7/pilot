@@ -4,9 +4,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.utils import cli_root
-
 from pilot.tasks import Task, step
+from pilot.utils import cli_root
 
 
 @dataclass(kw_only=True)

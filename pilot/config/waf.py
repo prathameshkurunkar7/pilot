@@ -120,9 +120,7 @@ class WafConfig:
 
     def validate(self, nginx_max_body_size: str) -> None:
         if self.mode not in WAF_MODES:
-            raise ConfigError(
-                f"waf.mode '{self.mode}' is invalid. Must be one of: {', '.join(WAF_MODES)}."
-            )
+            raise ConfigError(f"waf.mode '{self.mode}' is invalid. Must be one of: {', '.join(WAF_MODES)}.")
         if not isinstance(self.paranoia, int) or not 1 <= self.paranoia <= 4:
             raise ConfigError(
                 f"waf.paranoia '{self.paranoia}' is invalid. Must be an integer between 1 and 4."
@@ -133,10 +131,10 @@ class WafConfig:
             )
         try:
             body_limit = parse_nginx_size(self.body_limit)
-        except ValueError:
+        except ValueError as exc:
             raise ConfigError(
                 f"waf.body_limit '{self.body_limit}' is not a valid size (e.g. '50m', '13107200')."
-            )
+            ) from exc
         # Coupling only matters when the WAF is on: a body larger than what
         # ModSecurity buffers would be proxied to the app uninspected.
         if self.enabled and body_limit < parse_nginx_size(nginx_max_body_size):
@@ -217,5 +215,5 @@ def _validate_source_ip_condition(prefix: str, cond: WafCondition) -> None:
     for entry in cond.value.split(","):
         try:
             ipaddress.ip_network(entry.strip(), strict=False)
-        except ValueError:
-            raise ConfigError(f"{prefix}.value '{entry.strip()}' is not a valid IP or CIDR range.")
+        except ValueError as exc:
+            raise ConfigError(f"{prefix}.value '{entry.strip()}' is not a valid IP or CIDR range.") from exc

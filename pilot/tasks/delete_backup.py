@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import ClassVar
 
-from pilot.tasks import Task, step
 from pilot.core.site import Site
 from pilot.core.site.backups import parse_backup_timestamp
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError
+from pilot.tasks import Task, step
 
 
 @dataclass(kw_only=True)
@@ -37,9 +37,7 @@ class DeleteBackupTask(Task):
             print(f"Deleted from S3: {filename}")
             return True
         except S3IntegrationError as e:
-            print(
-                f"Something seems wrong with s3 integration, skipping remote delete for {filename}: {e!s}"
-            )
+            print(f"Something seems wrong with s3 integration, skipping remote delete for {filename}: {e!s}")
             return False
 
     @step("delete", lambda self: f"Delete {len(self.filenames)} backup(s) for {self.site}")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shlex
@@ -12,10 +13,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
-from pilot.utils import cli_root
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.processes.definitions import ProcessDefinition, ProcessDefinitionBuilder
+from pilot.utils import cli_root
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -61,9 +62,7 @@ _RESET = "\033[0m"
 class ProcessManager:
     def __init__(self, bench: "Bench", watch_admin_js: bool | None = None) -> None:
         self.bench = bench
-        self.watch_admin_js = (
-            bench.config.watch_admin_js if watch_admin_js is None else watch_admin_js
-        )
+        self.watch_admin_js = bench.config.watch_admin_js if watch_admin_js is None else watch_admin_js
         self._procs: dict[str, subprocess.Popen] = {}
         self._stopping = False
 
@@ -146,8 +145,8 @@ class ProcessManager:
             self.pid_file.unlink(missing_ok=True)
             try:
                 os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                raise BenchError(f"Process {pid} is not running. Removed stale PID file.")
+            except ProcessLookupError as exc:
+                raise BenchError(f"Process {pid} is not running. Removed stale PID file.") from exc
             return
 
         # No pid file (e.g. pre-init setup wizard): stop by port.
@@ -158,10 +157,8 @@ class ProcessManager:
         if not pids:
             raise BenchError("Bench is not running.")
         for pid in pids:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
 
     def is_running(self) -> bool:
         if not self.pid_file.exists():
@@ -234,18 +231,14 @@ class ProcessManager:
 
     def _stop_all(self) -> None:
         for proc in self._procs.values():
-            try:
+            with contextlib.suppress(ProcessLookupError, OSError):
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            except (ProcessLookupError, OSError):
-                pass
         for proc in self._procs.values():
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                try:
+                with contextlib.suppress(ProcessLookupError, OSError):
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, OSError):
-                    pass
 
     def _cleanup_proc_pid_files(self) -> None:
         for name in self._procs:

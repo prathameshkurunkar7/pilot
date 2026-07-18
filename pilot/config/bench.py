@@ -2,7 +2,6 @@ import re
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import List
 
 from pilot.config.admin import AdminConfig
 from pilot.config.app import AppConfig
@@ -35,7 +34,7 @@ class BenchConfig:
     redis: RedisConfig
     workers: WorkerConfig
     postgres: PostgresConfig = field(default_factory=PostgresConfig)
-    apps: List[AppConfig] = field(default_factory=list)
+    apps: list[AppConfig] = field(default_factory=list)
     http_port: int = 8000
     socketio_port: int = 9000
     socketio_backend: str = "node"
@@ -157,9 +156,7 @@ class BenchConfig:
             raise ConfigError("bench.python is required and must not be empty.")
         for app in self.apps:
             if not app.name or not app.repo or not app.branch:
-                raise ConfigError(
-                    f"App '{app.name or '(unnamed)'}' must have name, repo, and branch."
-                )
+                raise ConfigError(f"App '{app.name or '(unnamed)'}' must have name, repo, and branch.")
             if app.branches and app.branch not in app.branches:
                 raise ConfigError(
                     f"App '{app.name}': active branch '{app.branch}' is not listed in branches {app.branches}."

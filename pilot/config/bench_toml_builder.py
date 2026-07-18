@@ -3,9 +3,10 @@ from __future__ import annotations
 import copy
 import tomllib
 from pathlib import Path
+from typing import ClassVar
 
-from pilot.config.bench_toml import dumps_config
 from pilot.config.bench import BenchConfig
+from pilot.config.bench_toml import dumps_config
 from pilot.config.worker import WorkerConfig, WorkerGroup
 
 # Wizard-editable flat key -> BenchConfig attribute path.
@@ -146,9 +147,7 @@ def _flatten(config: BenchConfig) -> dict:
     app = config.framework_app
     settings["app_repo"] = app.repo
     settings["app_branch"] = app.branch
-    settings["workers"] = [
-        {"queues": list(g.queues), "count": g.count} for g in config.workers.groups
-    ]
+    settings["workers"] = [{"queues": list(g.queues), "count": g.count} for g in config.workers.groups]
     settings["production_process_manager"] = config.production.process_manager or "none"
     return settings
 
@@ -156,7 +155,7 @@ def _flatten(config: BenchConfig) -> dict:
 class BenchTomlBuilder:
     """Translates flat wizard/settings input to BenchConfig."""
 
-    DEFAULTS = {
+    DEFAULTS: ClassVar[dict] = {
         key: value for key, value in _flatten(_default_config()).items() if key != "bench_name"
     }
 

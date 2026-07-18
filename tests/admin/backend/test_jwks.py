@@ -10,10 +10,10 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from jwt import PyJWKClient
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
+from admin.backend.auth import issue_token
 from admin.backend.internal import jwks
 from admin.backend.internal.jwks import verify_jwks_token
 from admin.backend.middleware import decode_session_token
-from admin.backend.auth import issue_token
 
 JWKS_URL = "https://issuer.example.com/.well-known/jwks.json"
 AUDIENCE = "bench-a"  # every bench binds remote tokens to its own audience
@@ -151,17 +151,14 @@ def test_session_decode_skips_jwks_when_unconfigured() -> None:
 
 def _client(tmp_path: Path):
     from admin.backend.app import create_app
-    from pilot.config import BenchConfig
+    from pilot.config import BenchConfig, BenchTomlStore
     from pilot.config.bench_toml_builder import BenchTomlBuilder
-    from pilot.config import BenchTomlStore
 
     bench_root = tmp_path / "benches" / "current"
     bench_root.mkdir(parents=True)
     toml_path = bench_root / "bench.toml"
     toml_path.write_text(
-        BenchTomlBuilder(
-            bench_root.name, {"admin_enabled": True, "admin_password": "secret"}
-        ).render()
+        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": "secret"}).render()
     )
     config = BenchConfig.from_file(toml_path)
     config.admin.jwt_secret = "local-secret"
@@ -226,9 +223,7 @@ def test_jwks_sid_login_without_exp_does_not_crash(tmp_path: Path) -> None:
 def test_jwks_site_scoped_token_cannot_bootstrap_session(tmp_path: Path) -> None:
     # A site-scoped token (even with a jti) must not escalate to a bench session.
     client = _client(tmp_path)
-    resp = client.post(
-        "/api/v1/session", json={"sid": _mint(jti="login-3", scope="site", site="a.com")}
-    )
+    resp = client.post("/api/v1/session", json={"sid": _mint(jti="login-3", scope="site", site="a.com")})
     assert resp.status_code == 401
 
 

@@ -48,9 +48,7 @@ def _make_cloned_app(bench_root: Path, name: str) -> None:
 def test_site_apps_includes_title_and_description(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site1.localhost", ["suite"])
-    _make_app(
-        bench_root, "suite", '[project]\nname = "suite"\ndescription = "A custom suite app"\n'
-    )
+    _make_app(bench_root, "suite", '[project]\nname = "suite"\ndescription = "A custom suite app"\n')
 
     client = _client(bench_root)
     response = client.get("/api/v1/sites/site1.localhost/apps")

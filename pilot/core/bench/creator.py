@@ -34,8 +34,8 @@ class BenchCreator:
         self.db_type = db_type
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> "Bench":
-        from pilot.config.bench_toml_builder import default_ports
         from pilot.config import BenchTomlStore
+        from pilot.config.bench_toml_builder import default_ports
         from pilot.core.bench import Bench
 
         bench_toml = self.target_directory / "bench.toml"
@@ -60,9 +60,7 @@ class BenchCreator:
         on_progress(f"\nBench '{self.name}' created at {self.target_directory}")
         on_progress("\nNext step:")
         on_progress("  bench start")
-        on_progress(
-            f"  Then open http://localhost:{admin_port} — the setup wizard takes it from there."
-        )
+        on_progress(f"  Then open http://localhost:{admin_port} — the setup wizard takes it from there.")
 
         return Bench(self.target_directory)
 
@@ -86,14 +84,10 @@ class BenchCreator:
     def _add_database_settings(self, settings: dict) -> None:
         if self.db_type == "mariadb":
             settings["mariadb_port"] = self._sibling_mariadb_port() or self._pick_mariadb_port()
-            settings["mariadb_password"] = self._sibling_mariadb_password() or secrets.token_hex(
-                nbytes=8
-            )
+            settings["mariadb_password"] = self._sibling_mariadb_password() or secrets.token_hex(nbytes=8)
         if self.db_type == "postgres":
             settings["postgres_port"] = self._sibling_postgres_port() or self._pick_postgres_port()
-            settings["postgres_password"] = self._sibling_postgres_password() or secrets.token_hex(
-                nbytes=8
-            )
+            settings["postgres_password"] = self._sibling_postgres_password() or secrets.token_hex(nbytes=8)
 
     def _add_production_settings(self, settings: dict) -> None:
         if self.process_manager:

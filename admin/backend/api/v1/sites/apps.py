@@ -4,20 +4,7 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request
 
-from pilot.core.bench import Bench
-from pilot.exceptions import BenchError
-from pilot.integrations.git import GitProviderError, resolve_app_name_from_repo
-from pilot.internal.site_paths import site_exists
-from pilot.internal.validators import validate_app_name
-from pilot.tasks.get_and_install_app import GetAndInstallAppTask
-from pilot.tasks.install_app import InstallAppTask
-from pilot.tasks.uninstall_app import UninstallAppTask
-
 from admin.backend.api.responses import accepted_task_response, error_response
-from admin.backend.middleware import require_scope
-
-from admin.backend.providers.apps import AppProvider
-from admin.backend.providers.sites import SiteProvider
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import (
     internal_error,
@@ -28,6 +15,17 @@ from admin.backend.api.v1.sites.shared import (
     task_failure,
     text_fields,
 )
+from admin.backend.middleware import require_scope
+from admin.backend.providers.apps import AppProvider
+from admin.backend.providers.sites import SiteProvider
+from pilot.core.bench import Bench
+from pilot.exceptions import BenchError
+from pilot.integrations.git import GitProviderError, resolve_app_name_from_repo
+from pilot.internal.site_paths import site_exists
+from pilot.internal.validators import validate_app_name
+from pilot.tasks.get_and_install_app import GetAndInstallAppTask
+from pilot.tasks.install_app import InstallAppTask
+from pilot.tasks.uninstall_app import UninstallAppTask
 
 
 @sites_bp.get("/<name>/apps")
@@ -93,9 +91,7 @@ def install_site_app(name: str):
     try:
         task_id = _submit_install_task(bench_root, name, app, repo, branch)
     except GitProviderError:
-        return error_response(
-            "invalid_repository", "Could not determine the application name.", 422
-        )
+        return error_response("invalid_repository", "Could not determine the application name.", 422)
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)

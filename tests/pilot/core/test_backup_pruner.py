@@ -5,13 +5,14 @@ from pilot.config import BackupConfig, SiteConfig
 from pilot.core.site import Site
 
 _RUNS = ["20260101_020000", "20260102_020000", "20260103_020000"]  # oldest → newest
+_FIFO_RETENTION = BackupConfig(scheme="fifo", keep_last=1)
 
 
 def _bench(tmp_path):
     return SimpleNamespace(sites_path=tmp_path / "sites")
 
 
-def _setup_site(bench, site, retention=BackupConfig(scheme="fifo", keep_last=1)):
+def _setup_site(bench, site, retention=_FIFO_RETENTION):
     site_dir = bench.sites_path / site
     backups = site_dir / "private" / "backups"
     backups.mkdir(parents=True)
@@ -73,7 +74,7 @@ def test_offsite_failure_keeps_local_and_is_not_reported(tmp_path) -> None:
 def test_prunes_with_gfs_scheme(tmp_path) -> None:
     """The pruner honours a GFS policy read from site_config, not just FIFO."""
     bench = _bench(tmp_path)
-    runs = [f"202601{day:02d}_020000" for day in range(1, 11)]  # 10 daily runs, Jan 1–10
+    runs = [f"202601{day:02d}_020000" for day in range(1, 11)]  # 10 daily runs, Jan 1-10
     backups = bench.sites_path / "site1" / "private" / "backups"
     backups.mkdir(parents=True)
     for ts in runs:

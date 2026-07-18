@@ -20,9 +20,7 @@ def _write_bench_toml(bench_dir: Path, name: str, **settings) -> None:
 
 def _write_raw_bench_toml(bench_dir: Path, name: str, admin_port: int) -> None:
     bench_dir.mkdir(parents=True, exist_ok=True)
-    (bench_dir / "bench.toml").write_text(
-        f'[bench]\nname = "{name}"\n\n[admin]\nport = {admin_port}\n'
-    )
+    (bench_dir / "bench.toml").write_text(f'[bench]\nname = "{name}"\n\n[admin]\nport = {admin_port}\n')
 
 
 def _client(bench_root: Path, password: str = "secret", **extra_settings):
@@ -276,9 +274,7 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
 
     with (
         patch("pilot.managers.processes.systemd.SystemdProcessManager.start_admin") as mock_admin,
-        patch(
-            "pilot.managers.processes.systemd.SystemdProcessManager.apply_unit_action"
-        ) as mock_apply,
+        patch("pilot.managers.processes.systemd.SystemdProcessManager.apply_unit_action") as mock_apply,
         patch("pilot.managers.nginx.NginxManager.generate_config") as mock_gen,
         patch("pilot.managers.nginx.NginxManager.install_config"),
         patch("pilot.managers.nginx.NginxManager.reload"),
@@ -444,9 +440,7 @@ def test_api_benches_create_requires_process_manager(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    resp = client.post(
-        "/api/v1/benches", json={"name": "fresh", "admin_domain": "fresh-admin.example.com"}
-    )
+    resp = client.post("/api/v1/benches", json={"name": "fresh", "admin_domain": "fresh-admin.example.com"})
 
     assert resp.status_code == 422
     assert "process manager" in resp.get_json()["error"]["message"].lower()
@@ -471,9 +465,7 @@ def test_api_benches_create_rejects_duplicate_admin_domain(tmp_path: Path) -> No
         '[bench]\nname = "other"\n\n[admin]\ndomain = "shared-admin.example.com"\n'
     )
 
-    resp = client.post(
-        "/api/v1/benches", json=_new_payload("fresh", admin_domain="shared-admin.example.com")
-    )
+    resp = client.post("/api/v1/benches", json=_new_payload("fresh", admin_domain="shared-admin.example.com"))
 
     assert resp.status_code == 409
     assert "already used by bench 'other'" in resp.get_json()["error"]["message"]
@@ -483,9 +475,7 @@ def test_api_benches_create_rejects_duplicate_name(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    with patch(
-        "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains", return_value=[]
-    ):
+    with patch("pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains", return_value=[]):
         resp = client.post("/api/v1/benches", json=_new_payload("current"))
 
     assert resp.status_code == 409
@@ -698,7 +688,7 @@ def test_api_benches_explicit_actions_return_updated_resource(tmp_path: Path) ->
             for action in ("start", "stop", "restart")
         }
 
-    for action, resp in responses.items():
+    for _action, resp in responses.items():
         assert resp.status_code == 200
         assert resp.get_json()["name"] == "prod-bench"
     assert [call.args[0] for call in run_action.call_args_list] == [
@@ -840,9 +830,7 @@ def test_reinstall_site_generates_new_admin_password(tmp_path: Path) -> None:
     assert response.status_code == 202
     assert body["command"] == "reinstall-site"
     assert body["args"] == {"site": "s.localhost", "admin_password": "[redacted]"}
-    secrets_payload = json.loads(
-        (bench_root / "tasks" / body["task_id"] / "secrets.json").read_text()
-    )
+    secrets_payload = json.loads((bench_root / "tasks" / body["task_id"] / "secrets.json").read_text())
     assert secrets_payload["admin_password"]
     assert secrets_payload["admin_password"] != "admin"
 

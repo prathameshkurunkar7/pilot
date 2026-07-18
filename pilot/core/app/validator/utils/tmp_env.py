@@ -34,13 +34,13 @@ class TmpEnv:
         except CommandError as exc:
             raise AppValidationError(
                 f"Failed to create temporary environment for validation:\n{exc.message}"
-            )
+            ) from exc
         try:
             self._pip_install([frappe_path])
         except CommandError as exc:
             raise AppValidationError(
                 f"Failed to install frappe into the validation env:\n{exc.message}"
-            )
+            ) from exc
         return self
 
     def install_app(self, app: "App", dependency_paths: Iterable[Path] = ()) -> None:
@@ -49,7 +49,7 @@ class TmpEnv:
         try:
             self._pip_install([*dependency_paths, app.path])
         except CommandError as exc:
-            raise AppValidationError(f"'{app.config.name}' failed to install:\n{exc.message}")
+            raise AppValidationError(f"'{app.config.name}' failed to install:\n{exc.message}") from exc
 
     def resolve_modules(self, module_names: list[str]) -> dict[str, str]:
         """Return {module: reason} for names that don't resolve via find_spec
@@ -59,7 +59,7 @@ class TmpEnv:
                 [str(self.path / "bin" / "python"), "-c", self._resolve_check_script(module_names)]
             )
         except CommandError as exc:
-            raise AppValidationError(f"Failed to check imports:\n{exc.message}")
+            raise AppValidationError(f"Failed to check imports:\n{exc.message}") from exc
         return json.loads(result.stdout)
 
     @staticmethod

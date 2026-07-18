@@ -56,9 +56,7 @@ class NginxSiteLocations:
                 f"        }}\n"
             )
         return (
-            "    location / {\n"
-            + redirect
-            + f"        proxy_pass         http://bench-{bench_name};\n"
+            "    location / {\n" + redirect + f"        proxy_pass         http://bench-{bench_name};\n"
             f"        proxy_read_timeout 120;\n"
             f"        proxy_redirect     off;\n"
             f"        proxy_set_header   Host               $host;\n"

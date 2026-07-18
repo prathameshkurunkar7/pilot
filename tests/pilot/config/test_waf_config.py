@@ -6,9 +6,8 @@ import tomllib
 
 import pytest
 
-from pilot.config import BenchConfig
+from pilot.config import WAF_MODES, BenchConfig, WafCondition, WafConfig, WafRule, parse_nginx_size
 from pilot.config.bench_toml import dumps_config as bench_config_to_toml
-from pilot.config import WAF_MODES, WafCondition, WafConfig, WafRule, parse_nginx_size
 from pilot.exceptions import ConfigError
 
 
@@ -240,9 +239,7 @@ def test_custom_rules_round_trip() -> None:
                 action="log",
                 match="any",
                 enabled=False,
-                conditions=[
-                    WafCondition(field="user_agent", operator="matches", value="(sqlmap|nikto).*")
-                ],
+                conditions=[WafCondition(field="user_agent", operator="matches", value="(sqlmap|nikto).*")],
             ),
         ]
     )

@@ -103,9 +103,7 @@ class Site:
 
         SiteApps(self).uninstall_apps(app_names, force, on_progress)
 
-    def _remove_app_if_not_on_any_site(
-        self, app_name: str, on_progress: Callable[[str], None]
-    ) -> None:
+    def _remove_app_if_not_on_any_site(self, app_name: str, on_progress: Callable[[str], None]) -> None:
         from pilot.core.site.apps import SiteApps
 
         SiteApps(self).remove_app_if_not_on_any_site(app_name, on_progress)
@@ -123,9 +121,7 @@ class Site:
         on_progress(f"\nSite '{self.config.name}' dropped.")
         NginxManager(self.bench).reload_for_site_change()
 
-    def rename_to(
-        self, new_name: str, on_progress: Callable[[str], None] = lambda message: None
-    ) -> None:
+    def rename_to(self, new_name: str, on_progress: Callable[[str], None] = lambda message: None) -> None:
         from pilot.core.site.rename import SiteRename
 
         SiteRename(self, new_name).run(on_progress)

@@ -10,15 +10,14 @@ from types import SimpleNamespace
 
 import pytest
 
+import pilot.internal.tasks.callbacks as callback_module
 import pilot.internal.tasks.runner as task_runner_module
 import pilot.internal.tasks.store as task_store_module
 import pilot.internal.tasks.wrapper as wrapper_module
-import pilot.internal.tasks.callbacks as callback_module
-from pilot.managers.task.reader import TaskReader
-from pilot.internal.tasks.wrapper import callback_handler, run_with_syslog_output
-from pilot.tasks import TaskRunner
 from pilot.exceptions import TaskConflictError, TaskNotFoundError, TaskNotRunningError
-
+from pilot.internal.tasks.wrapper import callback_handler, run_with_syslog_output
+from pilot.managers.task.reader import TaskReader
+from pilot.tasks import TaskRunner
 
 TASK_ID = "20260715-120000-aabbcc"
 

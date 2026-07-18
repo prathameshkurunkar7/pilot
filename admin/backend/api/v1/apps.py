@@ -8,8 +8,8 @@ from flask import Blueprint, current_app, jsonify, request
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.providers.apps import AppProvider
 from pilot.core.bench import Bench
-from pilot.internal.validators import validate_app_name, validate_repo_url
 from pilot.internal.git import GitRepo
+from pilot.internal.validators import validate_app_name, validate_repo_url
 from pilot.tasks.fetch_app_updates import FetchAppUpdatesTask
 from pilot.tasks.get_and_install_app import GetAndInstallAppTask
 from pilot.tasks.get_app import GetAppTask

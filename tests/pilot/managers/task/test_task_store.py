@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 import pilot.internal.tasks.files as task_files_module
-from pilot.managers.task.models import TaskStatus
-from pilot.internal.tasks.store import TaskStore
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
+from pilot.internal.tasks.store import TaskStore
+from pilot.managers.task.models import TaskStatus
 
 TASK_ID = "20260715-120000-aabbcc"
 

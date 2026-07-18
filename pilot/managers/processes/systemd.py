@@ -6,16 +6,15 @@ from pathlib import Path
 
 from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
-from pilot.utils import cli_root
-from pilot.managers.processes.local import ProcessDefinition
+from pilot.managers.platform import _privileged
 from pilot.managers.processes.base import (
     ManagedProcessManager,
     UnitGroup,
     override,
 )
-from pilot.managers.platform import _privileged
+from pilot.managers.processes.local import ProcessDefinition
 from pilot.managers.processes.systemd_render import SystemdRenderer
-from pilot.utils import run_command
+from pilot.utils import cli_root, run_command
 
 _ADMIN_IDLE_TIMEOUT = 60  # seconds of inactivity before socket-activated admin stops
 _SYSTEMCTL_TIMEOUT = 90
@@ -42,18 +41,14 @@ class SystemdProcessManager(ManagedProcessManager):
 
         target_file = self._target_name()
         for path in list(self.systemd_conf_dir.iterdir()):
-            if path.is_file() and (
-                path.suffix in (".service", ".socket") or path.name == target_file
-            ):
+            if path.is_file() and (path.suffix in (".service", ".socket") or path.name == target_file):
                 path.unlink()
 
         renderer = SystemdRenderer(self.bench.config.name)
         workload_units: list[str] = []
         for pd in self._prod_process_definitions():
             if pd.name == "admin":
-                (self.systemd_conf_dir / self._unit_name("admin")).write_text(
-                    self._admin_service_text()
-                )
+                (self.systemd_conf_dir / self._unit_name("admin")).write_text(self._admin_service_text())
                 (self.systemd_conf_dir / self._admin_socket_name()).write_text(
                     renderer.admin_socket(self.bench.config.admin.internal_port)
                 )
@@ -80,9 +75,7 @@ class SystemdProcessManager(ManagedProcessManager):
             if not dst.is_symlink():
                 continue
             try:
-                points_to_bench = (
-                    dst.resolve(strict=False).parent == self.systemd_conf_dir.resolve()
-                )
+                points_to_bench = dst.resolve(strict=False).parent == self.systemd_conf_dir.resolve()
             except OSError:
                 continue
             if points_to_bench and dst.name not in units:
@@ -138,9 +131,7 @@ class SystemdProcessManager(ManagedProcessManager):
             # A listening socket counts as reachable (socket-activated).
             for unit in (self._admin_socket_name(), self._unit_name("admin")):
                 try:
-                    result = subprocess.run(
-                        self._systemctl("is-active", unit), capture_output=True, env=env
-                    )
+                    result = subprocess.run(self._systemctl("is-active", unit), capture_output=True, env=env)
                 except FileNotFoundError:
                     return False
                 if result.returncode == 0:
@@ -232,21 +223,15 @@ class SystemdProcessManager(ManagedProcessManager):
         elif action == "restart":
             service = self._unit_name("admin")
             if (self.user_unit_dir / service).exists():
-                subprocess.run(
-                    self._systemctl("reset-failed", service), capture_output=True, env=env
-                )
-                run_command(
-                    self._systemctl("restart", service), env=env, timeout=_SYSTEMCTL_TIMEOUT
-                )
+                subprocess.run(self._systemctl("reset-failed", service), capture_output=True, env=env)
+                run_command(self._systemctl("restart", service), env=env, timeout=_SYSTEMCTL_TIMEOUT)
 
     def _activate_admin_socket(self, env: dict) -> None:
         # Stop the service first: a stale port hold would make the new socket 502.
         socket = self._admin_socket_name()
         service = self._unit_name("admin")
         subprocess.run(self._systemctl("stop", service), capture_output=True, env=env)
-        subprocess.run(
-            self._systemctl("reset-failed", socket, service), capture_output=True, env=env
-        )
+        subprocess.run(self._systemctl("reset-failed", socket, service), capture_output=True, env=env)
         run_command(self._systemctl("enable", socket), env=env, timeout=_SYSTEMCTL_TIMEOUT)
         run_command(self._systemctl("restart", socket), env=env, timeout=_SYSTEMCTL_TIMEOUT)
 

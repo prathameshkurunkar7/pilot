@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from pilot.integrations.marketplace import Marketplace, Resolver
 from pilot.exceptions import AppNotFoundError, BenchError, DependencyResolutionError
+from pilot.integrations.marketplace import Marketplace, Resolver
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -31,14 +31,14 @@ class AppDependencyInstaller:
     def _find_resolver(self) -> Resolver | None:
         try:
             return Marketplace(self.bench).find_app(self.app.config.name)
-        except AppNotFoundError:
+        except AppNotFoundError as exc:
             missing = self._missing_required_apps()
             if missing:
                 raise BenchError(
                     f"'{self.app.config.name}' isn't in the marketplace registry, so its "
                     f"dependencies can't be installed automatically. It requires {missing} "
                     "— run 'bench get-app <repo>' for each of them first, then retry."
-                )
+                ) from exc
             return None
 
     def _install_missing(self, resolver: Resolver, on_progress: Callable[[str], None]) -> None:
@@ -62,9 +62,7 @@ class AppDependencyInstaller:
             on_progress(f"Installing dependency '{dep.app}'...")
             # transitive deps already handled by earlier entries in the chain
             dependency = App(AppConfig(name=dep.app, repo=dep.repo, branch=dep.target), self.bench)
-            dependency.install(
-                install_dependencies=False, skip_validations=True, on_progress=on_progress
-            )
+            dependency.install(install_dependencies=False, skip_validations=True, on_progress=on_progress)
 
     def _dependency_apps(self, resolver: Resolver) -> list["App"]:
         try:

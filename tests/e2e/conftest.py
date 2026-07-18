@@ -6,9 +6,8 @@ import os
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Browser, BrowserContext, Page, expect
-
 from harness.bench import Bench
+from playwright.sync_api import Browser, BrowserContext, Page, expect
 
 HERE = Path(__file__).resolve().parent
 RESULTS_DIR = HERE / "test-results"

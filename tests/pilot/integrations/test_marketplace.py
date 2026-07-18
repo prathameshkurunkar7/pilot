@@ -4,8 +4,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pilot.integrations.marketplace import Marketplace, Resolver
+
 from pilot.exceptions import BenchError
+from pilot.integrations.marketplace import Marketplace, Resolver
 
 
 def make_resolver(
@@ -101,17 +102,13 @@ def test_to_dict_includes_categories():
 
 
 def test_resolve_raises_for_non_installable_app():
-    r = make_resolver(
-        is_installable=False, frappe_version="14.0.0", required_version=">=15.0.0,<16.0.0"
-    )
+    r = make_resolver(is_installable=False, frappe_version="14.0.0", required_version=">=15.0.0,<16.0.0")
     with pytest.raises(BenchError, match="not compatible"):
         r.resolve()
 
 
 def test_resolve_error_message_contains_version_info():
-    r = make_resolver(
-        is_installable=False, frappe_version="14.0.0", required_version=">=15.0.0,<16.0.0"
-    )
+    r = make_resolver(is_installable=False, frappe_version="14.0.0", required_version=">=15.0.0,<16.0.0")
     with pytest.raises(BenchError) as exc:
         r.resolve()
     msg = str(exc.value)
@@ -142,9 +139,7 @@ def test_resolve_installs_dependency_before_root():
 def test_resolve_deep_chain_order():
     # erpnext → payments → stripe_integration
     stripe = make_resolver(app="stripe_integration", version="1.0.0")
-    payments = make_resolver(
-        app="payments", version="1.0.0", dependencies={"stripe_integration": ">=1.0.0"}
-    )
+    payments = make_resolver(app="payments", version="1.0.0", dependencies={"stripe_integration": ">=1.0.0"})
     erpnext = make_resolver(app="erpnext", version="15.0.0", dependencies={"payments": ">=1.0.0"})
     inject_registry(erpnext, [payments, stripe])
 
@@ -346,8 +341,7 @@ def make_marketplace(frappe_version: str, registry: list | None = None) -> Marke
             return_value=json.dumps(registry or SAMPLE_REGISTRY),
         ),
     ):
-        mp = Marketplace(bench)
-    return mp
+        return Marketplace(bench)
 
 
 def test_parse_registry_tolerates_bad_frappe_core():

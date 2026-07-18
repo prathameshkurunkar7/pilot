@@ -103,8 +103,7 @@ class BenchSettings:
 
 def needs_restart(old: dict, new: dict) -> bool:
     return any(
-        old.get(section, {}).get(key) != new.get(section, {}).get(key)
-        for section, key in _RESTART_KEYS
+        old.get(section, {}).get(key) != new.get(section, {}).get(key) for section, key in _RESTART_KEYS
     )
 
 
@@ -118,8 +117,7 @@ def firewall_payload(config: BenchConfig) -> dict:
         "enabled": firewall.enabled,
         "default": firewall.default,
         "rules": [
-            {"ip": rule.ip, "action": rule.action, "description": rule.description}
-            for rule in firewall.rules
+            {"ip": rule.ip, "action": rule.action, "description": rule.description} for rule in firewall.rules
         ],
     }
 

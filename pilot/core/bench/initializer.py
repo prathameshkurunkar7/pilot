@@ -71,9 +71,7 @@ class BenchInitializer:
                 fn()
             except Exception as e:
                 on_progress(f"    Warning: rollback step failed — {e}")
-        on_progress(
-            "\nRollback complete. bench.toml is preserved — fix the issue and run init again."
-        )
+        on_progress("\nRollback complete. bench.toml is preserved — fix the issue and run init again.")
 
     def _remove_bench_dirs(self) -> None:
         for name in _BENCH_DIRS:
@@ -90,9 +88,7 @@ class BenchInitializer:
         python_env_manager.ensure_python()
         python_env_manager.create_venv()
 
-    def _install_framework_apps(
-        self, python_env_manager, on_progress: Callable[[str], None]
-    ) -> None:
+    def _install_framework_apps(self, python_env_manager, on_progress: Callable[[str], None]) -> None:
         for app in self.bench.init_apps():
             if not app.is_cloned:
                 on_progress(f"  Cloning {app.config.name}...")
@@ -132,8 +128,8 @@ class BenchInitializer:
 
     def _install_system_packages(self) -> None:
         from pilot.managers.environment import PythonEnvManager
-        from pilot.managers.redis import RedisManager
         from pilot.managers.packages import get_package_manager
+        from pilot.managers.redis import RedisManager
 
         pkg = get_package_manager()
 

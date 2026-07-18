@@ -169,8 +169,7 @@ def test_get_from_supervisor_parses_output(tmp_path: Path) -> None:
     supervisor._supervisorctl.return_value = ["supervisorctl", "-c", "/path/to/supervisord.conf"]
 
     stdout = (
-        "test-bench:test-bench-web  RUNNING  pid 111, uptime 0:05:00\n"
-        "test-bench:test-bench-worker  STOPPED\n"
+        "test-bench:test-bench-web  RUNNING  pid 111, uptime 0:05:00\ntest-bench:test-bench-worker  STOPPED\n"
     )
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(stdout=stdout)
@@ -267,34 +266,48 @@ def _patch_managers(systemd_running: bool, supervisor_running: bool):
 def test_get_all_routes_to_systemd_when_running(tmp_path: Path) -> None:
     provider = make_provider(tmp_path)
     p_cfg, p_bench, p_systemd, p_supervisor, mock_systemd, _ = _patch_managers(True, False)
-    with p_cfg, p_bench, p_systemd, p_supervisor:
-        with patch.object(provider, "get_from_systemd", return_value=[]) as mock_read:
-            provider.get_all()
+    with (
+        p_cfg,
+        p_bench,
+        p_systemd,
+        p_supervisor,
+        patch.object(provider, "get_from_systemd", return_value=[]) as mock_read,
+    ):
+        provider.get_all()
     mock_read.assert_called_once_with(mock_systemd)
 
 
 def test_get_all_skips_supervisor_when_systemd_running(tmp_path: Path) -> None:
     provider = make_provider(tmp_path)
     p_cfg, p_bench, p_systemd, p_supervisor, _, mock_supervisor = _patch_managers(True, False)
-    with p_cfg, p_bench, p_systemd, p_supervisor:
-        with patch.object(provider, "get_from_systemd", return_value=[]):
-            provider.get_all()
+    with p_cfg, p_bench, p_systemd, p_supervisor, patch.object(provider, "get_from_systemd", return_value=[]):
+        provider.get_all()
     mock_supervisor.is_running.assert_not_called()
 
 
 def test_get_all_routes_to_supervisor_when_systemd_not_running(tmp_path: Path) -> None:
     provider = make_provider(tmp_path)
     p_cfg, p_bench, p_systemd, p_supervisor, _, mock_supervisor = _patch_managers(False, True)
-    with p_cfg, p_bench, p_systemd, p_supervisor:
-        with patch.object(provider, "get_from_supervisor", return_value=[]) as mock_read:
-            provider.get_all()
+    with (
+        p_cfg,
+        p_bench,
+        p_systemd,
+        p_supervisor,
+        patch.object(provider, "get_from_supervisor", return_value=[]) as mock_read,
+    ):
+        provider.get_all()
     mock_read.assert_called_once_with(mock_supervisor)
 
 
 def test_get_all_falls_back_to_pids_when_no_manager_running(tmp_path: Path) -> None:
     provider = make_provider(tmp_path)
     p_cfg, p_bench, p_systemd, p_supervisor, _, _ = _patch_managers(False, False)
-    with p_cfg, p_bench, p_systemd, p_supervisor:
-        with patch.object(provider, "get_from_pids", return_value=[]) as mock_read:
-            provider.get_all()
+    with (
+        p_cfg,
+        p_bench,
+        p_systemd,
+        p_supervisor,
+        patch.object(provider, "get_from_pids", return_value=[]) as mock_read,
+    ):
+        provider.get_all()
     mock_read.assert_called_once()

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pilot.exceptions import TaskConflictError
-
 from admin.backend.api.responses import error_response
+from pilot.exceptions import TaskConflictError
 
 
 def site_name(kwargs: dict) -> str:

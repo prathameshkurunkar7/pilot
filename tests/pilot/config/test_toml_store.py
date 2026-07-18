@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.config import BenchTomlStore
+from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.exceptions import ConfigError
 from pilot.internal.atomic_file import exclusive_file_lock
 
@@ -133,9 +133,7 @@ def test_write_fsyncs_file_and_parent_directory(
         events.append("replace")
         real_replace(source, destination)
 
-    monkeypatch.setattr(
-        "pilot.internal.atomic_file.os.fsync", lambda descriptor: events.append("fsync")
-    )
+    monkeypatch.setattr("pilot.internal.atomic_file.os.fsync", lambda descriptor: events.append("fsync"))
     monkeypatch.setattr("pilot.internal.atomic_file.os.replace", replace)
 
     store.write(config)
@@ -181,10 +179,12 @@ def test_concurrent_raw_edits_preserve_both_updates(tmp_path: Path) -> None:
 def test_nonblocking_lock_fails_when_another_thread_holds_it(tmp_path: Path) -> None:
     target = tmp_path / "operation"
 
-    with exclusive_file_lock(target):
-        with pytest.raises(BlockingIOError):
-            with exclusive_file_lock(target, blocking=False):
-                pass
+    with (
+        exclusive_file_lock(target),
+        pytest.raises(BlockingIOError),
+        exclusive_file_lock(target, blocking=False),
+    ):
+        pass
 
 
 def test_unchanged_transaction_does_not_replace_config(

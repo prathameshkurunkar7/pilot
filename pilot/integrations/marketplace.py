@@ -67,7 +67,7 @@ class Resolver:
         result: list["Resolver"],
     ):
         if app in path:
-            cycle = " -> ".join(path[path.index(app) :] + [app])
+            cycle = " -> ".join([*path[path.index(app) :], app])
             raise DependencyResolutionError(f"Circular dependency detected: {cycle}")
         if app in visited:
             if required_spec and Version(visited[app]) not in SpecifierSet(required_spec):
@@ -193,9 +193,7 @@ class Marketplace:
             best_match = compatible_targets[0] if compatible_targets else None
             display_target = best_match or (targets[0] if targets else {})
 
-            resolvers.append(
-                self._make_resolver(app, display_target, is_installable=bool(best_match))
-            )
+            resolvers.append(self._make_resolver(app, display_target, is_installable=bool(best_match)))
 
             if compatible_targets:
                 dependency_lookup[app["name"]] = [

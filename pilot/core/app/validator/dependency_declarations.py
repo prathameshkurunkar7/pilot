@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import ast
-import typing
-
 import tomllib
+import typing
 
 from pilot.core.app.validator.base import module_path
 from pilot.exceptions import AppValidationError
@@ -43,16 +42,16 @@ class DependencyDeclarationsCheck:
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign):
                 for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "required_apps":
-                        if isinstance(node.value, (ast.List, ast.Tuple)):
-                            return [
-                                # Entries may be "org/app" (any org, not just
-                                # "frappe/") or a bare app name — pyproject.toml
-                                # keys are always just the bare app name.
-                                elt.value.rsplit("/", 1)[-1]
-                                for elt in node.value.elts
-                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
-                            ]
+                    if (
+                        isinstance(target, ast.Name)
+                        and target.id == "required_apps"
+                        and isinstance(node.value, (ast.List, ast.Tuple))
+                    ):
+                        return [
+                            elt.value.rsplit("/", 1)[-1]
+                            for elt in node.value.elts
+                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                        ]
         return []
 
     def _get_pyproject_required_apps(self, app: "App") -> list[str]:
@@ -62,9 +61,7 @@ class DependencyDeclarationsCheck:
         with open(pyproject_path, "rb") as f:
             pyproject_data = tomllib.load(f)
 
-        declared_dependencies = (
-            pyproject_data.get("tool", {}).get("bench", {}).get("frappe-dependencies", [])
-        )
+        declared_dependencies = pyproject_data.get("tool", {}).get("bench", {}).get("frappe-dependencies", [])
 
         if isinstance(declared_dependencies, dict):
             return list(declared_dependencies.keys())

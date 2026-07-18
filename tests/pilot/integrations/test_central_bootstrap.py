@@ -7,9 +7,8 @@ from unittest.mock import patch
 import pytest
 
 from pilot.config.toml_store import BenchTomlStore
-from pilot.integrations.central import CentralClientError
-from pilot.integrations.central import enroll_if_needed, seed, seed_from_metadata
-from tests.pilot.integrations.test_central_client import _FakeResponse, _bench
+from pilot.integrations.central import CentralClientError, enroll_if_needed, seed, seed_from_metadata
+from tests.pilot.integrations.test_central_client import _bench, _FakeResponse
 
 _ENROLL_RESULT = {
     "auth_token": "pilot-token-abc",
@@ -46,9 +45,7 @@ def test_enroll_exchanges_seed_and_persists_credential_and_jwks(tmp_path: Path) 
         captured["headers"] = dict(request.headers)
         return _FakeResponse({"message": _ENROLL_RESULT})
 
-    with patch(
-        "pilot.integrations.central.bootstrap.urllib.request.urlopen", side_effect=fake_urlopen
-    ):
+    with patch("pilot.integrations.central.bootstrap.urllib.request.urlopen", side_effect=fake_urlopen):
         enrolled = enroll_if_needed(bench)
 
     assert enrolled is True
@@ -138,11 +135,13 @@ def test_enroll_rejects_an_incomplete_response(tmp_path: Path) -> None:
     _seed(bench)
     incomplete = {"auth_token": "t"}  # no jwks_url / audience_id
 
-    with patch(
-        "pilot.integrations.central.bootstrap.urllib.request.urlopen",
-        return_value=_FakeResponse({"message": incomplete}),
+    with (
+        patch(
+            "pilot.integrations.central.bootstrap.urllib.request.urlopen",
+            return_value=_FakeResponse({"message": incomplete}),
+        ),
+        pytest.raises(CentralClientError, match="missing"),
     ):
-        with pytest.raises(CentralClientError, match="missing"):
-            enroll_if_needed(bench)
+        enroll_if_needed(bench)
 
     assert bench.config.central.auth_token == ""

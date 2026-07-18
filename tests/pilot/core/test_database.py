@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pilot.config import BenchConfig, MariaDBConfig, PostgresConfig, RedisConfig, WorkerConfig, WorkerGroup
 from pilot.core.database import (
     MariaDB,
     PostgreSQL,
@@ -16,11 +17,6 @@ from pilot.core.database import (
     make_site_database,
 )
 from pilot.exceptions import DatabaseError
-from pilot.config import BenchConfig
-from pilot.config import MariaDBConfig
-from pilot.config import PostgresConfig
-from pilot.config import RedisConfig
-from pilot.config import WorkerConfig, WorkerGroup
 
 
 def _bench_config(db_type: str = "mariadb") -> BenchConfig:

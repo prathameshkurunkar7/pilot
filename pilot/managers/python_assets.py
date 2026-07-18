@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -8,8 +9,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.utils import extract_tar_archive
-from pilot.utils import get_yarn_bin, git_has_local_changes, run_command
+from pilot.utils import extract_tar_archive, get_yarn_bin, git_has_local_changes, run_command
 
 if TYPE_CHECKING:
     from pilot.core.app import App
@@ -71,9 +71,7 @@ class PythonAssetBuilder:
         """Run yarn install when node_modules is missing or yarn.lock changed."""
         integrity = path / "node_modules" / ".yarn-integrity"
         lock = path / "yarn.lock"
-        if integrity.exists() and (
-            not lock.exists() or lock.stat().st_mtime <= integrity.stat().st_mtime
-        ):
+        if integrity.exists() and (not lock.exists() or lock.stat().st_mtime <= integrity.stat().st_mtime):
             return
         app_name = path.name
         print(f"  Installing JS dependencies for {app_name}...")
@@ -209,9 +207,7 @@ class PythonAssetBuilder:
     def merge_json(path: Path, new_entries: dict) -> None:
         existing: dict = {}
         if path.exists():
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 existing = json.loads(path.read_text())
-            except json.JSONDecodeError:
-                pass
         existing.update(new_entries)
         path.write_text(json.dumps(existing, indent="\t", sort_keys=True) + "\n")

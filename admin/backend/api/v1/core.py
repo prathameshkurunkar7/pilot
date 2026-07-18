@@ -7,6 +7,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, g, jsonify, request, url_for
 
 from admin.backend.api.responses import created_response, error_response, no_content_response
+from admin.backend.api.v1.setup import wizard_marker_path
 from admin.backend.middleware import (
     allow_unauthenticated,
     authenticate_request,
@@ -14,12 +15,10 @@ from admin.backend.middleware import (
     rate_limit,
     set_session_cookie,
 )
-from pilot.managers.task import TaskActivityReader
-from admin.backend.api.v1.setup import wizard_marker_path
-from pilot.config import BenchConfig
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig, BenchTomlStore
 from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.platform import native_process_manager
+from pilot.managers.task import TaskActivityReader
 
 core_bp = Blueprint("core", __name__)
 

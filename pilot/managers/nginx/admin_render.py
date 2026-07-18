@@ -53,11 +53,7 @@ class NginxAdminConfigRenderer:
             f"server {{\n"
             f"    listen {http_port};\n"
             f"    listen [::]:{http_port};\n"
-            f"    server_name {domain};\n\n"
-            + self.security_trio
-            + self.acme_location
-            + proxy_block
-            + "}\n"
+            f"    server_name {domain};\n\n" + self.security_trio + self.acme_location + proxy_block + "}\n"
         )
 
     def _render_https_redirect_block(self, http_port: int, domain: str) -> str:
@@ -65,10 +61,7 @@ class NginxAdminConfigRenderer:
             f"server {{\n"
             f"    listen {http_port};\n"
             f"    listen [::]:{http_port};\n"
-            f"    server_name {domain};\n\n"
-            + self.security_trio
-            + self.acme_location
-            + "    location / {\n"
+            f"    server_name {domain};\n\n" + self.security_trio + self.acme_location + "    location / {\n"
             "        return 301 https://$host$request_uri;\n"
             "    }\n"
             "}\n\n"

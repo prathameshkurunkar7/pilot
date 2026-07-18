@@ -2,11 +2,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from pilot.tasks import backup_site as mod
-from pilot.tasks.backup_site import BackupSiteTask
 from pilot.config import SiteConfig
 from pilot.core.bench.audit_log import AuditLog
 from pilot.core.site import Site
+from pilot.tasks import backup_site as mod
+from pilot.tasks.backup_site import BackupSiteTask
 
 
 def _task(tmp_path):

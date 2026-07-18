@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import subprocess
@@ -10,12 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from pilot.internal.tasks import callbacks as callback_module
 from pilot.exceptions import TaskConflictError, TaskNotRunningError
-from pilot.managers.task.models import TaskStatus
+from pilot.internal.tasks import callbacks as callback_module
 from pilot.internal.tasks.process import TaskProcess, TaskProcessRecord
 from pilot.internal.tasks.process_identity import ProcessInspector
 from pilot.internal.tasks.store import TaskStore
+from pilot.managers.task.models import TaskStatus
 from pilot.tasks import TaskRunner
 
 TASK_ID = "20260715-120000-aabbcc"
@@ -64,10 +65,8 @@ def start_owned_process(
 def stop_process_group(process: subprocess.Popen) -> None:
     if process.poll() is not None:
         return
-    try:
+    with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
     process.wait(timeout=5)
 
 

@@ -17,9 +17,7 @@ class NewSiteCommand(Command):
 
     site_name: Annotated[str, Arg(help="Site name (e.g. site2.localhost).", metavar="name")]
     admin_password: Annotated[str, Arg(help="Frappe admin password.")] = "admin"
-    apps: Annotated[list[str] | None, Arg(help="Apps to assign (defaults to framework app).")] = (
-        None
-    )
+    apps: Annotated[list[str] | None, Arg(help="Apps to assign (defaults to framework app).")] = None
     db_type: Annotated[str | None, Arg(cli=False)] = None
 
     def __post_init__(self) -> None:

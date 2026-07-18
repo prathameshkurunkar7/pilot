@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from datetime import UTC
 from functools import lru_cache
 from pathlib import Path
 
@@ -10,8 +11,7 @@ import psutil
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
-from pilot.config import BenchConfig
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig, BenchTomlStore
 
 stats_bp = Blueprint("stats", __name__)
 
@@ -97,12 +97,10 @@ def _path_sizes(bench_root: Path, config: BenchConfig) -> list[dict]:
 
 
 def _log_file_info(description: str, path: Path) -> dict:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     if path.exists():
-        last_modified = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(
-            timespec="seconds"
-        )
+        last_modified = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat(timespec="seconds")
     else:
         last_modified = None
     return {"description": description, "path": str(path), "last_modified": last_modified}
@@ -110,8 +108,7 @@ def _log_file_info(description: str, path: Path) -> dict:
 
 @stats_bp.get("/monitor/status")
 def get_monitor_status():
-    from pilot.config import MonitorConfig
-    from pilot.config import BenchTomlStore
+    from pilot.config import BenchTomlStore, MonitorConfig
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
@@ -162,8 +159,8 @@ def get_waf_analytics():
 
 @stats_bp.get("/system")
 def system_info():
-    from pilot.managers.platform import kernel_version, os_version
     from admin.backend.providers.os import OSProvider
+    from pilot.managers.platform import kernel_version, os_version
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
     config = BenchTomlStore.for_bench(bench_root).read()

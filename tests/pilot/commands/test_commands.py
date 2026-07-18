@@ -8,11 +8,7 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-from pilot.config import AppConfig
-from pilot.config import BenchConfig
-from pilot.config import MariaDBConfig
-from pilot.config import RedisConfig
-from pilot.config import WorkerConfig, WorkerGroup
+from pilot.config import AppConfig, BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchAlreadyExistsError, BenchError
 
@@ -21,9 +17,7 @@ def make_bench(tmp_path: Path) -> Bench:
     config = BenchConfig(
         name="test-bench",
         python_version="3.14",
-        apps=[
-            AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")
-        ],
+        apps=[AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")],
         mariadb=MariaDBConfig(root_password="root"),
         redis=RedisConfig(cache_port=13000, queue_port=11000),
         workers=WorkerConfig(
@@ -37,9 +31,7 @@ def make_bench(tmp_path: Path) -> Bench:
     return Bench(config, tmp_path)
 
 
-def test_new_command_creates_directory_and_toml(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_new_command_creates_directory_and_toml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.commands.bench.create import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
@@ -62,9 +54,7 @@ def test_new_command_raises_if_bench_already_exists(tmp_path: Path) -> None:
         NewCommand(target_directory=target, bench_name="my-bench").run()
 
 
-def test_new_command_creates_benches_dir_if_missing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_new_command_creates_benches_dir_if_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.commands.bench.create import NewCommand
 
     monkeypatch.setattr("builtins.input", lambda _: "")
@@ -74,9 +64,7 @@ def test_new_command_creates_benches_dir_if_missing(
     assert target.parent.is_dir()
 
 
-def test_new_command_first_bench_uses_default_ports(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_new_command_first_bench_uses_default_ports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench.creator import BenchCreator
 
@@ -91,9 +79,7 @@ def test_new_command_first_bench_uses_default_ports(
     assert data["admin"]["port"] == 7000
 
 
-def test_new_command_second_bench_gets_next_offset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_new_command_second_bench_gets_next_offset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Every port field must shift by the same offset — a regression guard
     for a bug where admin_port got the offset applied twice."""
     from pilot.commands.bench.create import NewCommand
@@ -120,8 +106,8 @@ def test_new_command_inherits_sibling_jwks_url_and_audience(
     """The remote JWKS issuer is server-wide, so a new bench carries both the
     URL and the audience forward from a sibling that already trusts one."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.core.bench.creator import BenchCreator
     from pilot.config import BenchTomlStore
+    from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
@@ -141,9 +127,7 @@ def test_new_command_inherits_sibling_jwks_url_and_audience(
     assert inherited["jwks_audience"] == "bench-fleet"
 
 
-def test_new_command_first_bench_has_no_jwks_url(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_new_command_first_bench_has_no_jwks_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench.creator import BenchCreator
 
@@ -201,12 +185,8 @@ def test_new_command_postgres_port_is_not_offset_between_benches(
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     benches_dir = tmp_path / "benches"
-    NewCommand(
-        target_directory=benches_dir / "first", bench_name="first", database="postgres"
-    ).run()
-    NewCommand(
-        target_directory=benches_dir / "second", bench_name="second", database="postgres"
-    ).run()
+    NewCommand(target_directory=benches_dir / "first", bench_name="first", database="postgres").run()
+    NewCommand(target_directory=benches_dir / "second", bench_name="second", database="postgres").run()
 
     with open(benches_dir / "second" / "bench.toml", "rb") as f:
         data = tomllib.load(f)
@@ -225,9 +205,7 @@ def test_new_command_postgres_port_ignores_live_scan_on_macos(
     # 5432 reads as live, which would normally push the picker to 5433+.
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: port == 5432))
     with patch("pilot.managers.platform.is_macos", return_value=True):
-        NewCommand(
-            target_directory=tmp_path / "benches" / "pg", bench_name="pg", database="postgres"
-        ).run()
+        NewCommand(target_directory=tmp_path / "benches" / "pg", bench_name="pg", database="postgres").run()
 
     with open(tmp_path / "benches" / "pg" / "bench.toml", "rb") as f:
         data = tomllib.load(f)
@@ -310,9 +288,7 @@ def test_new_command_second_mariadb_bench_inherits_password(
     assert second["mariadb"]["root_password"] == first["mariadb"]["root_password"]
 
 
-def test_new_command_skips_offset_with_live_port(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_new_command_skips_offset_with_live_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An orphaned process holding a port with no matching bench.toml must
     also be avoided, not just offsets already on disk."""
     from pilot.commands.bench.create import NewCommand
@@ -501,9 +477,7 @@ def test_remove_app_full_flow_no_sites(tmp_path: Path) -> None:
         cmd.run()
 
     assert not app_dir.exists()
-    remaining = [
-        line for line in (bench.sites_path / "apps.txt").read_text().splitlines() if line.strip()
-    ]
+    remaining = [line for line in (bench.sites_path / "apps.txt").read_text().splitlines() if line.strip()]
     assert "erpnext" not in remaining
 
 
@@ -528,9 +502,11 @@ def test_uninstall_app_raises_if_app_not_installed(tmp_path: Path) -> None:
     (site_dir / "site_config.json").write_text("{}")
 
     cmd = UninstallAppCommand(bench, site_name="site1.localhost", app_names=["myapp"])
-    with patch("pilot.core.site.Site.list_apps", return_value=["frappe"]):
-        with pytest.raises(BenchError, match="not installed"):
-            cmd.run()
+    with (
+        patch("pilot.core.site.Site.list_apps", return_value=["frappe"]),
+        pytest.raises(BenchError, match="not installed"),
+    ):
+        cmd.run()
 
 
 def test_uninstall_app_calls_site_uninstall_when_installed(tmp_path: Path) -> None:
@@ -609,10 +585,12 @@ def test_build_command_default_uses_prebuilt_per_app(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
 
-    with patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as mock_build:
-        with patch.object(bench, "apps", return_value=[]):
-            BuildCommand(bench).run()
-            mock_build.assert_not_called()  # no apps → nothing called
+    with (
+        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as mock_build,
+        patch.object(bench, "apps", return_value=[]),
+    ):
+        BuildCommand(bench).run()
+        mock_build.assert_not_called()
 
 
 def test_requirements_skips_app_without_python_setup_files(tmp_path: Path) -> None:
@@ -694,11 +672,13 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
     (app_dir / ".git").mkdir()
     (app_dir / "package.json").write_text('{"name": "myapp"}\n')
 
-    with patch("pilot.utils.get_yarn_bin", return_value="yarn"):
-        with patch("pilot.utils.run_command") as mock_rc:
-            BenchRuntime(bench)._install_js_requirements(lambda _message: None)
-            mock_rc.assert_called_once()
-            assert mock_rc.call_args[0][0] == ["yarn", "install"]
+    with (
+        patch("pilot.utils.get_yarn_bin", return_value="yarn"),
+        patch("pilot.utils.run_command") as mock_rc,
+    ):
+        BenchRuntime(bench)._install_js_requirements(lambda _message: None)
+        mock_rc.assert_called_once()
+        assert mock_rc.call_args[0][0] == ["yarn", "install"]
 
 
 def test_upgrade_command_installs_admin_python_deps() -> None:
@@ -712,9 +692,7 @@ def test_upgrade_command_installs_admin_python_deps() -> None:
     ):
         UpgradeCommand().run()
 
-    mock_run_command.assert_called_once_with(
-        ["git", "-C", "/tmp/pilot", "pull"], stream_output=True
-    )
+    mock_run_command.assert_called_once_with(["git", "-C", "/tmp/pilot", "pull"], stream_output=True)
     mock_admin_env.assert_called_once_with(Path("/tmp/pilot"))
     mock_admin_env.return_value.install_python_deps.assert_called_once_with()
 
@@ -761,9 +739,9 @@ def test_bench_update_apps_raises_on_command_error(tmp_path: Path) -> None:
     with (
         patch("pilot.core.app.App.update", side_effect=CommandError("git error")),
         patch("pilot.integrations.marketplace.Marketplace.registry", return_value=[]),
+        pytest.raises(MigrateError),
     ):
-        with pytest.raises(MigrateError):
-            bench._update_apps(None, lambda message: None)
+        bench._update_apps(None, lambda message: None)
 
 
 def test_bench_marketplace_pin_matched_by_version(tmp_path: Path) -> None:
@@ -833,6 +811,7 @@ def test_bench_marketplace_pin_none_for_branch_target() -> None:
 
 def test_bench_update_apps_passes_marketplace_pin_to_app_update(tmp_path: Path) -> None:
     import subprocess
+
     from pilot.core.app import RevisionPin
     from pilot.integrations.marketplace import Marketplace
 
@@ -884,9 +863,11 @@ def test_bench_migrate_sites_raises_on_failure(tmp_path: Path) -> None:
     site_dir.mkdir()
     (site_dir / "site_config.json").write_text("{}")
 
-    with patch("pilot.core.site.Site.migrate", side_effect=CommandError("migrate failed")):
-        with pytest.raises(MigrateError):
-            bench._migrate_sites(False, lambda message: None)
+    with (
+        patch("pilot.core.site.Site.migrate", side_effect=CommandError("migrate failed")),
+        pytest.raises(MigrateError),
+    ):
+        bench._migrate_sites(False, lambda message: None)
 
 
 def test_bench_migrate_sites_passes_skip_failing_patches(tmp_path: Path) -> None:
@@ -904,6 +885,7 @@ def test_bench_migrate_sites_passes_skip_failing_patches(tmp_path: Path) -> None
 
 def test_drop_site_removes_site_from_bench_toml(tmp_path: Path) -> None:
     import tomllib
+
     from pilot.config import SiteConfig
     from pilot.core.site import Site
 
@@ -956,9 +938,7 @@ def test_restart_dev_bench_prints_guidance(tmp_path: Path, capsys: pytest.Captur
     assert "only for production benches" in out
 
 
-def test_restart_production_incomplete_prints_repair(
-    tmp_path: Path, capsys: pytest.CaptureFixture
-) -> None:
+def test_restart_production_incomplete_prints_repair(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     from pilot.commands.runtime.restart import RestartCommand
 
     bench = make_bench(tmp_path)
@@ -989,9 +969,7 @@ def test_restart_production_restarts_when_configured(tmp_path: Path) -> None:
     mgr.restart.assert_called_once()
 
 
-def test_ls_lists_benches_with_mode_and_address(
-    tmp_path: Path, capsys: pytest.CaptureFixture
-) -> None:
+def test_ls_lists_benches_with_mode_and_address(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     from pilot.commands.bench.list import ListCommand
 
     benches = tmp_path / "benches"
@@ -1188,9 +1166,7 @@ def test_unmount_legacy_bind_mount_unmounts_and_cleans_fstab(tmp_path: Path) -> 
     target = tmp_path / "old-bench"
     target.mkdir()
     fstab = tmp_path / "fstab"
-    fstab.write_text(
-        f"UUID=abc / ext4 defaults 0 1\n/bench-pool/old-bench {target} none bind,nofail 0 0\n"
-    )
+    fstab.write_text(f"UUID=abc / ext4 defaults 0 1\n/bench-pool/old-bench {target} none bind,nofail 0 0\n")
 
     calls: list[list[str]] = []
 
@@ -1241,7 +1217,7 @@ def test_build_admin_rejects_old_node(monkeypatch: pytest.MonkeyPatch) -> None:
     from admin.backend.frontend import _check_node_version
 
     monkeypatch.setattr("subprocess.run", lambda *a, **k: MagicMock(stdout="v18.20.8\n"))
-    with pytest.raises(BenchError, match="Node.js"):
+    with pytest.raises(BenchError, match=r"Node\.js"):
         _check_node_version()
 
 
@@ -1259,7 +1235,7 @@ def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -
         raise FileNotFoundError("node")
 
     monkeypatch.setattr("subprocess.run", _missing)
-    with pytest.raises(BenchError, match="Node.js is required"):
+    with pytest.raises(BenchError, match=r"Node\.js is required"):
         _check_node_version()
 
 
@@ -1346,9 +1322,7 @@ def test_admin_source_is_newer_detects_edits(tmp_path: Path) -> None:
     assert BenchRuntime._admin_source_is_newer(frontend, dist) is False
 
 
-def test_start_rebuilds_admin_when_source_changed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_start_rebuilds_admin_when_source_changed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.core.bench.runtime import BenchRuntime
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
@@ -1361,9 +1335,7 @@ def test_start_rebuilds_admin_when_source_changed(
     build.assert_called_once_with(True, on_progress=ANY)
 
 
-def test_start_skips_admin_rebuild_when_fresh(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_start_skips_admin_rebuild_when_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from pilot.core.bench.runtime import BenchRuntime
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=1, built_mtime=100)

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import re
 
-from playwright.sync_api import Page, expect
-
 from harness.tasks import run_task_action, wait_for_task
+from playwright.sync_api import Page, expect
 
 
 def login(page: Page, base_url: str, password: str) -> None:

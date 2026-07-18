@@ -8,8 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config import BenchConfig
-from pilot.config import WafConfig
+from pilot.config import BenchConfig, WafConfig
 from pilot.core.bench import Bench
 from pilot.managers.nginx import NginxManager
 from pilot.managers.waf import WafManager
@@ -19,9 +18,7 @@ pytestmark = pytest.mark.integration
 _HTTP_PORT = 8974
 _DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
-    "apps": [
-        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
-    ],
+    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }

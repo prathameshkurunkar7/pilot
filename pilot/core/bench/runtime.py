@@ -58,9 +58,8 @@ class BenchRuntime:
             return
 
         from pilot.managers.processes.local import ProcessManager
-        from pilot.managers.processes.base import ManagedProcessManager
 
-        manager = cast(ManagedProcessManager, ProcessManager.for_bench(self.bench))
+        manager = cast("ManagedProcessManager", ProcessManager.for_bench(self.bench))
         if not manager.is_configured():
             on_progress(incomplete_production_message(self.bench))
             return
@@ -92,8 +91,8 @@ class BenchRuntime:
             NginxManager(self.bench).generate_config()
 
     def rebuild_assets(self, force: bool = False) -> None:
-        from pilot.managers.processes.local import ProcessManager
         from pilot.managers.environment import PythonEnvManager
+        from pilot.managers.processes.local import ProcessManager
 
         manager = PythonEnvManager(self.bench)
         if force:
@@ -216,12 +215,7 @@ class BenchRuntime:
         from pilot.config import BenchTomlStore
 
         try:
-            return (
-                BenchTomlStore.for_bench(self.bench.path)
-                .read_raw()
-                .get("admin", {})
-                .get("port", 7000)
-            )
+            return BenchTomlStore.for_bench(self.bench.path).read_raw().get("admin", {}).get("port", 7000)
         except (OSError, tomllib.TOMLDecodeError):
             return 7000
 

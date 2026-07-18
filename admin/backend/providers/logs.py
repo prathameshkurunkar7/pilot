@@ -5,7 +5,7 @@ import subprocess
 import time
 from collections.abc import Generator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mKJHfABCDGsu]")
@@ -51,7 +51,7 @@ class LogProvider:
                 LogFileInfo(
                     filename=path.name,
                     size_bytes=stat.st_size,
-                    last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                    last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
                     process_name=path.stem,
                     line_count=self.count_lines(path),
                 )

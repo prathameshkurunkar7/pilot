@@ -40,9 +40,7 @@ def _static_checks() -> list:
     return [RepoStructureCheck(), SyntaxCheck(), DependencyDeclarationsCheck()]
 
 
-_SETUPTOOLS_BUILD = (
-    '[build-system]\nrequires = ["setuptools>=61"]\nbuild-backend = "setuptools.build_meta"\n'
-)
+_SETUPTOOLS_BUILD = '[build-system]\nrequires = ["setuptools>=61"]\nbuild-backend = "setuptools.build_meta"\n'
 
 
 def _make_fake_frappe(bench_root: Path) -> None:
@@ -80,13 +78,13 @@ def test_validate_repo_structure_fails_without_pyproject(tmp_path: Path) -> None
     app_path.mkdir(parents=True)
     bench = _FakeBench(apps_path=tmp_path / "apps", env_path=tmp_path / "env")
     app = App(AppConfig(name="myapp", repo="https://example.com/myapp.git", branch="main"), bench)
-    with pytest.raises(AppValidationError, match="pyproject.toml"):
+    with pytest.raises(AppValidationError, match=r"pyproject\.toml"):
         Validator(app).validate()
 
 
 def test_validate_repo_structure_fails_without_hooks(tmp_path: Path) -> None:
     app = _make_app(tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/__init__.py": ""})
-    with pytest.raises(AppValidationError, match="hooks.py"):
+    with pytest.raises(AppValidationError, match=r"hooks\.py"):
         Validator(app).validate()
 
 

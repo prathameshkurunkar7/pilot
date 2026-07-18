@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 from pilot.config import BenchConfig
 from pilot.exceptions import BenchError
@@ -133,12 +133,12 @@ class Bench:
 
         return BenchInventory(self).app(name)
 
-    def apps(self) -> List["App"]:
+    def apps(self) -> list["App"]:
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).apps()
 
-    def registered_apps(self) -> List[str]:
+    def registered_apps(self) -> list[str]:
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).registered_apps()
@@ -148,12 +148,12 @@ class Bench:
 
         return BenchInventory(self).is_app_installed(name)
 
-    def init_apps(self) -> List["App"]:
+    def init_apps(self) -> list["App"]:
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).init_apps()
 
-    def sites(self) -> List["Site"]:
+    def sites(self) -> list["Site"]:
         from pilot.core.bench.inventory import BenchInventory
 
         return BenchInventory(self).sites()
@@ -233,9 +233,7 @@ class Bench:
 
         BenchRuntime(self).rebuild_assets(force)
 
-    def install_requirements(
-        self, on_progress: Callable[[str], None] = lambda message: None
-    ) -> None:
+    def install_requirements(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
         from pilot.core.bench.runtime import BenchRuntime
 
         BenchRuntime(self).install_requirements(on_progress)
@@ -360,9 +358,7 @@ class Bench:
 
         BenchUpdater(self).rebuild_assets(apps_filter, on_progress)
 
-    def _migrate_sites(
-        self, skip_failing_patches: bool, on_progress: Callable[[str], None]
-    ) -> None:
+    def _migrate_sites(self, skip_failing_patches: bool, on_progress: Callable[[str], None]) -> None:
         from pilot.core.bench.update import BenchUpdater
 
         BenchUpdater(self).migrate_sites(skip_failing_patches, on_progress)

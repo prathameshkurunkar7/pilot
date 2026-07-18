@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from pilot.tasks import Task
 from pilot.exceptions import BenchError
+from pilot.tasks import Task
 from tests.pilot.commands.test_commands import make_bench
 
 

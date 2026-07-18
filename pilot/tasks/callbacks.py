@@ -36,9 +36,7 @@ def task_callbacks_for(task) -> TaskCallbacks:
             if args is None:
                 continue
             if trigger in callbacks:
-                raise ValueError(
-                    f"Multiple {trigger} callbacks declared for {type(task).__name__}."
-                )
+                raise ValueError(f"Multiple {trigger} callbacks declared for {type(task).__name__}.")
             callbacks[trigger] = {"operation": operation, "args": args}
     return callbacks
 

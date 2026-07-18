@@ -209,12 +209,8 @@ def _read_task_dir(
 
     queued_at_value = meta.get("queued_at") or meta.get("started_at")
     queued_at = datetime.fromisoformat(queued_at_value)
-    started_at = (
-        datetime.fromisoformat(meta["started_at"]) if meta.get("started_at") is not None else None
-    )
-    finished_at = (
-        datetime.fromisoformat(meta["finished_at"]) if meta.get("finished_at") is not None else None
-    )
+    started_at = datetime.fromisoformat(meta["started_at"]) if meta.get("started_at") is not None else None
+    finished_at = datetime.fromisoformat(meta["finished_at"]) if meta.get("finished_at") is not None else None
 
     return TaskInfo(
         task_id=meta["task_id"],

@@ -98,9 +98,7 @@ def test_short_circuit_still_populates_installed_dependencies(tmp_path: Path) ->
         patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"),
         patch.object(Marketplace, "_read_apps_json", return_value="[]"),
     ):
-        cmd = GetAppCommand(
-            bench, repo="https://github.com/frappe/helpdesk", install_dependencies=True
-        )
+        cmd = GetAppCommand(bench, repo="https://github.com/frappe/helpdesk", install_dependencies=True)
         cmd.run()
 
     assert [app.config.name for app in cmd.installed_dependencies] == ["telephony"]
@@ -131,9 +129,7 @@ def test_still_installs_missing_dependency_when_parent_already_installed(tmp_pat
         patch.object(App, "_install_into_environment"),
         patch.object(App, "_build_assets_via_env_manager"),
     ):
-        cmd = GetAppCommand(
-            bench, repo="https://github.com/frappe/helpdesk", install_dependencies=True
-        )
+        cmd = GetAppCommand(bench, repo="https://github.com/frappe/helpdesk", install_dependencies=True)
         cmd.run()
 
     # helpdesk itself short-circuits (already installed); telephony is the

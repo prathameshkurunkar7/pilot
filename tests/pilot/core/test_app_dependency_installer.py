@@ -9,8 +9,8 @@ import pytest
 
 from pilot.core.app import App
 from pilot.core.app.dependency_installer import AppDependencyInstaller
-from pilot.integrations.marketplace import Marketplace, Resolver
 from pilot.exceptions import BenchError, DependencyResolutionError, RegistryUnavailableError
+from pilot.integrations.marketplace import Marketplace, Resolver
 from tests.pilot.commands.test_commands import make_bench
 from tests.pilot.commands.test_get_app import make_resolver
 
@@ -29,9 +29,7 @@ def test_install_returns_empty_when_app_not_in_marketplace_and_no_required_apps(
     bench.create_directories()
     app = make_app(bench, "custom_app")
     (bench.apps_path / "custom_app").mkdir(parents=True)
-    (bench.apps_path / "custom_app" / "pyproject.toml").write_text(
-        '[project]\nname = "custom_app"\n'
-    )
+    (bench.apps_path / "custom_app" / "pyproject.toml").write_text('[project]\nname = "custom_app"\n')
 
     with (
         patch.object(Marketplace, "read_all_apps", return_value=[]),
@@ -125,12 +123,10 @@ def test_install_propagates_registry_unavailable_instead_of_swallowing_as_not_fo
 
     with (
         patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"),
-        patch.object(
-            Marketplace, "_read_apps_json", side_effect=RegistryUnavailableError("tampered")
-        ),
+        patch.object(Marketplace, "_read_apps_json", side_effect=RegistryUnavailableError("tampered")),
+        pytest.raises(RegistryUnavailableError),
     ):
-        with pytest.raises(RegistryUnavailableError):
-            AppDependencyInstaller(bench, app).install()
+        AppDependencyInstaller(bench, app).install()
 
 
 def test_install_raises_when_app_not_in_marketplace_but_requires_missing_apps(
@@ -149,6 +145,6 @@ def test_install_raises_when_app_not_in_marketplace_but_requires_missing_apps(
         patch.object(Marketplace, "read_all_apps", return_value=[]),
         patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"),
         patch.object(Marketplace, "_read_apps_json", return_value="[]"),
+        pytest.raises(BenchError, match="isn't in the marketplace registry"),
     ):
-        with pytest.raises(BenchError, match="isn't in the marketplace registry"):
-            AppDependencyInstaller(bench, app).install()
+        AppDependencyInstaller(bench, app).install()

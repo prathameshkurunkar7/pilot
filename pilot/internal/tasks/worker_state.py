@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import fcntl
 import json
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import IO, Iterator
+from typing import IO
 
 from pilot.internal.atomic_file import (
     atomic_write_private_text,
@@ -121,7 +122,7 @@ class WorkerStore:
             status=status,
             pid=pid,
             current_task_id=current_task_id,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
         payload = {
             "status": state.status.value,

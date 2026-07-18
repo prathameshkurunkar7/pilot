@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pilot.tasks.get_and_install_app import GetAndInstallAppTask
 from pilot.core.site import Site
+from pilot.tasks.get_and_install_app import GetAndInstallAppTask
 from tests.pilot.commands.test_commands import make_bench
 
 
@@ -78,4 +78,4 @@ def test_run_installs_only_app_on_sites_but_builds_assets_for_dependencies_too(
         task.run()
 
     mock_install_on_sites.assert_called_once_with(fake_cmd.app)
-    mock_build_assets.assert_called_once_with([fake_cmd.app] + fake_cmd.installed_dependencies)
+    mock_build_assets.assert_called_once_with([fake_cmd.app, *fake_cmd.installed_dependencies])

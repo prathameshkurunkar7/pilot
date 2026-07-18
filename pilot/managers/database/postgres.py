@@ -96,9 +96,7 @@ class PostgresManager(UserOwnedDBManager):
             # No --username: the bootstrap superuser is the bench OS user.
             run_command([self._server_binary("initdb"), "-D", str(self.data_dir)])
             self._install_unit()
-            run_command(
-                self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env()
-            )
+            run_command(self._systemctl("enable", "--now", self._UNIT_NAME), env=self._systemctl_env())
         elif not self.is_running():
             run_command(self._systemctl("start", self._UNIT_NAME), env=self._systemctl_env())
 
@@ -227,9 +225,7 @@ class PostgresManager(UserOwnedDBManager):
         found = which(name)
         if found:
             return found
-        candidates = sorted(
-            _DEBIAN_POSTGRES_ROOT.glob(f"*/bin/{name}"), key=self._debian_version_key
-        )
+        candidates = sorted(_DEBIAN_POSTGRES_ROOT.glob(f"*/bin/{name}"), key=self._debian_version_key)
         if candidates:
             return str(candidates[-1])
         return name

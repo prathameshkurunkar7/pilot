@@ -8,8 +8,8 @@ import sys
 import time
 from pathlib import Path
 
-from pilot.managers.cron import CronManager
 from pilot.exceptions import CommandError, RegistryUnavailableError
+from pilot.managers.cron import CronManager
 from pilot.utils import run_command
 
 REGISTRY_URL = "https://github.com/frappe/marketplace"
@@ -58,17 +58,17 @@ class RegistryCache:
         try:
             run_command(["git", "clone", "--depth", "1", REGISTRY_URL, str(self.path)])
         except CommandError as exc:
-            raise RegistryUnavailableError(f"Could not clone marketplace registry:\n{exc.message}")
+            raise RegistryUnavailableError(f"Could not clone marketplace registry:\n{exc.message}") from exc
         self.install_daily_refresh_cron()
 
     def _reject_if_tampered(self) -> None:
         try:
             result = run_command(["git", "-C", str(self.path), "status", "--porcelain"])
-        except CommandError:
+        except CommandError as exc:
             raise RegistryUnavailableError(
                 "The marketplace registry cache is corrupted (git status failed) — "
                 f"restore it before using get-app/marketplace: {self.path}"
-            )
+            ) from exc
         if result.stdout.decode().strip():
             raise RegistryUnavailableError(
                 "The marketplace registry cache has been modified manually — "
@@ -87,9 +87,7 @@ class RegistryCache:
             return  # offline — keep serving the existing clone
         try:
             local_head = (
-                run_command(["git", "-C", str(self.path), "rev-parse", "HEAD"])
-                .stdout.decode()
-                .strip()
+                run_command(["git", "-C", str(self.path), "rev-parse", "HEAD"]).stdout.decode().strip()
             )
             if remote_head == local_head:
                 return
@@ -117,9 +115,7 @@ class RegistryCache:
         """Register the daily cache refresh cron entry."""
         log_file = self._cli_root / "logs" / "registry-refresh.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        python, cli_root, log = (
-            shlex.quote(str(p)) for p in (sys.executable, self._cli_root, log_file)
-        )
+        python, cli_root, log = (shlex.quote(str(p)) for p in (sys.executable, self._cli_root, log_file))
         command = f"{python} -m pilot.core.registry_cache {cli_root} >> {log} 2>&1"
         CronManager(self._cli_root).set_schedule(_CRON_JOB_KEY, _CRON_SCHEDULE, command)
 

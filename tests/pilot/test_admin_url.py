@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import copy
 
-from pilot.utils import admin_url
 from pilot.config import BenchConfig
+from pilot.utils import admin_url
 
 BASE = {
     "bench": {"name": "alpha", "python": "3.14"},

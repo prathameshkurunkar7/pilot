@@ -6,20 +6,21 @@ import logging
 import pkgutil
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
+from pilot.exceptions import TaskNotRunningError
 from pilot.internal.tasks.authoring import required_task_args
 from pilot.internal.tasks.payload import TaskPayloadBuilder
-from pilot.tasks.callbacks import TaskCallback as TaskCallback, TaskCallbacks
-from pilot.tasks import Task
-from pilot.managers.task.models import (
-    TaskStatus,
-)
 from pilot.internal.tasks.process import TaskProcess
 from pilot.internal.tasks.store import TaskStore
 from pilot.internal.tasks.worker import task_workers
-from pilot.exceptions import TaskNotRunningError
+from pilot.managers.task.models import (
+    TaskStatus,
+)
+from pilot.tasks import Task
+from pilot.tasks.callbacks import TaskCallback as TaskCallback
+from pilot.tasks.callbacks import TaskCallbacks
 
 TASK_RETENTION_LIMIT = 100
 _TASK_PACKAGE_DIR = Path(__file__).resolve().parents[2] / "tasks"
@@ -124,7 +125,7 @@ class TaskRunner:
                 task_id,
                 TaskStatus.QUEUED,
                 TaskStatus.KILLED,
-                {"finished_at": datetime.now(timezone.utc).isoformat()},
+                {"finished_at": datetime.now(UTC).isoformat()},
             ):
                 current = self._store.read_status(task_id)
                 raise TaskNotRunningError(f"Task is not active: {task_id} (status={current.value})")

@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pilot.tasks.fetch_app_updates import FetchAppUpdatesTask
 from pilot.integrations.marketplace import Marketplace
+from pilot.tasks.fetch_app_updates import FetchAppUpdatesTask
 
 REGISTRY = [{"name": "helpdesk", "repo": "r", "targets": []}]
 

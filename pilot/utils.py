@@ -1,3 +1,4 @@
+import contextlib
 import os
 import shutil
 import signal
@@ -6,7 +7,7 @@ import tarfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import IO, TYPE_CHECKING, Optional
+from typing import IO, TYPE_CHECKING
 
 from pilot.exceptions import BenchError, CommandError
 
@@ -80,7 +81,10 @@ class UnsafeArchiveError(BenchError):
     pass
 
 
-def validate_tar_archive(path: Path, limits: ArchiveLimits = ArchiveLimits()) -> None:
+DEFAULT_ARCHIVE_LIMITS = ArchiveLimits()
+
+
+def validate_tar_archive(path: Path, limits: ArchiveLimits = DEFAULT_ARCHIVE_LIMITS) -> None:
     try:
         with tarfile.open(path) as archive:
             _validated_members(archive, limits)
@@ -91,7 +95,7 @@ def validate_tar_archive(path: Path, limits: ArchiveLimits = ArchiveLimits()) ->
 def extract_tar_archive(
     path: Path,
     destination: Path,
-    limits: ArchiveLimits = ArchiveLimits(),
+    limits: ArchiveLimits = DEFAULT_ARCHIVE_LIMITS,
 ) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     root = destination.resolve()
@@ -246,10 +250,8 @@ def normalize_host(host: str) -> str:
     if not host:
         return ""
     h = host.strip().lower().rstrip(".")
-    try:
+    with contextlib.suppress(UnicodeError, ValueError):
         h = h.encode("idna").decode("ascii")
-    except (UnicodeError, ValueError):
-        pass
     return h
 
 
@@ -270,9 +272,7 @@ def wildcard_suffix(pattern: str) -> str:
 def matches_wildcard(domain: str, patterns: list[str]) -> bool:
     """Return whether a domain matches any wildcard pattern."""
     domain = normalize_host(domain)
-    return any(
-        domain != (suffix := wildcard_suffix(p)) and domain.endswith(suffix) for p in patterns
-    )
+    return any(domain != (suffix := wildcard_suffix(p)) and domain.endswith(suffix) for p in patterns)
 
 
 def _bench_hosts(bench_dir: Path, config: "BenchConfig") -> Iterator[str]:
@@ -298,7 +298,7 @@ def _bench_hosts(bench_dir: Path, config: "BenchConfig") -> Iterator[str]:
             continue
 
 
-def host_owner(bench_path: Path, host: str) -> Optional[str]:
+def host_owner(bench_path: Path, host: str) -> str | None:
     """Return the sibling bench that already claims host, if any."""
     target = normalize_host(host)
     if not target:
@@ -390,11 +390,11 @@ def _start_process(
 def _wait_for_process(process: subprocess.Popen, argv: list[str], timeout: float | None):
     try:
         return process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         _terminate_process_group(process)
         raise CommandError(
             f"Command {argv[0]!r} timed out after {timeout}s and was terminated.", returncode=-1
-        )
+        ) from exc
     except KeyboardInterrupt:
         _terminate_process_group(process)
         raise
@@ -402,10 +402,8 @@ def _wait_for_process(process: subprocess.Popen, argv: list[str], timeout: float
 
 def _terminate_process_group(process: subprocess.Popen) -> None:
     # The child leads its own session, so killing its pgid reaches descendants too.
-    try:
+    with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
     process.wait()
 
 

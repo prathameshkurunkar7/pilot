@@ -7,15 +7,18 @@ from unittest.mock import patch
 import pytest
 
 from pilot.commands.admin.set_central_config import SetCentralConfigCommand
-from pilot.config import AppConfig
-from pilot.config import BenchConfig
-from pilot.config import MariaDBConfig
-from pilot.config import RedisConfig
-from pilot.config import BenchTomlStore
-from pilot.config import WorkerConfig, WorkerGroup
+from pilot.config import (
+    AppConfig,
+    BenchConfig,
+    BenchTomlStore,
+    MariaDBConfig,
+    RedisConfig,
+    WorkerConfig,
+    WorkerGroup,
+)
 from pilot.core.bench import Bench
-from pilot.integrations.central import CentralClient, CentralClientError
 from pilot.exceptions import BenchError
+from pilot.integrations.central import CentralClient, CentralClientError
 
 
 def _bench(root: Path, name: str = "b1") -> Bench:
@@ -24,9 +27,7 @@ def _bench(root: Path, name: str = "b1") -> Bench:
     config = BenchConfig(
         name=name,
         python_version="3.14",
-        apps=[
-            AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")
-        ],
+        apps=[AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")],
         mariadb=MariaDBConfig(root_password="root"),
         redis=RedisConfig(cache_port=13000, queue_port=11000),
         workers=WorkerConfig(groups=[WorkerGroup(queues=["default"], count=1)]),
@@ -109,9 +110,7 @@ def test_heartbeat_sends_x_pilot_token_and_returns_echo(tmp_path: Path) -> None:
         captured["headers"] = dict(request.headers)
         return _FakeResponse({"ok": True, "team": "TEAM-1", "pilot_credential_id": "pcred-x"})
 
-    with patch(
-        "pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen
-    ):
+    with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
         result = CentralClient(bench).heartbeat()
 
     assert result["team"] == "TEAM-1"
@@ -132,18 +131,13 @@ def test_forward_unwraps_message_and_targets_method_path(tmp_path: Path) -> None
         captured["headers"] = dict(request.headers)
         return _FakeResponse({"message": {"currency": "INR"}})
 
-    with patch(
-        "pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen
-    ):
+    with patch("pilot.integrations.central.client.urllib.request.urlopen", side_effect=fake_urlopen):
         result = CentralClient(bench).forward(
             "central.billing.api.billing_api.change_plan", "POST", {"plan": "biz"}
         )
 
     assert result == {"currency": "INR"}
-    assert (
-        captured["url"]
-        == "https://central.test/api/method/central.billing.api.billing_api.change_plan"
-    )
+    assert captured["url"] == "https://central.test/api/method/central.billing.api.billing_api.change_plan"
     assert captured["method"] == "POST"
     assert json.loads(captured["body"]) == {"plan": "biz"}
     assert "tok-7" in captured["headers"].values()
@@ -163,11 +157,11 @@ def test_heartbeat_wraps_non_json_response(tmp_path: Path) -> None:
         def __exit__(self, *exc) -> bool:
             return False
 
-    with patch(
-        "pilot.integrations.central.client.urllib.request.urlopen", return_value=_HtmlResponse()
+    with (
+        patch("pilot.integrations.central.client.urllib.request.urlopen", return_value=_HtmlResponse()),
+        pytest.raises(CentralClientError),
     ):
-        with pytest.raises(CentralClientError):
-            CentralClient(bench).heartbeat()
+        CentralClient(bench).heartbeat()
 
 
 def _app_client(bench_root: Path):
@@ -177,9 +171,7 @@ def _app_client(bench_root: Path):
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(
-            bench_root.name, {"admin_enabled": True, "admin_password": "secret"}
-        ).render()
+        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": "secret"}).render()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)

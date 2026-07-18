@@ -114,10 +114,7 @@ def test_task_optional_list_field_uses_nargs_star(tmp_path: Path) -> None:
 
 
 def test_task_literal_field_becomes_choices(tmp_path: Path) -> None:
-    assert (
-        parse_task(ParserTask, tmp_path, ["site.localhost", "frappe", "--mode", "safe"]).mode
-        == "safe"
-    )
+    assert parse_task(ParserTask, tmp_path, ["site.localhost", "frappe", "--mode", "safe"]).mode == "safe"
     with pytest.raises(SystemExit):
         parse_task(ParserTask, tmp_path, ["site.localhost", "frappe", "--mode", "wrong"])
 

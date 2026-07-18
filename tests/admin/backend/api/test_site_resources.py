@@ -48,9 +48,7 @@ def test_delete_site_rejects_symlink_without_starting_task(tmp_path: Path) -> No
     _write_site(outside, "linked.localhost")
     sites = bench_root / "sites"
     sites.mkdir()
-    (sites / "linked.localhost").symlink_to(
-        outside / "sites" / "linked.localhost", target_is_directory=True
-    )
+    (sites / "linked.localhost").symlink_to(outside / "sites" / "linked.localhost", target_is_directory=True)
 
     with patch("admin.backend.api.v1.sites.core.DropSiteTask.queue") as queue:
         response = client.delete("/api/v1/sites/linked.localhost")

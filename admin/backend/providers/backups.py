@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.core.bench import Bench
@@ -103,7 +103,7 @@ class BackupProvider:
         stat = path.stat()
         name = path.name
         timestamp = parse_backup_timestamp(name) or "unknown"
-        default_created_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+        default_created_at = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
         created_at = self.get_timestamp(timestamp) or default_created_at
 
         return BackupFile(
@@ -138,10 +138,10 @@ class BackupProvider:
     @staticmethod
     def get_timestamp(timestamp: str) -> datetime | None:
         try:
-            return datetime.strptime(timestamp, "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
+            return datetime.strptime(timestamp, "%Y%m%d_%H%M%S").replace(tzinfo=UTC)
         except ValueError:
             return None
 
     @classmethod
     def _get_timestamp_or_now(cls, timestamp: str) -> datetime:
-        return cls.get_timestamp(timestamp) or datetime.now(timezone.utc)
+        return cls.get_timestamp(timestamp) or datetime.now(UTC)

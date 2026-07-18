@@ -50,9 +50,7 @@ class Command:
         print(message)
         sys.stdout.flush()
 
-    def confirm(
-        self, prompt: str, *, skip: bool = False, error: type[Exception] = BenchError
-    ) -> None:
+    def confirm(self, prompt: str, *, skip: bool = False, error: type[Exception] = BenchError) -> None:
         if skip:
             return
         try:

@@ -5,7 +5,7 @@ import json
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pilot.internal.tasks.args import (
@@ -94,7 +94,7 @@ class TaskPayloadBuilder:
             secret_args=task_secret_args(command, args),
             command_argv=command_argv,
             callbacks=self.validate_callbacks(callbacks),
-            queued_at=datetime.now(timezone.utc).isoformat(),
+            queued_at=datetime.now(UTC).isoformat(),
             bench_root=self._bench_root,
         )
 
@@ -110,9 +110,7 @@ class TaskPayloadBuilder:
 
     def validate_args(self, command: str, args: dict) -> None:
         if command not in self._required_args:
-            raise ValueError(
-                f"Unknown command: {command!r}. Allowed: {sorted(self._required_args)}"
-            )
+            raise ValueError(f"Unknown command: {command!r}. Allowed: {sorted(self._required_args)}")
         reject_url_credentials(args)
         for key in self._required_args[command]:
             if key not in args:

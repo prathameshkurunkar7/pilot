@@ -66,9 +66,8 @@ class SiteProvisioner:
             site.install_app(self.bench.app(app_name))
 
     def write_pilot_communication_config(self, site: "Site") -> None:
-        from pilot.utils import admin_url
         from admin.backend.auth import ensure_jwt_secret, issue_site_token
-        from pilot.utils import write_private_text
+        from pilot.utils import admin_url, write_private_text
 
         config_path = site.path / "site_config.json"
         if not config_path.exists():
@@ -95,7 +94,7 @@ class SiteProvisioner:
                 manager.build_assets_for_app(app)
 
     def add_to_hosts(self, site: "Site") -> None:
-        if not self.bench.config.production.process_manager == "none":
+        if self.bench.config.production.process_manager != "none":
             return
 
         from pilot.managers.platform import add_hosts_entry
@@ -143,9 +142,7 @@ def validate_new_site(bench: "Bench", name: str, apps: list[str]) -> bool:
         )
     patterns = DomainRouteProvider.wildcard_domains()
     if patterns and not matches_wildcard(name, patterns):
-        raise BenchError(
-            f"Site name must match one of this bench's wildcard domains: {', '.join(patterns)}."
-        )
+        raise BenchError(f"Site name must match one of this bench's wildcard domains: {', '.join(patterns)}.")
     apps_txt = bench.sites_path / "apps.txt"
     installed = set(apps_txt.read_text().splitlines()) if apps_txt.exists() else set()
     for app in apps:

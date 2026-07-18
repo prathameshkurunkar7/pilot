@@ -8,12 +8,15 @@ from unittest.mock import patch
 
 import pytest
 
-from pilot.config import AppConfig
-from pilot.config import BenchConfig
-from pilot.config import GunicornConfig
-from pilot.config import MariaDBConfig
-from pilot.config import RedisConfig
-from pilot.config import WorkerConfig, WorkerGroup
+from pilot.config import (
+    AppConfig,
+    BenchConfig,
+    GunicornConfig,
+    MariaDBConfig,
+    RedisConfig,
+    WorkerConfig,
+    WorkerGroup,
+)
 from pilot.core.bench import Bench
 from pilot.exceptions import ConfigError
 from pilot.managers.gunicorn import GunicornManager
@@ -24,9 +27,7 @@ def make_bench(tmp_path: Path, gunicorn: GunicornConfig | None = None) -> Bench:
     config = BenchConfig(
         name="test-bench",
         python_version="3.14",
-        apps=[
-            AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")
-        ],
+        apps=[AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")],
         mariadb=MariaDBConfig(root_password="root"),
         redis=RedisConfig(cache_port=13000, queue_port=11000),
         workers=WorkerConfig(
@@ -87,25 +88,25 @@ def test_bench_config_parses_gunicorn_section(tmp_path: Path) -> None:
 
 def test_gunicorn_workers_must_be_positive(tmp_path: Path) -> None:
     bench = make_bench(tmp_path, GunicornConfig(workers=0))
-    with pytest.raises(ConfigError, match="gunicorn.workers"):
+    with pytest.raises(ConfigError, match=r"gunicorn\.workers"):
         bench.config.validate()
 
 
 def test_gunicorn_threads_must_be_positive(tmp_path: Path) -> None:
     bench = make_bench(tmp_path, GunicornConfig(threads=0))
-    with pytest.raises(ConfigError, match="gunicorn.threads"):
+    with pytest.raises(ConfigError, match=r"gunicorn\.threads"):
         bench.config.validate()
 
 
 def test_gunicorn_timeout_must_be_positive(tmp_path: Path) -> None:
     bench = make_bench(tmp_path, GunicornConfig(timeout=-1))
-    with pytest.raises(ConfigError, match="gunicorn.timeout"):
+    with pytest.raises(ConfigError, match=r"gunicorn\.timeout"):
         bench.config.validate()
 
 
 def test_gunicorn_worker_class_must_not_be_empty(tmp_path: Path) -> None:
     bench = make_bench(tmp_path, GunicornConfig(worker_class=""))
-    with pytest.raises(ConfigError, match="gunicorn.worker_class"):
+    with pytest.raises(ConfigError, match=r"gunicorn\.worker_class"):
         bench.config.validate()
 
 
@@ -452,9 +453,7 @@ def test_worker_pool_aggregates_groups_into_one_pool(tmp_path: Path) -> None:
 
     content = (bench.config_path / "gunicorn.conf.py").read_text()
     assert content.count("run_worker_pool") == 1
-    assert (
-        '"FRAPPE_COMPANION_QUEUE": "default,short,long"' in content
-    )  # union, order-preserving, deduped
+    assert '"FRAPPE_COMPANION_QUEUE": "default,short,long"' in content  # union, order-preserving, deduped
     assert '"FRAPPE_COMPANION_NUM_WORKERS": "4"' in content  # 2 + 1 + 1
 
 
@@ -507,8 +506,7 @@ def test_production_definitions_do_not_add_a_separate_task_worker(
     tmp_path: Path,
 ) -> None:
     names = {
-        definition.name
-        for definition in ProcessManager(make_bench(tmp_path))._prod_process_definitions()
+        definition.name for definition in ProcessManager(make_bench(tmp_path))._prod_process_definitions()
     }
 
     assert "task_worker" not in names
@@ -601,9 +599,7 @@ def test_py_memory_env_caps_glibc_arenas(tmp_path: Path) -> None:
 
 
 def test_max_requests_emitted_when_enabled(tmp_path: Path) -> None:
-    bench = make_bench(
-        tmp_path, gunicorn=GunicornConfig(max_requests=2000, max_requests_jitter=200)
-    )
+    bench = make_bench(tmp_path, gunicorn=GunicornConfig(max_requests=2000, max_requests_jitter=200))
     bench.config_path.mkdir(parents=True, exist_ok=True)
     GunicornManager(bench).generate_config()
     content = (bench.config_path / "gunicorn.conf.py").read_text()

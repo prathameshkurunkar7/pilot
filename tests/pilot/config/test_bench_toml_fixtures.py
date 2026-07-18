@@ -4,9 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config import BenchConfig
-from pilot.config import BenchTomlStore
-
+from pilot.config import BenchConfig, BenchTomlStore
 
 FIXTURES = Path(__file__).parent.parent.parent / "fixtures" / "bench_toml"
 

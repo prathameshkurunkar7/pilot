@@ -6,9 +6,9 @@ from unittest.mock import patch
 
 import pytest
 
-from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
 from pilot.config import BenchTomlStore
 from pilot.exceptions import BenchError
+from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
 from tests.pilot.commands.test_commands import make_bench
 
 
@@ -23,9 +23,7 @@ def _task(tmp_path: Path, *, production: bool, email: str = "") -> SetupLetsEncr
     site_path = tmp_path / "sites" / "secure.localhost"
     site_path.mkdir(parents=True)
     (site_path / "site_config.json").write_text(json.dumps({"ssl": False}))
-    return SetupLetsEncryptTask(
-        bench=bench, bench_root=tmp_path, site="secure.localhost", email=email
-    )
+    return SetupLetsEncryptTask(bench=bench, bench_root=tmp_path, site="secure.localhost", email=email)
 
 
 def test_production_preflight_runs_before_tls_configuration_changes(tmp_path: Path) -> None:

@@ -51,9 +51,7 @@ def reject_url_credentials(value) -> None:
         for child in value:
             reject_url_credentials(child)
     elif isinstance(value, str) and _has_url_credentials(value):
-        raise ValueError(
-            "Credentials in repository URLs are not allowed; use the Git provider connection."
-        )
+        raise ValueError("Credentials in repository URLs are not allowed; use the Git provider connection.")
 
 
 def _redact_value(key: str, value):

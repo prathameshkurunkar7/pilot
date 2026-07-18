@@ -16,8 +16,7 @@ class UpgradeCommand(Command):
 
     def run(self) -> None:
         from pilot.commands.admin.start import download_admin_frontend
-        from pilot.utils import cli_root
-        from pilot.utils import run_command
+        from pilot.utils import cli_root, run_command
 
         root = cli_root()
 

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from pilot.core.bench.setup import ProductionSetup
 from pilot.config import BenchConfig
 from pilot.core.bench import Bench
+from pilot.core.bench.setup import ProductionSetup
 from pilot.exceptions import BenchError
 from pilot.managers.letsencrypt import needs_letsencrypt
 
@@ -95,9 +95,7 @@ def test_needs_letsencrypt(tmp_path: Path) -> None:
     )
     # TLS disabled (central proxy terminates TLS) → no admin cert needed.
     assert not needs_letsencrypt(
-        _make_bench(
-            tmp_path, name="d", admin_domain="admin.example.com", email="x@y.com", tls=False
-        )
+        _make_bench(tmp_path, name="d", admin_domain="admin.example.com", email="x@y.com", tls=False)
     )
 
 
@@ -165,9 +163,7 @@ def test_require_production_inputs_needs_email_for_tls(tmp_path: Path) -> None:
 
 
 def test_require_production_inputs_passes_with_domain_and_email(tmp_path: Path) -> None:
-    bench = _make_bench(
-        tmp_path, admin_domain="admin.example.com", tls=True, email="me@example.com"
-    )
+    bench = _make_bench(tmp_path, admin_domain="admin.example.com", tls=True, email="me@example.com")
     cmd = ProductionSetup(bench, process_manager="systemd")
     cmd._resolve_target()
     cmd._require_production_inputs()  # no raise
@@ -183,6 +179,7 @@ def test_resolve_monitor_log_path_default(tmp_path: Path) -> None:
 
 def test_setup_monitoring_persists_log_path_to_toml(tmp_path: Path, monkeypatch) -> None:
     import tomllib
+
     from pilot.core.server.monitoring import MonitorConfigurator
 
     bench = _make_bench(tmp_path, process_manager="systemd")

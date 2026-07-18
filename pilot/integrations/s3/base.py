@@ -25,9 +25,7 @@ from pilot.exceptions import BenchError
 # range GETs: s3transfer buffers out-of-order parts and writes them in order.
 # boto3 is an optional dependency (the 'admin' extra); left unset if missing.
 _STREAM_TRANSFER = (
-    TransferConfig(multipart_chunksize=64 * 1024 * 1024, max_concurrency=8)
-    if TransferConfig
-    else None
+    TransferConfig(multipart_chunksize=64 * 1024 * 1024, max_concurrency=8) if TransferConfig else None
 )
 
 ENDPOINT_TEMPLATES = {
@@ -64,8 +62,8 @@ SUPPORTED_REGIONS = {
 def build_endpoint_url(provider: str, region: str) -> str:
     try:
         return ENDPOINT_TEMPLATES[provider].format(region=region)
-    except KeyError:
-        raise ValueError(f"Unsupported provider: {provider}")
+    except KeyError as exc:
+        raise ValueError(f"Unsupported provider: {provider}") from exc
 
 
 class S3IntegrationError(BenchError):
