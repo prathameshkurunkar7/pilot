@@ -126,7 +126,7 @@ def _preserve_unknown_array(
     table: _Table,
 ) -> list:
     result = copy.deepcopy(replacement)
-    for index, (old_entry, new_entry) in enumerate(zip(original, result)):
+    for index, (old_entry, new_entry) in enumerate(zip(original, result, strict=False)):
         if isinstance(old_entry, Mapping) and isinstance(new_entry, Mapping):
             result[index] = _preserve_unknown(old_entry, new_entry, table)
     return result

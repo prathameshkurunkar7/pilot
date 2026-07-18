@@ -1,6 +1,5 @@
-"""Integration: nginx itself accepts the trusted-proxy config we generate when a
-domain provider reports edge-proxy IPs. Runs the real `nginx -t`; non-destructive
-(stays in a tmp prefix, no sudo, no machine config touched)."""
+"""Integration test for nginx trusted-proxy config."""
+
 from __future__ import annotations
 
 import os
@@ -10,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.bench import BenchConfig
+from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.managers.nginx import NginxManager
 
@@ -97,7 +96,10 @@ def test_generated_trusted_proxy_config_passes_nginx_t(tmp_path: Path, monkeypat
         assert f"set_real_ip_from   {ip};" in site_conf
     assert "real_ip_header     X-Forwarded-For;" in site_conf
     # Gate TCP connections to the proxies on the real peer, not the rewritten client.
-    assert r'if ($realip_remote_addr ~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { set $bench_from_proxy 1; }' in site_conf
+    assert (
+        r'if ($realip_remote_addr ~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { set $bench_from_proxy 1; }'
+        in site_conf
+    )
     assert "if ($bench_from_proxy = 0) { return 403; }" in site_conf
     # The ACME challenge must stay reachable directly, else cert issuance fails.
     assert r'if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }' in site_conf
@@ -107,6 +109,7 @@ def test_generated_trusted_proxy_config_passes_nginx_t(tmp_path: Path, monkeypat
     conf = _wrapper_conf(tmp_path, nginx_dir / "include.conf")
     result = subprocess.run(
         ["nginx", "-t", "-p", str(tmp_path), "-c", str(conf)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stderr

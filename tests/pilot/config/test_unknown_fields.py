@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.bench import BenchConfig
+from pilot.config import BenchConfig
 from pilot.config.bench_toml import load_config
 from pilot.config.config_schema import unknown_config_paths
 from pilot.exceptions import ConfigError
@@ -50,12 +50,19 @@ def test_unknown_array_entry_keys_reported_with_index() -> None:
 
 def test_known_and_legacy_keys_not_flagged() -> None:
     data = copy.deepcopy(MINIMAL)
-    data["production"] = {"enabled": True, "process_manager": "supervisor", "nginx": True, "lightweight": False}
+    data["production"] = {
+        "enabled": True,
+        "process_manager": "supervisor",
+        "nginx": True,
+        "lightweight": False,
+    }
     data["workers"] = [{"queue": "default", "count": 1}]
     assert unknown_config_paths(data) == []
 
 
-def test_default_decode_silently_ignores_unknown_and_still_loads(capsys: pytest.CaptureFixture) -> None:
+def test_default_decode_silently_ignores_unknown_and_still_loads(
+    capsys: pytest.CaptureFixture,
+) -> None:
     data = copy.deepcopy(MINIMAL)
     data["mariadb"]["unknown_key"] = "x"
     data["bench"]["typo"] = 1

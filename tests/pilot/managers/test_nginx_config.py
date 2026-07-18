@@ -1,22 +1,19 @@
 """Tests for nginx config generation - no real nginx required."""
+
 import copy
 from pathlib import Path
-from unittest.mock import patch, PropertyMock
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
-from pilot.config.bench import BenchConfig
-from pilot.config.site import SiteConfig
+from pilot.config import BenchConfig, SiteConfig
 from pilot.core.bench import Bench
 from pilot.exceptions import CommandError
 from pilot.managers.nginx import NginxConfigRenderer, NginxManager
 
-
 _BASE_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
-    "apps": [
-        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
-    ],
+    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
@@ -291,7 +288,10 @@ def test_proxy_servers_gate_tcp_peer_and_trust_xff(tmp_path: Path) -> None:
     assert "real_ip_header     X-Forwarded-For;" in config
     # Accept TCP connections from the proxies alone, tested on the real peer
     # ($realip_remote_addr) since real_ip has already rewritten $remote_addr.
-    assert r'if ($realip_remote_addr ~ "^(203\.0\.113\.5|203\.0\.113\.6)$") { set $bench_from_proxy 1; }' in config
+    assert (
+        r'if ($realip_remote_addr ~ "^(203\.0\.113\.5|203\.0\.113\.6)$") { set $bench_from_proxy 1; }'
+        in config
+    )
     assert "if ($bench_from_proxy = 0) { return 403; }" in config
     # ACME challenges stay reachable directly, so cert issuance never 403s.
     assert r'if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }' in config
@@ -306,6 +306,7 @@ def test_proxy_servers_gate_tcp_peer_and_trust_xff(tmp_path: Path) -> None:
 def test_two_benches_generate_non_conflicting_configs(tmp_path: Path) -> None:
     """All benches share one nginx, so each bench's include.conf must use a
     uniquely-named upstream and its own admin server_name."""
+
     def _include_for(name: str, http_port: int, admin_domain: str) -> str:
         data = copy.deepcopy(_BASE_DATA)
         data["bench"] = {"name": name, "python": "3.14", "http_port": http_port}
@@ -321,9 +322,6 @@ def test_two_benches_generate_non_conflicting_configs(tmp_path: Path) -> None:
     assert "upstream bench-alpha {" in a
     assert "upstream bench-beta {" in b
     assert "bench-beta" not in a and "bench-alpha" not in b
-
-
-# ── IPv6 (dual-stack listeners) ───────────────────────────────────────────────
 
 
 def test_http_site_listens_dual_stack(tmp_path: Path) -> None:
@@ -413,7 +411,12 @@ def test_generate_config_writes_error_page_files(tmp_path: Path) -> None:
     NginxManager(bench).generate_config(ssl_ready=False)
 
     error_dir = bench.config_path / "nginx" / "error_pages"
-    assert sorted(p.name for p in error_dir.iterdir()) == ["403.html", "404.html", "502.html", "503.html"]
+    assert sorted(p.name for p in error_dir.iterdir()) == [
+        "403.html",
+        "404.html",
+        "502.html",
+        "503.html",
+    ]
     assert "404" in (error_dir / "404.html").read_text()
     # admin vhost also serves the custom pages
     admin_conf = (bench.config_path / "nginx" / "sites" / "_admin.conf").read_text()
@@ -437,8 +440,6 @@ def test_catchall_default_server(tmp_path: Path) -> None:
     assert "ssl_reject_handshake on;" in conf
 
 
-# ── Firewall ────────────────────────────────────────────────────────────────
-
 def _firewall_data(enabled: bool, default: str, rules: list) -> dict:
     data = copy.deepcopy(_BASE_DATA)
     data["firewall"] = {"enabled": enabled, "default": default, "rules": rules}
@@ -455,7 +456,7 @@ def test_firewall_blocklist_emits_only_deny(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _firewall_data(True, "allow", rules))
     out = NginxConfigRenderer(bench)._render_firewall()
     assert "deny 203.0.113.4;" in out
-    assert "deny all;" not in out   # default allow => no terminal deny
+    assert "deny all;" not in out  # default allow => no terminal deny
 
 
 def test_firewall_allowlist_emits_allow_then_deny_all(tmp_path: Path) -> None:
@@ -501,20 +502,19 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
     manager = NginxManager(bench)
     symlink_path = tmp_path / "test-bench.conf"
 
-    with patch.object(manager, "reload", side_effect=CommandError("nginx -t failed", returncode=1)), \
-         patch("pilot.managers.nginx.run_command") as mock_run:
-        with pytest.raises(CommandError):
-            manager._reload_or_rollback(symlink_path)
+    with (
+        patch.object(manager, "reload", side_effect=CommandError("nginx -t failed", returncode=1)),
+        patch("pilot.managers.nginx.run_command") as mock_run,
+        pytest.raises(CommandError),
+    ):
+        manager._reload_or_rollback(symlink_path)
 
     mock_run.assert_called_once()
     assert mock_run.call_args[0][0][-2:] == ["unlink", str(symlink_path)]
 
 
 def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> None:
-    """A bench dropped without going through its own teardown (e.g. its
-    directory deleted directly) leaves its vhost symlink dangling; that alone
-    fails nginx -t for every bench sharing the config dir, so install_config
-    must sweep it away regardless of which bench it belonged to."""
+    """Dangling vhost symlinks are pruned before nginx -t."""
     nginx_dir = tmp_path / "conf.d"
     nginx_dir.mkdir()
     target = tmp_path / "real-target.conf"
@@ -531,9 +531,7 @@ def test_prune_dangling_symlinks_removes_only_broken_ones(tmp_path: Path) -> Non
 
 
 def test_config_dir_falls_back_to_platform_default(tmp_path: Path) -> None:
-    """Regression: Path("") is truthy, so `config_dir or default(...)` never
-    falls back - the unconfigured default must resolve to the real directory,
-    not the empty sentinel itself."""
+    """Empty config_dir falls back to the platform default."""
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
     with patch("pilot.managers.nginx.default_nginx_config_dir", return_value=Path("/etc/nginx/conf.d")):

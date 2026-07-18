@@ -1,6 +1,5 @@
-"""Integration: nginx accepts the ModSecurity config we generate. Runs the real
-`nginx -t` against a generated WAF vhost. Skipped unless the ModSecurity module
-and CRS are actually installed (so it no-ops in environments without the WAF)."""
+"""Integration test for generated ModSecurity nginx config."""
+
 from __future__ import annotations
 
 import shutil
@@ -9,8 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pilot.config.bench import BenchConfig
-from pilot.config.waf import WafConfig
+from pilot.config import BenchConfig, WafConfig
 from pilot.core.bench import Bench
 from pilot.managers.nginx import NginxManager
 from pilot.managers.waf import WafManager
@@ -71,6 +69,7 @@ def test_generated_waf_config_passes_nginx_t(tmp_path: Path) -> None:
     conf = _wrapper_conf(tmp_path, nginx_dir / "include.conf", WafManager.module_path())
     result = subprocess.run(
         ["nginx", "-t", "-p", str(tmp_path), "-c", str(conf)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stderr

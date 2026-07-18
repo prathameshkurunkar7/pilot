@@ -1,4 +1,5 @@
 """Tests for GET /api/v1/cli-updates and POST /api/v1/cli-update-checks."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,7 +10,7 @@ from pilot.config.bench_toml_builder import BenchTomlBuilder
 
 def _client(bench_root: Path, password: str = "secret"):
     from admin.backend.app import create_app
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
@@ -37,8 +38,10 @@ def test_cli_updates_reads_without_fetching(tmp_path: Path) -> None:
     client = _client(bench_root)
     repo = _mock_repo(behind=2)
 
-    with patch("admin.backend.api.v1.updates.cli_root", return_value=Path("/cli")), \
-         patch("admin.backend.api.v1.updates.GitRepo", return_value=repo):
+    with (
+        patch("admin.backend.api.v1.updates.cli_root", return_value=Path("/cli")),
+        patch("admin.backend.api.v1.updates.GitRepo", return_value=repo),
+    ):
         response = client.get("/api/v1/cli-updates")
 
     body = response.get_json()
@@ -53,8 +56,10 @@ def test_cli_update_checks_fetches_first(tmp_path: Path) -> None:
     client = _client(bench_root)
     repo = _mock_repo(behind=0)
 
-    with patch("admin.backend.api.v1.updates.cli_root", return_value=Path("/cli")), \
-         patch("admin.backend.api.v1.updates.GitRepo", return_value=repo):
+    with (
+        patch("admin.backend.api.v1.updates.cli_root", return_value=Path("/cli")),
+        patch("admin.backend.api.v1.updates.GitRepo", return_value=repo),
+    ):
         response = client.post("/api/v1/cli-update-checks")
 
     body = response.get_json()

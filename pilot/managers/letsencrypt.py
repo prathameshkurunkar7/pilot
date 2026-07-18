@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -9,7 +10,7 @@ from pilot.managers.platform import _privileged
 from pilot.utils import run_command
 
 if TYPE_CHECKING:
-    from pilot.config.site import SiteConfig
+    from pilot.config import SiteConfig
     from pilot.core.bench import Bench
 
 _CERT_EXPIRY_THRESHOLD_DAYS = 30
@@ -54,13 +55,7 @@ def letsencrypt_active(bench: "Bench") -> bool:
 
 
 def letsencrypt_email_required(bench: "Bench") -> bool:
-    """True if --tls would actually obtain a cert here — an SSL site or a public
-    admin domain — and so needs a contact email. Local domains (``*.localhost``)
-    never get certs, so no email is required for them.
-
-    admin.tls = False means a central proxy terminates TLS for the whole bench,
-    so no certs are obtained here at all.
-    """
+    """True when local TLS would issue a public cert and needs an email."""
     if not bench.config.admin.tls:
         return False
     if any(site.config.ssl and _is_public_domain(site.config.name) for site in bench.sites()):
@@ -112,18 +107,27 @@ class LetsEncryptManager:
         webroot_path = str(self.bench.config.letsencrypt.webroot_path)
         email = self.bench.config.letsencrypt.email
 
-        run_command(_privileged([
-            "certbot", "certonly",
-            "--webroot",
-            "-w", webroot_path,
-            *domain_args,
-            "--cert-name", site.name,
-            "--expand",
-            "--email", email,
-            "--agree-tos",
-            "--non-interactive",
-            "--deploy-hook", _nginx_reload_hook(),
-        ]))
+        run_command(
+            _privileged(
+                [
+                    "certbot",
+                    "certonly",
+                    "--webroot",
+                    "-w",
+                    webroot_path,
+                    *domain_args,
+                    "--cert-name",
+                    site.name,
+                    "--expand",
+                    "--email",
+                    email,
+                    "--agree-tos",
+                    "--non-interactive",
+                    "--deploy-hook",
+                    _nginx_reload_hook(),
+                ]
+            )
+        )
 
     def obtain_all(self) -> None:
         # With TLS disabled a central proxy fronts the bench; obtain nothing.
@@ -143,7 +147,9 @@ class LetsEncryptManager:
             try:
                 self.obtain_admin()
             except CommandError as exc:
-                print(f"Could not obtain a certificate for '{self.bench.config.admin.domain}', skipping: {exc}")
+                print(
+                    f"Could not obtain a certificate for '{self.bench.config.admin.domain}', skipping: {exc}"
+                )
                 failed.append(self.bench.config.admin.domain)
         # Don't raise: certs that did issue should still get TLS applied. Domains
         # that failed stay on HTTP and can be retried later.
@@ -160,16 +166,25 @@ class LetsEncryptManager:
             print(f"Certificate for {domain} already exists and is not near expiry. Skipping.")
             return
 
-        run_command(_privileged([
-            "certbot", "certonly",
-            "--webroot",
-            "-w", str(self.bench.config.letsencrypt.webroot_path),
-            "-d", domain,
-            "--email", self.bench.config.letsencrypt.email,
-            "--agree-tos",
-            "--non-interactive",
-            "--deploy-hook", _nginx_reload_hook(),
-        ]))
+        run_command(
+            _privileged(
+                [
+                    "certbot",
+                    "certonly",
+                    "--webroot",
+                    "-w",
+                    str(self.bench.config.letsencrypt.webroot_path),
+                    "-d",
+                    domain,
+                    "--email",
+                    self.bench.config.letsencrypt.email,
+                    "--agree-tos",
+                    "--non-interactive",
+                    "--deploy-hook",
+                    _nginx_reload_hook(),
+                ]
+            )
+        )
 
     def renew(self) -> None:
         run_command(_privileged(["certbot", "renew", "--quiet"]))
@@ -185,7 +200,7 @@ class LetsEncryptManager:
 
     def _is_near_expiry_cert(self, cert_file: Path) -> bool:
         import subprocess
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         result = subprocess.run(
             _privileged(["openssl", "x509", "-enddate", "-noout", "-in", str(cert_file)]),
@@ -197,6 +212,6 @@ class LetsEncryptManager:
             return True
 
         date_str = result.stdout.strip().replace("notAfter=", "")
-        expiry = datetime.strptime(date_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
-        now = datetime.now(tz=timezone.utc)
+        expiry = datetime.strptime(date_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=UTC)
+        now = datetime.now(tz=UTC)
         return (expiry - now).days < _CERT_EXPIRY_THRESHOLD_DAYS

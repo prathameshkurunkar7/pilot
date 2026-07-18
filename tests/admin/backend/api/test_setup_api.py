@@ -5,9 +5,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from admin.backend.app import create_app
-from pilot.tasks.manager.task_state import TaskStatus
-from pilot.tasks.manager.task_store import TaskStore
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
+from pilot.internal.tasks.store import TaskStore
+from pilot.managers.task.models import TaskStatus
 
 
 def setup_client(bench_root: Path):
@@ -27,7 +27,7 @@ def save_configuration(client):
 
 
 def start_setup(client, key: str = "wizard-setup"):
-    with patch("pilot.tasks.manager.task_runner.task_workers.wake"):
+    with patch("pilot.internal.tasks.runner.task_workers.wake"):
         return client.post(
             "/api/v1/setup/actions/start",
             headers={"Idempotency-Key": key},
@@ -181,7 +181,7 @@ def test_only_one_unauthenticated_request_can_claim_setup(
 
 def test_database_validation_uses_one_engine_neutral_resource(tmp_path: Path) -> None:
     client = setup_client(tmp_path)
-    with patch("pilot.managers.mariadb.MariaDBManager") as manager_class:
+    with patch("pilot.managers.database.MariaDBManager") as manager_class:
         manager_class.return_value.is_installed.return_value = False
         response = client.post(
             "/api/v1/setup/database-validations",
@@ -198,7 +198,7 @@ def test_database_validation_uses_one_engine_neutral_resource(tmp_path: Path) ->
 
 def test_database_validation_supports_existing_postgres(tmp_path: Path) -> None:
     client = setup_client(tmp_path)
-    with patch("pilot.managers.postgres.PostgresManager") as manager_class:
+    with patch("pilot.managers.database.PostgresManager") as manager_class:
         manager_class.return_value.check_credentials.return_value = False
         response = client.post(
             "/api/v1/setup/database-validations",

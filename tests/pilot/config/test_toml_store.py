@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from pilot.config import BenchTomlStore
 from pilot.config.bench_toml_builder import BenchTomlBuilder
-from pilot.config.toml_store import BenchTomlStore
 from pilot.exceptions import ConfigError
 from pilot.internal.atomic_file import exclusive_file_lock
 
@@ -133,9 +133,7 @@ def test_write_fsyncs_file_and_parent_directory(
         events.append("replace")
         real_replace(source, destination)
 
-    monkeypatch.setattr(
-        "pilot.internal.atomic_file.os.fsync", lambda descriptor: events.append("fsync")
-    )
+    monkeypatch.setattr("pilot.internal.atomic_file.os.fsync", lambda descriptor: events.append("fsync"))
     monkeypatch.setattr("pilot.internal.atomic_file.os.replace", replace)
 
     store.write(config)
@@ -181,10 +179,12 @@ def test_concurrent_raw_edits_preserve_both_updates(tmp_path: Path) -> None:
 def test_nonblocking_lock_fails_when_another_thread_holds_it(tmp_path: Path) -> None:
     target = tmp_path / "operation"
 
-    with exclusive_file_lock(target):
-        with pytest.raises(BlockingIOError):
-            with exclusive_file_lock(target, blocking=False):
-                pass
+    with (
+        exclusive_file_lock(target),
+        pytest.raises(BlockingIOError),
+        exclusive_file_lock(target, blocking=False),
+    ):
+        pass
 
 
 def test_unchanged_transaction_does_not_replace_config(
@@ -245,21 +245,23 @@ def test_write_flat_matches_builder(tmp_path: Path) -> None:
 
 
 def test_write_flat_preserves_production_enabled(tmp_path: Path) -> None:
-    """production.enabled has no flat key, so BenchTomlBuilder.build() always
-    reconstructs it as the dataclass default (False). A wizard/settings save
-    (write_flat) on a bench already brought up to production must not silently
-    demote it back to "development" — that's a regression, not a real change."""
+    """write_flat preserves production.enabled on production benches."""
     store = BenchTomlStore.for_bench(tmp_path)
-    store.write_flat("prod-bench", {"production_process_manager": "systemd", "admin_domain": "admin.example.com"})
+    store.write_flat(
+        "prod-bench", {"production_process_manager": "systemd", "admin_domain": "admin.example.com"}
+    )
     raw = store.read_raw()
     raw["production"]["enabled"] = True
     store.write_raw(raw)
 
-    store.write_flat("prod-bench", {
-        "production_process_manager": "systemd",
-        "admin_domain": "admin.example.com",
-        "admin_password": "secret",
-    })
+    store.write_flat(
+        "prod-bench",
+        {
+            "production_process_manager": "systemd",
+            "admin_domain": "admin.example.com",
+            "admin_password": "secret",
+        },
+    )
 
     config = store.read()
     assert config.production.enabled is True

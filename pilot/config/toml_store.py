@@ -1,27 +1,23 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
+from pilot.config.bench import BenchConfig
+from pilot.config.bench_toml import dumps_config, load_config
+from pilot.config.config_schema import preserve_unknown_config
 from pilot.internal.atomic_file import (
     atomic_write_private_text,
     exclusive_file_lock,
     replace_private_text_locked,
 )
-from pilot.config.bench_toml import dumps_config, load_config
-from pilot.config.config_schema import preserve_unknown_config
 from pilot.internal.toml import Toml
-from pilot.config.bench import BenchConfig
 
 
 class BenchTomlStore:
-    """Single entry point for reading and writing a bench's ``bench.toml``.
-
-    Wraps internal parsing and serialization so every caller funnels through
-    one object instead of touching the file directly.
-    """
+    """Single entry point for reading and writing bench.toml."""
 
     FILENAME = "bench.toml"
 

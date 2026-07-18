@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pilot.internal.toml import ConfigDict, Toml, TomlDataclassCodec
 from pilot.config.bench import BenchConfig
 from pilot.config.waf import WafConfig
+from pilot.internal.toml import ConfigDict, Toml, TomlDataclassCodec
 
 
 def _bench_config_from_dict(data: ConfigDict, *, strict: bool = False) -> BenchConfig:
@@ -12,7 +12,24 @@ def _bench_config_from_dict(data: ConfigDict, *, strict: bool = False) -> BenchC
 
 
 def _bench_config_to_dict(config: BenchConfig) -> ConfigDict:
-    bench = {
+    data: ConfigDict = {
+        "bench": _bench_section(config),
+        "apps": _apps_section(config),
+        "mariadb": _mariadb_section(config),
+        "postgres": _postgres_section(config),
+        "redis": _redis_section(config),
+        "workers": _workers_section(config),
+        "production": _production_section(config),
+        "gunicorn": _gunicorn_section(config),
+        "letsencrypt": _letsencrypt_section(config),
+        "admin": _admin_section(config),
+    }
+    _add_optional_sections(data, config)
+    return data
+
+
+def _bench_section(config: BenchConfig) -> ConfigDict:
+    bench: ConfigDict = {
         "name": config.name,
         "python": config.python_version,
         "http_port": config.http_port,
@@ -25,15 +42,21 @@ def _bench_config_to_dict(config: BenchConfig) -> ConfigDict:
     }
     if config.default_branch:
         bench["default_branch"] = config.default_branch
+    return bench
 
-    apps = []
+
+def _apps_section(config: BenchConfig) -> list[ConfigDict]:
+    apps: list[ConfigDict] = []
     for app in config.apps:
         app_data: ConfigDict = {"name": app.name, "repo": app.repo, "branch": app.branch}
         if app.branches:
             app_data["branches"] = app.branches
         apps.append(app_data)
+    return apps
 
-    mariadb = {
+
+def _mariadb_section(config: BenchConfig) -> ConfigDict:
+    return {
         "host": config.mariadb.host,
         "port": config.mariadb.port,
         "root_password": config.mariadb.root_password,
@@ -41,68 +64,81 @@ def _bench_config_to_dict(config: BenchConfig) -> ConfigDict:
         "socket_path": config.mariadb.socket_path,
         "existing": config.mariadb.existing,
     }
-    postgres = {
+
+
+def _postgres_section(config: BenchConfig) -> ConfigDict:
+    return {
         "host": config.postgres.host,
         "port": config.postgres.port,
         "root_password": config.postgres.root_password,
         "admin_user": config.postgres.admin_user,
         "existing": config.postgres.existing,
     }
+
+
+def _redis_section(config: BenchConfig) -> ConfigDict:
     redis: ConfigDict = {
         "cache_port": config.redis.cache_port,
         "queue_port": config.redis.queue_port,
     }
     if config.redis.version:
         redis["version"] = config.redis.version
+    return redis
 
+
+def _workers_section(config: BenchConfig) -> list[ConfigDict]:
+    return [{"queues": group.queues, "count": group.count} for group in config.workers.groups]
+
+
+def _production_section(config: BenchConfig) -> ConfigDict:
     production: ConfigDict = {
         "enabled": config.production.enabled,
         "use_companion_manager": config.production.use_companion_manager,
     }
     if config.production.process_manager:
         production["process_manager"] = config.production.process_manager
+    return production
 
-    data: ConfigDict = {
-        "bench": bench,
-        "apps": apps,
-        "mariadb": mariadb,
-        "postgres": postgres,
-        "redis": redis,
-        "workers": [
-            {"queues": group.queues, "count": group.count} for group in config.workers.groups
-        ],
-        "production": production,
-        "gunicorn": {
-            "workers": config.gunicorn.workers,
-            "threads": config.gunicorn.threads,
-            "timeout": config.gunicorn.timeout,
-            "worker_class": config.gunicorn.worker_class,
-            "malloc_arena_max": config.gunicorn.malloc_arena_max or 2,
-            "max_requests": config.gunicorn.max_requests,
-            "max_requests_jitter": config.gunicorn.max_requests_jitter,
-        },
-        "letsencrypt": {
-            "email": config.letsencrypt.email,
-            "webroot_path": str(config.letsencrypt.webroot_path),
-        },
-        "admin": {
-            "port": config.admin.port,
-            "timeout": config.admin.timeout,
-            "enabled": config.admin.enabled,
-            "password": config.admin.password,
-            "domain": config.admin.domain,
-            "tls": config.admin.tls,
-            "allow_bench_management": config.admin.allow_bench_management,
-        },
+
+def _gunicorn_section(config: BenchConfig) -> ConfigDict:
+    return {
+        "workers": config.gunicorn.workers,
+        "threads": config.gunicorn.threads,
+        "timeout": config.gunicorn.timeout,
+        "worker_class": config.gunicorn.worker_class,
+        "malloc_arena_max": config.gunicorn.malloc_arena_max or 2,
+        "max_requests": config.gunicorn.max_requests,
+        "max_requests_jitter": config.gunicorn.max_requests_jitter,
     }
 
+
+def _letsencrypt_section(config: BenchConfig) -> ConfigDict:
+    return {
+        "email": config.letsencrypt.email,
+        "webroot_path": str(config.letsencrypt.webroot_path),
+    }
+
+
+def _admin_section(config: BenchConfig) -> ConfigDict:
+    admin: ConfigDict = {
+        "port": config.admin.port,
+        "timeout": config.admin.timeout,
+        "enabled": config.admin.enabled,
+        "password": config.admin.password,
+        "domain": config.admin.domain,
+        "tls": config.admin.tls,
+        "allow_bench_management": config.admin.allow_bench_management,
+    }
     optional_admin = {
         "jwt_secret": config.admin.jwt_secret,
         "jwks_url": config.admin.jwks_url,
         "jwks_audience": config.admin.jwks_audience,
     }
-    data["admin"].update({key: value for key, value in optional_admin.items() if value})
+    admin.update({key: value for key, value in optional_admin.items() if value})
+    return admin
 
+
+def _add_optional_sections(data: ConfigDict, config: BenchConfig) -> None:
     if config.central.endpoint or config.central.auth_token:
         data["central"] = {
             "endpoint": config.central.endpoint,
@@ -141,7 +177,12 @@ def _bench_config_to_dict(config: BenchConfig) -> ConfigDict:
                     "match": rule.match,
                     "enabled": rule.enabled,
                     "conditions": [
-                        {"field": c.field, "operator": c.operator, "value": c.value, "header_name": c.header_name}
+                        {
+                            "field": c.field,
+                            "operator": c.operator,
+                            "value": c.value,
+                            "header_name": c.header_name,
+                        }
                         for c in rule.conditions
                     ],
                 }
@@ -169,8 +210,6 @@ def _bench_config_to_dict(config: BenchConfig) -> ConfigDict:
         }
         if monitor.log_path:
             data["monitor"]["log_path"] = str(monitor.log_path)
-
-    return data
 
 
 BENCH_TOML_CODEC = TomlDataclassCodec(

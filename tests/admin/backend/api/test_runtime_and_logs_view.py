@@ -1,4 +1,5 @@
 """Tests for /api/v1/runtime and /api/v1/logs routes."""
+
 from __future__ import annotations
 
 import json
@@ -11,7 +12,7 @@ from pilot.config.bench_toml_builder import BenchTomlBuilder
 
 def _client(bench_root: Path, password: str = "secret"):
     from admin.backend.app import create_app
-    from pilot.core.admin_auth import ensure_jwt_secret, issue_token
+    from admin.backend.auth import ensure_jwt_secret, issue_token
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
@@ -27,8 +28,14 @@ def _client(bench_root: Path, password: str = "secret"):
 
 def _process(name="web", status="running"):
     return SimpleNamespace(
-        name=name, status=status, pid=123, uptime="1h",
-        cpu_percent=1.0, rss_mb=10.0, pss_mb=8.0, log_file=Path(f"{name}.log"),
+        name=name,
+        status=status,
+        pid=123,
+        uptime="1h",
+        cpu_percent=1.0,
+        rss_mb=10.0,
+        pss_mb=8.0,
+        log_file=Path(f"{name}.log"),
     )
 
 
@@ -68,12 +75,15 @@ def test_runtime_restart_returns_the_process_list(tmp_path: Path) -> None:
     status_result = Mock(returncode=0, stdout="current:web RUNNING\n")
     restart_result = Mock(returncode=0)
 
-    with patch(
-        "admin.backend.api.v1.processes.subprocess.run",
-        side_effect=[status_result, restart_result],
-    ), patch(
-        "admin.backend.providers.processes.ProcessProvider.get_all",
-        return_value=[_process()],
+    with (
+        patch(
+            "admin.backend.api.v1.processes.subprocess.run",
+            side_effect=[status_result, restart_result],
+        ),
+        patch(
+            "admin.backend.providers.processes.ProcessProvider.get_all",
+            return_value=[_process()],
+        ),
     ):
         response = client.post("/api/v1/runtime/actions/restart")
 

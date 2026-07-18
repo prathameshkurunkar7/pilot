@@ -1,11 +1,10 @@
 """Tests for Site.drop()'s provider domain capture/release driving a dummy provider."""
+
 import json
 import os
 from pathlib import Path
 
-from pilot.config.bench import BenchConfig
-from pilot.config.site import SiteConfig
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchConfig, BenchTomlStore, SiteConfig
 from pilot.core.bench import Bench
 from pilot.core.site import Site
 
@@ -54,8 +53,14 @@ def _write_site(bench: Bench, name: str, config: dict) -> None:
 def test_collects_site_name_and_custom_domains(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
-    _write_site(bench, "mysite", {"domains": ["app.example.com", "shop.example.com"],
-                                  "host_name": "https://app.example.com"})
+    _write_site(
+        bench,
+        "mysite",
+        {
+            "domains": ["app.example.com", "shop.example.com"],
+            "host_name": "https://app.example.com",
+        },
+    )
 
     assert Site(SiteConfig(name="mysite", apps=[]), bench)._provider_domains() == [
         "mysite",

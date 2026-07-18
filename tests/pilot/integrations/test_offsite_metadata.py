@@ -50,7 +50,9 @@ def test_concurrent_adds_keep_every_run(tmp_path) -> None:
     metadata = Metadata(s3, "bucket", BackupKeys("site"), tmp_path / ".backup-metadata")
     timestamps = [f"20260701_0000{i:02d}" for i in range(8)]
 
-    _run_concurrently(lambda i: metadata.add(timestamps[i], f"{timestamps[i]}-database.sql.gz"), len(timestamps))
+    _run_concurrently(
+        lambda i: metadata.add(timestamps[i], f"{timestamps[i]}-database.sql.gz"), len(timestamps)
+    )
 
     stored = s3.objects[BackupKeys("site").month(timestamps[0])]
     assert set(stored) == set(timestamps)

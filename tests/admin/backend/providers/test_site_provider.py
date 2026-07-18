@@ -31,9 +31,7 @@ def test_site_provider_skips_symlinked_site(tmp_path: Path) -> None:
     _make_site(outside, "linked.localhost", {"installed_apps": ["frappe"]})
     sites = tmp_path / "sites"
     sites.mkdir()
-    (sites / "linked.localhost").symlink_to(
-        outside / "linked.localhost", target_is_directory=True
-    )
+    (sites / "linked.localhost").symlink_to(outside / "linked.localhost", target_is_directory=True)
 
     assert SiteProvider(tmp_path).get_all() == []
 

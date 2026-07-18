@@ -5,15 +5,11 @@ from pathlib import Path
 from flask import current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
-from admin.backend.middleware import require_scope
-
 from admin.backend.api.v1.sites import sites_bp
 from admin.backend.api.v1.sites.shared import site_name
-
+from admin.backend.middleware import require_scope
 from pilot.integrations.central import CentralClient, CentralClientError
 
-# Transparent, allowlisted proxy: a site calls `sites/<site>/central/<method>` and the pilot
-# forwards it to Central with its X-Pilot-Token (Central resolves team/asset from the credential).
 _ALLOWED_PREFIXES = ("central.billing.api.billing_api.",)
 _ALLOWED_EXACT = frozenset({"central.api.pilot.heartbeat"})
 
@@ -35,9 +31,10 @@ def _central() -> CentralClient:
 @sites_bp.post("/<name>/central/<path:method_path>")
 @require_scope(site_name)
 def central_proxy(name: str, method_path: str):
-    # config/enroll are excluded — those are the pilot's own boot-time calls, not a site's.
     if not _is_allowed(method_path):
-        return error_response("central_method_forbidden", f"Central method '{method_path}' is not permitted.", 403)
+        return error_response(
+            "central_method_forbidden", f"Central method '{method_path}' is not permitted.", 403
+        )
     data = request.get_json(silent=True) if request.method == "POST" else None
     try:
         return jsonify(_central().forward(method_path, request.method, data))

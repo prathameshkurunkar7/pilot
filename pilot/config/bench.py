@@ -2,7 +2,6 @@ import re
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import List
 
 from pilot.config.admin import AdminConfig
 from pilot.config.app import AppConfig
@@ -35,7 +34,7 @@ class BenchConfig:
     redis: RedisConfig
     workers: WorkerConfig
     postgres: PostgresConfig = field(default_factory=PostgresConfig)
-    apps: List[AppConfig] = field(default_factory=list)
+    apps: list[AppConfig] = field(default_factory=list)
     http_port: int = 8000
     socketio_port: int = 9000
     socketio_backend: str = "node"
@@ -159,7 +158,9 @@ class BenchConfig:
             if not app.name or not app.repo or not app.branch:
                 raise ConfigError(f"App '{app.name or '(unnamed)'}' must have name, repo, and branch.")
             if app.branches and app.branch not in app.branches:
-                raise ConfigError(f"App '{app.name}': active branch '{app.branch}' is not listed in branches {app.branches}.")
+                raise ConfigError(
+                    f"App '{app.name}': active branch '{app.branch}' is not listed in branches {app.branches}."
+                )
 
     def _validate_bench_name(self) -> None:
         if not _BENCH_NAME_PATTERN.match(self.name):
@@ -184,15 +185,21 @@ class BenchConfig:
         }
         for name, port in ports.items():
             if not (_PORT_MIN <= port <= _PORT_MAX):
-                raise ConfigError(f"{name} {port} is out of range. Must be between {_PORT_MIN} and {_PORT_MAX}.")
+                raise ConfigError(
+                    f"{name} {port} is out of range. Must be between {_PORT_MIN} and {_PORT_MAX}."
+                )
 
     def _validate_socketio_backend(self) -> None:
         if self.socketio_backend not in ("python", "node"):
-            raise ConfigError(f"bench.socketio_backend '{self.socketio_backend}' is invalid. Must be 'python' or 'node'.")
+            raise ConfigError(
+                f"bench.socketio_backend '{self.socketio_backend}' is invalid. Must be 'python' or 'node'."
+            )
 
     def _validate_db_type(self) -> None:
         if self.db_type not in ("mariadb", "postgres", "sqlite"):
-            raise ConfigError(f"bench.db_type '{self.db_type}' is invalid. Must be 'mariadb', 'postgres', or 'sqlite'.")
+            raise ConfigError(
+                f"bench.db_type '{self.db_type}' is invalid. Must be 'mariadb', 'postgres', or 'sqlite'."
+            )
 
     @property
     def framework_app(self) -> AppConfig:

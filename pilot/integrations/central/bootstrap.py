@@ -10,13 +10,8 @@ from pilot.integrations.central.client import CentralClientError, _message
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
 
-# First-boot enrollment: the bench exchanges a single-use bootstrap token (seeded by Atlas
-# at VM-create) for its long-lived credential + JWKS config, in one call.
-
 ENROLL_METHOD = "central.api.pilot.enroll"
 
-# Canonical path a bare `bench enroll` reads the seed from (VM metadata drops it here; on
-# tmpfs, so the single-use token doesn't survive a reboot). Override with $PILOT_SEED_PATH.
 DEFAULT_SEED_PATH = "/run/pilot/central-seed.json"
 
 
@@ -27,8 +22,6 @@ def default_seed_path() -> str:
 
 
 def seed_from_metadata(bench: "Bench", path: str) -> bool:
-    """Stage a seed (``{central_endpoint, bootstrap_token}`` JSON) that VM metadata dropped
-    at ``path``. Returns True if one was found — the boot-free enrollment entry point."""
     from pathlib import Path
 
     source = Path(path)
@@ -43,8 +36,6 @@ def seed_from_metadata(bench: "Bench", path: str) -> bool:
 
 
 def seed(bench: "Bench", endpoint: str, bootstrap_token: str) -> None:
-    """Write the create-time seed into bench.toml ``[central]`` + the in-memory config, so
-    ``enroll_if_needed`` can exchange it."""
     from pilot.config.toml_store import BenchTomlStore
 
     store = BenchTomlStore.for_bench(bench.path)
@@ -59,8 +50,6 @@ def seed(bench: "Bench", endpoint: str, bootstrap_token: str) -> None:
 
 
 def enroll_if_needed(bench: "Bench") -> bool:
-    """Idempotent: no-op if already enrolled, else exchange the seeded bootstrap token for
-    the credential + JWKS config and persist both into bench.toml. Returns True if enrolled."""
     central = bench.config.central
     if central.auth_token:
         return False
@@ -74,8 +63,6 @@ def enroll_if_needed(bench: "Bench") -> bool:
 
 
 def _enroll(endpoint: str, bootstrap_token: str) -> dict[str, Any]:
-    """POST the bootstrap token to Central's guest enroll endpoint. No credential is sent —
-    the signed, single-use bootstrap token is the only authentication."""
     body = json.dumps({"bootstrap_token": bootstrap_token}).encode()
     request = urllib.request.Request(
         f"{endpoint}/api/method/{ENROLL_METHOD}",
@@ -96,8 +83,6 @@ def _enroll(endpoint: str, bootstrap_token: str) -> dict[str, Any]:
 
 
 def _persist(bench: "Bench", result: dict[str, Any]) -> None:
-    """Write the enrolled credential + JWKS trust config into bench.toml and refresh the
-    in-memory config. The bootstrap token is dropped — it is single-use and now spent."""
     from pilot.config.toml_store import BenchTomlStore
 
     missing = [key for key in ("auth_token", "jwks_url", "audience_id") if not result.get(key)]

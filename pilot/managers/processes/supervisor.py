@@ -5,17 +5,17 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from pilot.managers.admin_environment import AdminEnvManager
+from pilot.managers.environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
-from pilot.loader import cli_root
-from pilot.managers.processes.local import ProcessDefinition
 from pilot.managers.processes.base import (
     ManagedProcessManager,
-    UnitGroup,
     ServiceRenderer,
+    UnitGroup,
     override,
 )
-from pilot.utils import run_command
+from pilot.managers.processes.local import ProcessDefinition
+from pilot.utils import cli_root, run_command
+
 
 class SupervisorRenderer(ServiceRenderer):
     """Builds the bench's supervisord.conf and per-program blocks."""
@@ -78,6 +78,7 @@ class SupervisorRenderer(ServiceRenderer):
     def _csv(self, items: list[ProcessDefinition]) -> str:
         return ",".join(self.program_name(pd) for pd in items)
 
+
 class SupervisorProcessManager(ManagedProcessManager):
     """Manages bench processes via a bench-owned supervisord instance (no sudo required)."""
 
@@ -113,7 +114,9 @@ class SupervisorProcessManager(ManagedProcessManager):
         GunicornManager(self.bench).generate_admin_config()
         self.supervisor_dir.mkdir(parents=True, exist_ok=True)
         renderer = SupervisorRenderer(self.bench.config.name, self.bench.logs_path)
-        self.supervisor_conf_path.write_text(renderer.conf(self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid))
+        self.supervisor_conf_path.write_text(
+            renderer.conf(self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid)
+        )
 
     @override
     def install_config(self) -> None:

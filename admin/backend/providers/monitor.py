@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 WINDOW_SECONDS = {"30m": 1800, "1h": 3600, "6h": 21600, "12h": 43200, "24h": 86400, "1w": 604800}
@@ -16,11 +16,10 @@ class MonitorProvider:
     def __init__(self, bench_root: Path, window: str) -> None:
         self._bench_root = bench_root
         self._window = window if window in WINDOW_SECONDS else "1h"
-        self._cutoff = datetime.now(timezone.utc) - timedelta(seconds=WINDOW_SECONDS[self._window])
+        self._cutoff = datetime.now(UTC) - timedelta(seconds=WINDOW_SECONDS[self._window])
 
     def get_history(self) -> dict:
-        from pilot.config.monitor import MonitorConfig
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore, MonitorConfig
 
         config = BenchTomlStore.for_bench(self._bench_root).read()
         app_log = config.monitor.log_path or MonitorConfig.default_log_path(config.name)
@@ -28,7 +27,7 @@ class MonitorProvider:
             "window": self._window,
             "window_seconds": WINDOW_SECONDS[self._window],
             # Absolute epoch ms so the browser windows correctly regardless of its timezone.
-            "now": int(datetime.now(timezone.utc).timestamp() * 1000),
+            "now": int(datetime.now(UTC).timestamp() * 1000),
             "system": self.get_system_metrics(config.monitor.system_log_path),
             "application": self.get_application_metrics(app_log, config.name),
         }
@@ -58,7 +57,7 @@ class MonitorProvider:
         memory = metrics.get("memory") or {}
         network = metrics.get("network") or {}
         disk_io = metrics.get("disk_io") or {}
-        point = {
+        return {
             "time": self.to_epoch_ms(when),
             "Busy User": cpu.get("user"),
             "Busy System": cpu.get("system"),
@@ -78,14 +77,19 @@ class MonitorProvider:
             "Read": disk_io.get("read_bytes_per_sec"),
             "Write": disk_io.get("write_bytes_per_sec"),
         }
-        return point
 
     @staticmethod
     def get_latest_storage(rows: list) -> dict | None:
         for _, metrics in reversed(rows):
             disk = (metrics.get("storage") or {}).get("disk")
             if disk:
-                return {"disk": {"used_mb": disk.get("used_mb"), "total_mb": disk.get("total_mb"), "percent": disk.get("percent")}}
+                return {
+                    "disk": {
+                        "used_mb": disk.get("used_mb"),
+                        "total_mb": disk.get("total_mb"),
+                        "percent": disk.get("percent"),
+                    }
+                }
         return None
 
     def get_application_metrics(self, path: Path, bench_name: str) -> dict:
@@ -93,8 +97,12 @@ class MonitorProvider:
         return {
             "earliest": self.get_earliest(path),
             "services": self.get_service_names(rows, bench_name),
-            "cpu": [self.build_service_row(when, metrics, bench_name, "cpu_percent") for when, metrics in rows],
-            "memory": [self.build_service_row(when, metrics, bench_name, "memory_rss_mb") for when, metrics in rows],
+            "cpu": [
+                self.build_service_row(when, metrics, bench_name, "cpu_percent") for when, metrics in rows
+            ],
+            "memory": [
+                self.build_service_row(when, metrics, bench_name, "memory_rss_mb") for when, metrics in rows
+            ],
         }
 
     def get_records_in_window(self, path: Path) -> list[tuple[datetime, dict]]:
@@ -117,7 +125,7 @@ class MonitorProvider:
     def _get_time(value: str) -> datetime:
         """Older lines carry naive server-local time; astimezone() normalizes it to UTC."""
         when = datetime.fromisoformat(value)
-        return when if when.tzinfo else when.astimezone(timezone.utc)
+        return when if when.tzinfo else when.astimezone(UTC)
 
     def get_service_names(self, rows: list, bench_name: str) -> list[str]:
         names: list[str] = []

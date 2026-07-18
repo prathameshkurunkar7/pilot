@@ -1,7 +1,4 @@
-"""Central integration: the pilot's HTTP client to the Central control plane and its
-first-boot enrollment. Public surface re-exported here so callers do
-`from pilot.integrations.central import ...` rather than reaching into client/bootstrap.
-"""
+"""Central HTTP client and enrollment helpers."""
 
 from __future__ import annotations
 

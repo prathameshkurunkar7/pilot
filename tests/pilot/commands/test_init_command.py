@@ -1,11 +1,12 @@
 """BenchInitializer._provision_or_verify: existing database handling."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
 import pytest
 
-from pilot.core.bench_initializer import BenchInitializer
+from pilot.core.bench.initializer import BenchInitializer
 from pilot.exceptions import BenchError
 
 
@@ -42,7 +43,7 @@ def test_raises_when_existing_credentials_are_wrong() -> None:
     manager.config.admin_user = "admin"
     manager.check_credentials.return_value = False
 
-    with pytest.raises(BenchError, match="db.example.com"):
+    with pytest.raises(BenchError, match=r"db\.example\.com"):
         _initializer()._provision_or_verify(manager, "MariaDB")
 
     manager.provision.assert_not_called()

@@ -12,20 +12,17 @@ if TYPE_CHECKING:
 
 
 class CentralClientError(BenchError):
-    """A Central API call could not be made or was rejected (missing config,
-    transport failure, or a non-2xx response)."""
+    """A Central API call could not be made or was rejected."""
 
 
 def _message(payload: Any) -> Any:
-    """Unwrap Frappe's ``{"message": ...}`` envelope that whitelisted methods return"""
     if isinstance(payload, dict) and "message" in payload:
         return payload["message"]
     return payload
 
 
 class CentralClient:
-    """Thin transport for this bench's pilot→Central calls: reads endpoint + auth_token from
-    bench.toml and authenticates with X-Pilot-Token. Methods are forwarded by path, not mirrored."""
+    """Central transport using this bench's pilot token."""
 
     TOKEN_HEADER = "X-Pilot-Token"
 
@@ -33,8 +30,7 @@ class CentralClient:
         self.bench = bench
 
     def heartbeat(self) -> dict[str, Any]:
-        """Prove this pilot can authenticate to Central; returns Central's identity echo
-        (team + pilot_credential_id)."""
+        """Verify Central auth and return its identity echo."""
         return self._get("/api/method/central.api.pilot.heartbeat")
 
     def forward(self, method_path: str, http_method: str, data: dict[str, Any] | None = None) -> Any:
@@ -84,6 +80,4 @@ class CentralClient:
         except urllib.error.URLError as exc:
             raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc.reason}") from exc
         except ValueError as exc:
-            # A 2xx with a non-JSON body (e.g. an HTML error page from a proxy) — decode /
-            # json.loads raise ValueError, which the urllib guards above don't cover.
             raise CentralClientError(f"Central returned a non-JSON response for {path}: {exc}") from exc

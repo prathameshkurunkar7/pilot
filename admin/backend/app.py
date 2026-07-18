@@ -5,13 +5,12 @@ from pathlib import Path
 
 from flask import Flask, send_file
 
-from pilot.config.toml_store import BenchTomlStore
-
 from admin.backend.api.errors import install_api_error_handlers
 from admin.backend.api.responses import error_response
 from admin.backend.api.routes import API_V1_PREFIX
 from admin.backend.internal.rate_limiter import UsedTokens
 from admin.backend.middleware import allow_unauthenticated, install_auth_guard
+from pilot.config import BenchTomlStore
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -139,7 +138,7 @@ def secure_cookie_setting(config_store: BenchTomlStore) -> bool:
     if config.admin.tls:
         return True
 
-    from pilot.core.domains import DomainRouteProvider
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
 
     try:
         return bool(DomainRouteProvider.proxy_servers())

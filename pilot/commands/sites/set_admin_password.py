@@ -4,7 +4,7 @@ import getpass
 from dataclasses import dataclass
 from typing import Annotated, ClassVar
 
-from pilot.commands.base import Arg, Command
+from pilot.commands import Arg, Command
 from pilot.exceptions import BenchError
 
 
@@ -16,7 +16,7 @@ class SetAdminPasswordCommand(Command):
     password: Annotated[str | None, Arg(help="New password; omit to be prompted securely.")] = None
 
     def run(self) -> None:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         password = self.password or self._prompt()
         if not password:
@@ -26,7 +26,7 @@ class SetAdminPasswordCommand(Command):
         with store.edit_raw() as data:
             data.setdefault("admin", {})["password"] = password
         self.bench.config.admin.password = password
-        self.print("Admin password updated.")
+        self.report("Admin password updated.")
 
     def _prompt(self) -> str:
         password = getpass.getpass("New admin password: ")
