@@ -58,14 +58,20 @@ class BenchConfigFiles:
     def write_common_site_config(self) -> None:
         redis = self.bench.config.redis
         redis_cache = f"redis://localhost:{redis.cache_port}"
-        config = {
-            "redis_cache": redis_cache,
-            "redis_queue": f"redis://localhost:{redis.queue_port}",
-            "redis_socketio": redis_cache,
-            "socketio_port": self.bench.config.socketio_port,
-            "webserver_port": self.bench.config.http_port,
-            "socketio_backend": self.bench.config.socketio_backend,
-            "monitor": True,
-        }
         config_path = self.bench.sites_path / "common_site_config.json"
+        try:
+            config = json.loads(config_path.read_text()) if config_path.exists() else {}
+        except json.JSONDecodeError:
+            config = {}
+        config.update(
+            {
+                "redis_cache": redis_cache,
+                "redis_queue": f"redis://localhost:{redis.queue_port}",
+                "redis_socketio": redis_cache,
+                "socketio_port": self.bench.config.socketio_port,
+                "webserver_port": self.bench.config.http_port,
+                "socketio_backend": self.bench.config.socketio_backend,
+                "monitor": True,
+            }
+        )
         write_private_text(config_path, json.dumps(config, indent=2) + "\n")

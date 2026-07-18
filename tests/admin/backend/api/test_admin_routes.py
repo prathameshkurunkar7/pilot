@@ -9,6 +9,7 @@ from admin.backend.middleware import AuthPolicy, get_auth_policy
 SITE_SCOPED_ENDPOINTS = {
     "sites.add_domain",
     "sites.backup_site",
+    "sites.central_proxy",
     "sites.clear_cache",
     "sites.delete_backup_schedule",
     "sites.backup_download_links",
@@ -71,20 +72,20 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         and not rule.rule.startswith(f"{API_V1_PREFIX}/")
     ]
 
-    assert len(routes) == 99
+    assert len(routes) == 101
     assert unversioned == []
-    assert len({(method, path) for method, path, _, _ in routes}) == 99
+    assert len({(method, path) for method, path, _, _ in routes}) == 101
     assert Counter(method for method, _, _, _ in routes) == {
         "DELETE": 10,
-        "GET": 50,
+        "GET": 51,
         "PATCH": 4,
-        "POST": 32,
+        "POST": 33,
         "PUT": 3,
     }
     assert Counter(policy for _, _, _, policy in routes) == {
         "authenticated": 53,
         "authenticated+bench-management": 9,
-        "authenticated+site-scope": 26,
+        "authenticated+site-scope": 28,
         "open": 5,
         "setup-conditional": 6,
     }
@@ -108,7 +109,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         "runtime": 4,
         "settings": 2,
         "setup": 6,
-        "sites": 29,
+        "sites": 31,
         "ssh-keys": 3,
         "metrics": 1,
         "session": 3,
@@ -168,6 +169,8 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         ("GET", "/api/v1/sites/<name>/backup-schedule"),
         ("PUT", "/api/v1/sites/<name>/backup-schedule"),
         ("DELETE", "/api/v1/sites/<name>/backup-schedule"),
+        ("GET", "/api/v1/sites/<name>/central/<path:method_path>"),
+        ("POST", "/api/v1/sites/<name>/central/<path:method_path>"),
     } <= route_keys
     assert {
         ("GET", "/api/v1/tasks"),

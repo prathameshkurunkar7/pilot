@@ -1144,6 +1144,21 @@ def test_start_rebuild_config_writes_process_and_common_site_config(tmp_path: Pa
     common_site.assert_called_once()
 
 
+def test_write_common_site_config_preserves_custom_keys(tmp_path: Path) -> None:
+    import json
+
+    bench = make_bench(tmp_path)
+    bench.sites_path.mkdir(parents=True)
+    config_path = bench.sites_path / "common_site_config.json"
+    config_path.write_text('{"server_script_enabled": 1, "redis_cache": "stale"}')
+
+    bench.write_common_site_config()
+
+    config = json.loads(config_path.read_text())
+    assert config["server_script_enabled"] == 1
+    assert config["redis_cache"] == "redis://localhost:13000"
+
+
 def _drop_config(name: str) -> BenchConfig:
     return BenchConfig(
         name=name,

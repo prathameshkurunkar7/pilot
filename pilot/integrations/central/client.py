@@ -15,8 +15,14 @@ class CentralClientError(BenchError):
     """A Central API call could not be made or was rejected."""
 
 
+def _message(payload: Any) -> Any:
+    if isinstance(payload, dict) and "message" in payload:
+        return payload["message"]
+    return payload
+
+
 class CentralClient:
-    """Calls Central using the bench's pilot auth token."""
+    """Central transport using this bench's pilot token."""
 
     TOKEN_HEADER = "X-Pilot-Token"
 
@@ -26,6 +32,11 @@ class CentralClient:
     def heartbeat(self) -> dict[str, Any]:
         """Verify Central auth and return its identity echo."""
         return self._get("/api/method/central.api.pilot.heartbeat")
+
+    def forward(self, method_path: str, http_method: str, data: dict[str, Any] | None = None) -> Any:
+        """Proxy an arbitrary Central pilot-API method with the X-Pilot-Token, returning its
+        result (the ``{"message": ...}`` envelope unwrapped). The caller decides what's reachable."""
+        return _message(self._request(f"/api/method/{method_path}", method=http_method, data=data))
 
     def _credentials(self) -> tuple[str, str]:
         endpoint, token = self._bench_toml_credentials()
@@ -48,8 +59,19 @@ class CentralClient:
         return config.get("central_endpoint"), config.get("central_auth_token")
 
     def _get(self, path: str) -> dict[str, Any]:
+        return self._request(path, method="GET")
+
+    def _post(self, path: str, data: dict[str, Any]) -> dict[str, Any]:
+        return self._request(path, method="POST", data=data)
+
+    def _request(self, path: str, method: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
         endpoint, token = self._credentials()
-        request = urllib.request.Request(f"{endpoint}{path}", method="GET", headers={self.TOKEN_HEADER: token})
+        headers = {self.TOKEN_HEADER: token}
+        body = None
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+            body = json.dumps(data).encode()
+        request = urllib.request.Request(f"{endpoint}{path}", data=body, method=method, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
                 return json.loads(response.read().decode())
@@ -58,6 +80,4 @@ class CentralClient:
         except urllib.error.URLError as exc:
             raise CentralClientError(f"Cannot reach Central at {endpoint}: {exc.reason}") from exc
         except ValueError as exc:
-            # A 2xx with a non-JSON body (e.g. an HTML error page from a proxy) — decode /
-            # json.loads raise ValueError, which the urllib guards above don't cover.
             raise CentralClientError(f"Central returned a non-JSON response for {path}: {exc}") from exc
