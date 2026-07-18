@@ -60,7 +60,7 @@ def decode_token(token: str, secret: str) -> dict | None:
     return payload if isinstance(exp, int) and time.time() < exp else None
 
 
-def verify_token(token: str, secret: str) -> bool:
+def is_token_valid(token: str, secret: str) -> bool:
     return decode_token(token, secret) is not None
 
 

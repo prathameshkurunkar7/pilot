@@ -20,7 +20,7 @@ from pilot.core.bench import Bench
 from pilot.core.bench.settings import (
     SettingsApplyFailed,
     firewall_payload,
-    needs_restart,
+    is_restart_needed,
     restart_trigger_values,
     s3_payload,
     waf_payload,
@@ -39,7 +39,7 @@ __all__ = [
     "audit_bp",
     "build_settings_response",
     "firewall_payload",
-    "needs_restart",
+    "is_restart_needed",
     "network_bp",
     "restart_trigger_values",
     "s3_payload",

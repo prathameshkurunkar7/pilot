@@ -21,7 +21,7 @@ def create_app(bench_root: Path) -> Flask:
     app.config["BENCH_ROOT"] = bench_root
     app.config["TEMPLATES_AUTO_RELOAD"] = False
     app.config["TRUSTED_PROXY_PEERS"] = trusted_proxy_peers(config_store)
-    app.config["SESSION_COOKIE_SECURE"] = secure_cookie_setting(config_store)
+    app.config["SESSION_COOKIE_SECURE"] = is_secure_cookie(config_store)
 
     app.extensions["used_logins"] = UsedTokens()
 
@@ -127,7 +127,7 @@ def trusted_proxy_peers(config_store: BenchTomlStore) -> tuple[str, ...]:
     return ("127.0.0.1", "::1", "")
 
 
-def secure_cookie_setting(config_store: BenchTomlStore) -> bool:
+def is_secure_cookie(config_store: BenchTomlStore) -> bool:
     """Whether the browser reaches Admin over explicitly configured HTTPS."""
     try:
         config = config_store.read()

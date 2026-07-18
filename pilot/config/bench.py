@@ -207,7 +207,7 @@ class BenchConfig:
             return AppConfig(name="frappe", repo="", branch="")
         return self.apps[0]
 
-    def app_by_name(self, name: str) -> AppConfig:
+    def get_app_by_name(self, name: str) -> AppConfig:
         for app in self.apps:
             if app.name == name:
                 return app

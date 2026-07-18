@@ -37,8 +37,8 @@ def main() -> None:
     skip_watchdog = args.no_timeout or args.dev
     if not skip_watchdog:
         try:
-            cfg = BenchTomlStore.for_bench(bench_root).read()
-            skip_watchdog = cfg.admin.enabled
+            config = BenchTomlStore.for_bench(bench_root).read()
+            skip_watchdog = config.admin.enabled
         except Exception as exc:
             logging.debug("Could not read bench.toml to decide the watchdog: %s", exc)
 

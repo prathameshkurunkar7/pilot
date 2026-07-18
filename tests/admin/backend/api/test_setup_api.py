@@ -199,7 +199,7 @@ def test_database_validation_uses_one_engine_neutral_resource(tmp_path: Path) ->
 def test_database_validation_supports_existing_postgres(tmp_path: Path) -> None:
     client = setup_client(tmp_path)
     with patch("pilot.managers.database.PostgresManager") as manager_class:
-        manager_class.return_value.check_credentials.return_value = False
+        manager_class.return_value.has_valid_credentials.return_value = False
         response = client.post(
             "/api/v1/setup/database-validations",
             json={

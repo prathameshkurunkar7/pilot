@@ -10,10 +10,10 @@ import pytest
 from admin.backend.auth import (
     decode_token,
     has_scope,
+    is_token_valid,
     issue_login_token,
     issue_site_token,
     issue_token,
-    verify_token,
 )
 from pilot.config import BenchConfig
 from pilot.config.bench_toml_builder import BenchTomlBuilder
@@ -22,24 +22,24 @@ from pilot.exceptions import BenchError
 
 
 def test_round_trip_is_valid() -> None:
-    assert verify_token(issue_token("k3y"), "k3y")
+    assert is_token_valid(issue_token("k3y"), "k3y")
 
 
 def test_wrong_secret_rejected() -> None:
-    assert not verify_token(issue_token("k3y"), "other")
+    assert not is_token_valid(issue_token("k3y"), "other")
 
 
 def test_tampered_token_rejected() -> None:
-    assert not verify_token(issue_token("k3y") + "x", "k3y")
+    assert not is_token_valid(issue_token("k3y") + "x", "k3y")
 
 
 def test_expired_token_rejected() -> None:
-    assert not verify_token(issue_token("k3y", ttl=10, issued_at=time.time() - 100), "k3y")
+    assert not is_token_valid(issue_token("k3y", ttl=10, issued_at=time.time() - 100), "k3y")
 
 
 def test_empty_inputs_rejected() -> None:
-    assert not verify_token("", "k3y")
-    assert not verify_token(issue_token("k3y"), "")
+    assert not is_token_valid("", "k3y")
+    assert not is_token_valid(issue_token("k3y"), "")
 
 
 def test_issue_requires_secret() -> None:
@@ -67,7 +67,7 @@ def test_command_issues_verifiable_token_and_persists_secret(tmp_path, capsys) -
     GenerateSessionCommand(_bench(tmp_path)).run()
     token = capsys.readouterr().out.strip()
     secret = tomllib.loads((tmp_path / "bench.toml").read_text())["admin"]["jwt_secret"]
-    assert secret and verify_token(token, secret)
+    assert secret and is_token_valid(token, secret)
 
 
 def test_command_reuses_existing_secret(tmp_path) -> None:
@@ -238,7 +238,7 @@ def test_login_with_sid_sets_httponly_cookie(tmp_path: Path) -> None:
     assert client.get("/api/v1/benches").status_code != 401
 
 
-def test_login_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path) -> None:
+def test_login_cookie_uses_explicit_is_secure_cookie(tmp_path: Path) -> None:
     client = _client(tmp_path)
     client.application.config["SESSION_COOKIE_SECURE"] = True
 
@@ -250,7 +250,7 @@ def test_login_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path) -> Non
     assert "Secure" in cookie
 
 
-def test_setup_session_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path) -> None:
+def test_setup_session_cookie_uses_explicit_is_secure_cookie(tmp_path: Path) -> None:
     from admin.backend.app import create_app
 
     app = create_app(tmp_path)
@@ -270,8 +270,8 @@ def test_setup_session_cookie_uses_explicit_secure_cookie_setting(tmp_path: Path
     assert "SameSite=Lax" in cookie
 
 
-def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> None:
-    from admin.backend.app import secure_cookie_setting
+def test_is_secure_cookie_requires_tls_or_configured_proxy(monkeypatch) -> None:
+    from admin.backend.app import is_secure_cookie
 
     config = SimpleNamespace(
         production=SimpleNamespace(enabled=True),
@@ -280,17 +280,17 @@ def test_secure_cookie_setting_requires_tls_or_configured_proxy(monkeypatch) -> 
     store = SimpleNamespace(read=lambda: config)
 
     monkeypatch.setattr("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: [])
-    assert secure_cookie_setting(store) is False
+    assert is_secure_cookie(store) is False
 
     monkeypatch.setattr(
         "pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers",
         lambda: ["203.0.113.10"],
     )
-    assert secure_cookie_setting(store) is True
+    assert is_secure_cookie(store) is True
 
     config.admin.tls = True
     monkeypatch.setattr("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: [])
-    assert secure_cookie_setting(store) is True
+    assert is_secure_cookie(store) is True
 
 
 def test_login_with_invalid_sid_rejected(tmp_path: Path) -> None:

@@ -23,7 +23,7 @@ class FetchAppUpdatesTask(Task):
         updates = self.fetch()
         print(json.dumps(updates), flush=True)
 
-    def check_update(self, name: str) -> bool:
+    def has_update(self, name: str) -> bool:
         app = self.bench.app(name)
         return app.has_marketplace_update(self.marketplace_by_name.get(name))
 
@@ -34,7 +34,7 @@ class FetchAppUpdatesTask(Task):
 
         updates: dict[str, bool] = {}
         with ThreadPoolExecutor(max_workers=8) as pool:
-            futures = {pool.submit(self.check_update, name): name for name in app_names}
+            futures = {pool.submit(self.has_update, name): name for name in app_names}
             for future in as_completed(futures):
                 updates[futures[future]] = future.result()
         return updates

@@ -215,7 +215,7 @@ class S3:
                 f"Failed to list '{bucket_name}/{prefix}': {error.response['Error'].get('Message', error)}",
             ) from error
 
-    def object_exists(self, bucket_name: str, remote_key: str) -> bool:
+    def has_object(self, bucket_name: str, remote_key: str) -> bool:
         try:
             self.client.head_object(Bucket=bucket_name, Key=remote_key)
             return True

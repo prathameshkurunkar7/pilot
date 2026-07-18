@@ -87,7 +87,7 @@ class App:
         return self._repository.remote_url
 
     def _detect_default_branch(self) -> str:
-        return self._repository.detect_default_branch()
+        return self._repository.get_default_branch()
 
     def is_commit_hash(self, ref: str) -> bool:
         return AppRepository.is_commit_hash(ref)

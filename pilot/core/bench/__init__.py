@@ -118,15 +118,17 @@ class Bench:
         """Command prefix to invoke frappe's bench helper via the venv Python."""
         return [str(self.python), "-m", "frappe.utils.bench_helper"]
 
+    @property
     def db_root_args(self) -> list[str]:
         from pilot.core.bench.config_files import BenchConfigFiles
 
-        return BenchConfigFiles(self).db_root_args()
+        return BenchConfigFiles(self).db_root_args
 
+    @property
     def postgres_root_password(self) -> str:
         from pilot.core.bench.config_files import BenchConfigFiles
 
-        return BenchConfigFiles(self).postgres_root_password()
+        return BenchConfigFiles(self).postgres_root_password
 
     def app(self, name: str) -> "App":
         from pilot.core.bench.inventory import BenchInventory

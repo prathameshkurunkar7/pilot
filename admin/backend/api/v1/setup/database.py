@@ -62,10 +62,10 @@ def database_validation(bench_root: Path, data: dict):
 
 def database_validation_state(manager, password: str, existing: bool) -> str:
     if existing:
-        return "valid" if manager.check_credentials(password) else "invalid"
+        return "valid" if manager.has_valid_credentials(password) else "invalid"
     if _is_fresh_install(manager):
         return "will_install"
-    return "valid" if manager.check_credentials(password) else "invalid"
+    return "valid" if manager.has_valid_credentials(password) else "invalid"
 
 
 def _is_fresh_install(manager: PostgresManager | MariaDBManager) -> bool:

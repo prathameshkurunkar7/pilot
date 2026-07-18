@@ -24,7 +24,7 @@ class CliContext:
     assume_yes: bool = False
 
     @property
-    def all_benches(self) -> bool:
+    def is_all_benches(self) -> bool:
         return self.bench_name == "all"
 
     def for_bench(self, name: str) -> "CliContext":
@@ -195,7 +195,7 @@ def run_native(context: CliContext, remaining: list[str]) -> None:
     args = parser.parse_args(remaining)
     started = time.monotonic()
     with error_boundary(context):
-        if context.all_benches:
+        if context.is_all_benches:
             registry.dispatch_all(args, parser, context)
         else:
             registry.dispatch(args, parser, context)

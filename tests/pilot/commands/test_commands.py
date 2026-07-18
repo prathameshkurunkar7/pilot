@@ -1240,17 +1240,17 @@ def test_build_admin_errors_when_node_missing(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_build_admin_installs_when_node_modules_missing(tmp_path: Path) -> None:
-    from admin.backend.frontend import _needs_npm_install
+    from admin.backend.frontend import _is_npm_install_stale
 
     (tmp_path / "package.json").write_text("{}")
 
-    assert _needs_npm_install(tmp_path) is True
+    assert _is_npm_install_stale(tmp_path) is True
 
 
 def test_build_admin_installs_when_manifest_is_newer_than_installed_deps(tmp_path: Path) -> None:
     import os
 
-    from admin.backend.frontend import _needs_npm_install
+    from admin.backend.frontend import _is_npm_install_stale
 
     node_modules = tmp_path / "node_modules"
     node_modules.mkdir()
@@ -1264,13 +1264,13 @@ def test_build_admin_installs_when_manifest_is_newer_than_installed_deps(tmp_pat
     os.utime(package_json, (200, 200))
     os.utime(package_lock, (100, 100))
 
-    assert _needs_npm_install(tmp_path) is True
+    assert _is_npm_install_stale(tmp_path) is True
 
 
 def test_build_admin_skips_install_when_installed_deps_are_current(tmp_path: Path) -> None:
     import os
 
-    from admin.backend.frontend import _needs_npm_install
+    from admin.backend.frontend import _is_npm_install_stale
 
     package_json = tmp_path / "package.json"
     package_json.write_text("{}")
@@ -1284,7 +1284,7 @@ def test_build_admin_skips_install_when_installed_deps_are_current(tmp_path: Pat
     os.utime(package_lock, (100, 100))
     os.utime(install_state, (200, 200))
 
-    assert _needs_npm_install(tmp_path) is False
+    assert _is_npm_install_stale(tmp_path) is False
 
 
 def _admin_source_checkout(tmp_path: Path, src_mtime: int, built_mtime: int) -> Path:

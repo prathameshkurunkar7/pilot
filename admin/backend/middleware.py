@@ -38,7 +38,7 @@ def get_auth_policy(view) -> AuthPolicy:
     return getattr(view, _AUTH_POLICY, AuthPolicy.AUTHENTICATED)
 
 
-def authenticate_request(config) -> bool:
+def is_request_authenticated(config) -> bool:
     authorization = request.headers.get("Authorization", "")
     token = authorization[7:] if authorization.startswith("Bearer ") else None
     token = token or request.cookies.get("sid")
@@ -166,7 +166,7 @@ def _admin_session_response(config):
         return error_response(
             "session_unavailable", "No admin password is configured.", 503, {"enabled": False}
         )
-    if not authenticate_request(config):
+    if not is_request_authenticated(config):
         return error_response("authentication_required", "Authentication is required.", 401)
     return None
 

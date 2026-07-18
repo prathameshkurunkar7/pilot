@@ -230,18 +230,18 @@ class ProductionSetup:
             subprocess.run(["sudo", "systemctl", "disable", "--now", "supervisor"], check=False)
         from pilot.managers.processes.supervisor import SupervisorProcessManager
 
-        mgr = SupervisorProcessManager(self.bench)
-        mgr.write_config()
-        mgr.install_config()
-        mgr.reload_manager_config()
+        manager = SupervisorProcessManager(self.bench)
+        manager.write_config()
+        manager.install_config()
+        manager.reload_manager_config()
 
     def _setup_systemd(self) -> None:
         from pilot.managers.processes.systemd import SystemdProcessManager
 
-        mgr = SystemdProcessManager(self.bench)
-        mgr.write_config()
-        mgr.install_config()
-        mgr.reload_manager_config()
+        manager = SystemdProcessManager(self.bench)
+        manager.write_config()
+        manager.install_config()
+        manager.reload_manager_config()
 
     def _start_workload(self) -> None:
         """Start the workload (and admin) so the bench is actually serving once
@@ -251,9 +251,9 @@ class ProductionSetup:
         ProcessManager.for_bench(self.bench).start()
 
     def _setup_letsencrypt_if_needed(self) -> None:
-        from pilot.managers.letsencrypt import needs_letsencrypt
+        from pilot.managers.letsencrypt import is_letsencrypt_required
 
-        if not needs_letsencrypt(self.bench):
+        if not is_letsencrypt_required(self.bench):
             return
         try:
             self.bench.setup_letsencrypt()

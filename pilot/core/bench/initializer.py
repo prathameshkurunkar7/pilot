@@ -149,7 +149,7 @@ class BenchInitializer:
         if not manager.config.existing:
             manager.provision()
             return
-        if not manager.check_credentials():
+        if not manager.has_valid_credentials():
             from pilot.exceptions import BenchError
 
             raise BenchError(

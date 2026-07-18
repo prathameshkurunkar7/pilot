@@ -58,14 +58,14 @@ def test_framework_app_defaults_when_no_apps() -> None:
 
 def test_app_by_name_found() -> None:
     config = BenchConfig.from_file(FIXTURES_DIR / "minimal.toml")
-    app = config.app_by_name("frappe")
+    app = config.get_app_by_name("frappe")
     assert app.name == "frappe"
 
 
 def test_app_by_name_not_found() -> None:
     config = BenchConfig.from_file(FIXTURES_DIR / "minimal.toml")
     with pytest.raises(KeyError):
-        config.app_by_name("nonexistent")
+        config.get_app_by_name("nonexistent")
 
 
 def test_config_without_apps_is_valid() -> None:

@@ -10,8 +10,8 @@ from admin.backend.api.responses import created_response, error_response, no_con
 from admin.backend.api.v1.setup import wizard_marker_path
 from admin.backend.middleware import (
     allow_unauthenticated,
-    authenticate_request,
     decode_session_token,
+    is_request_authenticated,
     rate_limit,
     set_session_cookie,
 )
@@ -55,7 +55,7 @@ def bootstrap():
         with exclusive_file_lock(marker):
             if marker.exists():
                 handoff_task_id = marker.read_text(encoding="utf-8").strip()
-                if not handoff_task_id and _setup_complete(bench_root, config):
+                if not handoff_task_id and _is_setup_complete(bench_root, config):
                     marker.unlink(missing_ok=True)
                 else:
                     return jsonify(_setup_bootstrap(bench_root))
@@ -68,7 +68,7 @@ def bootstrap():
             "production": config.production.enabled,
             "native_process_manager": native_process_manager(),
             "allow_bench_management": config.admin.allow_bench_management,
-            "task_worker": TaskActivityReader(bench_root).read().public_dict(),
+            "task_worker": TaskActivityReader(bench_root).read().public_dict,
         }
     )
 
@@ -87,7 +87,7 @@ def get_session():
             "Bench configuration is unavailable.",
             503,
         )
-    authenticated = authenticate_request(config)
+    authenticated = is_request_authenticated(config)
     response = {"authenticated": authenticated}
     if authenticated:
         response["scope"] = g.jwt_claims.get("scope", "bench")
@@ -182,7 +182,7 @@ def _setup_bootstrap(bench_root: Path) -> dict:
     return {"mode": "setup", "name": name, "enabled": True}
 
 
-def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
+def _is_setup_complete(bench_root: Path, config: BenchConfig) -> bool:
     if not (bench_root / "env" / "bin" / "python").exists():
         return False
     if not config.admin.password:
