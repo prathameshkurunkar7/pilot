@@ -66,6 +66,7 @@ These rules are mandatory for agents changing this repo:
 
 ## Working Rules
 
+- Read `SPEC.md` before starting changes.
 - Do not touch unrelated dirty files.
 - Do not delete data directories.
 - The top-level `benches/` directory is local data and must stay ignored.
