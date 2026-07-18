@@ -57,6 +57,7 @@ class ProcessDefinition:
     env: dict = field(default_factory=dict)
     working_dir: Path | None = None  # was `cd {dir} &&`
     stop_timeout: int | None = None  # graceful-stop seconds (redis=300, web+companion=1600)
+    critical: bool = True  # dev runner stops the whole bench when this process exits
 
 
 class ProcessManager:
@@ -207,12 +208,18 @@ class ProcessManager:
             (self.bench.pids_path / f"{pd.name}.pid").write_text(str(proc.pid))
             threading.Thread(target=self._stream, args=(pd.name, proc, color), daemon=True).start()
 
+        is_critical = {pd.name: pd.critical for pd in defs}
         while not self._stopping:
             for name, proc in list(self._procs.items()):
-                if proc.poll() is not None:
+                if proc.poll() is None:
+                    continue
+                if is_critical[name]:
                     print(f"[{name}] exited with code {proc.returncode}", file=sys.stderr)
                     self._stopping = True
                     break
+                print(f"[{name}] exited with code {proc.returncode}; continuing without it", file=sys.stderr)
+                del self._procs[name]
+                (self.bench.pids_path / f"{name}.pid").unlink(missing_ok=True)
             if not self._stopping:
                 time.sleep(0.5)
 
@@ -336,11 +343,14 @@ class ProcessManager:
         )
 
     def _watch_definition(self) -> ProcessDefinition:
+        # Non-critical: frappe watch dies when the initial esbuild build fails
+        # (e.g. unbuilt assets on a fresh bench); the bench must outlive it.
         return ProcessDefinition(
             name="watch",
             argv=[str(self.python), "-m", "frappe.utils.bench_helper", "frappe", "watch"],
             log_file=self.bench.logs_path / "watch.log",
             working_dir=self.bench.sites_path,
+            critical=False,
         )
 
     def _worker_pool_definition(self, queues: str, num_workers: int) -> ProcessDefinition:
