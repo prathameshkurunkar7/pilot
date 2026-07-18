@@ -41,7 +41,10 @@ class BenchInitializer:
             ("Install system packages", self._install_system_packages),
             ("Create bench directory structure", self._create_bench_structure),
             ("Create Python virtualenv", lambda: self._create_virtualenv(python_env_manager)),
-            ("Clone and install framework app", lambda: self._install_framework_apps(python_env_manager, on_progress)),
+            (
+                "Clone and install framework app",
+                lambda: self._install_framework_apps(python_env_manager, on_progress),
+            ),
             ("Install Node.js", python_env_manager.install_node),
             ("Install Node.js dependencies", python_env_manager.install_node_dependencies),
             ("Configure Redis", self._configure_redis),
@@ -68,7 +71,9 @@ class BenchInitializer:
                 fn()
             except Exception as e:
                 on_progress(f"    Warning: rollback step failed — {e}")
-        on_progress("\nRollback complete. bench.toml is preserved — fix the issue and run init again.")
+        on_progress(
+            "\nRollback complete. bench.toml is preserved — fix the issue and run init again."
+        )
 
     def _remove_bench_dirs(self) -> None:
         for name in _BENCH_DIRS:
@@ -85,7 +90,9 @@ class BenchInitializer:
         python_env_manager.ensure_python()
         python_env_manager.create_venv()
 
-    def _install_framework_apps(self, python_env_manager, on_progress: Callable[[str], None]) -> None:
+    def _install_framework_apps(
+        self, python_env_manager, on_progress: Callable[[str], None]
+    ) -> None:
         for app in self.bench.init_apps():
             if not app.is_cloned:
                 on_progress(f"  Cloning {app.config.name}...")

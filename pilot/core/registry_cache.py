@@ -1,4 +1,5 @@
 """Tamper-checked local clone of the marketplace registry."""
+
 from __future__ import annotations
 
 import shlex
@@ -85,9 +86,11 @@ class RegistryCache:
         if remote_head is None:
             return  # offline — keep serving the existing clone
         try:
-            local_head = run_command(
-                ["git", "-C", str(self.path), "rev-parse", "HEAD"]
-            ).stdout.decode().strip()
+            local_head = (
+                run_command(["git", "-C", str(self.path), "rev-parse", "HEAD"])
+                .stdout.decode()
+                .strip()
+            )
             if remote_head == local_head:
                 return
             run_command(["git", "-C", str(self.path), "fetch", "--depth", "1", "origin", "HEAD"])
@@ -114,7 +117,9 @@ class RegistryCache:
         """Register the daily cache refresh cron entry."""
         log_file = self._cli_root / "logs" / "registry-refresh.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        python, cli_root, log = (shlex.quote(str(p)) for p in (sys.executable, self._cli_root, log_file))
+        python, cli_root, log = (
+            shlex.quote(str(p)) for p in (sys.executable, self._cli_root, log_file)
+        )
         command = f"{python} -m pilot.core.registry_cache {cli_root} >> {log} 2>&1"
         CronManager(self._cli_root).set_schedule(_CRON_JOB_KEY, _CRON_SCHEDULE, command)
 

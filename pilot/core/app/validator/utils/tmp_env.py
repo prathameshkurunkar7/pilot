@@ -90,7 +90,10 @@ class TmpEnv:
         uv = shutil.which("uv")
         if uv:
             return uv
-        for candidate in (Path.home() / ".local" / "bin" / "uv", Path.home() / ".cargo" / "bin" / "uv"):
+        for candidate in (
+            Path.home() / ".local" / "bin" / "uv",
+            Path.home() / ".cargo" / "bin" / "uv",
+        ):
             if candidate.exists():
                 return str(candidate)
         raise BenchError("uv not found — run the pilot install script to set it up")

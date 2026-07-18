@@ -76,16 +76,16 @@ def resolve_app_name_from_repo(bench_root: Path, repo_url: str, branch: str = ""
     project = data.get("project") or {}
     name = project.get("name", "").strip()
     if not name:
-        raise GitProviderError(
-            "pyproject.toml does not contain a [project] name field."
-        )
+        raise GitProviderError("pyproject.toml does not contain a [project] name field.")
     description = (project.get("description") or "").strip()
 
     # A Frappe app must ship hooks.py under its importable module.
     try:
         provider.fetch_raw_file(repo_url, f"{name}/hooks.py", ref)
     except GitProviderError as exc:
-        raise GitProviderError(f"'{name}' doesn't look like a Frappe app (no {name}/hooks.py found).") from exc
+        raise GitProviderError(
+            f"'{name}' doesn't look like a Frappe app (no {name}/hooks.py found)."
+        ) from exc
 
     return {"name": name, "description": description}
 

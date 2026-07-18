@@ -73,7 +73,9 @@ class Bench:
     def create(self) -> None:
         """`bench new <name>` then read the generated admin port."""
         if self.dir.exists():
-            raise RuntimeError(f'Bench "{self.name}" already exists at {self.dir} — clean it up first')
+            raise RuntimeError(
+                f'Bench "{self.name}" already exists at {self.dir} — clean it up first'
+            )
         self._run(["new", self.name])
         if not (self.dir / "bench.toml").exists():
             # `bench` resolves its benches dir as <dir containing pilot>/benches.
@@ -108,7 +110,10 @@ class Bench:
             if now > deadline:
                 raise TimeoutError("Wizard server did not exit in time")
             if now >= next_log:
-                print(f"[harness] waiting for wizard server to exit, {int(now - start)}s elapsed", flush=True)
+                print(
+                    f"[harness] waiting for wizard server to exit, {int(now - start)}s elapsed",
+                    flush=True,
+                )
                 next_log = now + 15
             time.sleep(1)
         self._proc = None

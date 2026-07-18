@@ -65,7 +65,9 @@ class AdminEnvManager:
             return
 
         print(f"  Installing {', '.join(deps)}...", end=" ", flush=True)
-        subprocess.run([self.uv, "pip", "install", "--python", str(self.python), "--quiet", *deps], check=True)
+        subprocess.run(
+            [self.uv, "pip", "install", "--python", str(self.python), "--quiet", *deps], check=True
+        )
         print("done")
 
     def _ensure_frontend_deps(self) -> None:
@@ -81,7 +83,13 @@ class AdminEnvManager:
     def _read_admin_deps(self) -> list[str]:
         pyproject = self.venv_path.parent / "pyproject.toml"
         if not pyproject.exists():
-            return ["flask>=3.0", "psutil>=5.9", "pymysql>=1.1", "gunicorn>=21.2", "pyjwt[crypto]>=2.8"]
+            return [
+                "flask>=3.0",
+                "psutil>=5.9",
+                "pymysql>=1.1",
+                "gunicorn>=21.2",
+                "pyjwt[crypto]>=2.8",
+            ]
         with open(pyproject, "rb") as f:
             data = tomllib.load(f)
         return data.get("project", {}).get("optional-dependencies", {}).get("admin")

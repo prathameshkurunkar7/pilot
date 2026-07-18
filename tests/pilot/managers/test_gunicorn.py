@@ -1,4 +1,5 @@
 """Tests for gunicorn production support."""
+
 from __future__ import annotations
 
 import shlex
@@ -23,14 +24,18 @@ def make_bench(tmp_path: Path, gunicorn: GunicornConfig | None = None) -> Bench:
     config = BenchConfig(
         name="test-bench",
         python_version="3.14",
-        apps=[AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")],
+        apps=[
+            AppConfig(name="frappe", repo="https://github.com/frappe/frappe", branch="version-16")
+        ],
         mariadb=MariaDBConfig(root_password="root"),
         redis=RedisConfig(cache_port=13000, queue_port=11000),
-        workers=WorkerConfig(groups=[
-            WorkerGroup(queues=["default"], count=2),
-            WorkerGroup(queues=["short"], count=1),
-            WorkerGroup(queues=["long"], count=1),
-        ]),
+        workers=WorkerConfig(
+            groups=[
+                WorkerGroup(queues=["default"], count=2),
+                WorkerGroup(queues=["short"], count=1),
+                WorkerGroup(queues=["long"], count=1),
+            ]
+        ),
         gunicorn=gunicorn or GunicornConfig(),
     )
     return Bench(config, tmp_path)
@@ -46,12 +51,20 @@ def test_gunicorn_config_defaults() -> None:
 
 
 def test_gunicorn_default_bind_uses_bench_http_port(tmp_path: Path) -> None:
-    config = BenchConfig._from_dict({
-        "bench": {"name": "test-bench", "python": "3.14", "http_port": 9000},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
-        "mariadb": {"root_password": "root"},
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-    })
+    config = BenchConfig._from_dict(
+        {
+            "bench": {"name": "test-bench", "python": "3.14", "http_port": 9000},
+            "apps": [
+                {
+                    "name": "frappe",
+                    "repo": "https://github.com/frappe/frappe",
+                    "branch": "version-16",
+                }
+            ],
+            "mariadb": {"root_password": "root"},
+            "redis": {"cache_port": 13000, "queue_port": 11000},
+        }
+    )
     bench = Bench(config, tmp_path)
     assert GunicornManager(bench)._bind() == "127.0.0.1:9000"
 
@@ -62,7 +75,7 @@ def test_bench_config_parses_gunicorn_section(tmp_path: Path) -> None:
         '[bench]\nname = "test-bench"\npython = "3.14"\n\n'
         '[[apps]]\nname = "frappe"\nrepo = "https://github.com/frappe/frappe"\nbranch = "version-16"\n\n'
         '[mariadb]\nroot_password = "root"\n\n'
-        '[redis]\ncache_port = 13000\nqueue_port = 11000\n\n'
+        "[redis]\ncache_port = 13000\nqueue_port = 11000\n\n"
         '[gunicorn]\nworkers = 8\nthreads = 16\ntimeout = 300\nworker_class = "gevent"\n'
     )
     config = BenchConfig.from_file(toml)
@@ -132,12 +145,20 @@ def test_gunicorn_manager_generates_admin_config(tmp_path: Path) -> None:
 
 
 def test_gunicorn_manager_bind_uses_bench_http_port(tmp_path: Path) -> None:
-    config = BenchConfig._from_dict({
-        "bench": {"name": "test-bench", "python": "3.14", "http_port": 9000},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
-        "mariadb": {"root_password": "root"},
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-    })
+    config = BenchConfig._from_dict(
+        {
+            "bench": {"name": "test-bench", "python": "3.14", "http_port": 9000},
+            "apps": [
+                {
+                    "name": "frappe",
+                    "repo": "https://github.com/frappe/frappe",
+                    "branch": "version-16",
+                }
+            ],
+            "mariadb": {"root_password": "root"},
+            "redis": {"cache_port": 13000, "queue_port": 11000},
+        }
+    )
     bench = Bench(config, tmp_path)
     manager = GunicornManager(bench)
 
@@ -215,7 +236,9 @@ def test_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
     bench.create_directories()
     manager = ProcessManager(bench)
 
-    with patch.object(manager, "_ensure_gunicorn_config", wraps=manager._ensure_gunicorn_config) as mock_ensure:
+    with patch.object(
+        manager, "_ensure_gunicorn_config", wraps=manager._ensure_gunicorn_config
+    ) as mock_ensure:
         manager.write_config()
         mock_ensure.assert_called_once()
 
@@ -229,8 +252,10 @@ def test_supervisor_generate_config_writes_gunicorn_config(tmp_path: Path) -> No
     bench.config_path.mkdir(parents=True, exist_ok=True)
     manager = SupervisorProcessManager(bench)
 
-    with patch("pilot.managers.environment.AdminEnvManager"), \
-         patch.object(manager, "_prod_process_definitions", return_value=[]):
+    with (
+        patch("pilot.managers.environment.AdminEnvManager"),
+        patch.object(manager, "_prod_process_definitions", return_value=[]),
+    ):
         manager.write_config()
 
     assert (bench.config_path / "gunicorn.conf.py").exists()
@@ -244,8 +269,10 @@ def test_systemd_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
     bench.config_path.mkdir(parents=True, exist_ok=True)
     manager = SystemdProcessManager(bench)
 
-    with patch("pilot.managers.environment.AdminEnvManager"), \
-         patch.object(manager, "_prod_process_definitions", return_value=[]):
+    with (
+        patch("pilot.managers.environment.AdminEnvManager"),
+        patch.object(manager, "_prod_process_definitions", return_value=[]),
+    ):
         manager.write_config()
 
     assert (bench.config_path / "gunicorn.conf.py").exists()
@@ -254,12 +281,20 @@ def test_systemd_generate_config_writes_gunicorn_config(tmp_path: Path) -> None:
 def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
     from pilot.managers.nginx import NginxConfigRenderer
 
-    config = BenchConfig._from_dict({
-        "bench": {"name": "test-bench", "python": "3.14", "http_port": 9000},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
-        "mariadb": {"root_password": "root"},
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-    })
+    config = BenchConfig._from_dict(
+        {
+            "bench": {"name": "test-bench", "python": "3.14", "http_port": 9000},
+            "apps": [
+                {
+                    "name": "frappe",
+                    "repo": "https://github.com/frappe/frappe",
+                    "branch": "version-16",
+                }
+            ],
+            "mariadb": {"root_password": "root"},
+            "redis": {"cache_port": 13000, "queue_port": 11000},
+        }
+    )
     bench = Bench(config, tmp_path)
     renderer = NginxConfigRenderer(bench)
 
@@ -289,7 +324,7 @@ def test_production_config_parses_use_companion_manager(tmp_path: Path) -> None:
         '[bench]\nname = "test-bench"\npython = "3.14"\n\n'
         '[[apps]]\nname = "frappe"\nrepo = "https://github.com/frappe/frappe"\nbranch = "version-16"\n\n'
         '[mariadb]\nroot_password = "root"\n\n'
-        '[redis]\ncache_port = 13000\nqueue_port = 11000\n\n'
+        "[redis]\ncache_port = 13000\nqueue_port = 11000\n\n"
         '[admin]\ndomain = "admin.test.localhost"\n\n'
         '[production]\nprocess_manager = "supervisor"\nnginx = true\nuse_companion_manager = true\n'
     )
@@ -308,13 +343,26 @@ def test_toml_writer_includes_use_companion_manager(tmp_path: Path) -> None:
 
 
 def test_gunicorn_config_includes_companion_workers(tmp_path: Path) -> None:
-    config = BenchConfig._from_dict({
-        "bench": {"name": "test-bench", "python": "3.14", "http_port": 8000, "socketio_port": 9000},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
-        "mariadb": {"root_password": "root"},
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-        "production": {"process_manager": "supervisor", "use_companion_manager": True},
-    })
+    config = BenchConfig._from_dict(
+        {
+            "bench": {
+                "name": "test-bench",
+                "python": "3.14",
+                "http_port": 8000,
+                "socketio_port": 9000,
+            },
+            "apps": [
+                {
+                    "name": "frappe",
+                    "repo": "https://github.com/frappe/frappe",
+                    "branch": "version-16",
+                }
+            ],
+            "mariadb": {"root_password": "root"},
+            "redis": {"cache_port": 13000, "queue_port": 11000},
+            "production": {"process_manager": "supervisor", "use_companion_manager": True},
+        }
+    )
     bench = Bench(config, tmp_path)
     bench.config_path.mkdir(parents=True, exist_ok=True)
 
@@ -335,14 +383,27 @@ def test_gunicorn_config_includes_companion_workers(tmp_path: Path) -> None:
 
 
 def test_gunicorn_config_uses_explicit_combined_worker_group(tmp_path: Path) -> None:
-    config = BenchConfig._from_dict({
-        "bench": {"name": "test-bench", "python": "3.14", "http_port": 8000, "socketio_port": 9000},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
-        "mariadb": {"root_password": "root"},
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-        "workers": [{"queues": ["default", "short", "long"], "count": 1}],
-        "production": {"process_manager": "supervisor", "use_companion_manager": True},
-    })
+    config = BenchConfig._from_dict(
+        {
+            "bench": {
+                "name": "test-bench",
+                "python": "3.14",
+                "http_port": 8000,
+                "socketio_port": 9000,
+            },
+            "apps": [
+                {
+                    "name": "frappe",
+                    "repo": "https://github.com/frappe/frappe",
+                    "branch": "version-16",
+                }
+            ],
+            "mariadb": {"root_password": "root"},
+            "redis": {"cache_port": 13000, "queue_port": 11000},
+            "workers": [{"queues": ["default", "short", "long"], "count": 1}],
+            "production": {"process_manager": "supervisor", "use_companion_manager": True},
+        }
+    )
     bench = Bench(config, tmp_path)
     bench.config_path.mkdir(parents=True, exist_ok=True)
 
@@ -359,18 +420,31 @@ def test_gunicorn_config_uses_explicit_combined_worker_group(tmp_path: Path) -> 
 def test_worker_pool_aggregates_groups_into_one_pool(tmp_path: Path) -> None:
     # Multiple groups collapse into a single pool: deduped queue union and the
     # summed worker count drive one run_worker_pool companion.
-    config = BenchConfig._from_dict({
-        "bench": {"name": "test-bench", "python": "3.14", "http_port": 8000, "socketio_port": 9000},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
-        "mariadb": {"root_password": "root"},
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-        "workers": [
-            {"queues": ["default"], "count": 2},
-            {"queues": ["short"], "count": 1},
-            {"queues": ["long", "default"], "count": 1},
-        ],
-        "production": {"process_manager": "supervisor", "use_companion_manager": True},
-    })
+    config = BenchConfig._from_dict(
+        {
+            "bench": {
+                "name": "test-bench",
+                "python": "3.14",
+                "http_port": 8000,
+                "socketio_port": 9000,
+            },
+            "apps": [
+                {
+                    "name": "frappe",
+                    "repo": "https://github.com/frappe/frappe",
+                    "branch": "version-16",
+                }
+            ],
+            "mariadb": {"root_password": "root"},
+            "redis": {"cache_port": 13000, "queue_port": 11000},
+            "workers": [
+                {"queues": ["default"], "count": 2},
+                {"queues": ["short"], "count": 1},
+                {"queues": ["long", "default"], "count": 1},
+            ],
+            "production": {"process_manager": "supervisor", "use_companion_manager": True},
+        }
+    )
     bench = Bench(config, tmp_path)
     bench.config_path.mkdir(parents=True, exist_ok=True)
 
@@ -378,7 +452,9 @@ def test_worker_pool_aggregates_groups_into_one_pool(tmp_path: Path) -> None:
 
     content = (bench.config_path / "gunicorn.conf.py").read_text()
     assert content.count("run_worker_pool") == 1
-    assert '"FRAPPE_COMPANION_QUEUE": "default,short,long"' in content  # union, order-preserving, deduped
+    assert (
+        '"FRAPPE_COMPANION_QUEUE": "default,short,long"' in content
+    )  # union, order-preserving, deduped
     assert '"FRAPPE_COMPANION_NUM_WORKERS": "4"' in content  # 2 + 1 + 1
 
 
@@ -393,14 +469,24 @@ def test_gunicorn_config_excludes_companion_without_flag(tmp_path: Path) -> None
     assert "wsgi_app" not in content
 
 
-def test_process_definitions_excludes_workers_and_socketio_in_companion_mode(tmp_path: Path) -> None:
-    config = BenchConfig._from_dict({
-        "bench": {"name": "test-bench", "python": "3.14"},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
-        "mariadb": {"root_password": "root"},
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-        "production": {"process_manager": "supervisor", "use_companion_manager": True},
-    })
+def test_process_definitions_excludes_workers_and_socketio_in_companion_mode(
+    tmp_path: Path,
+) -> None:
+    config = BenchConfig._from_dict(
+        {
+            "bench": {"name": "test-bench", "python": "3.14"},
+            "apps": [
+                {
+                    "name": "frappe",
+                    "repo": "https://github.com/frappe/frappe",
+                    "branch": "version-16",
+                }
+            ],
+            "mariadb": {"root_password": "root"},
+            "redis": {"cache_port": 13000, "queue_port": 11000},
+            "production": {"process_manager": "supervisor", "use_companion_manager": True},
+        }
+    )
     bench = Bench(config, tmp_path)
     manager = ProcessManager(bench)
 
@@ -420,7 +506,10 @@ def test_process_definitions_excludes_workers_and_socketio_in_companion_mode(tmp
 def test_production_definitions_do_not_add_a_separate_task_worker(
     tmp_path: Path,
 ) -> None:
-    names = {definition.name for definition in ProcessManager(make_bench(tmp_path))._prod_process_definitions()}
+    names = {
+        definition.name
+        for definition in ProcessManager(make_bench(tmp_path))._prod_process_definitions()
+    }
 
     assert "task_worker" not in names
     assert "task-worker" not in names
@@ -429,13 +518,21 @@ def test_production_definitions_do_not_add_a_separate_task_worker(
 def test_supervisor_web_program_has_long_stopwaitsecs_in_companion_mode(tmp_path: Path) -> None:
     from pilot.managers.processes.supervisor import SupervisorProcessManager, SupervisorRenderer
 
-    config = BenchConfig._from_dict({
-        "bench": {"name": "test-bench", "python": "3.14"},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
-        "mariadb": {"root_password": "root"},
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-        "production": {"process_manager": "supervisor", "use_companion_manager": True},
-    })
+    config = BenchConfig._from_dict(
+        {
+            "bench": {"name": "test-bench", "python": "3.14"},
+            "apps": [
+                {
+                    "name": "frappe",
+                    "repo": "https://github.com/frappe/frappe",
+                    "branch": "version-16",
+                }
+            ],
+            "mariadb": {"root_password": "root"},
+            "redis": {"cache_port": 13000, "queue_port": 11000},
+            "production": {"process_manager": "supervisor", "use_companion_manager": True},
+        }
+    )
     bench = Bench(config, tmp_path)
     bench.config_path.mkdir(parents=True, exist_ok=True)
     manager = SupervisorProcessManager(bench)
@@ -449,13 +546,21 @@ def test_supervisor_web_program_has_long_stopwaitsecs_in_companion_mode(tmp_path
 def test_systemd_web_service_has_long_timeout_in_companion_mode(tmp_path: Path) -> None:
     from pilot.managers.processes.systemd import SystemdProcessManager, SystemdRenderer
 
-    config = BenchConfig._from_dict({
-        "bench": {"name": "test-bench", "python": "3.14"},
-        "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
-        "mariadb": {"root_password": "root"},
-        "redis": {"cache_port": 13000, "queue_port": 11000},
-        "production": {"process_manager": "systemd", "use_companion_manager": True},
-    })
+    config = BenchConfig._from_dict(
+        {
+            "bench": {"name": "test-bench", "python": "3.14"},
+            "apps": [
+                {
+                    "name": "frappe",
+                    "repo": "https://github.com/frappe/frappe",
+                    "branch": "version-16",
+                }
+            ],
+            "mariadb": {"root_password": "root"},
+            "redis": {"cache_port": 13000, "queue_port": 11000},
+            "production": {"process_manager": "systemd", "use_companion_manager": True},
+        }
+    )
     bench = Bench(config, tmp_path)
     manager = SystemdProcessManager(bench)
 
@@ -496,7 +601,9 @@ def test_py_memory_env_caps_glibc_arenas(tmp_path: Path) -> None:
 
 
 def test_max_requests_emitted_when_enabled(tmp_path: Path) -> None:
-    bench = make_bench(tmp_path, gunicorn=GunicornConfig(max_requests=2000, max_requests_jitter=200))
+    bench = make_bench(
+        tmp_path, gunicorn=GunicornConfig(max_requests=2000, max_requests_jitter=200)
+    )
     bench.config_path.mkdir(parents=True, exist_ok=True)
     GunicornManager(bench).generate_config()
     content = (bench.config_path / "gunicorn.conf.py").read_text()

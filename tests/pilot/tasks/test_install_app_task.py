@@ -48,9 +48,7 @@ def test_install_app_task_builds_assets_for_app_and_required_apps(tmp_path: Path
 
     with (
         patch.object(Site, "install_app"),
-        patch(
-            "pilot.managers.environment.PythonEnvManager.build_assets_for_app"
-        ) as mock_build,
+        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as mock_build,
     ):
         task.run()
 
@@ -64,9 +62,7 @@ def test_install_app_task_skips_required_app_missing_from_bench(tmp_path: Path) 
 
     with (
         patch.object(Site, "install_app"),
-        patch(
-            "pilot.managers.environment.PythonEnvManager.build_assets_for_app"
-        ) as mock_build,
+        patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as mock_build,
     ):
         task.run()
 

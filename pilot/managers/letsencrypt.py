@@ -96,7 +96,9 @@ class LetsEncryptManager:
             and not self._is_near_expiry(site)
             and self._cert_covers(nginx_manager.cert_path(site), domains)
         ):
-            print(f"Certificate for {site.name} already covers all domains and is not near expiry. Skipping.")
+            print(
+                f"Certificate for {site.name} already covers all domains and is not near expiry. Skipping."
+            )
             return
 
         domain_args = []
@@ -106,18 +108,27 @@ class LetsEncryptManager:
         webroot_path = str(self.bench.config.letsencrypt.webroot_path)
         email = self.bench.config.letsencrypt.email
 
-        run_command(_privileged([
-            "certbot", "certonly",
-            "--webroot",
-            "-w", webroot_path,
-            *domain_args,
-            "--cert-name", site.name,
-            "--expand",
-            "--email", email,
-            "--agree-tos",
-            "--non-interactive",
-            "--deploy-hook", _nginx_reload_hook(),
-        ]))
+        run_command(
+            _privileged(
+                [
+                    "certbot",
+                    "certonly",
+                    "--webroot",
+                    "-w",
+                    webroot_path,
+                    *domain_args,
+                    "--cert-name",
+                    site.name,
+                    "--expand",
+                    "--email",
+                    email,
+                    "--agree-tos",
+                    "--non-interactive",
+                    "--deploy-hook",
+                    _nginx_reload_hook(),
+                ]
+            )
+        )
 
     def obtain_all(self) -> None:
         # With TLS disabled a central proxy fronts the bench; obtain nothing.
@@ -131,13 +142,17 @@ class LetsEncryptManager:
                 try:
                     self.obtain(site.config)
                 except CommandError as exc:
-                    print(f"Could not obtain a certificate for '{site.config.name}', skipping: {exc}")
+                    print(
+                        f"Could not obtain a certificate for '{site.config.name}', skipping: {exc}"
+                    )
                     failed.append(site.config.name)
         if _is_public_domain(self.bench.config.admin.domain):
             try:
                 self.obtain_admin()
             except CommandError as exc:
-                print(f"Could not obtain a certificate for '{self.bench.config.admin.domain}', skipping: {exc}")
+                print(
+                    f"Could not obtain a certificate for '{self.bench.config.admin.domain}', skipping: {exc}"
+                )
                 failed.append(self.bench.config.admin.domain)
         # Don't raise: certs that did issue should still get TLS applied. Domains
         # that failed stay on HTTP and can be retried later.
@@ -150,20 +165,31 @@ class LetsEncryptManager:
         nginx_manager = NginxManager(self.bench)
         domain = self.bench.config.admin.domain
 
-        if nginx_manager.has_admin_cert and not self._is_near_expiry_cert(nginx_manager.admin_cert_path()):
+        if nginx_manager.has_admin_cert and not self._is_near_expiry_cert(
+            nginx_manager.admin_cert_path()
+        ):
             print(f"Certificate for {domain} already exists and is not near expiry. Skipping.")
             return
 
-        run_command(_privileged([
-            "certbot", "certonly",
-            "--webroot",
-            "-w", str(self.bench.config.letsencrypt.webroot_path),
-            "-d", domain,
-            "--email", self.bench.config.letsencrypt.email,
-            "--agree-tos",
-            "--non-interactive",
-            "--deploy-hook", _nginx_reload_hook(),
-        ]))
+        run_command(
+            _privileged(
+                [
+                    "certbot",
+                    "certonly",
+                    "--webroot",
+                    "-w",
+                    str(self.bench.config.letsencrypt.webroot_path),
+                    "-d",
+                    domain,
+                    "--email",
+                    self.bench.config.letsencrypt.email,
+                    "--agree-tos",
+                    "--non-interactive",
+                    "--deploy-hook",
+                    _nginx_reload_hook(),
+                ]
+            )
+        )
 
     def renew(self) -> None:
         run_command(_privileged(["certbot", "renew", "--quiet"]))

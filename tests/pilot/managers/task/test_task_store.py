@@ -90,9 +90,7 @@ def test_queue_sequence_recovery_ignores_staged_task_dirs(tmp_path: Path) -> Non
     store.tasks_root.mkdir(parents=True)
     staged_task = store.tasks_root / ".20260715-120000-staged.tmp"
     staged_task.mkdir()
-    (staged_task / "meta.json").write_text(
-        json.dumps({**metadata(), "queue_sequence": 99})
-    )
+    (staged_task / "meta.json").write_text(json.dumps({**metadata(), "queue_sequence": 99}))
     (staged_task / "status").write_text(TaskStatus.QUEUED.value)
 
     task_dir = store.create_queued({**metadata(), "task_id": "20260715-120000-333333"})

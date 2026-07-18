@@ -247,16 +247,21 @@ def test_write_flat_matches_builder(tmp_path: Path) -> None:
 def test_write_flat_preserves_production_enabled(tmp_path: Path) -> None:
     """write_flat preserves production.enabled on production benches."""
     store = BenchTomlStore.for_bench(tmp_path)
-    store.write_flat("prod-bench", {"production_process_manager": "systemd", "admin_domain": "admin.example.com"})
+    store.write_flat(
+        "prod-bench", {"production_process_manager": "systemd", "admin_domain": "admin.example.com"}
+    )
     raw = store.read_raw()
     raw["production"]["enabled"] = True
     store.write_raw(raw)
 
-    store.write_flat("prod-bench", {
-        "production_process_manager": "systemd",
-        "admin_domain": "admin.example.com",
-        "admin_password": "secret",
-    })
+    store.write_flat(
+        "prod-bench",
+        {
+            "production_process_manager": "systemd",
+            "admin_domain": "admin.example.com",
+            "admin_password": "secret",
+        },
+    )
 
     config = store.read()
     assert config.production.enabled is True

@@ -61,10 +61,7 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
         for rule in app.url_map.iter_rules()
         if rule.rule.startswith(API_V1_PREFIX)
     ]
-    areas = [
-        path.removeprefix(f"{API_V1_PREFIX}/").split("/", 1)[0]
-        for _, path, _, _ in routes
-    ]
+    areas = [path.removeprefix(f"{API_V1_PREFIX}/").split("/", 1)[0] for _, path, _, _ in routes]
     unversioned = [
         rule.rule
         for rule in app.url_map.iter_rules()
@@ -228,7 +225,8 @@ def test_admin_route_inventory_matches_baseline(tmp_path: Path) -> None:
     assert not {
         path
         for _, path, _, _ in routes
-        if path in {
+        if path
+        in {
             "/api/v1/tasks/",
             "/api/v1/tasks/run",
             "/api/v1/tasks/<task_id>/kill",

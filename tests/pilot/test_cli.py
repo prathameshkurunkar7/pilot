@@ -66,9 +66,7 @@ def test_strip_bench_flag_empty_args() -> None:
 
 def test_passthrough_own_commands_are_not_forwarded() -> None:
     for cmd in ("start", "stop", "init", "new", "get-app", "new-site", "build", "update"):
-        assert not dispatch.is_frappe_passthrough(
-            [cmd]
-        ), f"{cmd!r} should not be a passthrough"
+        assert not dispatch.is_frappe_passthrough([cmd]), f"{cmd!r} should not be a passthrough"
 
 
 def test_passthrough_unknown_commands_are_forwarded() -> None:

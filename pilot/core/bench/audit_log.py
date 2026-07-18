@@ -37,7 +37,9 @@ class AuditLog:
         if not self._dir.is_dir():
             return []
         files = [p for p in self._dir.iterdir() if _FILE_RE.match(p.name)]
-        return sorted(files, key=lambda p: p.name, reverse=True)  # zero-padded, so name sort == time sort
+        return sorted(
+            files, key=lambda p: p.name, reverse=True
+        )  # zero-padded, so name sort == time sort
 
     def _read_newest_first(self):
         for path in self._weekly_files():

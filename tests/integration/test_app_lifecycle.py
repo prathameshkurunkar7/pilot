@@ -68,7 +68,6 @@ def _purge_testapp(bench_root: Path, bench_bin: str, site: str) -> None:
 
 @pytest.mark.integration
 class TestAppLifecycle:
-
     def test_get_app_clones_and_installs(
         self, bench_root: Path, bench_bin: str, testapp_repo: Path
     ) -> None:
@@ -86,15 +85,17 @@ class TestAppLifecycle:
             f"{APP_NAME} not importable from bench virtualenv after get-app"
         )
 
-    def test_install_app_on_site(
-        self, bench_root: Path, bench_bin: str, site_name: str
-    ) -> None:
+    def test_install_app_on_site(self, bench_root: Path, bench_bin: str, site_name: str) -> None:
         """install-app registers testapp on the site."""
         if not (bench_root / "apps" / APP_NAME).is_dir():
             pytest.skip(f"{APP_NAME} not in apps/ — run test_get_app first")
 
         result = _run(
-            bench_bin, "--site", site_name, "install-app", APP_NAME,
+            bench_bin,
+            "--site",
+            site_name,
+            "install-app",
+            APP_NAME,
             cwd=bench_root,
         )
         assert result.returncode == 0, (
@@ -104,13 +105,10 @@ class TestAppLifecycle:
 
         installed = _installed_apps(bench_bin, bench_root, site_name)
         assert APP_NAME in installed, (
-            f"{APP_NAME} not in list-apps output after install-app.\n"
-            f"Installed: {installed}"
+            f"{APP_NAME} not in list-apps output after install-app.\nInstalled: {installed}"
         )
 
-    def test_migrate_after_install(
-        self, bench_root: Path, bench_bin: str, site_name: str
-    ) -> None:
+    def test_migrate_after_install(self, bench_root: Path, bench_bin: str, site_name: str) -> None:
         """migrate succeeds with testapp installed."""
         result = _run(bench_bin, "--site", site_name, "migrate", cwd=bench_root)
         assert result.returncode == 0, (
@@ -118,16 +116,20 @@ class TestAppLifecycle:
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
-    def test_remove_app_from_site(
-        self, bench_root: Path, bench_bin: str, site_name: str
-    ) -> None:
+    def test_remove_app_from_site(self, bench_root: Path, bench_bin: str, site_name: str) -> None:
         """uninstall-app removes testapp from the site."""
         installed = _installed_apps(bench_bin, bench_root, site_name)
         if APP_NAME not in installed:
             pytest.skip(f"{APP_NAME} not installed on {site_name} — run test_install_app first")
 
         result = _run(
-            bench_bin, "--site", site_name, "uninstall-app", APP_NAME, "--yes", "--no-backup",
+            bench_bin,
+            "--site",
+            site_name,
+            "uninstall-app",
+            APP_NAME,
+            "--yes",
+            "--no-backup",
             cwd=bench_root,
         )
         assert result.returncode == 0, (
@@ -137,13 +139,10 @@ class TestAppLifecycle:
 
         installed_after = _installed_apps(bench_bin, bench_root, site_name)
         assert APP_NAME not in installed_after, (
-            f"{APP_NAME} still in list-apps after remove-app.\n"
-            f"Installed: {installed_after}"
+            f"{APP_NAME} still in list-apps after remove-app.\nInstalled: {installed_after}"
         )
 
-    def test_migrate_after_remove(
-        self, bench_root: Path, bench_bin: str, site_name: str
-    ) -> None:
+    def test_migrate_after_remove(self, bench_root: Path, bench_bin: str, site_name: str) -> None:
         """migrate succeeds after app removal."""
         result = _run(bench_bin, "--site", site_name, "migrate", cwd=bench_root)
         assert result.returncode == 0, (

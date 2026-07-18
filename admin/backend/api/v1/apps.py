@@ -57,7 +57,9 @@ def install():
     sites = data.get("sites", [])
     if not isinstance(sites, list) or any(not isinstance(s, str) for s in sites):
         return error_response("invalid_sites", "sites must be a list of strings.", 422)
-    sites = list(dict.fromkeys(sites))  # de-dupe, preserve order: a repeated site would install twice
+    sites = list(
+        dict.fromkeys(sites)
+    )  # de-dupe, preserve order: a repeated site would install twice
 
     name = (data.get("name") or "").strip()
     repo = (data.get("repo") or "").strip()

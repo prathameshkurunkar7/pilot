@@ -54,9 +54,7 @@ def test_build_assets_builds_for_app_and_every_dependency(tmp_path: Path) -> Non
     dep = MagicMock()
     dep.config.name = "telephony"
 
-    with patch(
-        "pilot.managers.environment.PythonEnvManager.build_assets_for_app"
-    ) as mock_build:
+    with patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as mock_build:
         task.build_assets([app, dep])
 
     assert mock_build.call_args_list == [((app,),), ((dep,),)]

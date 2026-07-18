@@ -101,9 +101,7 @@ def install_site_app(name: str):
     return accepted_task_response(bench_root, task_id)
 
 
-def _submit_install_task(
-    bench_root: Path, site: str, app: str, repo: str, branch: str
-) -> str:
+def _submit_install_task(bench_root: Path, site: str, app: str, repo: str, branch: str) -> str:
     """An app already cloned into the bench installs directly; otherwise it is
     fetched first, by repository URL or by marketplace name."""
     bench = Bench(bench_root)
@@ -134,9 +132,7 @@ def delete_site_app(name: str, app: str):
 
     force = request.args.get("force") == "true"
     try:
-        task_id = UninstallAppTask.queue(
-            Bench(bench_root), site=name, app=app, force=force
-        )
+        task_id = UninstallAppTask.queue(Bench(bench_root), site=name, app=app, force=force)
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)

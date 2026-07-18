@@ -1,4 +1,5 @@
 """Unit tests for CLI bench resolution."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,7 +38,9 @@ def test_require_explicit_rejects_auto_pick(tmp_path: Path, monkeypatch) -> None
 def test_require_explicit_accepts_bench_flag(tmp_path: Path, monkeypatch) -> None:
     bench_dir = _make_bench(tmp_path, "only")
     monkeypatch.chdir(tmp_path)
-    assert cli_dispatch.find_bench_root(_context(tmp_path, "only"), require_explicit=True) == bench_dir
+    assert (
+        cli_dispatch.find_bench_root(_context(tmp_path, "only"), require_explicit=True) == bench_dir
+    )
 
 
 def test_require_explicit_accepts_inside_bench_dir(tmp_path: Path, monkeypatch) -> None:

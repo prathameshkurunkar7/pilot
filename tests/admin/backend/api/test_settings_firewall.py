@@ -1,4 +1,5 @@
 """Tests for the admin Settings firewall (allow/block list) endpoints."""
+
 from __future__ import annotations
 
 from pilot.config import BenchConfig
@@ -10,7 +11,9 @@ def _config() -> BenchConfig:
     return BenchConfig._from_dict(
         {
             "bench": {"name": "test-bench", "python": "3.14"},
-            "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
+            "apps": [
+                {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}
+            ],
             "mariadb": {"root_password": "root"},
             "admin": {"domain": "admin.example.com"},
         }
@@ -24,16 +27,19 @@ def test_settings_response_defaults_to_open_firewall() -> None:
 
 def test_patcher_applies_firewall_rules() -> None:
     config = _config()
-    error = ConfigPatcher(config, {
-        "firewall": {
-            "enabled": True,
-            "default": "deny",
-            "rules": [
-                {"ip": "203.0.113.4", "action": "allow", "description": "office"},
-                {"ip": "", "action": "deny"},  # blank IP is dropped
-            ],
-        }
-    }).apply()
+    error = ConfigPatcher(
+        config,
+        {
+            "firewall": {
+                "enabled": True,
+                "default": "deny",
+                "rules": [
+                    {"ip": "203.0.113.4", "action": "allow", "description": "office"},
+                    {"ip": "", "action": "deny"},  # blank IP is dropped
+                ],
+            }
+        },
+    ).apply()
 
     assert error is None
     assert config.firewall.enabled is True
@@ -45,7 +51,9 @@ def test_patcher_applies_firewall_rules() -> None:
 
 def test_patcher_rejects_invalid_ip() -> None:
     config = _config()
-    error = ConfigPatcher(config, {"firewall": {"enabled": True, "rules": [{"ip": "nope", "action": "deny"}]}}).apply()
+    error = ConfigPatcher(
+        config, {"firewall": {"enabled": True, "rules": [{"ip": "nope", "action": "deny"}]}}
+    ).apply()
     assert error is not None and "nope" in error
 
 

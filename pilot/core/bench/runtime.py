@@ -52,9 +52,7 @@ class BenchRuntime:
         manager.stop_admin()
         on_progress(f"Stopped bench {self.bench.config.name}.")
 
-    def restart_workload(
-        self, include_admin: bool, on_progress: Callable[[str], None]
-    ) -> None:
+    def restart_workload(self, include_admin: bool, on_progress: Callable[[str], None]) -> None:
         if not self.bench.config.production.enabled:
             on_progress(_DEV_RESTART_MESSAGE)
             return
@@ -77,9 +75,7 @@ class BenchRuntime:
         from pilot.managers.processes.local import ProcessManager
 
         if not self.bench.config.production.enabled:
-            raise BenchError(
-                "Start, stop, and restart are only supported for production benches."
-            )
+            raise BenchError("Start, stop, and restart are only supported for production benches.")
         manager = ProcessManager.for_bench(self.bench)
         operation = manager.start_workload if action == "start" else getattr(manager, action)
         operation()
@@ -111,9 +107,7 @@ class BenchRuntime:
         self._install_python_requirements(on_progress)
         self._install_js_requirements(on_progress)
 
-    def _start_development(
-        self, initialized: bool, on_progress: Callable[[str], None]
-    ) -> None:
+    def _start_development(self, initialized: bool, on_progress: Callable[[str], None]) -> None:
         from pilot.managers.processes.local import ProcessManager
 
         try:
@@ -176,9 +170,7 @@ class BenchRuntime:
         try:
             build_admin_frontend(True, on_progress=on_progress)
         except BenchError as error:
-            on_progress(
-                f"  Could not rebuild the admin UI ({error}); serving the existing build."
-            )
+            on_progress(f"  Could not rebuild the admin UI ({error}); serving the existing build.")
 
     def _start_wizard(self, on_progress: Callable[[str], None]) -> None:
         from admin.backend.frontend import download_admin_frontend
@@ -257,9 +249,7 @@ class BenchRuntime:
         python = str(self.bench.python)
 
         for app in self.bench.apps():
-            if not (app.path / "pyproject.toml").exists() and not (
-                app.path / "setup.py"
-            ).exists():
+            if not (app.path / "pyproject.toml").exists() and not (app.path / "setup.py").exists():
                 continue
             on_progress(f"Installing Python requirements for {app.config.name}...")
             run_command(

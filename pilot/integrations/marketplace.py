@@ -132,7 +132,11 @@ class Marketplace:
         return cache.apps_json_path.read_text()
 
     def get_current_frappe_version(self) -> str:
-        cmd = [str(self.bench.env_path / "bin" / "python"), "-c", "import frappe; print(frappe.__version__)"]
+        cmd = [
+            str(self.bench.env_path / "bin" / "python"),
+            "-c",
+            "import frappe; print(frappe.__version__)",
+        ]
         result = run_command(cmd)
         return result.stdout.strip().decode()
 
@@ -189,7 +193,9 @@ class Marketplace:
             best_match = compatible_targets[0] if compatible_targets else None
             display_target = best_match or (targets[0] if targets else {})
 
-            resolvers.append(self._make_resolver(app, display_target, is_installable=bool(best_match)))
+            resolvers.append(
+                self._make_resolver(app, display_target, is_installable=bool(best_match))
+            )
 
             if compatible_targets:
                 dependency_lookup[app["name"]] = [

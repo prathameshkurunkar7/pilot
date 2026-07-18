@@ -1,4 +1,5 @@
 """Unit tests for ProcessProvider."""
+
 from __future__ import annotations
 
 import os
@@ -15,7 +16,10 @@ def make_provider(tmp_path: Path) -> ProcessProvider:
 def test_get_systemd_process_running(tmp_path: Path) -> None:
     provider = make_provider(tmp_path)
     block = "Id=test-bench-web.service\nActiveState=active\nMainPID=1234"
-    with patch("admin.backend.providers.processes.ProcessProvider._get_process_stats", return_value=(1.0, 40.0, 35.0)):
+    with patch(
+        "admin.backend.providers.processes.ProcessProvider._get_process_stats",
+        return_value=(1.0, 40.0, 35.0),
+    ):
         info = provider._get_systemd_process(block, "test-bench")
     assert info is not None
     assert info.name == "web"
@@ -49,7 +53,10 @@ def test_get_systemd_process_not_a_service_returns_none(tmp_path: Path) -> None:
 def test_get_systemd_process_strips_bench_name_prefix(tmp_path: Path) -> None:
     provider = make_provider(tmp_path)
     block = "Id=my-bench-worker-default-1.service\nActiveState=active\nMainPID=9999"
-    with patch("admin.backend.providers.processes.ProcessProvider._get_process_stats", return_value=(None, None, None)):
+    with patch(
+        "admin.backend.providers.processes.ProcessProvider._get_process_stats",
+        return_value=(None, None, None),
+    ):
         info = provider._get_systemd_process(block, "my-bench")
     assert info is not None
     assert info.name == "worker-default-1"
@@ -82,7 +89,10 @@ def test_get_from_systemd_parses_multiple_units(tmp_path: Path) -> None:
     )
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(stdout=stdout)
-        with patch("admin.backend.providers.processes.ProcessProvider._get_process_stats", return_value=(1.2, 45.0, 40.0)):
+        with patch(
+            "admin.backend.providers.processes.ProcessProvider._get_process_stats",
+            return_value=(1.2, 45.0, 40.0),
+        ):
             result = provider.get_from_systemd(systemd)
 
     assert len(result) == 2
@@ -99,8 +109,16 @@ def test_get_from_systemd_parses_multiple_units(tmp_path: Path) -> None:
 def test_get_supervisor_process_running_with_pid_and_uptime(tmp_path: Path) -> None:
     provider = make_provider(tmp_path)
     line = "test-bench:test-bench-web  RUNNING  pid 5678, uptime 0:01:23"
-    with patch("admin.backend.providers.processes.ProcessProvider._get_process_stats", return_value=(0.5, 30.0, 25.0)), \
-         patch("admin.backend.providers.processes.ProcessProvider._get_proc_uptime", return_value="1m 23s"):
+    with (
+        patch(
+            "admin.backend.providers.processes.ProcessProvider._get_process_stats",
+            return_value=(0.5, 30.0, 25.0),
+        ),
+        patch(
+            "admin.backend.providers.processes.ProcessProvider._get_proc_uptime",
+            return_value="1m 23s",
+        ),
+    ):
         info = provider._get_supervisor_process(line, "test-bench")
     assert info is not None
     assert info.name == "web"
@@ -135,7 +153,10 @@ def test_get_supervisor_process_malformed_returns_none(tmp_path: Path) -> None:
 def test_get_supervisor_process_strips_bench_name_prefix(tmp_path: Path) -> None:
     provider = make_provider(tmp_path)
     line = "my-bench:my-bench-worker-default-1  RUNNING  pid 42, uptime 1:00:00"
-    with patch("admin.backend.providers.processes.ProcessProvider._get_process_stats", return_value=(None, None, None)):
+    with patch(
+        "admin.backend.providers.processes.ProcessProvider._get_process_stats",
+        return_value=(None, None, None),
+    ):
         info = provider._get_supervisor_process(line, "my-bench")
     assert info is not None
     assert info.name == "worker-default-1"
@@ -153,7 +174,10 @@ def test_get_from_supervisor_parses_output(tmp_path: Path) -> None:
     )
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(stdout=stdout)
-        with patch("admin.backend.providers.processes.ProcessProvider._get_process_stats", return_value=(0.5, 30.0, 25.0)):
+        with patch(
+            "admin.backend.providers.processes.ProcessProvider._get_process_stats",
+            return_value=(0.5, 30.0, 25.0),
+        ):
             result = provider.get_from_supervisor(supervisor)
 
     assert len(result) == 2
@@ -185,7 +209,10 @@ def test_get_from_pids_running_process(tmp_path: Path) -> None:
     pids_dir.mkdir()
     (pids_dir / "web.pid").write_text(str(os.getpid()))
 
-    with patch("admin.backend.providers.processes.ProcessProvider._get_process_stats", return_value=(2.0, 50.0, 45.0)):
+    with patch(
+        "admin.backend.providers.processes.ProcessProvider._get_process_stats",
+        return_value=(2.0, 50.0, 45.0),
+    ):
         result = make_provider(tmp_path).get_from_pids()
 
     assert len(result) == 1
@@ -228,7 +255,10 @@ def _patch_managers(systemd_running: bool, supervisor_running: bool):
         patch("pilot.config.toml_store.BenchTomlStore.for_bench"),
         patch("pilot.core.bench.Bench"),
         patch("pilot.managers.processes.systemd.SystemdProcessManager", return_value=mock_systemd),
-        patch("pilot.managers.processes.supervisor.SupervisorProcessManager", return_value=mock_supervisor),
+        patch(
+            "pilot.managers.processes.supervisor.SupervisorProcessManager",
+            return_value=mock_supervisor,
+        ),
         mock_systemd,
         mock_supervisor,
     )

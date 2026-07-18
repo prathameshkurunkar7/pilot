@@ -42,9 +42,7 @@ def _mocked_site_domains(bench_root: Path, site: str, domains=(), primary=None):
     domain_names = list(domains)
     site_domains.names.return_value = domain_names
     site_domains.primary.return_value = primary
-    site_domains.apply_task.side_effect = lambda: TaskRunner(bench_root).run_task(
-        SetupNginxTask
-    )
+    site_domains.apply_task.side_effect = lambda: TaskRunner(bench_root).run_task(SetupNginxTask)
 
     def status(domain: str):
         normalized = normalize_host(domain)
@@ -90,7 +88,8 @@ def test_get_domain_reports_a_custom_domain(tmp_path: Path) -> None:
         return_value=_mocked_site_domains(
             bench_root,
             "site.localhost",
-            domains=["custom.example.com"], primary="custom.example.com"
+            domains=["custom.example.com"],
+            primary="custom.example.com",
         ),
     ):
         response = client.get("/api/v1/sites/site.localhost/domains/custom.example.com")

@@ -1,4 +1,5 @@
 """BenchInitializer._provision_or_verify: existing database handling."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

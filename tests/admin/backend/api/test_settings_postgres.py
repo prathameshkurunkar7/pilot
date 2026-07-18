@@ -1,4 +1,5 @@
 """Tests for editing the [postgres] connection on the admin Settings page."""
+
 from __future__ import annotations
 
 from pilot.config import BenchConfig
@@ -10,7 +11,9 @@ def _config() -> BenchConfig:
     return BenchConfig._from_dict(
         {
             "bench": {"name": "test-bench", "python": "3.14"},
-            "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
+            "apps": [
+                {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}
+            ],
             "mariadb": {"root_password": "root"},
             "admin": {"domain": "admin.example.com"},
         }
@@ -31,7 +34,9 @@ def test_response_hides_password_but_flags_when_set() -> None:
 def test_patcher_updates_connection_fields() -> None:
     config = _config()
 
-    error = ConfigPatcher(config, {"postgres": {"host": "db.internal", "port": 5433, "admin_user": "pgroot"}}).apply()
+    error = ConfigPatcher(
+        config, {"postgres": {"host": "db.internal", "port": 5433, "admin_user": "pgroot"}}
+    ).apply()
 
     assert error is None
     assert config.postgres.host == "db.internal"

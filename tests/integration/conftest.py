@@ -62,22 +62,26 @@ def testapp_repo(tmp_path_factory: pytest.TempPathFactory) -> Path:
     shutil.copytree(src, repo)
 
     # git init with 'main' as the default branch (git ≥ 2.28)
-    result = subprocess.run(
-        ["git", "init", "-b", "main"], cwd=repo, capture_output=True
-    )
+    result = subprocess.run(["git", "init", "-b", "main"], cwd=repo, capture_output=True)
     if result.returncode != 0:
         # older git: init then rename branch
         subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
-        subprocess.run(
-            ["git", "checkout", "-b", "main"], cwd=repo, check=True, capture_output=True
-        )
+        subprocess.run(["git", "checkout", "-b", "main"], cwd=repo, check=True, capture_output=True)
 
     subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
     subprocess.run(
         [
-            "git", "-c", "user.email=ci@test.com", "-c", "user.name=CI",
-            "commit", "-m", "init",
+            "git",
+            "-c",
+            "user.email=ci@test.com",
+            "-c",
+            "user.name=CI",
+            "commit",
+            "-m",
+            "init",
         ],
-        cwd=repo, check=True, capture_output=True,
+        cwd=repo,
+        check=True,
+        capture_output=True,
     )
     return repo

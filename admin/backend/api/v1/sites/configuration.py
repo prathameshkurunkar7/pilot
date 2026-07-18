@@ -18,7 +18,12 @@ from admin.backend.api.responses import error_response
 from admin.backend.middleware import require_scope
 
 from admin.backend.api.v1.sites import sites_bp
-from admin.backend.api.v1.sites.shared import internal_error, malformed_body, site_name, site_not_found
+from admin.backend.api.v1.sites.shared import (
+    internal_error,
+    malformed_body,
+    site_name,
+    site_not_found,
+)
 
 PROTECTED_CONFIG_KEYS = _PROTECTED_CONFIG_KEYS
 _CONFIG_ALIASES = (_config_patch_error, _merge_public_config, _public_config)

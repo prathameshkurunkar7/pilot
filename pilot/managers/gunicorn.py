@@ -148,7 +148,10 @@ class GunicornManager:
                     queues.append(queue)
         num_workers = max(1, sum(group.count for group in groups))
         stop_timeout = max(
-            (_COMPANION_QUEUE_STOP_TIMEOUT.get(q, _COMPANION_QUEUE_STOP_TIMEOUT["default"]) for q in queues),
+            (
+                _COMPANION_QUEUE_STOP_TIMEOUT.get(q, _COMPANION_QUEUE_STOP_TIMEOUT["default"])
+                for q in queues
+            ),
             default=_COMPANION_QUEUE_STOP_TIMEOUT["default"],
         )
         return self._companion_spec(

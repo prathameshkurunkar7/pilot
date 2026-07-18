@@ -1,4 +1,5 @@
 """Tests for Validator's pre-install static checks on a cloned app."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -39,7 +40,9 @@ def _static_checks() -> list:
     return [RepoStructureCheck(), SyntaxCheck(), DependencyDeclarationsCheck()]
 
 
-_SETUPTOOLS_BUILD = '[build-system]\nrequires = ["setuptools>=61"]\nbuild-backend = "setuptools.build_meta"\n'
+_SETUPTOOLS_BUILD = (
+    '[build-system]\nrequires = ["setuptools>=61"]\nbuild-backend = "setuptools.build_meta"\n'
+)
 
 
 def _make_fake_frappe(bench_root: Path) -> None:
@@ -122,7 +125,9 @@ def test_dependency_declarations_fails_when_required_app_is_missing(tmp_path: Pa
         Validator(app, checks=_static_checks()).validate()
 
 
-def test_dependency_declarations_fails_when_frappe_dependencies_missing_entirely(tmp_path: Path) -> None:
+def test_dependency_declarations_fails_when_frappe_dependencies_missing_entirely(
+    tmp_path: Path,
+) -> None:
     app = _make_app(
         tmp_path,
         "myapp",
@@ -133,7 +138,9 @@ def test_dependency_declarations_fails_when_frappe_dependencies_missing_entirely
         Validator(app, checks=_static_checks()).validate()
 
 
-def test_dependency_declarations_fails_when_frappe_dependencies_omits_frappe(tmp_path: Path) -> None:
+def test_dependency_declarations_fails_when_frappe_dependencies_omits_frappe(
+    tmp_path: Path,
+) -> None:
     app = _make_app(
         tmp_path,
         "myapp",
@@ -272,7 +279,10 @@ def test_import_check_skips_type_checking_only_imports(tmp_path: Path) -> None:
         "import required_dependency\n"
     )
     app = _make_app(
-        tmp_path, "myapp", '[project]\nname = "myapp"\n', {"myapp/hooks.py": "", "myapp/utils.py": source}
+        tmp_path,
+        "myapp",
+        '[project]\nname = "myapp"\n',
+        {"myapp/hooks.py": "", "myapp/utils.py": source},
     )
     # `typing` itself is stdlib, filtered out at the _imported_module_locations level.
     assert list(ImportCheck()._imported_module_locations(app)) == ["required_dependency"]

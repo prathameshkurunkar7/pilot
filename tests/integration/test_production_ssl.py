@@ -41,6 +41,7 @@ def _require_tooling():
     if reason:
         pytest.skip(reason)
 
+
 def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(list(args), cwd=cwd, capture_output=True, text=True)
 
@@ -52,10 +53,22 @@ def _install_self_signed_cert(domain: str) -> None:
     key = stage / "privkey.pem"
     crt = stage / "fullchain.pem"
     r = _run(
-        "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-        "-keyout", str(key), "-out", str(crt),
-        "-days", "30", "-subj", f"/O={CERT_ORG}/CN={domain}",
-        "-addext", f"subjectAltName=DNS:{domain}",
+        "openssl",
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        str(key),
+        "-out",
+        str(crt),
+        "-days",
+        "30",
+        "-subj",
+        f"/O={CERT_ORG}/CN={domain}",
+        "-addext",
+        f"subjectAltName=DNS:{domain}",
     )
     assert r.returncode == 0, f"openssl failed for {domain}: {r.stderr}"
 
@@ -86,18 +99,29 @@ def _site_dir(bench_root: Path, site: str) -> Path:
 def _https_status(domain: str) -> str:
     """HTTP status nginx returns over TLS for *domain*; '000' = no/failed TLS."""
     r = _run(
-        "curl", "-sk", "-o", "/dev/null", "-w", "%{http_code}",
-        "--resolve", f"{domain}:{HTTPS_PORT}:127.0.0.1",
+        "curl",
+        "-sk",
+        "-o",
+        "/dev/null",
+        "-w",
+        "%{http_code}",
+        "--resolve",
+        f"{domain}:{HTTPS_PORT}:127.0.0.1",
         f"https://{domain}/",
     )
     return r.stdout.strip()
 
 
-def _request(domain: str, path: str, *, scheme: str = "https", method: str = "GET",
-             json_body: dict | None = None) -> tuple[str, str]:
+def _request(
+    domain: str,
+    path: str,
+    *,
+    scheme: str = "https",
+    method: str = "GET",
+    json_body: dict | None = None,
+) -> tuple[str, str]:
     port = HTTPS_PORT if scheme == "https" else HTTP_PORT
-    args = ["curl", "-s", "-w", "\n%{http_code}",
-            "--resolve", f"{domain}:{port}:127.0.0.1"]
+    args = ["curl", "-s", "-w", "\n%{http_code}", "--resolve", f"{domain}:{port}:127.0.0.1"]
     if scheme == "https":
         args.append("-k")
     if method != "GET":
@@ -109,8 +133,9 @@ def _request(domain: str, path: str, *, scheme: str = "https", method: str = "GE
     return code.strip(), body
 
 
-def _request_ok(domain: str, path: str, *, tries: int = 20, delay: float = 0.5,
-                **kwargs) -> tuple[str, str]:
+def _request_ok(
+    domain: str, path: str, *, tries: int = 20, delay: float = 0.5, **kwargs
+) -> tuple[str, str]:
     """Poll _request until it returns 200, to ride out the brief window where the
     workload is restarting (e.g. just after a process-manager migration)."""
     status, body = "000", ""
@@ -124,8 +149,15 @@ def _request_ok(domain: str, path: str, *, tries: int = 20, delay: float = 0.5,
 
 def _http_redirect(domain: str) -> tuple[str, str]:
     r = _run(
-        "curl", "-s", "-o", "/dev/null", "-w", "%{http_code} %{redirect_url}",
-        "--resolve", f"{domain}:{HTTP_PORT}:127.0.0.1", f"http://{domain}/",
+        "curl",
+        "-s",
+        "-o",
+        "/dev/null",
+        "-w",
+        "%{http_code} %{redirect_url}",
+        "--resolve",
+        f"{domain}:{HTTP_PORT}:127.0.0.1",
+        f"http://{domain}/",
     )
     code, _, target = r.stdout.strip().partition(" ")
     return code, target
@@ -155,13 +187,16 @@ def _set_admin_tls(bench_root: Path, enabled: bool) -> None:
 
 def _served_cert_org(domain: str) -> str:
     probe = subprocess.run(
-        ["openssl", "s_client", "-connect", f"127.0.0.1:{HTTPS_PORT}",
-         "-servername", domain],
-        input="", capture_output=True, text=True,
+        ["openssl", "s_client", "-connect", f"127.0.0.1:{HTTPS_PORT}", "-servername", domain],
+        input="",
+        capture_output=True,
+        text=True,
     )
     subject = subprocess.run(
         ["openssl", "x509", "-noout", "-subject"],
-        input=probe.stdout, capture_output=True, text=True,
+        input=probe.stdout,
+        capture_output=True,
+        text=True,
     )
     return subject.stdout.strip()
 
@@ -197,6 +232,7 @@ def _start_external_redis(bench_root: Path) -> None:
         if path.exists():
             _run("redis-server", str(path), "--daemonize", "yes")
 
+
 @pytest.fixture(scope="class")
 def production(bench_root: Path, bench_bin: str):
     for domain in ALL_DOMAINS:
@@ -206,8 +242,12 @@ def production(bench_root: Path, bench_bin: str):
     _stop_external_redis(bench_root)
 
     result = _run(
-        bench_bin, "setup", "production",
-        "--admin-domain", ADMIN_DOMAIN, "--tls",
+        bench_bin,
+        "setup",
+        "production",
+        "--admin-domain",
+        ADMIN_DOMAIN,
+        "--tls",
         cwd=bench_root,
     )
     assert result.returncode == 0, (
@@ -229,7 +269,6 @@ def production(bench_root: Path, bench_bin: str):
 
 
 class TestProductionSSL:
-
     def test_bench_toml_records_production_state(self, production: Path) -> None:
         import tomllib
 
@@ -329,7 +368,9 @@ class TestProductionSSL:
         if not _site_dir(production, SITE_NO_SSL).is_dir():
             pytest.skip(f"{SITE_NO_SSL} not present in this bench")
         code, target = _http_redirect(SITE_NO_SSL)
-        assert code not in ("301", "308"), f"plain site unexpectedly redirected ({code} -> {target})"
+        assert code not in ("301", "308"), (
+            f"plain site unexpectedly redirected ({code} -> {target})"
+        )
 
     def test_unknown_host_handshake_rejected(self, production: Path) -> None:
         # Catch-all default server uses ssl_reject_handshake, so an unconfigured
@@ -341,8 +382,12 @@ class TestProductionSSL:
         import tomllib
 
         r = _run(
-            bench_bin, "setup", "production",
-            "--admin-domain", ADMIN_DOMAIN, "--tls",
+            bench_bin,
+            "setup",
+            "production",
+            "--admin-domain",
+            ADMIN_DOMAIN,
+            "--tls",
             cwd=production,
         )
         assert r.returncode == 0, f"idempotent re-run failed:\n{r.stdout}\n{r.stderr}"
@@ -371,8 +416,12 @@ class TestProductionSSL:
         import tomllib
 
         r = _run(
-            bench_bin, "setup", "production",
-            "--admin-domain", ADMIN_DOMAIN_2, "--tls",
+            bench_bin,
+            "setup",
+            "production",
+            "--admin-domain",
+            ADMIN_DOMAIN_2,
+            "--tls",
             cwd=production,
         )
         assert r.returncode == 0, f"re-setup failed:\n{r.stdout}\n{r.stderr}"
@@ -405,6 +454,7 @@ class TestProductionSSL:
         # Vhost gone -> catch-all rejects (000) or no upstream (502); never 200.
         assert _https_status(current_site) != "200", "site still served after remove"
 
+
 @pytest.fixture(scope="class")
 def http_only_production(bench_root: Path, bench_bin: str):
     _set_admin_tls(bench_root, False)
@@ -412,7 +462,11 @@ def http_only_production(bench_root: Path, bench_bin: str):
     _stop_external_redis(bench_root)
 
     result = _run(
-        bench_bin, "setup", "production", "--admin-domain", ADMIN_DOMAIN,
+        bench_bin,
+        "setup",
+        "production",
+        "--admin-domain",
+        ADMIN_DOMAIN,
         cwd=bench_root,  # no --tls: keeps admin.tls=false from bench.toml
     )
     assert result.returncode == 0, (
@@ -427,7 +481,6 @@ def http_only_production(bench_root: Path, bench_bin: str):
 
 
 class TestProductionNoTLS:
-
     def test_admin_vhost_is_http_only(self, http_only_production: Path) -> None:
         conf = (_nginx_conf_dir(http_only_production) / "sites" / "_admin.conf").read_text()
         assert f"server_name {ADMIN_DOMAIN};" in conf, conf
@@ -443,6 +496,7 @@ class TestProductionNoTLS:
     def test_admin_not_served_over_https(self, http_only_production: Path) -> None:
         assert _https_status(ADMIN_DOMAIN) == "000", "admin answered HTTPS with TLS disabled"
 
+
 @pytest.fixture(scope="class")
 def systemd_production(bench_root: Path, bench_bin: str):
     _install_self_signed_cert(SITE)
@@ -453,8 +507,15 @@ def systemd_production(bench_root: Path, bench_bin: str):
     _stop_external_redis(bench_root)
 
     result = _run(
-        bench_bin, "setup", "production", "--process-manager", "systemd",
-        "--admin-domain", ADMIN_DOMAIN, "--tls", cwd=bench_root,
+        bench_bin,
+        "setup",
+        "production",
+        "--process-manager",
+        "systemd",
+        "--admin-domain",
+        ADMIN_DOMAIN,
+        "--tls",
+        cwd=bench_root,
     )
     assert result.returncode == 0, (
         f"systemd setup production failed:\n{result.stdout}\n{result.stderr}"
@@ -470,7 +531,6 @@ def systemd_production(bench_root: Path, bench_bin: str):
 
 
 class TestProcessManagerMigration:
-
     def test_migrate_systemd_to_supervisord(self, systemd_production: Path, bench_bin: str) -> None:
         import tomllib
 
@@ -479,8 +539,15 @@ class TestProcessManagerMigration:
         assert systemd_target.exists(), "systemd target missing before migration"
 
         r = _run(
-            bench_bin, "setup", "production", "--process-manager", "supervisord",
-            "--admin-domain", ADMIN_DOMAIN, "--tls", cwd=systemd_production,
+            bench_bin,
+            "setup",
+            "production",
+            "--process-manager",
+            "supervisord",
+            "--admin-domain",
+            ADMIN_DOMAIN,
+            "--tls",
+            cwd=systemd_production,
         )
         assert r.returncode == 0, f"migration to supervisord failed:\n{r.stdout}\n{r.stderr}"
 
@@ -493,8 +560,8 @@ class TestProcessManagerMigration:
         assert status == "200", f"site broke after PM migration ({status}): {body!r}"
         assert "pong" in body, body
 
-class TestMultiBench:
 
+class TestMultiBench:
     def test_second_bench_coexists(self, bench_root: Path, bench_bin: str) -> None:
         root2 = os.environ.get("BENCH_TEST_ROOT_2")
         if not root2:
@@ -507,9 +574,13 @@ class TestMultiBench:
         _install_self_signed_cert(admin2)
         _set_site_ssl(root1, SITE, True)
         try:
-            r1 = _run(bench_bin, "setup", "production", "--admin-domain", ADMIN_DOMAIN, "--tls", cwd=root1)
+            r1 = _run(
+                bench_bin, "setup", "production", "--admin-domain", ADMIN_DOMAIN, "--tls", cwd=root1
+            )
             assert r1.returncode == 0, f"first bench deploy failed:\n{r1.stdout}\n{r1.stderr}"
-            r2 = _run(bench_bin, "setup", "production", "--admin-domain", admin2, "--tls", cwd=root2)
+            r2 = _run(
+                bench_bin, "setup", "production", "--admin-domain", admin2, "--tls", cwd=root2
+            )
             assert r2.returncode == 0, f"second bench deploy failed:\n{r2.stdout}\n{r2.stderr}"
             status, _ = _request(SITE, "/api/method/frappe.ping")
             assert status == "200", f"first bench broke after second deploy ({status})"

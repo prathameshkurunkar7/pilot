@@ -1,4 +1,5 @@
 """Tests for /api/v1/runtime and /api/v1/logs routes."""
+
 from __future__ import annotations
 
 import json
@@ -15,7 +16,9 @@ def _client(bench_root: Path, password: str = "secret"):
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
+        BenchTomlBuilder(
+            bench_root.name, {"admin_enabled": True, "admin_password": password}
+        ).render()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -27,8 +30,14 @@ def _client(bench_root: Path, password: str = "secret"):
 
 def _process(name="web", status="running"):
     return SimpleNamespace(
-        name=name, status=status, pid=123, uptime="1h",
-        cpu_percent=1.0, rss_mb=10.0, pss_mb=8.0, log_file=Path(f"{name}.log"),
+        name=name,
+        status=status,
+        pid=123,
+        uptime="1h",
+        cpu_percent=1.0,
+        rss_mb=10.0,
+        pss_mb=8.0,
+        log_file=Path(f"{name}.log"),
     )
 
 
@@ -68,12 +77,15 @@ def test_runtime_restart_returns_the_process_list(tmp_path: Path) -> None:
     status_result = Mock(returncode=0, stdout="current:web RUNNING\n")
     restart_result = Mock(returncode=0)
 
-    with patch(
-        "admin.backend.api.v1.processes.subprocess.run",
-        side_effect=[status_result, restart_result],
-    ), patch(
-        "admin.backend.providers.processes.ProcessProvider.get_all",
-        return_value=[_process()],
+    with (
+        patch(
+            "admin.backend.api.v1.processes.subprocess.run",
+            side_effect=[status_result, restart_result],
+        ),
+        patch(
+            "admin.backend.providers.processes.ProcessProvider.get_all",
+            return_value=[_process()],
+        ),
     ):
         response = client.post("/api/v1/runtime/actions/restart")
 
@@ -126,7 +138,9 @@ def test_log_events_emits_structured_json_lines(tmp_path: Path) -> None:
         response = client.get("/api/v1/logs/web.log/events")
         body = response.get_data(as_text=True)
 
-    events = [json.loads(chunk.removeprefix("data: ")) for chunk in body.strip().split("\n\n") if chunk]
+    events = [
+        json.loads(chunk.removeprefix("data: ")) for chunk in body.strip().split("\n\n") if chunk
+    ]
     assert events == [{"line": "first line"}, {"line": "second line"}]
 
 

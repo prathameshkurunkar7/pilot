@@ -194,8 +194,6 @@ def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
         from pilot.managers.task import TaskReader
 
         tasks = TaskReader(bench_root).list_tasks(limit=20)
-        return not any(
-            task.command == "wizard-setup" and task.status.is_active for task in tasks
-        )
+        return not any(task.command == "wizard-setup" and task.status.is_active for task in tasks)
     except Exception:
         return True

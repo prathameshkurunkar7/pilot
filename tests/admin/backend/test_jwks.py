@@ -33,7 +33,13 @@ def _jwks_document() -> dict:
 
 
 def _mint(key=_RSA, alg: str = "RS256", kid: str = "rsa-key", **claims) -> str:
-    payload = {"sub": "admin", "scope": "bench", "aud": AUDIENCE, "exp": int(time.time()) + 300, **claims}
+    payload = {
+        "sub": "admin",
+        "scope": "bench",
+        "aud": AUDIENCE,
+        "exp": int(time.time()) + 300,
+        **claims,
+    }
     if payload.get("aud") is None:  # _mint(aud=None) omits the claim entirely
         payload.pop("aud")
     return jwt.encode(payload, key, algorithm=alg, headers={"kid": kid})
@@ -65,7 +71,12 @@ def test_expired_token_rejected() -> None:
 def test_token_without_exp_rejected() -> None:
     # A non-expiring token is refused outright (PyJWT does not require exp by
     # default); this also keeps the login endpoint from reading a missing exp.
-    forever = jwt.encode({"sub": "admin", "scope": "bench", "jti": "x", "aud": AUDIENCE}, _RSA, algorithm="RS256", headers={"kid": "rsa-key"})
+    forever = jwt.encode(
+        {"sub": "admin", "scope": "bench", "jti": "x", "aud": AUDIENCE},
+        _RSA,
+        algorithm="RS256",
+        headers={"kid": "rsa-key"},
+    )
     assert verify_jwks_token(forever, JWKS_URL, AUDIENCE) is None
 
 
@@ -79,7 +90,12 @@ def test_unknown_kid_rejected() -> None:
 
 def test_symmetric_algorithm_not_accepted() -> None:
     # A published public key must never be replayable as an HMAC secret.
-    forged = jwt.encode({"sub": "admin", "aud": AUDIENCE, "exp": int(time.time()) + 300}, "x" * 32, algorithm="HS256", headers={"kid": "rsa-key"})
+    forged = jwt.encode(
+        {"sub": "admin", "aud": AUDIENCE, "exp": int(time.time()) + 300},
+        "x" * 32,
+        algorithm="HS256",
+        headers={"kid": "rsa-key"},
+    )
     assert verify_jwks_token(forged, JWKS_URL, AUDIENCE) is None
 
 
@@ -142,7 +158,11 @@ def _client(tmp_path: Path):
     bench_root = tmp_path / "benches" / "current"
     bench_root.mkdir(parents=True)
     toml_path = bench_root / "bench.toml"
-    toml_path.write_text(BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": "secret"}).render())
+    toml_path.write_text(
+        BenchTomlBuilder(
+            bench_root.name, {"admin_enabled": True, "admin_password": "secret"}
+        ).render()
+    )
     config = BenchConfig.from_file(toml_path)
     config.admin.jwt_secret = "local-secret"
     config.admin.jwks_url = JWKS_URL
@@ -163,7 +183,10 @@ def test_jwks_bearer_token_authenticates(tmp_path: Path) -> None:
 
 def test_jwks_ec_bearer_token_authenticates(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    resp = client.get("/api/v1/benches", headers={"Authorization": f"Bearer {_mint(_EC, alg='ES256', kid='ec-key')}"})
+    resp = client.get(
+        "/api/v1/benches",
+        headers={"Authorization": f"Bearer {_mint(_EC, alg='ES256', kid='ec-key')}"},
+    )
     assert resp.status_code != 401
 
 
@@ -191,20 +214,33 @@ def test_jwks_sid_login_is_single_use(tmp_path: Path) -> None:
 
 def test_jwks_sid_login_without_exp_does_not_crash(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    forever = jwt.encode({"sub": "admin", "scope": "bench", "jti": "noexp", "aud": AUDIENCE}, _RSA, algorithm="RS256", headers={"kid": "rsa-key"})
+    forever = jwt.encode(
+        {"sub": "admin", "scope": "bench", "jti": "noexp", "aud": AUDIENCE},
+        _RSA,
+        algorithm="RS256",
+        headers={"kid": "rsa-key"},
+    )
     assert client.post("/api/v1/session", json={"sid": forever}).status_code == 401
 
 
 def test_jwks_site_scoped_token_cannot_bootstrap_session(tmp_path: Path) -> None:
     # A site-scoped token (even with a jti) must not escalate to a bench session.
     client = _client(tmp_path)
-    resp = client.post("/api/v1/session", json={"sid": _mint(jti="login-3", scope="site", site="a.com")})
+    resp = client.post(
+        "/api/v1/session", json={"sid": _mint(jti="login-3", scope="site", site="a.com")}
+    )
     assert resp.status_code == 401
 
 
 def test_jwks_site_scoped_bearer_is_enforced(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    ok = client.get("/api/v1/sites/a.com/apps", headers={"Authorization": f"Bearer {_mint(scope='site', site='a.com')}"})
-    denied = client.get("/api/v1/sites/a.com/apps", headers={"Authorization": f"Bearer {_mint(scope='site', site='other.com')}"})
+    ok = client.get(
+        "/api/v1/sites/a.com/apps",
+        headers={"Authorization": f"Bearer {_mint(scope='site', site='a.com')}"},
+    )
+    denied = client.get(
+        "/api/v1/sites/a.com/apps",
+        headers={"Authorization": f"Bearer {_mint(scope='site', site='other.com')}"},
+    )
     assert ok.status_code != 403
     assert denied.status_code == 403

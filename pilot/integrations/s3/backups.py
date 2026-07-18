@@ -98,7 +98,9 @@ class OffsiteBackup:
         client = S3.from_config(config)
         return cls(client, config.bucket, bench_root)
 
-    def upload(self, site_name: str, timestamp: str, backup_path: Path, remove_local: bool = True) -> None:
+    def upload(
+        self, site_name: str, timestamp: str, backup_path: Path, remove_local: bool = True
+    ) -> None:
         keys = BackupKeys(site_name)
         self.s3.upload_file(self.bucket, backup_path, keys.file(timestamp, backup_path.name))
         self._metadata(keys).add(timestamp, backup_path.name)
@@ -106,9 +108,13 @@ class OffsiteBackup:
             backup_path.unlink(missing_ok=True)
 
     def download(self, site_name: str, timestamp: str, filename: str, destination: Path) -> None:
-        self.s3.download_file(self.bucket, BackupKeys(site_name).file(timestamp, filename), destination)
+        self.s3.download_file(
+            self.bucket, BackupKeys(site_name).file(timestamp, filename), destination
+        )
 
-    def presigned_url(self, site_name: str, timestamp: str, filename: str, expires_in: int = 25_000) -> str:
+    def presigned_url(
+        self, site_name: str, timestamp: str, filename: str, expires_in: int = 25_000
+    ) -> str:
         """A direct, time-limited S3 download link — the file goes straight
         from S3 to whoever has the link, without passing through this server."""
         key = BackupKeys(site_name).file(timestamp, filename)

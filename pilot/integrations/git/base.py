@@ -81,7 +81,7 @@ def normalize_to_https(repo_url: str) -> str:
     url = (repo_url or "").strip()
     # scp-style: git@github.com:owner/repo(.git)
     if url.startswith("git@"):
-        host, _, path = url[len("git@"):].partition(":")
+        host, _, path = url[len("git@") :].partition(":")
         return f"https://{host}/{path}"
     if url.startswith("ssh://"):
         parsed = urllib.parse.urlparse(url)
@@ -94,7 +94,7 @@ def inject_https_token(repo_url: str, username: str, token: str) -> str:
     https = normalize_to_https(repo_url)
     if not token or not https.startswith("https://"):
         return https
-    rest = https[len("https://"):]
+    rest = https[len("https://") :]
     # Strip any userinfo already present so we don't double up.
     if "@" in rest.split("/", 1)[0]:
         rest = rest.split("@", 1)[1]

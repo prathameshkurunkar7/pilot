@@ -17,7 +17,9 @@ _ALLOWED_EXACT = frozenset({"central.api.pilot.heartbeat"})
 
 
 def _is_allowed(method_path: str) -> bool:
-    return method_path in _ALLOWED_EXACT or any(method_path.startswith(p) for p in _ALLOWED_PREFIXES)
+    return method_path in _ALLOWED_EXACT or any(
+        method_path.startswith(p) for p in _ALLOWED_PREFIXES
+    )
 
 
 def _central() -> CentralClient:
@@ -34,7 +36,9 @@ def _central() -> CentralClient:
 @require_scope(site_name)
 def central_proxy(name: str, method_path: str):
     if not _is_allowed(method_path):
-        return error_response("central_method_forbidden", f"Central method '{method_path}' is not permitted.", 403)
+        return error_response(
+            "central_method_forbidden", f"Central method '{method_path}' is not permitted.", 403
+        )
     data = request.get_json(silent=True) if request.method == "POST" else None
     try:
         return jsonify(_central().forward(method_path, request.method, data))

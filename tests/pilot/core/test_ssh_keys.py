@@ -1,4 +1,5 @@
 """Tests for the authorized_keys store (pilot.core.server.ssh_keys)."""
+
 from __future__ import annotations
 
 import pytest

@@ -246,7 +246,12 @@ def test_postgres_defaults_when_section_absent() -> None:
 
 def test_postgres_section_roundtrip() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["postgres"] = {"host": "db.internal", "port": 5433, "admin_user": "pgroot", "root_password": "secret"}
+    data["postgres"] = {
+        "host": "db.internal",
+        "port": 5433,
+        "admin_user": "pgroot",
+        "root_password": "secret",
+    }
     config = load_from_dict(data)
     assert config.postgres.host == "db.internal"
     assert config.postgres.port == 5433
@@ -483,6 +488,7 @@ def test_monitor_log_path_parsed_as_path() -> None:
     data["monitor"] = {"log_path": "/var/log/my-bench-stats.log"}
     config = BenchConfig._from_dict(data)
     from pathlib import Path
+
     assert config.monitor.log_path == Path("/var/log/my-bench-stats.log")
 
 
@@ -535,6 +541,7 @@ def test_toml_writer_monitor_log_path_omitted_when_none() -> None:
 
 def test_toml_writer_monitor_log_path_written_when_set() -> None:
     from pathlib import Path
+
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["production"] = {"enabled": True, "process_manager": "systemd"}
     data["admin"] = {"domain": "admin.example.com"}
@@ -603,6 +610,7 @@ def test_firewall_toml_round_trip() -> None:
     }
     config = load_from_dict(data)
     import tomllib
+
     reparsed = BenchConfig._from_dict(tomllib.loads(bench_config_to_toml(config)))
     reparsed.validate()
     assert reparsed.firewall.enabled is True

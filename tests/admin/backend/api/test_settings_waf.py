@@ -1,4 +1,5 @@
 """Tests for the admin Settings WAF endpoints."""
+
 from __future__ import annotations
 
 import pytest
@@ -12,7 +13,9 @@ def _config() -> BenchConfig:
     return BenchConfig._from_dict(
         {
             "bench": {"name": "test-bench", "python": "3.14"},
-            "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}],
+            "apps": [
+                {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "develop"}
+            ],
             "mariadb": {"root_password": "root"},
             "admin": {"domain": "admin.example.com"},
         }
@@ -28,14 +31,21 @@ def test_settings_response_defaults_to_disabled_waf() -> None:
 
 def test_patcher_applies_waf() -> None:
     config = _config()
-    error = ConfigPatcher(config, {
-        "waf": {
-            "enabled": True, "mode": "On", "paranoia": 3, "inbound_threshold": 8,
-            "body_limit": "100m", "inspect_responses": True,
-            "exclusions": ["SecRuleRemoveById 942100", "   "],  # blank dropped
-            "exempt_paths": ["/api/method/ping"],
-        }
-    }).apply()
+    error = ConfigPatcher(
+        config,
+        {
+            "waf": {
+                "enabled": True,
+                "mode": "On",
+                "paranoia": 3,
+                "inbound_threshold": 8,
+                "body_limit": "100m",
+                "inspect_responses": True,
+                "exclusions": ["SecRuleRemoveById 942100", "   "],  # blank dropped
+                "exempt_paths": ["/api/method/ping"],
+            }
+        },
+    ).apply()
 
     assert error is None
     assert config.waf.enabled and config.waf.mode == "On" and config.waf.paranoia == 3
@@ -70,13 +80,29 @@ def test_patcher_leaves_waf_untouched_when_absent() -> None:
 
 def test_patcher_applies_custom_rule_and_drops_blank_conditions() -> None:
     config = _config()
-    error = ConfigPatcher(config, {"waf": {"custom_rules": [{
-        "name": "Block admin abroad", "action": "block", "match": "all", "enabled": True,
-        "conditions": [
-            {"field": "uri_path", "operator": "starts_with", "value": "/admin"},
-            {"field": "", "operator": "", "value": ""},  # trailing blank row dropped
-        ],
-    }]}}).apply()
+    error = ConfigPatcher(
+        config,
+        {
+            "waf": {
+                "custom_rules": [
+                    {
+                        "name": "Block admin abroad",
+                        "action": "block",
+                        "match": "all",
+                        "enabled": True,
+                        "conditions": [
+                            {"field": "uri_path", "operator": "starts_with", "value": "/admin"},
+                            {
+                                "field": "",
+                                "operator": "",
+                                "value": "",
+                            },  # trailing blank row dropped
+                        ],
+                    }
+                ]
+            }
+        },
+    ).apply()
     assert error is None
     rule = config.waf.custom_rules[0]
     assert rule.name == "Block admin abroad" and len(rule.conditions) == 1
@@ -84,9 +110,21 @@ def test_patcher_applies_custom_rule_and_drops_blank_conditions() -> None:
 
 def test_patcher_rejects_malicious_custom_rule_cleanly() -> None:
     # An injection attempt must yield a clean error string, never an unhandled 500.
-    error = ConfigPatcher(_config(), {"waf": {"custom_rules": [{
-        "name": "x", "conditions": [{"field": "uri_path", "operator": "is", "value": '/a" "deny"'}],
-    }]}}).apply()
+    error = ConfigPatcher(
+        _config(),
+        {
+            "waf": {
+                "custom_rules": [
+                    {
+                        "name": "x",
+                        "conditions": [
+                            {"field": "uri_path", "operator": "is", "value": '/a" "deny"'}
+                        ],
+                    }
+                ]
+            }
+        },
+    ).apply()
     assert error is not None and "value" in error
 
 

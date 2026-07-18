@@ -50,7 +50,9 @@ class OSProvider:
             return ""
 
         try:
-            result = run_command([str(python_bin), "-c", "import frappe; print(frappe.__version__)"])
+            result = run_command(
+                [str(python_bin), "-c", "import frappe; print(frappe.__version__)"]
+            )
         except CommandError:
             return ""
 

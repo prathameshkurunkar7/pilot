@@ -60,10 +60,7 @@ class SiteProvider:
 
         names = set()
         for task in tasks:
-            if (
-                not task.status.is_active
-                or task.command not in _PROVISIONING_COMMANDS
-            ):
+            if not task.status.is_active or task.command not in _PROVISIONING_COMMANDS:
                 continue
             for key in _PROVISIONING_ARG_KEYS:
                 if name := task.args.get(key):

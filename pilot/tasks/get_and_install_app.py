@@ -42,9 +42,7 @@ class GetAndInstallAppTask(Task):
             )
         else:
             app = App.from_repo(self.bench, self.repo, self.branch)
-        return app.install(
-            install_dependencies=bool(self.marketplace_app), on_progress=self.report
-        )
+        return app.install(install_dependencies=bool(self.marketplace_app), on_progress=self.report)
 
     def install_on_sites(self, app: App) -> None:
         for site in self.sites:

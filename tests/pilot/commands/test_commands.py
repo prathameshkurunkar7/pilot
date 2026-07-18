@@ -609,9 +609,7 @@ def test_build_command_default_uses_prebuilt_per_app(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
 
-    with patch(
-        "pilot.managers.environment.PythonEnvManager.build_assets_for_app"
-    ) as mock_build:
+    with patch("pilot.managers.environment.PythonEnvManager.build_assets_for_app") as mock_build:
         with patch.object(bench, "apps", return_value=[]):
             BuildCommand(bench).run()
             mock_build.assert_not_called()  # no apps → nothing called

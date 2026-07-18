@@ -1,4 +1,5 @@
 """Tests for pilot.core.app.dependency_installer.AppDependencyInstaller."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,16 +22,22 @@ def make_app(bench, name: str):
     return App(AppConfig(name=name, repo=f"https://github.com/frappe/{name}", branch="main"), bench)
 
 
-def test_install_returns_empty_when_app_not_in_marketplace_and_no_required_apps(tmp_path: Path) -> None:
+def test_install_returns_empty_when_app_not_in_marketplace_and_no_required_apps(
+    tmp_path: Path,
+) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
     app = make_app(bench, "custom_app")
     (bench.apps_path / "custom_app").mkdir(parents=True)
-    (bench.apps_path / "custom_app" / "pyproject.toml").write_text('[project]\nname = "custom_app"\n')
+    (bench.apps_path / "custom_app" / "pyproject.toml").write_text(
+        '[project]\nname = "custom_app"\n'
+    )
 
-    with patch.object(Marketplace, "read_all_apps", return_value=[]), \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch.object(Marketplace, "_read_apps_json", return_value="[]"):
+    with (
+        patch.object(Marketplace, "read_all_apps", return_value=[]),
+        patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"),
+        patch.object(Marketplace, "_read_apps_json", return_value="[]"),
+    ):
         result = AppDependencyInstaller(bench, app).install()
 
     assert result == []
@@ -45,10 +52,12 @@ def test_install_installs_missing_dependency(tmp_path: Path) -> None:
     helpdesk = make_resolver("helpdesk", deps={"telephony": ""})
     helpdesk._registry = {"telephony": [telephony]}
 
-    with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch.object(Marketplace, "_read_apps_json", return_value="[]"), \
-            patch.object(App, "install") as mock_install:
+    with (
+        patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]),
+        patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"),
+        patch.object(Marketplace, "_read_apps_json", return_value="[]"),
+        patch.object(App, "install") as mock_install,
+    ):
         result = AppDependencyInstaller(bench, app).install()
 
     mock_install.assert_called_once()
@@ -69,10 +78,12 @@ def test_install_skips_already_installed_dependency(tmp_path: Path) -> None:
     helpdesk = make_resolver("helpdesk", deps={"telephony": ""})
     helpdesk._registry = {"telephony": [telephony]}
 
-    with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch.object(Marketplace, "_read_apps_json", return_value="[]"), \
-            patch.object(App, "install") as mock_install:
+    with (
+        patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]),
+        patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"),
+        patch.object(Marketplace, "_read_apps_json", return_value="[]"),
+        patch.object(App, "install") as mock_install,
+    ):
         result = AppDependencyInstaller(bench, app).install()
 
     mock_install.assert_not_called()
@@ -91,28 +102,40 @@ def test_dependency_apps_falls_back_to_direct_deps_on_transitive_conflict(tmp_pa
     helpdesk = make_resolver("helpdesk", deps={"telephony": ""})
     helpdesk._registry = {"telephony": [telephony]}
 
-    with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch.object(Marketplace, "_read_apps_json", return_value="[]"), \
-            patch.object(Resolver, "resolve", side_effect=DependencyResolutionError("conflict deep in the graph")):
+    with (
+        patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]),
+        patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"),
+        patch.object(Marketplace, "_read_apps_json", return_value="[]"),
+        patch.object(
+            Resolver, "resolve", side_effect=DependencyResolutionError("conflict deep in the graph")
+        ),
+    ):
         result = AppDependencyInstaller(bench, app).install()
 
     assert [a.config.name for a in result] == ["telephony"]
 
 
-def test_install_propagates_registry_unavailable_instead_of_swallowing_as_not_found(tmp_path: Path) -> None:
+def test_install_propagates_registry_unavailable_instead_of_swallowing_as_not_found(
+    tmp_path: Path,
+) -> None:
     """RegistryUnavailableError propagates instead of looking like not-found."""
     bench = make_bench(tmp_path)
     bench.create_directories()
     app = make_app(bench, "helpdesk")
 
-    with patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch.object(Marketplace, "_read_apps_json", side_effect=RegistryUnavailableError("tampered")):
+    with (
+        patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"),
+        patch.object(
+            Marketplace, "_read_apps_json", side_effect=RegistryUnavailableError("tampered")
+        ),
+    ):
         with pytest.raises(RegistryUnavailableError):
             AppDependencyInstaller(bench, app).install()
 
 
-def test_install_raises_when_app_not_in_marketplace_but_requires_missing_apps(tmp_path: Path) -> None:
+def test_install_raises_when_app_not_in_marketplace_but_requires_missing_apps(
+    tmp_path: Path,
+) -> None:
     bench = make_bench(tmp_path)
     bench.create_directories()
     app_dir = bench.apps_path / "india_compliance"
@@ -122,8 +145,10 @@ def test_install_raises_when_app_not_in_marketplace_but_requires_missing_apps(tm
     )
     app = make_app(bench, "india_compliance")
 
-    with patch.object(Marketplace, "read_all_apps", return_value=[]), \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch.object(Marketplace, "_read_apps_json", return_value="[]"):
+    with (
+        patch.object(Marketplace, "read_all_apps", return_value=[]),
+        patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"),
+        patch.object(Marketplace, "_read_apps_json", return_value="[]"),
+    ):
         with pytest.raises(BenchError, match="isn't in the marketplace registry"):
             AppDependencyInstaller(bench, app).install()

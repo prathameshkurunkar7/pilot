@@ -59,9 +59,7 @@ class SiteRename:
                 f"An admin domain must not match a site domain."
             )
 
-    def run_followups(
-        self, ssl_enabled: bool, on_progress: Callable[[str], None]
-    ) -> None:
+    def run_followups(self, ssl_enabled: bool, on_progress: Callable[[str], None]) -> None:
         name = self.bench.config.name
         if self.bench.config.production.enabled:
             self._run_or_advise(

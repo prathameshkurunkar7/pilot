@@ -54,14 +54,16 @@ class GitHubProvider(GitProvider):
             if not batch:
                 break
             for r in batch:
-                repos.append({
-                    "name": r.get("name"),
-                    "full_name": r.get("full_name"),
-                    "private": r.get("private", False),
-                    "description": r.get("description") or "",
-                    "default_branch": r.get("default_branch") or "",
-                    "clone_url": r.get("clone_url") or "",
-                })
+                repos.append(
+                    {
+                        "name": r.get("name"),
+                        "full_name": r.get("full_name"),
+                        "private": r.get("private", False),
+                        "description": r.get("description") or "",
+                        "default_branch": r.get("default_branch") or "",
+                        "clone_url": r.get("clone_url") or "",
+                    }
+                )
             if len(batch) < 100:
                 break
         return repos

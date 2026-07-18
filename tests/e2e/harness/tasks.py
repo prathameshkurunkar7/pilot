@@ -41,9 +41,7 @@ def wait_for_task(
             if status == "success":
                 return
             if status == "failed":
-                output = request.get(
-                    f"{base_url}/api/v1/tasks/{task_id}/output/content"
-                )
+                output = request.get(f"{base_url}/api/v1/tasks/{task_id}/output/content")
                 tail = "\n".join(output.text().splitlines()[-30:]) if output.ok else ""
                 raise RuntimeError(f"Task {task_id} failed:\n{tail}")
         time.sleep(2)

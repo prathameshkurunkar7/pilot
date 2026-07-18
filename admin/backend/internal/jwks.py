@@ -6,7 +6,18 @@ import jwt
 from jwt import PyJWKClient
 
 # Exclude HS*: a public JWKS key must never become an HMAC secret.
-_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "PS384", "PS512", "EdDSA"]
+_ALGORITHMS = [
+    "RS256",
+    "RS384",
+    "RS512",
+    "ES256",
+    "ES384",
+    "ES512",
+    "PS256",
+    "PS384",
+    "PS512",
+    "EdDSA",
+]
 
 _clients: dict[str, PyJWKClient] = {}
 
@@ -23,8 +34,13 @@ def verify_jwks_token(token: str, jwks_url: str, audience: str) -> dict | None:
         signing_key = PyJWKClient.match_kid(_client(jwks_url).get_signing_keys(), kid)
         if signing_key is None:
             return None
-        return jwt.decode(token, signing_key.key, algorithms=_ALGORITHMS, audience=audience,
-                          options={"require": ["exp", "aud"], "verify_aud": True})
+        return jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=_ALGORITHMS,
+            audience=audience,
+            options={"require": ["exp", "aud"], "verify_aud": True},
+        )
     except jwt.PyJWTError:  # PyJWKClientError (fetch failures) subclasses this too
         return None
 

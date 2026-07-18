@@ -140,7 +140,9 @@ class SiteBackups:
         for file in self.directory.glob(f"{timestamp}-*"):
             file.unlink(missing_ok=True)
 
-    def _delete_offsite(self, offsite: OffsiteBackup, timestamp: str, files: dict[str, str]) -> None:
+    def _delete_offsite(
+        self, offsite: OffsiteBackup, timestamp: str, files: dict[str, str]
+    ) -> None:
         for filename in list(files.values()):
             offsite.delete(self.site.config.name, timestamp, filename)
 

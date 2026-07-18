@@ -1,4 +1,5 @@
 """Tests for RegistryCache using a real local git remote."""
+
 from __future__ import annotations
 
 import os
@@ -37,8 +38,10 @@ def _git(cwd: Path, *args: str) -> None:
 @pytest.fixture(autouse=True)
 def _point_at_local_remote(tmp_path):
     remote = make_remote(tmp_path)
-    with patch("pilot.core.registry_cache.REGISTRY_URL", str(remote)), \
-            patch("pilot.core.registry_cache.CronManager"):  # never touch the real system crontab
+    with (
+        patch("pilot.core.registry_cache.REGISTRY_URL", str(remote)),
+        patch("pilot.core.registry_cache.CronManager"),
+    ):  # never touch the real system crontab
         yield remote
 
 
@@ -52,7 +55,9 @@ def test_ensure_fresh_clones_on_first_use(tmp_path: Path) -> None:
     assert cache.apps_json_path.read_text() == '{"apps": []}'
 
 
-def test_ensure_fresh_skips_network_within_refresh_window(tmp_path: Path, _point_at_local_remote) -> None:
+def test_ensure_fresh_skips_network_within_refresh_window(
+    tmp_path: Path, _point_at_local_remote
+) -> None:
     cache = make_cache(tmp_path)
     cache.ensure_fresh()
     commit_new_content(_point_at_local_remote, '{"apps": ["new"]}')
@@ -64,7 +69,9 @@ def test_ensure_fresh_skips_network_within_refresh_window(tmp_path: Path, _point
     assert cache.apps_json_path.read_text() == '{"apps": []}'  # unchanged — stale check skipped
 
 
-def test_ensure_fresh_pulls_when_refresh_window_elapsed(tmp_path: Path, _point_at_local_remote) -> None:
+def test_ensure_fresh_pulls_when_refresh_window_elapsed(
+    tmp_path: Path, _point_at_local_remote
+) -> None:
     cache = make_cache(tmp_path)
     cache.ensure_fresh()
     commit_new_content(_point_at_local_remote, '{"apps": ["new"]}')
@@ -95,7 +102,9 @@ def test_ensure_fresh_falls_back_to_local_clone_when_offline(tmp_path: Path) -> 
     assert cache.apps_json_path.read_text() == '{"apps": []}'
 
 
-def test_ensure_fresh_falls_back_when_fetch_fails_mid_refresh(tmp_path: Path, _point_at_local_remote) -> None:
+def test_ensure_fresh_falls_back_when_fetch_fails_mid_refresh(
+    tmp_path: Path, _point_at_local_remote
+) -> None:
     """A mid-refresh fetch failure keeps serving the local clone."""
     from pilot.exceptions import CommandError
     from pilot.utils import run_command as real_run_command
@@ -110,8 +119,10 @@ def test_ensure_fresh_falls_back_when_fetch_fails_mid_refresh(tmp_path: Path, _p
             raise CommandError("connection reset")
         return real_run_command(argv, *args, **kwargs)
 
-    with patch.object(RegistryCache, "_remote_head_sha", return_value="deadbeef" * 5), \
-            patch("pilot.core.registry_cache.run_command", side_effect=flaky_run_command):
+    with (
+        patch.object(RegistryCache, "_remote_head_sha", return_value="deadbeef" * 5),
+        patch("pilot.core.registry_cache.run_command", side_effect=flaky_run_command),
+    ):
         cache.ensure_fresh()  # must not raise
 
     assert cache.apps_json_path.read_text() == '{"apps": []}'
@@ -124,12 +135,17 @@ def test_ensure_fresh_raises_bench_error_when_git_status_fails(tmp_path: Path) -
     cache = make_cache(tmp_path)
     cache.ensure_fresh()
 
-    with patch("pilot.core.registry_cache.run_command", side_effect=CommandError("fatal: not a git repository")):
+    with patch(
+        "pilot.core.registry_cache.run_command",
+        side_effect=CommandError("fatal: not a git repository"),
+    ):
         with pytest.raises(BenchError, match="corrupted"):
             cache.ensure_fresh()
 
 
-def test_ensure_fresh_falls_back_when_rev_parse_fails_mid_refresh(tmp_path: Path, _point_at_local_remote) -> None:
+def test_ensure_fresh_falls_back_when_rev_parse_fails_mid_refresh(
+    tmp_path: Path, _point_at_local_remote
+) -> None:
     """rev-parse failure during refresh keeps serving the local clone."""
     from pilot.exceptions import CommandError
     from pilot.utils import run_command as real_run_command
@@ -143,8 +159,10 @@ def test_ensure_fresh_falls_back_when_rev_parse_fails_mid_refresh(tmp_path: Path
             raise CommandError("fatal: bad object HEAD")
         return real_run_command(argv, *args, **kwargs)
 
-    with patch.object(RegistryCache, "_remote_head_sha", return_value="deadbeef" * 5), \
-            patch("pilot.core.registry_cache.run_command", side_effect=flaky_run_command):
+    with (
+        patch.object(RegistryCache, "_remote_head_sha", return_value="deadbeef" * 5),
+        patch("pilot.core.registry_cache.run_command", side_effect=flaky_run_command),
+    ):
         cache.ensure_fresh()  # must not raise
 
     assert cache.apps_json_path.read_text() == '{"apps": []}'

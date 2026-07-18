@@ -36,9 +36,12 @@ def gunicorn_proc(bench_root: Path):
     proc = subprocess.Popen(
         [
             str(gunicorn_bin),
-            "--bind", f"127.0.0.1:{GUNICORN_PORT}",
-            "--workers", "1",
-            "--timeout", "120",
+            "--bind",
+            f"127.0.0.1:{GUNICORN_PORT}",
+            "--workers",
+            "1",
+            "--timeout",
+            "120",
             "frappe.app:application",
         ],
         cwd=bench_root / "sites",
@@ -70,7 +73,6 @@ def gunicorn_proc(bench_root: Path):
 # Tests
 @pytest.mark.integration
 class TestSetupWizard:
-
     def test_setup_wizard_completes(self, bench_root: Path, gunicorn_proc) -> None:
         """setup_complete succeeds or returns the idempotent ok response."""
         session = requests.Session()
@@ -82,24 +84,23 @@ class TestSetupWizard:
             f"{BASE_URL}/api/method/login",
             data={"usr": "Administrator", "pwd": ADMIN_PASSWORD},
         )
-        assert login.status_code == 200, (
-            f"Login failed ({login.status_code}): {login.text}"
-        )
+        assert login.status_code == 200, f"Login failed ({login.status_code}): {login.text}"
 
         # Run the setup wizard.
         response = session.post(
-            f"{BASE_URL}/api/method/"
-            "frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
+            f"{BASE_URL}/api/method/frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
             data={
-                "args": json.dumps({
-                    "language": "English",
-                    "country": "United States",
-                    "timezone": "America/New_York",
-                    "currency": "USD",
-                    "full_name": "Test Administrator",
-                    "email": "admin@example.com",
-                    "password": ADMIN_PASSWORD,
-                })
+                "args": json.dumps(
+                    {
+                        "language": "English",
+                        "country": "United States",
+                        "timezone": "America/New_York",
+                        "currency": "USD",
+                        "full_name": "Test Administrator",
+                        "email": "admin@example.com",
+                        "password": ADMIN_PASSWORD,
+                    }
+                )
             },
         )
         assert response.status_code == 200, (
@@ -123,8 +124,7 @@ class TestSetupWizard:
         assert login.status_code == 200
 
         response = session.post(
-            f"{BASE_URL}/api/method/"
-            "frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
+            f"{BASE_URL}/api/method/frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
             data={"args": json.dumps({})},
         )
         assert response.status_code == 200, (
@@ -136,5 +136,5 @@ class TestSetupWizard:
             f"Second call raised a server-side exception:\n{body.get('exc')}"
         )
         assert body.get("message", {}).get("status") == "ok", (
-            f"Expected {{\"status\": \"ok\"}} on second call, got: {body.get('message')}"
+            f'Expected {{"status": "ok"}} on second call, got: {body.get("message")}'
         )

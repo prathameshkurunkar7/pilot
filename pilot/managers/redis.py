@@ -62,9 +62,5 @@ class RedisManager:
 
     def _write_config(self, filename: str, port: int) -> None:
         self.bench.config_path.mkdir(parents=True, exist_ok=True)
-        content = (
-            f"port {port}\n"
-            "bind 127.0.0.1\n"
-            'save ""\n'
-        )
+        content = f'port {port}\nbind 127.0.0.1\nsave ""\n'
         (self.bench.config_path / filename).write_text(content)

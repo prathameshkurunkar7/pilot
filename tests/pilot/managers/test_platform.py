@@ -1,4 +1,5 @@
 """Tests for pilot.managers.platform helpers."""
+
 from __future__ import annotations
 
 import threading

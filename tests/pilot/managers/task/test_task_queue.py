@@ -127,9 +127,7 @@ def test_queue_ignores_invalid_task_dirs(tmp_path: Path) -> None:
 
     invalid_dir = store.tasks_root / "not-a-task"
     invalid_dir.mkdir()
-    (invalid_dir / "meta.json").write_text(
-        json.dumps(task_metadata("20260715-120000-222222"))
-    )
+    (invalid_dir / "meta.json").write_text(json.dumps(task_metadata("20260715-120000-222222")))
     (invalid_dir / "status").write_text(TaskStatus.QUEUED.value)
 
     assert TaskQueue(tmp_path).queued_task_ids() == [queued]

@@ -17,6 +17,7 @@ except ImportError:
     class EndpointConnectionError(Exception):  # type: ignore[no-redef]
         pass
 
+
 from pilot.config import S3Config
 from pilot.exceptions import BenchError
 
@@ -24,7 +25,9 @@ from pilot.exceptions import BenchError
 # range GETs: s3transfer buffers out-of-order parts and writes them in order.
 # boto3 is an optional dependency (the 'admin' extra); left unset if missing.
 _STREAM_TRANSFER = (
-    TransferConfig(multipart_chunksize=64 * 1024 * 1024, max_concurrency=8) if TransferConfig else None
+    TransferConfig(multipart_chunksize=64 * 1024 * 1024, max_concurrency=8)
+    if TransferConfig
+    else None
 )
 
 ENDPOINT_TEMPLATES = {
@@ -116,15 +119,21 @@ class S3:
         try:
             self.client.head_bucket(Bucket=bucket_name)
         except EndpointConnectionError as error:
-            raise S3IntegrationError(f"Could not reach S3 endpoint '{self.endpoint_url}'. Check the endpoint URL and network access.") from error
+            raise S3IntegrationError(
+                f"Could not reach S3 endpoint '{self.endpoint_url}'. Check the endpoint URL and network access."
+            ) from error
         except ClientError as error:
             code = error.response["Error"]["Code"]
             if code == "404":
                 self.create_bucket(bucket_name)
             elif code in ("401", "403"):
-                raise S3IntegrationError(f"Access to bucket '{bucket_name}' was denied. Check the S3 credentials.") from error
+                raise S3IntegrationError(
+                    f"Access to bucket '{bucket_name}' was denied. Check the S3 credentials."
+                ) from error
             else:
-                raise S3IntegrationError(f"Could not verify bucket '{bucket_name}': {error.response['Error'].get('Message', code)}") from error
+                raise S3IntegrationError(
+                    f"Could not verify bucket '{bucket_name}': {error.response['Error'].get('Message', code)}"
+                ) from error
 
     def create_bucket(self, bucket_name: str) -> None:
         try:
@@ -136,7 +145,9 @@ class S3:
             else:
                 self.client.create_bucket(Bucket=bucket_name)
         except ClientError as error:
-            raise S3IntegrationError(f"Failed to create bucket '{bucket_name}': {error.response['Error'].get('Message', error)}") from error
+            raise S3IntegrationError(
+                f"Failed to create bucket '{bucket_name}': {error.response['Error'].get('Message', error)}"
+            ) from error
 
     def upload_file(self, bucket_name: str, local_path: Path, remote_key: str) -> None:
         try:

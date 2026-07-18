@@ -57,10 +57,25 @@ def test_to_dict_excludes_registry():
 
 def test_to_dict_contains_all_expected_keys():
     r = make_resolver()
-    keys = {"name", "repo", "target_type", "target", "version", "frappe_version",
-             "required_version", "dependencies", "is_installable",
-             "title", "description", "logo_url", "category", "categories", "stars",
-             "documentation", "website"}
+    keys = {
+        "name",
+        "repo",
+        "target_type",
+        "target",
+        "version",
+        "frappe_version",
+        "required_version",
+        "dependencies",
+        "is_installable",
+        "title",
+        "description",
+        "logo_url",
+        "category",
+        "categories",
+        "stars",
+        "documentation",
+        "website",
+    }
     assert keys == set(r.to_dict().keys())
 
 
@@ -86,13 +101,17 @@ def test_to_dict_includes_categories():
 
 
 def test_resolve_raises_for_non_installable_app():
-    r = make_resolver(is_installable=False, frappe_version="14.0.0", required_version=">=15.0.0,<16.0.0")
+    r = make_resolver(
+        is_installable=False, frappe_version="14.0.0", required_version=">=15.0.0,<16.0.0"
+    )
     with pytest.raises(BenchError, match="not compatible"):
         r.resolve()
 
 
 def test_resolve_error_message_contains_version_info():
-    r = make_resolver(is_installable=False, frappe_version="14.0.0", required_version=">=15.0.0,<16.0.0")
+    r = make_resolver(
+        is_installable=False, frappe_version="14.0.0", required_version=">=15.0.0,<16.0.0"
+    )
     with pytest.raises(BenchError) as exc:
         r.resolve()
     msg = str(exc.value)
@@ -123,7 +142,9 @@ def test_resolve_installs_dependency_before_root():
 def test_resolve_deep_chain_order():
     # erpnext → payments → stripe_integration
     stripe = make_resolver(app="stripe_integration", version="1.0.0")
-    payments = make_resolver(app="payments", version="1.0.0", dependencies={"stripe_integration": ">=1.0.0"})
+    payments = make_resolver(
+        app="payments", version="1.0.0", dependencies={"stripe_integration": ">=1.0.0"}
+    )
     erpnext = make_resolver(app="erpnext", version="15.0.0", dependencies={"payments": ">=1.0.0"})
     inject_registry(erpnext, [payments, stripe])
 
@@ -316,8 +337,14 @@ def make_marketplace(frappe_version: str, registry: list | None = None) -> Marke
     import json
 
     with (
-        patch("pilot.integrations.marketplace.Marketplace.get_current_frappe_version", return_value=frappe_version),
-        patch("pilot.integrations.marketplace.Marketplace._read_apps_json", return_value=json.dumps(registry or SAMPLE_REGISTRY)),
+        patch(
+            "pilot.integrations.marketplace.Marketplace.get_current_frappe_version",
+            return_value=frappe_version,
+        ),
+        patch(
+            "pilot.integrations.marketplace.Marketplace._read_apps_json",
+            return_value=json.dumps(registry or SAMPLE_REGISTRY),
+        ),
     ):
         mp = Marketplace(bench)
     return mp
@@ -329,14 +356,24 @@ def test_parse_registry_tolerates_bad_frappe_core():
             "name": "null_spec_app",
             "repo": "https://github.com/frappe/null_spec_app",
             "targets": [
-                {"version": "1.0.0", "target_type": "branch", "target": "main", "frappe_core": None},
+                {
+                    "version": "1.0.0",
+                    "target_type": "branch",
+                    "target": "main",
+                    "frappe_core": None,
+                },
             ],
         },
         {
             "name": "garbage_spec_app",
             "repo": "https://github.com/frappe/garbage_spec_app",
             "targets": [
-                {"version": "1.0.0", "target_type": "branch", "target": "main", "frappe_core": "not-a-spec"},
+                {
+                    "version": "1.0.0",
+                    "target_type": "branch",
+                    "target": "main",
+                    "frappe_core": "not-a-spec",
+                },
             ],
         },
     ]

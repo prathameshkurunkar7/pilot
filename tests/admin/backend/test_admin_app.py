@@ -223,7 +223,10 @@ def test_api_benches_create_creates_bench(tmp_path: Path) -> None:
 
     with (
         patch("subprocess.Popen") as mock_popen,
-        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains", return_value=[]),
+        patch(
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
+            return_value=[],
+        ),
     ):
         resp = client.post("/api/v1/benches", json=_new_payload("fresh"))
 
@@ -285,7 +288,10 @@ def test_api_benches_create_routes_wizard_at_domain_when_production(tmp_path: Pa
             return_value=False,
         ),
         patch("pilot.core.adapters.domain_provider.DomainRouteProvider.register") as mock_register,
-        patch("pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains", return_value=[]),
+        patch(
+            "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains",
+            return_value=[],
+        ),
         patch("pilot.managers.platform.has_passwordless_sudo", return_value=True),
         patch("subprocess.Popen") as mock_popen,
     ):
@@ -477,7 +483,9 @@ def test_api_benches_create_rejects_duplicate_name(tmp_path: Path) -> None:
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
 
-    with patch("pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains", return_value=[]):
+    with patch(
+        "pilot.core.adapters.domain_provider.DomainRouteProvider.wildcard_domains", return_value=[]
+    ):
         resp = client.post("/api/v1/benches", json=_new_payload("current"))
 
     assert resp.status_code == 409

@@ -1,4 +1,5 @@
 """Tests for DomainRouteProvider driving a real (dummy) bench-domain-provider."""
+
 import json
 import os
 from pathlib import Path
@@ -15,7 +16,9 @@ from pilot.managers.nginx import NginxConfigRenderer
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
-    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
+    "apps": [
+        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
+    ],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
@@ -75,7 +78,10 @@ def test_generate_dns_records_returns_provider_output(tmp_path: Path, monkeypatc
 
     records = DomainRouteProvider(bench).generate_dns_records("mysite", "app.example.com")
 
-    assert records == {"cname": [{"type": "CNAME", "host": "app.example.com", "value": "edge.example.com"}], "a": []}
+    assert records == {
+        "cname": [{"type": "CNAME", "host": "app.example.com", "value": "edge.example.com"}],
+        "a": [],
+    }
 
 
 def test_generate_dns_records_passes_site_then_domain(tmp_path: Path, monkeypatch) -> None:
@@ -88,7 +94,9 @@ def test_generate_dns_records_passes_site_then_domain(tmp_path: Path, monkeypatc
     assert _calls(log) == ["generate-dns-records mysite app.example.com"]
 
 
-def test_generate_dns_records_validates_locally_before_provider(tmp_path: Path, monkeypatch) -> None:
+def test_generate_dns_records_validates_locally_before_provider(
+    tmp_path: Path, monkeypatch
+) -> None:
     """Local duplicate checks run before provider calls."""
     log = _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
@@ -156,7 +164,10 @@ def test_builtin_dns_records_without_provider(tmp_path: Path, monkeypatch) -> No
 
     records = DomainRouteProvider(bench).generate_dns_records("mysite", "app.example.com")
 
-    assert records == {"cname": [{"type": "CNAME", "host": "app.example.com", "value": "mysite"}], "a": []}
+    assert records == {
+        "cname": [{"type": "CNAME", "host": "app.example.com", "value": "mysite"}],
+        "a": [],
+    }
 
 
 def test_nginx_gates_tcp_peer_to_provider_proxy_servers(tmp_path: Path, monkeypatch) -> None:
@@ -166,7 +177,10 @@ def test_nginx_gates_tcp_peer_to_provider_proxy_servers(tmp_path: Path, monkeypa
     )
 
     assert "set_real_ip_from   203.0.113.10;" in config
-    assert r'if ($realip_remote_addr ~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { set $bench_from_proxy 1; }' in config
+    assert (
+        r'if ($realip_remote_addr ~ "^(203\.0\.113\.10|203\.0\.113\.11)$") { set $bench_from_proxy 1; }'
+        in config
+    )
     assert "if ($bench_from_proxy = 0) { return 403; }" in config
     assert "deny               all;" not in config
     assert "X-Forwarded-For    $http_x_forwarded_for" in config

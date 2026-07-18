@@ -141,7 +141,12 @@ def _bench_config_to_dict(config: BenchConfig) -> ConfigDict:
                     "match": rule.match,
                     "enabled": rule.enabled,
                     "conditions": [
-                        {"field": c.field, "operator": c.operator, "value": c.value, "header_name": c.header_name}
+                        {
+                            "field": c.field,
+                            "operator": c.operator,
+                            "value": c.value,
+                            "header_name": c.header_name,
+                        }
                         for c in rule.conditions
                     ],
                 }

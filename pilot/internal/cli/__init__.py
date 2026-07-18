@@ -1,4 +1,5 @@
 """Internal console entrypoint and argparse plumbing."""
+
 from __future__ import annotations
 
 from pilot.internal.cli.dispatch import (

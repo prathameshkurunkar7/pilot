@@ -1,4 +1,5 @@
 """Tests for shared utilities and the raw bench TOML store interface."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -23,14 +24,16 @@ def test_hosts_line_contains_exact_hostname_token(line: str, expected: bool) -> 
     assert hosts_line_contains(line, "site.localhost") is expected
 
 
-def _make_bench(benches: Path, name: str, *, admin_domain: str, sites: list[str] | None = None) -> Path:
+def _make_bench(
+    benches: Path, name: str, *, admin_domain: str, sites: list[str] | None = None
+) -> Path:
     bench = benches / name
     (bench / "sites").mkdir(parents=True, exist_ok=True)
     (bench / "bench.toml").write_text(
         f'[bench]\nname = "{name}"\npython = "3.14"\n\n'
         '[[apps]]\nname = "frappe"\nrepo = "https://github.com/frappe/frappe"\nbranch = "version-16"\n\n'
         '[mariadb]\nroot_password = "root"\n\n'
-        '[redis]\ncache_port = 13000\nqueue_port = 11000\n\n'
+        "[redis]\ncache_port = 13000\nqueue_port = 11000\n\n"
         f'[admin]\ndomain = "{admin_domain}"\n'
     )
     for site in sites or []:
@@ -60,7 +63,9 @@ def test_host_owner_free_host_returns_none(tmp_path: Path) -> None:
 
 def test_host_owner_ignores_self(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
-    bench = _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
+    bench = _make_bench(
+        benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"]
+    )
     # Scanning from alpha itself must not report alpha as the owner.
     assert host_owner(bench, "shop.localhost") is None
 
@@ -73,7 +78,9 @@ def test_host_owner_normalizes_case_and_trailing_dot(tmp_path: Path) -> None:
 
 def test_host_owner_detects_site_alias(tmp_path: Path) -> None:
     benches = tmp_path / "benches"
-    bench = _make_bench(benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"])
+    bench = _make_bench(
+        benches, "alpha", admin_domain="alpha-admin.localhost", sites=["shop.localhost"]
+    )
     site_cfg = bench / "sites" / "shop.localhost" / "site_config.json"
     site_cfg.write_text('{"domains": ["www.shop.example.com"]}')
     assert host_owner(benches / "beta", "www.shop.example.com") == "alpha"

@@ -270,7 +270,9 @@ def wildcard_suffix(pattern: str) -> str:
 def matches_wildcard(domain: str, patterns: list[str]) -> bool:
     """Return whether a domain matches any wildcard pattern."""
     domain = normalize_host(domain)
-    return any(domain != (suffix := wildcard_suffix(p)) and domain.endswith(suffix) for p in patterns)
+    return any(
+        domain != (suffix := wildcard_suffix(p)) and domain.endswith(suffix) for p in patterns
+    )
 
 
 def _bench_hosts(bench_dir: Path, config: "BenchConfig") -> Iterator[str]:
@@ -365,7 +367,9 @@ def run_command(
     return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
-def _start_process(argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool) -> subprocess.Popen:
+def _start_process(
+    argv: list[str], cwd: Path | None, env: dict | None, stream_output: bool
+) -> subprocess.Popen:
     inherited = {
         key: os.environ[key]
         for key in ("BENCH_TASK_LAUNCH_ID", "PILOT_NONINTERACTIVE_PRIVILEGES")
@@ -388,7 +392,9 @@ def _wait_for_process(process: subprocess.Popen, argv: list[str], timeout: float
         return process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         _terminate_process_group(process)
-        raise CommandError(f"Command {argv[0]!r} timed out after {timeout}s and was terminated.", returncode=-1)
+        raise CommandError(
+            f"Command {argv[0]!r} timed out after {timeout}s and was terminated.", returncode=-1
+        )
     except KeyboardInterrupt:
         _terminate_process_group(process)
         raise

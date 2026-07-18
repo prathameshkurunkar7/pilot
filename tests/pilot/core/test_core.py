@@ -619,7 +619,9 @@ def test_site_create_mariadb_when_bench_is_mariadb(
 ) -> None:
     bench = make_bench(tmp_path)  # bench db_type defaults to mariadb
     captured = _capture_site_cmd(monkeypatch)
-    monkeypatch.setattr("pilot.managers.database.mariadb.MariaDBManager._detect_socket", lambda self: "")
+    monkeypatch.setattr(
+        "pilot.managers.database.mariadb.MariaDBManager._detect_socket", lambda self: ""
+    )
 
     Site(SiteConfig(name="mdb.localhost", apps=["frappe"], admin_password="secret"), bench).create()
 

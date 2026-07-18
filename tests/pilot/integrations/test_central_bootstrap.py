@@ -46,7 +46,9 @@ def test_enroll_exchanges_seed_and_persists_credential_and_jwks(tmp_path: Path) 
         captured["headers"] = dict(request.headers)
         return _FakeResponse({"message": _ENROLL_RESULT})
 
-    with patch("pilot.integrations.central.bootstrap.urllib.request.urlopen", side_effect=fake_urlopen):
+    with patch(
+        "pilot.integrations.central.bootstrap.urllib.request.urlopen", side_effect=fake_urlopen
+    ):
         enrolled = enroll_if_needed(bench)
 
     assert enrolled is True
@@ -84,7 +86,9 @@ def test_seed_then_enroll_from_scratch(tmp_path: Path) -> None:
 def test_seed_from_metadata_stages_a_boot_time_seed(tmp_path: Path) -> None:
     bench = _bench(tmp_path)
     seed_path = tmp_path / "seed.json"
-    seed_path.write_text(json.dumps({"central_endpoint": "https://central.test", "bootstrap_token": "boot-9"}))
+    seed_path.write_text(
+        json.dumps({"central_endpoint": "https://central.test", "bootstrap_token": "boot-9"})
+    )
 
     assert seed_from_metadata(bench, str(seed_path)) is True
     assert bench.config.central.endpoint == "https://central.test"
@@ -98,7 +102,9 @@ def test_bare_enroll_command_reads_the_canonical_seed_path(tmp_path: Path, monke
 
     bench = _bench(tmp_path)
     seed_path = tmp_path / "central-seed.json"
-    seed_path.write_text(json.dumps({"central_endpoint": "https://central.test", "bootstrap_token": "boot-boot"}))
+    seed_path.write_text(
+        json.dumps({"central_endpoint": "https://central.test", "bootstrap_token": "boot-boot"})
+    )
     monkeypatch.setenv("PILOT_SEED_PATH", str(seed_path))
 
     with patch(

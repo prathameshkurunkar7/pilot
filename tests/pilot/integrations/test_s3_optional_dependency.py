@@ -14,7 +14,12 @@ def without_boto3(monkeypatch: pytest.MonkeyPatch):
     real_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):
-        if name == "boto3" or name.startswith("boto3.") or name == "botocore" or name.startswith("botocore."):
+        if (
+            name == "boto3"
+            or name.startswith("boto3.")
+            or name == "botocore"
+            or name.startswith("botocore.")
+        ):
             raise ImportError(f"mocked missing: {name}")
         return real_import(name, *args, **kwargs)
 

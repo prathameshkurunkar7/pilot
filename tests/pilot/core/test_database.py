@@ -1,4 +1,5 @@
 """Tests for pilot.core.database — SQLite is tested live; MariaDB/PostgreSQL use mocks."""
+
 from __future__ import annotations
 
 import json
@@ -38,6 +39,7 @@ def test_sqlite_execute_select(tmp_path: Path) -> None:
     db_path = str(tmp_path / "test.db")
     db = SQLite(db_path)
     import sqlite3
+
     conn = sqlite3.connect(db_path)
     conn.execute("CREATE TABLE foo (id INTEGER, name TEXT)")
     conn.execute("INSERT INTO foo VALUES (1, 'alice'), (2, 'bob')")
@@ -55,6 +57,7 @@ def test_sqlite_execute_read_only_does_not_persist(tmp_path: Path) -> None:
     db_path = str(tmp_path / "test.db")
     db = SQLite(db_path)
     import sqlite3
+
     conn = sqlite3.connect(db_path)
     conn.execute("CREATE TABLE t (v INTEGER)")
     conn.commit()
@@ -69,6 +72,7 @@ def test_sqlite_execute_empty_result(tmp_path: Path) -> None:
     db_path = str(tmp_path / "test.db")
     db = SQLite(db_path)
     import sqlite3
+
     conn = sqlite3.connect(db_path)
     conn.execute("CREATE TABLE empty_t (id INTEGER)")
     conn.commit()
@@ -82,6 +86,7 @@ def test_sqlite_execute_empty_result(tmp_path: Path) -> None:
 def test_sqlite_get_tables(tmp_path: Path) -> None:
     db_path = str(tmp_path / "test.db")
     import sqlite3
+
     conn = sqlite3.connect(db_path)
     conn.execute("CREATE TABLE alpha (x INTEGER)")
     conn.execute("CREATE TABLE beta (y TEXT)")
@@ -96,6 +101,7 @@ def test_sqlite_get_tables(tmp_path: Path) -> None:
 def test_sqlite_get_table_columns(tmp_path: Path) -> None:
     db_path = str(tmp_path / "test.db")
     import sqlite3
+
     conn = sqlite3.connect(db_path)
     conn.execute("CREATE TABLE person (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
     conn.commit()
@@ -110,6 +116,7 @@ def test_sqlite_get_table_columns(tmp_path: Path) -> None:
 def test_sqlite_get_schema(tmp_path: Path) -> None:
     db_path = str(tmp_path / "test.db")
     import sqlite3
+
     conn = sqlite3.connect(db_path)
     conn.execute("CREATE TABLE doc (id INTEGER, body TEXT)")
     conn.commit()
@@ -128,6 +135,7 @@ def test_sqlite_get_schema_groups_columns_per_table_in_one_connection(tmp_path: 
     # and that columns still land under the right table.
     db_path = str(tmp_path / "test.db")
     import sqlite3
+
     conn = sqlite3.connect(db_path)
     conn.execute("CREATE TABLE alpha (id INTEGER, name TEXT)")
     conn.execute("CREATE TABLE beta (id INTEGER, amount REAL)")
@@ -154,6 +162,7 @@ def test_sqlite_read_only_blocks_ddl(tmp_path: Path) -> None:
     db_path = str(tmp_path / "test.db")
     db = SQLite(db_path)
     import sqlite3
+
     conn = sqlite3.connect(db_path)
     conn.execute("CREATE TABLE keep_me (id INTEGER)")
     conn.commit()
@@ -169,6 +178,7 @@ def test_sqlite_read_only_blocks_dml(tmp_path: Path) -> None:
     db_path = str(tmp_path / "test.db")
     db = SQLite(db_path)
     import sqlite3
+
     conn = sqlite3.connect(db_path)
     conn.execute("CREATE TABLE t (v INTEGER)")
     conn.execute("INSERT INTO t VALUES (1)")
@@ -250,43 +260,59 @@ def _write_site_config(bench_root: Path, site: str, cfg: dict) -> None:
 
 
 def test_make_site_database_returns_mariadb(tmp_path: Path) -> None:
-    _write_site_config(tmp_path, "mysite.local", {
-        "db_type": "mariadb",
-        "db_name": "mydb",
-        "db_user": "myuser",
-        "db_password": "mypw",
-        "db_socket": "/run/mysqld/mysqld.sock",
-    })
+    _write_site_config(
+        tmp_path,
+        "mysite.local",
+        {
+            "db_type": "mariadb",
+            "db_name": "mydb",
+            "db_user": "myuser",
+            "db_password": "mypw",
+            "db_socket": "/run/mysqld/mysqld.sock",
+        },
+    )
     db = make_site_database(tmp_path, "mysite.local")
     assert isinstance(db, MariaDB)
 
 
 def test_make_site_database_returns_postgres(tmp_path: Path) -> None:
-    _write_site_config(tmp_path, "pgsite.local", {
-        "db_type": "postgres",
-        "db_name": "pgdb",
-        "db_user": "pguser",
-        "db_password": "pgpw",
-    })
+    _write_site_config(
+        tmp_path,
+        "pgsite.local",
+        {
+            "db_type": "postgres",
+            "db_name": "pgdb",
+            "db_user": "pguser",
+            "db_password": "pgpw",
+        },
+    )
     db = make_site_database(tmp_path, "pgsite.local")
     assert isinstance(db, PostgreSQL)
 
 
 def test_make_site_database_returns_sqlite(tmp_path: Path) -> None:
-    _write_site_config(tmp_path, "litesite.local", {
-        "db_type": "sqlite",
-        "db_name": "litedb",
-    })
+    _write_site_config(
+        tmp_path,
+        "litesite.local",
+        {
+            "db_type": "sqlite",
+            "db_name": "litedb",
+        },
+    )
     db = make_site_database(tmp_path, "litesite.local")
     assert isinstance(db, SQLite)
 
 
 def test_make_site_database_defaults_to_mariadb(tmp_path: Path) -> None:
-    _write_site_config(tmp_path, "oldsite.local", {
-        "db_name": "olddb",
-        "db_user": "u",
-        "db_password": "p",
-    })
+    _write_site_config(
+        tmp_path,
+        "oldsite.local",
+        {
+            "db_name": "olddb",
+            "db_user": "u",
+            "db_password": "p",
+        },
+    )
     db = make_site_database(tmp_path, "oldsite.local")
     assert isinstance(db, MariaDB)
 
@@ -296,23 +322,33 @@ def test_make_site_database_raises_for_missing_site(tmp_path: Path) -> None:
         make_site_database(tmp_path, "ghost")
 
 
-@pytest.mark.parametrize("site_name", [
-    "../secret-site",
-    "../../etc/passwd",
-    "foo/../../secret-site",
-    "foo/bar",
-    "foo\\bar",
-    "..",
-    "",
-])
+@pytest.mark.parametrize(
+    "site_name",
+    [
+        "../secret-site",
+        "../../etc/passwd",
+        "foo/../../secret-site",
+        "foo/bar",
+        "foo\\bar",
+        "..",
+        "",
+    ],
+)
 def test_make_site_database_rejects_path_traversal(tmp_path: Path, site_name: str) -> None:
     # A sibling directory outside of tmp_path/sites that a traversal attempt
     # could otherwise reach.
     secret_dir = tmp_path.parent / "secret-site"
     secret_dir.mkdir(exist_ok=True)
-    (secret_dir / "site_config.json").write_text(json.dumps({
-        "db_type": "mariadb", "db_name": "d", "db_user": "u", "db_password": "p",
-    }))
+    (secret_dir / "site_config.json").write_text(
+        json.dumps(
+            {
+                "db_type": "mariadb",
+                "db_name": "d",
+                "db_user": "u",
+                "db_password": "p",
+            }
+        )
+    )
     try:
         with pytest.raises(FileNotFoundError):
             make_site_database(tmp_path, site_name)
@@ -323,6 +359,7 @@ def test_make_site_database_rejects_path_traversal(tmp_path: Path, site_name: st
 
 def test_bench_db_lazy_init(tmp_path: Path) -> None:
     from pilot.core.bench import Bench
+
     bench = Bench(_bench_config("mariadb"), tmp_path)
     assert bench._db is None
     db = bench.db
@@ -332,5 +369,6 @@ def test_bench_db_lazy_init(tmp_path: Path) -> None:
 
 def test_bench_db_returns_same_instance_on_second_access(tmp_path: Path) -> None:
     from pilot.core.bench import Bench
+
     bench = Bench(_bench_config("mariadb"), tmp_path)
     assert bench.db is bench.db

@@ -85,7 +85,13 @@ class MonitorProvider:
         for _, metrics in reversed(rows):
             disk = (metrics.get("storage") or {}).get("disk")
             if disk:
-                return {"disk": {"used_mb": disk.get("used_mb"), "total_mb": disk.get("total_mb"), "percent": disk.get("percent")}}
+                return {
+                    "disk": {
+                        "used_mb": disk.get("used_mb"),
+                        "total_mb": disk.get("total_mb"),
+                        "percent": disk.get("percent"),
+                    }
+                }
         return None
 
     def get_application_metrics(self, path: Path, bench_name: str) -> dict:
@@ -93,8 +99,14 @@ class MonitorProvider:
         return {
             "earliest": self.get_earliest(path),
             "services": self.get_service_names(rows, bench_name),
-            "cpu": [self.build_service_row(when, metrics, bench_name, "cpu_percent") for when, metrics in rows],
-            "memory": [self.build_service_row(when, metrics, bench_name, "memory_rss_mb") for when, metrics in rows],
+            "cpu": [
+                self.build_service_row(when, metrics, bench_name, "cpu_percent")
+                for when, metrics in rows
+            ],
+            "memory": [
+                self.build_service_row(when, metrics, bench_name, "memory_rss_mb")
+                for when, metrics in rows
+            ],
         }
 
     def get_records_in_window(self, path: Path) -> list[tuple[datetime, dict]]:

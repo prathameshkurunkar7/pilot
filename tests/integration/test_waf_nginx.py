@@ -1,4 +1,5 @@
 """Integration test for generated ModSecurity nginx config."""
+
 from __future__ import annotations
 
 import shutil
@@ -18,7 +19,9 @@ pytestmark = pytest.mark.integration
 _HTTP_PORT = 8974
 _DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
-    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
+    "apps": [
+        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
+    ],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
@@ -69,6 +72,7 @@ def test_generated_waf_config_passes_nginx_t(tmp_path: Path) -> None:
     conf = _wrapper_conf(tmp_path, nginx_dir / "include.conf", WafManager.module_path())
     result = subprocess.run(
         ["nginx", "-t", "-p", str(tmp_path), "-c", str(conf)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stderr

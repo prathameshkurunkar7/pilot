@@ -1,4 +1,5 @@
 """Tests for cursor pagination on GET /api/v1/audit-events."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,7 +14,9 @@ def _client(bench_root: Path, password: str = "secret"):
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
+        BenchTomlBuilder(
+            bench_root.name, {"admin_enabled": True, "admin_password": password}
+        ).render()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)

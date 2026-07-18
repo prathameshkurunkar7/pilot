@@ -1,4 +1,5 @@
 """Resolves and installs an app's marketplace dependencies onto a bench."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -61,7 +62,9 @@ class AppDependencyInstaller:
             on_progress(f"Installing dependency '{dep.app}'...")
             # transitive deps already handled by earlier entries in the chain
             dependency = App(AppConfig(name=dep.app, repo=dep.repo, branch=dep.target), self.bench)
-            dependency.install(install_dependencies=False, skip_validations=True, on_progress=on_progress)
+            dependency.install(
+                install_dependencies=False, skip_validations=True, on_progress=on_progress
+            )
 
     def _dependency_apps(self, resolver: Resolver) -> list["App"]:
         try:

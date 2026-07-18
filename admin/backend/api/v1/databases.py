@@ -17,8 +17,7 @@ def list_query_sites():
     if not sites_path.is_dir():
         return jsonify([])
     site_dirs = sorted(
-        d for d in sites_path.iterdir()
-        if d.is_dir() and (d / "site_config.json").exists()
+        d for d in sites_path.iterdir() if d.is_dir() and (d / "site_config.json").exists()
     )
     sites = []
     for d in site_dirs:
@@ -38,6 +37,7 @@ def get_schema():
         return error_response("invalid_site", "Site is required.", 422)
     try:
         from pilot.core.database import make_site_database
+
         return jsonify(make_site_database(bench_root, site).get_schema())
     except FileNotFoundError:
         return error_response("site_not_found", "Site was not found.", 404)
@@ -68,16 +68,19 @@ def execute_query():
         return error_response("invalid_query", "Query is required.", 422)
     try:
         from pilot.core.database import make_site_database
+
         db = make_site_database(bench_root, site)
         result = db.execute(query, read_only=read_only)
-        return jsonify({
-            "columns": result.columns,
-            "rows": result.rows,
-            "row_count": len(result.rows),
-            "duration_ms": result.duration_ms,
-            "truncated": result.truncated,
-            "affected_rows": result.affected_rows,
-        })
+        return jsonify(
+            {
+                "columns": result.columns,
+                "rows": result.rows,
+                "row_count": len(result.rows),
+                "duration_ms": result.duration_ms,
+                "truncated": result.truncated,
+                "affected_rows": result.affected_rows,
+            }
+        )
     except FileNotFoundError:
         return error_response("site_not_found", "Site was not found.", 404)
     except Exception:

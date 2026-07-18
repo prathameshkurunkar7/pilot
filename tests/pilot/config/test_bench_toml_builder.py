@@ -7,10 +7,15 @@ from pathlib import Path
 
 from pilot.config.bench_toml_builder import BenchTomlBuilder, current_port_offset, default_ports
 
+
 def test_default_ports_returns_all_fields() -> None:
     ports = default_ports()
     assert set(ports) == {
-        "http_port", "socketio_port", "redis.cache_port", "redis.queue_port", "admin.port",
+        "http_port",
+        "socketio_port",
+        "redis.cache_port",
+        "redis.queue_port",
+        "admin.port",
     }
 
 
@@ -72,7 +77,11 @@ def test_current_port_offset_zero_when_file_invalid(tmp_path: Path) -> None:
 
 
 def test_mariadb_host_and_existing_round_trip(tmp_path: Path) -> None:
-    settings = {"mariadb_existing": True, "mariadb_host": "db.example.com", "mariadb_admin_user": "admin"}
+    settings = {
+        "mariadb_existing": True,
+        "mariadb_host": "db.example.com",
+        "mariadb_admin_user": "admin",
+    }
     toml_path = tmp_path / "bench.toml"
     toml_path.write_text(BenchTomlBuilder("my-bench", settings).render())
 

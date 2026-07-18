@@ -34,9 +34,7 @@ def backup_site(name: str):
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
-        task_id = BackupSiteTask.queue(
-            Bench(bench_root), site=name, with_files=True
-        )
+        task_id = BackupSiteTask.queue(Bench(bench_root), site=name, with_files=True)
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)
@@ -94,9 +92,7 @@ def _backup_set_resource(s) -> dict:
 def download_backup_file(name: str, timestamp: str, file_id: str):
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        target = Bench(bench_root).site(name).backups.download_file_path(
-            timestamp, file_id
-        )
+        target = Bench(bench_root).site(name).backups.download_file_path(timestamp, file_id)
     except BenchError:
         return error_response("invalid_filename", "Backup filename is invalid.", 422)
     except Exception:
@@ -155,9 +151,7 @@ def set_backup_schedule(name: str):
         return malformed_body()
     fields = text_fields(data, "schedule")
     retention_value = data.get("retention")
-    if fields is None or (
-        retention_value is not None and not isinstance(retention_value, dict)
-    ):
+    if fields is None or (retention_value is not None and not isinstance(retention_value, dict)):
         return invalid_fields()
     schedule = fields["schedule"]
     if err := validate_cron_expression(schedule):

@@ -5,7 +5,9 @@ from pathlib import Path
 
 from pilot.exceptions import BenchError
 
-_ADMIN_RELEASE_URL = "https://github.com/frappe/bench-cli/releases/download/latest-build/admin-frontend.tar.gz"
+_ADMIN_RELEASE_URL = (
+    "https://github.com/frappe/bench-cli/releases/download/latest-build/admin-frontend.tar.gz"
+)
 # The frontend toolchain (unplugin via frappe-ui/vite) uses import.meta.dirname,
 # which only exists in Node 20.11+. Older Node fails the build with an opaque
 # "paths[0] ... undefined" error, so we check up-front.
@@ -44,7 +46,9 @@ def download_admin_frontend(cli_root: Path) -> bool:
         tmp.unlink(missing_ok=True)
 
 
-def build_admin_frontend(force_build: bool = False, on_progress: Callable[[str], None] = lambda message: None) -> None:
+def build_admin_frontend(
+    force_build: bool = False, on_progress: Callable[[str], None] = lambda message: None
+) -> None:
     from pilot.utils import cli_root
     from pilot.utils import run_command
 
@@ -71,7 +75,9 @@ def _find_frontend() -> Path:
     candidate = cli_root() / "admin" / "frontend"
     if (candidate / "package.json").exists():
         return candidate
-    raise BenchError("admin/frontend not found. This command requires the bench-cli source directory with admin/frontend/.")
+    raise BenchError(
+        "admin/frontend not found. This command requires the bench-cli source directory with admin/frontend/."
+    )
 
 
 def _needs_npm_install(frontend: Path) -> bool:

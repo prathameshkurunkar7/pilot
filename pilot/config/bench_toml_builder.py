@@ -45,7 +45,13 @@ FRAMEWORK_BRANCHES = ["version-16", "develop"]
 
 _DEFAULT_DATA: dict = {
     "bench": {"name": "", "python": "3.14"},
-    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": FRAMEWORK_BRANCHES[0]}],
+    "apps": [
+        {
+            "name": "frappe",
+            "repo": "https://github.com/frappe/frappe",
+            "branch": FRAMEWORK_BRANCHES[0],
+        }
+    ],
     "mariadb": {"root_password": "root"},
 }
 
@@ -73,7 +79,10 @@ def current_port_offset(toml_path: Path) -> int:
     try:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
-        return data.get("bench", {}).get("http_port", default_ports()["http_port"]) - default_ports()["http_port"]
+        return (
+            data.get("bench", {}).get("http_port", default_ports()["http_port"])
+            - default_ports()["http_port"]
+        )
     except (OSError, tomllib.TOMLDecodeError):
         return 0
 
@@ -137,7 +146,9 @@ def _flatten(config: BenchConfig) -> dict:
     app = config.framework_app
     settings["app_repo"] = app.repo
     settings["app_branch"] = app.branch
-    settings["workers"] = [{"queues": list(g.queues), "count": g.count} for g in config.workers.groups]
+    settings["workers"] = [
+        {"queues": list(g.queues), "count": g.count} for g in config.workers.groups
+    ]
     settings["production_process_manager"] = config.production.process_manager or "none"
     return settings
 
@@ -145,7 +156,9 @@ def _flatten(config: BenchConfig) -> dict:
 class BenchTomlBuilder:
     """Translates flat wizard/settings input to BenchConfig."""
 
-    DEFAULTS = {key: value for key, value in _flatten(_default_config()).items() if key != "bench_name"}
+    DEFAULTS = {
+        key: value for key, value in _flatten(_default_config()).items() if key != "bench_name"
+    }
 
     def __init__(self, name: str, settings: dict | None = None, port_offset: int = 0) -> None:
         self._name = name

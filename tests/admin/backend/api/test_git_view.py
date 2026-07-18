@@ -1,4 +1,5 @@
 """Tests for /api/v1/git/connection, /repositories, /branches, /repository-resolutions."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,7 +15,9 @@ def _client(bench_root: Path, password: str = "secret"):
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
+        BenchTomlBuilder(
+            bench_root.name, {"admin_enabled": True, "admin_password": password}
+        ).render()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -119,8 +122,10 @@ def test_branches_returns_branches_and_default(tmp_path: Path) -> None:
     provider.list_branches.return_value = ["main", "develop"]
     provider.get_default_branch.return_value = "main"
 
-    with patch("admin.backend.api.v1.git.provider_for_repo", return_value=provider), \
-         patch("admin.backend.api.v1.git.provider_for_name", return_value=provider):
+    with (
+        patch("admin.backend.api.v1.git.provider_for_repo", return_value=provider),
+        patch("admin.backend.api.v1.git.provider_for_name", return_value=provider),
+    ):
         response = client.get(
             "/api/v1/git/branches", query_string={"repo": "https://github.com/frappe/suite"}
         )
@@ -135,11 +140,13 @@ def test_repository_resolutions_returns_the_resolved_app(tmp_path: Path) -> None
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
 
-    with patch("admin.backend.api.v1.git.provider_for_repo", return_value=Mock()), \
-         patch(
-             "admin.backend.api.v1.git.resolve_app_name_from_repo",
-             return_value={"name": "suite", "description": "A suite app"},
-         ):
+    with (
+        patch("admin.backend.api.v1.git.provider_for_repo", return_value=Mock()),
+        patch(
+            "admin.backend.api.v1.git.resolve_app_name_from_repo",
+            return_value={"name": "suite", "description": "A suite app"},
+        ),
+    ):
         response = client.post(
             "/api/v1/git/repository-resolutions",
             json={"repo": "https://github.com/frappe/suite", "branch": "develop"},

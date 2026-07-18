@@ -1,4 +1,5 @@
 """Trusted-proxy and firewall integration test over live HTTP."""
+
 from __future__ import annotations
 
 import contextlib
@@ -27,7 +28,9 @@ _EDGE_PORT = 8963
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14", "http_port": _BACKEND_PORT},
-    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
+    "apps": [
+        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
+    ],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
@@ -87,7 +90,9 @@ def _run_nginx(prefix: Path, body: str) -> subprocess.Popen:
     conf.write_text(body)
     proc = subprocess.Popen(
         ["nginx", "-p", str(prefix), "-c", str(conf), "-g", "daemon off;"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     return proc
 
@@ -182,8 +187,8 @@ def test_direct_connection_is_blocked_only_proxy_gets_through(tmp_path, backend,
 def test_allowlist_filters_client_but_never_the_proxy(tmp_path, backend, edge):
     firewall = {"enabled": True, "default": "deny", "rules": [{"ip": "1.2.3.4", "action": "allow"}]}
     with _bench_nginx(tmp_path, firewall):
-        assert _get(_EDGE_PORT, "1.2.3.4")[0] == 200   # allowed client
-        assert _get(_EDGE_PORT, "9.9.9.9")[0] == 403   # client not on the allowlist
+        assert _get(_EDGE_PORT, "1.2.3.4")[0] == 200  # allowed client
+        assert _get(_EDGE_PORT, "9.9.9.9")[0] == 403  # client not on the allowlist
         # No X-Forwarded-For: $remote_addr stays the proxy IP; the allowlist must
         # not block it, or the whole bench goes dark.
         assert _get(_EDGE_PORT, None)[0] == 200
@@ -196,8 +201,8 @@ def test_blocklist_cannot_block_the_proxy_even_when_denied(tmp_path, backend, ed
         "rules": [{"ip": "9.9.9.9", "action": "deny"}, {"ip": _PROXY_SRC, "action": "deny"}],
     }
     with _bench_nginx(tmp_path, firewall):
-        assert _get(_EDGE_PORT, "1.2.3.4")[0] == 200   # client allowed by default
-        assert _get(_EDGE_PORT, "9.9.9.9")[0] == 403   # client explicitly denied
+        assert _get(_EDGE_PORT, "1.2.3.4")[0] == 200  # client allowed by default
+        assert _get(_EDGE_PORT, "9.9.9.9")[0] == 403  # client explicitly denied
         # Proxy IP is explicitly denied, yet an XFF-less request still passes: the
         # proxy allow is emitted first and access rules are first-match.
         assert _get(_EDGE_PORT, None)[0] == 200

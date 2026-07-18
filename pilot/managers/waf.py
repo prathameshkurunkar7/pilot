@@ -53,7 +53,9 @@ class WafManager:
         if any((Path(base) / MODSEC_MODULE_NAME).exists() for base in _MODULE_DIRS):
             return True
         modules_dir = Path("/etc/nginx/modules-enabled")
-        return modules_dir.is_dir() and any("modsecurity" in entry.name for entry in modules_dir.iterdir())
+        return modules_dir.is_dir() and any(
+            "modsecurity" in entry.name for entry in modules_dir.iterdir()
+        )
 
     @staticmethod
     def module_path() -> str | None:
@@ -65,7 +67,9 @@ class WafManager:
 
     @staticmethod
     def crs_available() -> bool:
-        return (SHARED_MODSEC_DIR / "crs-setup.conf").exists() and (SHARED_MODSEC_DIR / "rules").is_dir()
+        return (SHARED_MODSEC_DIR / "crs-setup.conf").exists() and (
+            SHARED_MODSEC_DIR / "rules"
+        ).is_dir()
 
     @classmethod
     def is_installed(cls) -> bool:
@@ -95,8 +99,14 @@ class WafManager:
             staged_setup = tmp_path / "crs-setup.conf"
             shutil.copy(extracted / "crs-setup.conf.example", staged_setup)
             run_command(_privileged(["mkdir", "-p", str(SHARED_MODSEC_DIR)]))
-            run_command(_privileged(["cp", str(staged_setup), str(SHARED_MODSEC_DIR / "crs-setup.conf")]))
-            run_command(_privileged(["cp", "-rT", str(extracted / "rules"), str(SHARED_MODSEC_DIR / "rules")]))
+            run_command(
+                _privileged(["cp", str(staged_setup), str(SHARED_MODSEC_DIR / "crs-setup.conf")])
+            )
+            run_command(
+                _privileged(
+                    ["cp", "-rT", str(extracted / "rules"), str(SHARED_MODSEC_DIR / "rules")]
+                )
+            )
 
     @staticmethod
     def _verify_checksum(archive: Path) -> None:

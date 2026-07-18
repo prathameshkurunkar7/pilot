@@ -17,6 +17,7 @@ from pilot.managers.processes.base import (
 )
 from pilot.utils import run_command
 
+
 class SupervisorRenderer(ServiceRenderer):
     """Builds the bench's supervisord.conf and per-program blocks."""
 
@@ -49,7 +50,9 @@ class SupervisorRenderer(ServiceRenderer):
     def conf(self, defs: list[ProcessDefinition], sock, pid) -> str:
         workload = [pd for pd in defs if pd.name != "admin"]
         admin = [pd for pd in defs if pd.name == "admin"]
-        admin_group = f"[group:{self.bench_name}-admin]\nprograms={self._csv(admin)}\n\n" if admin else ""
+        admin_group = (
+            f"[group:{self.bench_name}-admin]\nprograms={self._csv(admin)}\n\n" if admin else ""
+        )
         programs = "\n".join(self.render(pd) for pd in defs)
         return (
             f"[unix_http_server]\n"
@@ -77,6 +80,7 @@ class SupervisorRenderer(ServiceRenderer):
 
     def _csv(self, items: list[ProcessDefinition]) -> str:
         return ",".join(self.program_name(pd) for pd in items)
+
 
 class SupervisorProcessManager(ManagedProcessManager):
     """Manages bench processes via a bench-owned supervisord instance (no sudo required)."""
@@ -113,7 +117,11 @@ class SupervisorProcessManager(ManagedProcessManager):
         GunicornManager(self.bench).generate_admin_config()
         self.supervisor_dir.mkdir(parents=True, exist_ok=True)
         renderer = SupervisorRenderer(self.bench.config.name, self.bench.logs_path)
-        self.supervisor_conf_path.write_text(renderer.conf(self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid))
+        self.supervisor_conf_path.write_text(
+            renderer.conf(
+                self._prod_process_definitions(), self.supervisor_sock, self.supervisor_pid
+            )
+        )
 
     @override
     def install_config(self) -> None:
@@ -136,7 +144,9 @@ class SupervisorProcessManager(ManagedProcessManager):
     @override
     def apply_unit_action(self, action: str, role: UnitGroup) -> None:
         # stop/admin-restart are no-ops when the daemon is down to avoid supervisorctl errors.
-        if (action == "stop" or (action == "restart" and role is UnitGroup.ADMIN)) and not self.is_alive():
+        if (
+            action == "stop" or (action == "restart" and role is UnitGroup.ADMIN)
+        ) and not self.is_alive():
             return
         run_command([*self._supervisorctl(), action, self._target(role)])
 

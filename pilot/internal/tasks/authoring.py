@@ -55,8 +55,7 @@ def task_from_args(
     args: argparse.Namespace,
 ) -> Task:
     kwargs = {
-        arg_field.name: value_from_namespace(args, arg_field)
-        for arg_field in task_fields(cls)
+        arg_field.name: value_from_namespace(args, arg_field) for arg_field in task_fields(cls)
     }
     return cls(bench=bench, bench_root=bench_root, **kwargs)
 

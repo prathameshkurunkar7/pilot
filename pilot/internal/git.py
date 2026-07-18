@@ -119,7 +119,9 @@ class GitRepo:
         try:
             return subprocess.run(
                 ["git", "-C", str(self.path), *args],
-                capture_output=True, text=True, timeout=timeout,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
             )
         except (OSError, subprocess.SubprocessError):
             return subprocess.CompletedProcess(args, returncode=1, stdout="", stderr="")

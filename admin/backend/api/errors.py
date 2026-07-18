@@ -87,9 +87,7 @@ def _handle_http_error(error: HTTPException):
         return error
     status = error.code or 500
     message = (
-        "Request payload is too large."
-        if status == 413
-        else error.description or "Request failed."
+        "Request payload is too large." if status == 413 else error.description or "Request failed."
     )
     return error_response(_HTTP_ERROR_CODES.get(status, "http_error"), message, status)
 

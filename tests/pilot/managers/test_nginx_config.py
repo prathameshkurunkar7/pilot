@@ -1,4 +1,5 @@
 """Tests for nginx config generation - no real nginx required."""
+
 import copy
 from pathlib import Path
 from unittest.mock import patch, PropertyMock
@@ -291,10 +292,16 @@ def test_proxy_servers_gate_tcp_peer_and_trust_xff(tmp_path: Path) -> None:
     assert "real_ip_header     X-Forwarded-For;" in config
     # Accept TCP connections from the proxies alone, tested on the real peer
     # ($realip_remote_addr) since real_ip has already rewritten $remote_addr.
-    assert r'if ($realip_remote_addr ~ "^(203\.0\.113\.5|203\.0\.113\.6)$") { set $bench_from_proxy 1; }' in config
+    assert (
+        r'if ($realip_remote_addr ~ "^(203\.0\.113\.5|203\.0\.113\.6)$") { set $bench_from_proxy 1; }'
+        in config
+    )
     assert "if ($bench_from_proxy = 0) { return 403; }" in config
     # ACME challenges stay reachable directly, so cert issuance never 403s.
-    assert r'if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }' in config
+    assert (
+        r'if ($request_uri ~ "^/\.well-known/acme-challenge/") { set $bench_from_proxy 1; }'
+        in config
+    )
     # The old allow-proxy/deny-all (which tested the rewritten client IP) is gone.
     assert "allow              203.0.113.5;" not in config
     assert "deny               all;" not in config
@@ -306,6 +313,7 @@ def test_proxy_servers_gate_tcp_peer_and_trust_xff(tmp_path: Path) -> None:
 def test_two_benches_generate_non_conflicting_configs(tmp_path: Path) -> None:
     """All benches share one nginx, so each bench's include.conf must use a
     uniquely-named upstream and its own admin server_name."""
+
     def _include_for(name: str, http_port: int, admin_domain: str) -> str:
         data = copy.deepcopy(_BASE_DATA)
         data["bench"] = {"name": name, "python": "3.14", "http_port": http_port}
@@ -410,7 +418,12 @@ def test_generate_config_writes_error_page_files(tmp_path: Path) -> None:
     NginxManager(bench).generate_config(ssl_ready=False)
 
     error_dir = bench.config_path / "nginx" / "error_pages"
-    assert sorted(p.name for p in error_dir.iterdir()) == ["403.html", "404.html", "502.html", "503.html"]
+    assert sorted(p.name for p in error_dir.iterdir()) == [
+        "403.html",
+        "404.html",
+        "502.html",
+        "503.html",
+    ]
     assert "404" in (error_dir / "404.html").read_text()
     # admin vhost also serves the custom pages
     admin_conf = (bench.config_path / "nginx" / "sites" / "_admin.conf").read_text()
@@ -421,7 +434,9 @@ def test_catchall_default_server(tmp_path: Path) -> None:
     from pathlib import Path as _P
 
     bench = _make_bench(tmp_path, _BASE_DATA)
-    conf = NginxConfigRenderer(bench)._render_catchall(80, 443, _P("/usr/share/nginx/bench-error-pages"))
+    conf = NginxConfigRenderer(bench)._render_catchall(
+        80, 443, _P("/usr/share/nginx/bench-error-pages")
+    )
 
     assert "listen 80 default_server;" in conf
     assert "server_name _;" in conf
@@ -433,6 +448,7 @@ def test_catchall_default_server(tmp_path: Path) -> None:
     assert "listen 443 ssl http2 default_server;" in conf
     assert "ssl_reject_handshake on;" in conf
 
+
 def _firewall_data(enabled: bool, default: str, rules: list) -> dict:
     data = copy.deepcopy(_BASE_DATA)
     data["firewall"] = {"enabled": enabled, "default": default, "rules": rules}
@@ -440,7 +456,9 @@ def _firewall_data(enabled: bool, default: str, rules: list) -> dict:
 
 
 def test_firewall_master_switch_off_renders_nothing(tmp_path: Path) -> None:
-    bench = _make_bench(tmp_path, _firewall_data(False, "deny", [{"ip": "1.2.3.4", "action": "deny"}]))
+    bench = _make_bench(
+        tmp_path, _firewall_data(False, "deny", [{"ip": "1.2.3.4", "action": "deny"}])
+    )
     assert NginxConfigRenderer(bench)._render_firewall() == ""
 
 
@@ -449,7 +467,7 @@ def test_firewall_blocklist_emits_only_deny(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _firewall_data(True, "allow", rules))
     out = NginxConfigRenderer(bench)._render_firewall()
     assert "deny 203.0.113.4;" in out
-    assert "deny all;" not in out   # default allow => no terminal deny
+    assert "deny all;" not in out  # default allow => no terminal deny
 
 
 def test_firewall_allowlist_emits_allow_then_deny_all(tmp_path: Path) -> None:
@@ -495,8 +513,10 @@ def test_install_config_rolls_back_symlink_when_reload_fails(tmp_path: Path) -> 
     manager = NginxManager(bench)
     symlink_path = tmp_path / "test-bench.conf"
 
-    with patch.object(manager, "reload", side_effect=CommandError("nginx -t failed", returncode=1)), \
-         patch("pilot.managers.nginx.run_command") as mock_run:
+    with (
+        patch.object(manager, "reload", side_effect=CommandError("nginx -t failed", returncode=1)),
+        patch("pilot.managers.nginx.run_command") as mock_run,
+    ):
         with pytest.raises(CommandError):
             manager._reload_or_rollback(symlink_path)
 
@@ -525,7 +545,9 @@ def test_config_dir_falls_back_to_platform_default(tmp_path: Path) -> None:
     """Empty config_dir falls back to the platform default."""
     bench = _make_bench(tmp_path, _BASE_DATA)
     manager = NginxManager(bench)
-    with patch("pilot.managers.nginx.default_nginx_config_dir", return_value=Path("/etc/nginx/conf.d")):
+    with patch(
+        "pilot.managers.nginx.default_nginx_config_dir", return_value=Path("/etc/nginx/conf.d")
+    ):
         assert manager.config_dir == Path("/etc/nginx/conf.d")
 
 

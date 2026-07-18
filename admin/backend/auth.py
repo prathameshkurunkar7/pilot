@@ -53,7 +53,9 @@ def decode_token(token: str, secret: str) -> dict | None:
         return None
     try:
         header_b64, payload_b64, signature_b64 = token.split(".")
-        if not hmac.compare_digest(_unb64(signature_b64), _sign(f"{header_b64}.{payload_b64}", secret)):
+        if not hmac.compare_digest(
+            _unb64(signature_b64), _sign(f"{header_b64}.{payload_b64}", secret)
+        ):
             return None
         payload = json.loads(_unb64(payload_b64))
     except (ValueError, json.JSONDecodeError):

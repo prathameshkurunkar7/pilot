@@ -22,7 +22,11 @@ psutil.cpu_times_percent()
 
 # Network/disk counters are cumulative, so throughput is the delta between polls
 # divided by the elapsed time — this holds the previous reading between requests.
-_io_state = {"time": time.monotonic(), "net": psutil.net_io_counters(), "disk": psutil.disk_io_counters()}
+_io_state = {
+    "time": time.monotonic(),
+    "net": psutil.net_io_counters(),
+    "disk": psutil.disk_io_counters(),
+}
 
 
 def _cpu_breakdown() -> dict:
@@ -48,8 +52,12 @@ def _io_rates() -> dict:
             "tx_bytes_per_sec": round((net.bytes_sent - _io_state["net"].bytes_sent) / elapsed, 2),
         },
         "disk_io": {
-            "read_bytes_per_sec": round((disk.read_bytes - prev_disk.read_bytes) / elapsed, 2) if disk and prev_disk else 0.0,
-            "write_bytes_per_sec": round((disk.write_bytes - prev_disk.write_bytes) / elapsed, 2) if disk and prev_disk else 0.0,
+            "read_bytes_per_sec": round((disk.read_bytes - prev_disk.read_bytes) / elapsed, 2)
+            if disk and prev_disk
+            else 0.0,
+            "write_bytes_per_sec": round((disk.write_bytes - prev_disk.write_bytes) / elapsed, 2)
+            if disk and prev_disk
+            else 0.0,
         },
     }
     _io_state.update(time=now, net=net, disk=disk)
@@ -90,8 +98,11 @@ def _path_sizes(bench_root: Path, config: BenchConfig) -> list[dict]:
 
 def _log_file_info(description: str, path: Path) -> dict:
     from datetime import datetime, timezone
+
     if path.exists():
-        last_modified = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(timespec="seconds")
+        last_modified = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(
+            timespec="seconds"
+        )
     else:
         last_modified = None
     return {"description": description, "path": str(path), "last_modified": last_modified}
@@ -101,15 +112,18 @@ def _log_file_info(description: str, path: Path) -> dict:
 def get_monitor_status():
     from pilot.config import MonitorConfig
     from pilot.config import BenchTomlStore
+
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         config = BenchTomlStore.for_bench(bench_root).read()
         mon = config.monitor
         log_path = mon.log_path or MonitorConfig.default_log_path(config.name)
-        return jsonify([
-            _log_file_info("System Log", mon.system_log_path),
-            _log_file_info("Application Log", log_path),
-        ])
+        return jsonify(
+            [
+                _log_file_info("System Log", mon.system_log_path),
+                _log_file_info("Application Log", log_path),
+            ]
+        )
     except Exception:
         return error_response(
             "monitor_status_unavailable",

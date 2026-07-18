@@ -36,7 +36,9 @@ def find_bench_root(context: CliContext, require_explicit: bool = False) -> Path
     if context.bench_name:
         bench_dir = benches_dir / context.bench_name
         if not (bench_dir / "bench.toml").exists():
-            raise BenchError(f"Bench '{context.bench_name}' not found.\n{available_hint(benches_dir)}")
+            raise BenchError(
+                f"Bench '{context.bench_name}' not found.\n{available_hint(benches_dir)}"
+            )
         return bench_dir
 
     current = Path.cwd()
@@ -51,12 +53,16 @@ def find_bench_root(context: CliContext, require_explicit: bool = False) -> Path
         )
 
     if benches_dir.is_dir():
-        candidates = [d for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()]
+        candidates = [
+            d for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()
+        ]
         if len(candidates) == 1:
             return candidates[0]
         if len(candidates) > 1:
             names = ", ".join(d.name for d in sorted(candidates))
-            raise BenchError(f"Multiple benches found: {names}\nSpecify one with: bench -b <name> <command>")
+            raise BenchError(
+                f"Multiple benches found: {names}\nSpecify one with: bench -b <name> <command>"
+            )
 
     raise BenchError("No bench found. Create one with: bench new <name>")
 
@@ -87,9 +93,7 @@ def strip_bench_flag(args: list[str]) -> tuple[str | None, list[str]]:
     return bench_name, remaining
 
 
-def is_frappe_passthrough(
-    args: list[str], own_commands: frozenset[str] | None = None
-) -> bool:
+def is_frappe_passthrough(args: list[str], own_commands: frozenset[str] | None = None) -> bool:
     if own_commands is None:
         from pilot.internal.cli.registry import command_names
 

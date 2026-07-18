@@ -176,7 +176,9 @@ def test_collect_system_metrics_skipped_when_not_authority(tmp_path: Path) -> No
     monitor.bench.config.monitor.system_log_path = system_log_file
 
     siblings = [_sibling("other-bench", "systemd")]
-    with patch("pilot.core.server.monitoring_config.iter_sibling_benches", return_value=iter(siblings)):
+    with patch(
+        "pilot.core.server.monitoring_config.iter_sibling_benches", return_value=iter(siblings)
+    ):
         monitor.collect_system_metrics()
 
     assert not system_log_file.exists()

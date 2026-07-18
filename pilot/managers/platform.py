@@ -103,8 +103,7 @@ def _privileged(command: list[str]) -> list[str]:
     if is_root():
         return command
     noninteractive = (
-        _NONINTERACTIVE_PRIVILEGES.get()
-        or os.environ.get(NONINTERACTIVE_PRIVILEGES_ENV) == "1"
+        _NONINTERACTIVE_PRIVILEGES.get() or os.environ.get(NONINTERACTIVE_PRIVILEGES_ENV) == "1"
     )
     sudo = ["sudo", "-n"] if noninteractive else ["sudo"]
     return [*sudo, *command]
@@ -147,9 +146,12 @@ def service_disable_command(name: str) -> list[str]:
 def service_running(name: str) -> bool:
     """Return True if the named system service is currently running."""
     try:
-        return subprocess.run(
-            ["systemctl", "is-active", "--quiet", name], capture_output=True, timeout=5
-        ).returncode == 0
+        return (
+            subprocess.run(
+                ["systemctl", "is-active", "--quiet", name], capture_output=True, timeout=5
+            ).returncode
+            == 0
+        )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
@@ -227,7 +229,8 @@ def unmount_legacy_bind_mount(target: Path, fstab_path: Path = Path("/etc/fstab"
     except OSError:
         return
     kept = [
-        line for line in lines
+        line
+        for line in lines
         if not (
             len(line.split()) >= 2
             and not line.lstrip().startswith("#")

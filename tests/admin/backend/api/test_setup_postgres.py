@@ -8,7 +8,9 @@ from admin.backend.api.v1.setup import read_defaults, validate_configuration
 
 
 def test_validate_configuration_requires_postgres_password() -> None:
-    error = validate_configuration({"admin_password": "x", "db_type": "postgres", "postgres_password": ""})
+    error = validate_configuration(
+        {"admin_password": "x", "db_type": "postgres", "postgres_password": ""}
+    )
     assert error and "postgres_password" in error
 
 
@@ -18,12 +20,19 @@ def test_validate_configuration_accepts_postgres_password() -> None:
 
 
 def test_validate_configuration_requires_mariadb_password() -> None:
-    error = validate_configuration({"admin_password": "x", "db_type": "mariadb", "mariadb_password": ""})
+    error = validate_configuration(
+        {"admin_password": "x", "db_type": "mariadb", "mariadb_password": ""}
+    )
     assert error and "mariadb_password" in error
 
 
 def test_validate_configuration_requires_host_for_existing_mariadb() -> None:
-    data = {"admin_password": "x", "db_type": "mariadb", "mariadb_password": "pw", "mariadb_existing": True}
+    data = {
+        "admin_password": "x",
+        "db_type": "mariadb",
+        "mariadb_password": "pw",
+        "mariadb_existing": True,
+    }
     error = validate_configuration(data)
     assert error and "mariadb_host" in error
 
@@ -53,7 +62,12 @@ def test_validate_configuration_accepts_complete_existing_mariadb() -> None:
 
 
 def test_validate_configuration_ignores_host_when_not_marked_existing() -> None:
-    data = {"admin_password": "x", "db_type": "mariadb", "mariadb_password": "pw", "mariadb_host": "db.example.com"}
+    data = {
+        "admin_password": "x",
+        "db_type": "mariadb",
+        "mariadb_password": "pw",
+        "mariadb_host": "db.example.com",
+    }
     assert validate_configuration(data) is None
 
 

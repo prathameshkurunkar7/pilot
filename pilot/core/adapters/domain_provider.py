@@ -65,7 +65,9 @@ class DomainRouteProvider:
             )
         self._ask_provider("deregister", domain)
         config = self._read(site_name)
-        config["domains"] = [d for d in (config.get("domains") or []) if normalize_host(self._name(d)) != domain]
+        config["domains"] = [
+            d for d in (config.get("domains") or []) if normalize_host(self._name(d)) != domain
+        ]
         self._write(site_name, config)
 
     def release(self, domain: str) -> None:
@@ -93,9 +95,7 @@ class DomainRouteProvider:
             return []
         result = subprocess.run([exe, verb], capture_output=True, text=True)
         if result.returncode != 0:
-            raise DomainProviderError(
-                result.stderr.strip() or f"{_PROVIDER_BIN} {verb} failed."
-            )
+            raise DomainProviderError(result.stderr.strip() or f"{_PROVIDER_BIN} {verb} failed.")
         out = result.stdout.strip()
         return json.loads(out) if out else []
 
@@ -132,7 +132,9 @@ class DomainRouteProvider:
     def _write(self, site_name: str, config: dict) -> None:
         write_private_text(self._config_path(site_name), json.dumps(config, indent=1))
 
-    def _ask_provider(self, action: str, domain: str | None = None, *, site: str | None = None) -> tuple[bool, object]:
+    def _ask_provider(
+        self, action: str, domain: str | None = None, *, site: str | None = None
+    ) -> tuple[bool, object]:
         """Run bench-domain-provider when installed."""
         exe = which(_PROVIDER_BIN)
         if not exe:
@@ -140,9 +142,7 @@ class DomainRouteProvider:
         argv = [exe, action, *([site] if site else []), *([domain] if domain else [])]
         result = subprocess.run(argv, capture_output=True, text=True)
         if result.returncode != 0:
-            raise DomainProviderError(
-                result.stderr.strip() or f"{_PROVIDER_BIN} {action} failed."
-            )
+            raise DomainProviderError(result.stderr.strip() or f"{_PROVIDER_BIN} {action} failed.")
         # Do not parse status text from mutating verbs.
         if action in ("register", "deregister"):
             return True, None
@@ -155,15 +155,11 @@ class DomainRouteProvider:
         if not domain:
             raise DomainConflictError("A domain is required.")
         if domain == normalize_host(self.bench.config.admin.domain):
-            raise DomainConflictError(
-                f"{domain} is already used by this bench's admin domain."
-            )
+            raise DomainConflictError(f"{domain} is already used by this bench's admin domain.")
         for site in self.bench.sites():
             if domain in (normalize_host(d) for d in site.config.all_domains):
                 if site.config.name == site_name:
-                    raise DomainConflictError(
-                        f"{domain} is already attached to this site."
-                    )
+                    raise DomainConflictError(f"{domain} is already attached to this site.")
                 raise DomainConflictError(
                     f"{domain} is already used by site '{site.config.name}' in this bench."
                 )
@@ -178,9 +174,7 @@ class DomainRouteProvider:
         """Raise unless the domain resolves to this server."""
         candidate = self._resolve(domain)
         if not candidate:
-            raise DomainConflictError(
-                f"{domain} doesn't resolve yet. Retry once DNS has updated."
-            )
+            raise DomainConflictError(f"{domain} doesn't resolve yet. Retry once DNS has updated.")
         expected = self._resolve(site_name)
         if ip := self._server_ip():
             expected.add(ip)

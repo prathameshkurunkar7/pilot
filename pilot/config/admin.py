@@ -3,7 +3,9 @@ from dataclasses import dataclass
 
 from pilot.exceptions import ConfigError
 
-_HOSTNAME_PATTERN = re.compile(r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
+_HOSTNAME_PATTERN = re.compile(
+    r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+)
 
 
 @dataclass
@@ -50,4 +52,6 @@ class AdminConfig:
                 )
             return
         if not _HOSTNAME_PATTERN.match(self.domain):
-            raise ConfigError(f"admin.domain '{self.domain}' is not a valid hostname (bench '{bench_name}').")
+            raise ConfigError(
+                f"admin.domain '{self.domain}' is not a valid hostname (bench '{bench_name}')."
+            )

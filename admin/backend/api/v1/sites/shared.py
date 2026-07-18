@@ -20,9 +20,7 @@ def malformed_body():
 
 
 def invalid_fields():
-    return error_response(
-        "invalid_fields", "One or more request fields are invalid.", 422
-    )
+    return error_response("invalid_fields", "One or more request fields are invalid.", 422)
 
 
 def text_fields(data: dict, *names: str) -> dict[str, str] | None:
@@ -41,9 +39,7 @@ def internal_error(message: str):
 
 def task_failure(error: Exception):
     if isinstance(error, TaskConflictError):
-        return error_response(
-            "task_conflict", "A conflicting task is already active.", 409
-        )
+        return error_response("task_conflict", "A conflicting task is already active.", 409)
     if isinstance(error, ValueError):
         return error_response("invalid_task", str(error), 422)
     return internal_error("Could not start the requested task.")
@@ -51,9 +47,7 @@ def task_failure(error: Exception):
 
 def site_name_failure(message: str):
     if "already" in message or "clashes" in message:
-        return error_response(
-            "site_name_conflict", "The site name is already in use.", 409
-        )
+        return error_response("site_name_conflict", "The site name is already in use.", 409)
     return error_response("invalid_site_name", message, 422)
 
 

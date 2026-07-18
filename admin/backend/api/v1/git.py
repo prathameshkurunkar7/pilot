@@ -89,7 +89,9 @@ def save_integration():
         return error_response(
             "git_provider_unavailable", "Could not connect to the git provider.", 500
         )
-    record = _store().save(provider_name, token, username=username or account.get("login", ""), expires_at=expires_at)
+    record = _store().save(
+        provider_name, token, username=username or account.get("login", ""), expires_at=expires_at
+    )
     return jsonify(_status(record))
 
 

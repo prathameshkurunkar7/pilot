@@ -1,4 +1,5 @@
 """Tests for GetAppCommand.run()."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,10 +30,12 @@ def test_full_flow_runs_when_app_not_registered(tmp_path: Path) -> None:
     bench.create_directories()
     cmd = GetAppCommand(bench, repo="https://github.com/frappe/myapp")
 
-    with patch.object(App, "clone") as mock_clone, \
-            patch.object(App, "_validate") as mock_validate, \
-            patch.object(App, "_install_into_environment") as mock_install, \
-            patch.object(App, "_build_assets_via_env_manager") as mock_build:
+    with (
+        patch.object(App, "clone") as mock_clone,
+        patch.object(App, "_validate") as mock_validate,
+        patch.object(App, "_install_into_environment") as mock_install,
+        patch.object(App, "_build_assets_via_env_manager") as mock_build,
+    ):
         cmd.run()
 
     mock_clone.assert_called_once()
@@ -48,10 +51,12 @@ def test_run_short_circuits_when_app_already_registered(tmp_path: Path) -> None:
     (bench.sites_path / "apps.txt").write_text("frappe\nmyapp\n")
     cmd = GetAppCommand(bench, repo="https://github.com/frappe/myapp")
 
-    with patch.object(App, "clone") as mock_clone, \
-            patch.object(App, "_validate") as mock_validate, \
-            patch.object(App, "_install_into_environment") as mock_install, \
-            patch.object(App, "_build_assets_via_env_manager") as mock_build:
+    with (
+        patch.object(App, "clone") as mock_clone,
+        patch.object(App, "_validate") as mock_validate,
+        patch.object(App, "_install_into_environment") as mock_install,
+        patch.object(App, "_build_assets_via_env_manager") as mock_build,
+    ):
         cmd.run()
 
     mock_clone.assert_not_called()
@@ -88,10 +93,14 @@ def test_short_circuit_still_populates_installed_dependencies(tmp_path: Path) ->
     helpdesk = make_resolver("helpdesk", deps={"telephony": ""})
     helpdesk._registry = {"telephony": [telephony]}
 
-    with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch.object(Marketplace, "_read_apps_json", return_value="[]"):
-        cmd = GetAppCommand(bench, repo="https://github.com/frappe/helpdesk", install_dependencies=True)
+    with (
+        patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]),
+        patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"),
+        patch.object(Marketplace, "_read_apps_json", return_value="[]"),
+    ):
+        cmd = GetAppCommand(
+            bench, repo="https://github.com/frappe/helpdesk", install_dependencies=True
+        )
         cmd.run()
 
     assert [app.config.name for app in cmd.installed_dependencies] == ["telephony"]
@@ -108,14 +117,23 @@ def test_still_installs_missing_dependency_when_parent_already_installed(tmp_pat
     helpdesk = make_resolver("helpdesk", deps={"telephony": ""})
     helpdesk._registry = {"telephony": [telephony]}
 
-    with patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]), \
-            patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"), \
-            patch.object(Marketplace, "_read_apps_json", return_value="[]"), \
-            patch.object(App, "clone", autospec=True, side_effect=lambda app: app.path.mkdir(parents=True, exist_ok=True)) as mock_clone, \
-            patch.object(App, "_validate"), \
-            patch.object(App, "_install_into_environment"), \
-            patch.object(App, "_build_assets_via_env_manager"):
-        cmd = GetAppCommand(bench, repo="https://github.com/frappe/helpdesk", install_dependencies=True)
+    with (
+        patch.object(Marketplace, "read_all_apps", return_value=[helpdesk]),
+        patch.object(Marketplace, "get_current_frappe_version", return_value="16.0.0"),
+        patch.object(Marketplace, "_read_apps_json", return_value="[]"),
+        patch.object(
+            App,
+            "clone",
+            autospec=True,
+            side_effect=lambda app: app.path.mkdir(parents=True, exist_ok=True),
+        ) as mock_clone,
+        patch.object(App, "_validate"),
+        patch.object(App, "_install_into_environment"),
+        patch.object(App, "_build_assets_via_env_manager"),
+    ):
+        cmd = GetAppCommand(
+            bench, repo="https://github.com/frappe/helpdesk", install_dependencies=True
+        )
         cmd.run()
 
     # helpdesk itself short-circuits (already installed); telephony is the
@@ -129,10 +147,12 @@ def test_skip_validations_flag_still_skips_validate(tmp_path: Path) -> None:
     bench.create_directories()
     cmd = GetAppCommand(bench, repo="https://github.com/frappe/myapp", skip_validations=True)
 
-    with patch.object(App, "clone"), \
-            patch.object(App, "_validate") as mock_validate, \
-            patch.object(App, "_install_into_environment"), \
-            patch.object(App, "_build_assets_via_env_manager"):
+    with (
+        patch.object(App, "clone"),
+        patch.object(App, "_validate") as mock_validate,
+        patch.object(App, "_install_into_environment"),
+        patch.object(App, "_build_assets_via_env_manager"),
+    ):
         cmd.run()
 
     mock_validate.assert_not_called()

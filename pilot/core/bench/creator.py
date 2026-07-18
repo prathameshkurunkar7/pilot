@@ -91,7 +91,9 @@ class BenchCreator:
         on_progress(f"\nBench '{self.name}' created at {self.target_directory}")
         on_progress("\nNext step:")
         on_progress("  bench start")
-        on_progress(f"  Then open http://localhost:{admin_port} — the setup wizard takes it from there.")
+        on_progress(
+            f"  Then open http://localhost:{admin_port} — the setup wizard takes it from there."
+        )
 
         return Bench(self.target_directory)
 

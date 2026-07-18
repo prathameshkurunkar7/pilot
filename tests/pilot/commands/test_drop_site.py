@@ -1,4 +1,5 @@
 """Tests for Site.drop()'s provider domain capture/release driving a dummy provider."""
+
 import json
 import os
 from pathlib import Path
@@ -11,7 +12,9 @@ from pilot.core.site import Site
 
 _BENCH_DATA: dict = {
     "bench": {"name": "test-bench", "python": "3.14"},
-    "apps": [{"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}],
+    "apps": [
+        {"name": "frappe", "repo": "https://github.com/frappe/frappe", "branch": "version-16"}
+    ],
     "mariadb": {"root_password": "root"},
     "redis": {"cache_port": 13000, "queue_port": 11000},
 }
@@ -54,8 +57,14 @@ def _write_site(bench: Bench, name: str, config: dict) -> None:
 def test_collects_site_name_and_custom_domains(tmp_path: Path, monkeypatch) -> None:
     _install_provider(tmp_path, monkeypatch)
     bench = _make_bench(tmp_path)
-    _write_site(bench, "mysite", {"domains": ["app.example.com", "shop.example.com"],
-                                  "host_name": "https://app.example.com"})
+    _write_site(
+        bench,
+        "mysite",
+        {
+            "domains": ["app.example.com", "shop.example.com"],
+            "host_name": "https://app.example.com",
+        },
+    )
 
     assert Site(SiteConfig(name="mysite", apps=[]), bench)._provider_domains() == [
         "mysite",
@@ -103,7 +112,9 @@ def _capture_drop_cmd(tmp_path: Path, monkeypatch, bench: Bench) -> dict:
     BenchTomlStore.for_bench(bench.path).write(bench.config)
     _write_site(bench, "mysite", {})
     captured: dict = {}
-    monkeypatch.setattr("pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd))
+    monkeypatch.setattr(
+        "pilot.core.site.run_command", lambda cmd, **kw: captured.setdefault("cmd", cmd)
+    )
     Site(SiteConfig(name="mysite", apps=[]), bench).drop()
     return captured
 

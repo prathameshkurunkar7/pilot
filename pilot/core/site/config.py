@@ -188,11 +188,15 @@ def config_patch_error(current, submitted) -> str | None:
 
 
 def is_public_config_key(key: str) -> bool:
-    normalized = re.sub(
-        r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])",
-        "_",
-        key,
-    ).lower().replace("-", "_")
+    normalized = (
+        re.sub(
+            r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])",
+            "_",
+            key,
+        )
+        .lower()
+        .replace("-", "_")
+    )
     compact = normalized.replace("_", "")
     compact_secret_parts = (
         "accesskey",

@@ -20,7 +20,9 @@ class GitCredentialStore:
         except (FileNotFoundError, ValueError):
             return None
 
-    def save(self, provider: str, token: str, *, username: str = "", expires_at: str | None = None) -> dict:
+    def save(
+        self, provider: str, token: str, *, username: str = "", expires_at: str | None = None
+    ) -> dict:
         existing = self.load() or {}
         record = {
             "provider": provider,

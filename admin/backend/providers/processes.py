@@ -71,7 +71,11 @@ class ProcessProvider:
             text=True,
             env=systemd._systemctl_env(),
         )
-        return [info for block in result.stdout.strip().split("\n\n") if (info := self._get_systemd_process(block.strip(), bench_name))]
+        return [
+            info
+            for block in result.stdout.strip().split("\n\n")
+            if (info := self._get_systemd_process(block.strip(), bench_name))
+        ]
 
     def _get_systemd_process(self, block: str, bench_name: str) -> ProcessInfo | None:
         """Parses one blank-line-separated `systemctl show` property block."""
@@ -82,7 +86,11 @@ class ProcessProvider:
 
         name = unit_id.removesuffix(".service").removeprefix(f"{bench_name}-")
         state = props.get("ActiveState", "")
-        status = "running" if state == "active" else ("stopped" if state in ("inactive", "failed", "deactivating") else "unknown")
+        status = (
+            "running"
+            if state == "active"
+            else ("stopped" if state in ("inactive", "failed", "deactivating") else "unknown")
+        )
         pid_str = props.get("MainPID", "0")
         pid = int(pid_str) if pid_str.isdigit() and pid_str != "0" else None
         return self._build_info(name, status, pid)
@@ -107,7 +115,11 @@ class ProcessProvider:
             return None
 
         full_name, state, rest = m.group(1), m.group(2).lower(), m.group(3)
-        status = "running" if state == "running" else ("stopped" if state in ("stopped", "exited", "fatal", "backoff") else "unknown")
+        status = (
+            "running"
+            if state == "running"
+            else ("stopped" if state in ("stopped", "exited", "fatal", "backoff") else "unknown")
+        )
 
         pid: int | None = None
         if pid_m := re.search(r"pid (\d+)", rest):
@@ -138,7 +150,9 @@ class ProcessProvider:
             status = "stopped"
         return self._build_info(name, status, pid)
 
-    def _build_info(self, name: str, status: str, pid: int | None, log_name: str | None = None) -> ProcessInfo:
+    def _build_info(
+        self, name: str, status: str, pid: int | None, log_name: str | None = None
+    ) -> ProcessInfo:
         log_file = self._bench_root / "logs" / f"{log_name or name}.log"
         if pid and status == "running":
             cpu, rss, pss = self._get_process_stats(pid)
@@ -146,8 +160,14 @@ class ProcessProvider:
         else:
             cpu = rss = pss = uptime = None
         return ProcessInfo(
-            name=name, status=status, pid=pid, uptime=uptime, log_file=log_file,
-            cpu_percent=cpu, rss_mb=rss, pss_mb=pss,
+            name=name,
+            status=status,
+            pid=pid,
+            uptime=uptime,
+            log_file=log_file,
+            cpu_percent=cpu,
+            rss_mb=rss,
+            pss_mb=pss,
         )
 
     @classmethod
@@ -192,7 +212,7 @@ class ProcessProvider:
                 with open(f"/proc/{entry}/stat") as f:
                     data = f.read()
                 # ppid is 2 fields after comm's closing ')' (comm may contain "( )").
-                ppid = int(data[data.rindex(")") + 2:].split()[1])
+                ppid = int(data[data.rindex(")") + 2 :].split()[1])
             except (OSError, ValueError, IndexError):
                 continue
             children.setdefault(ppid, []).append(int(entry))
@@ -226,7 +246,7 @@ class ProcessProvider:
                 data = f.read()
             # Start time is field 22 (clock ticks since boot); fields after comm
             # ')' start at field 3, so it's index 19 in the post-comm split.
-            starttime_ticks = int(data[data.rindex(")") + 2:].split()[19])
+            starttime_ticks = int(data[data.rindex(")") + 2 :].split()[19])
             elapsed = system_uptime - starttime_ticks / os.sysconf("SC_CLK_TCK")
             return _format_duration(elapsed) if elapsed >= 0 else None
         except (OSError, ValueError, IndexError):

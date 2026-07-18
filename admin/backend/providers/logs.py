@@ -47,13 +47,15 @@ class LogProvider:
         infos = []
         for path in sorted(logs_dir.glob("*.log")):
             stat = path.stat()
-            infos.append(LogFileInfo(
-                filename=path.name,
-                size_bytes=stat.st_size,
-                last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-                process_name=path.stem,
-                line_count=self.count_lines(path),
-            ))
+            infos.append(
+                LogFileInfo(
+                    filename=path.name,
+                    size_bytes=stat.st_size,
+                    last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                    process_name=path.stem,
+                    line_count=self.count_lines(path),
+                )
+            )
         return infos
 
     def tail_file(self, filename: str, lines: int = 200) -> list[str]:
