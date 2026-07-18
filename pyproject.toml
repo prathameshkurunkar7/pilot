@@ -22,12 +22,23 @@ type-check = ["mypy>=1.13"]
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["pilot*", "admin*"]
+exclude = ["benches*", "tests*", "docs*", "admin.frontend*"]
 
 [tool.ruff]
 line-length = 100
 
 [tool.ruff.format]
 line-ending = "auto"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/admin", "tests/pilot"]
+norecursedirs = ["benches", "admin/frontend/node_modules"]
+markers = [
+  "incremental: run tests in order and stop dependent checks after a failure",
+  "integration: requires local services or a full bench environment",
+  "production: exercises production setup paths",
+]
 
 [tool.setuptools.package-data]
 "admin.backend" = [

@@ -1,4 +1,5 @@
 """Tests for /api/v1/apps, /api/v1/marketplace/apps, and /api/v1/app-updates."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,7 +14,9 @@ def _client(bench_root: Path, password: str = "secret"):
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
+        BenchTomlBuilder(
+            bench_root.name, {"admin_enabled": True, "admin_password": password}
+        ).render()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -31,7 +34,7 @@ def _make_cloned_app(bench_root: Path, name: str) -> None:
 
 def _post_install(client, **payload):
     with patch(
-        "pilot.managers.task.runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         return client.post("/api/v1/apps", json=payload)
@@ -147,9 +150,7 @@ def test_update_app_404s_when_not_cloned(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
 
-    response = client.patch(
-        "/api/v1/apps/suite", json={"repo": "https://github.com/frappe/suite"}
-    )
+    response = client.patch("/api/v1/apps/suite", json={"repo": "https://github.com/frappe/suite"})
 
     assert response.status_code == 404
 
@@ -160,7 +161,7 @@ def test_delete_app_queues_removal(tmp_path: Path) -> None:
     client = _client(bench_root)
 
     with patch(
-        "pilot.managers.task.runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         response = client.delete("/api/v1/apps/suite")
@@ -203,9 +204,11 @@ def test_app_updates_reads_without_fetching(tmp_path: Path) -> None:
     bench.apps.return_value = [app]
     repo = Mock()
 
-    with patch("pilot.core.bench.Bench", return_value=bench), \
-         patch("admin.backend.api.v1.updates.GitRepo", return_value=repo), \
-         patch("admin.backend.api.v1.updates._app_info", return_value={"name": "suite"}):
+    with (
+        patch("pilot.core.bench.Bench", return_value=bench),
+        patch("admin.backend.api.v1.updates.GitRepo", return_value=repo),
+        patch("admin.backend.api.v1.updates._app_info", return_value={"name": "suite"}),
+    ):
         response = client.get("/api/v1/app-updates")
 
     assert response.status_code == 200
@@ -223,9 +226,11 @@ def test_app_update_checks_fetches_each_cloned_app(tmp_path: Path) -> None:
     bench.apps.return_value = [app]
     repo = Mock()
 
-    with patch("pilot.core.bench.Bench", return_value=bench), \
-         patch("admin.backend.api.v1.updates.GitRepo", return_value=repo), \
-         patch("admin.backend.api.v1.updates._app_info", return_value={"name": "suite"}):
+    with (
+        patch("pilot.core.bench.Bench", return_value=bench),
+        patch("admin.backend.api.v1.updates.GitRepo", return_value=repo),
+        patch("admin.backend.api.v1.updates._app_info", return_value={"name": "suite"}),
+    ):
         response = client.post("/api/v1/app-update-checks")
 
     assert response.status_code == 200

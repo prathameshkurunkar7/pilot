@@ -1,24 +1,22 @@
 from __future__ import annotations
 
 import json
-import re
 import secrets
-import subprocess
 from pathlib import Path
-from urllib.parse import urlsplit
 
-from flask import current_app, jsonify, make_response, request
+from flask import current_app, jsonify, request
 
-from pilot.config.bench import BenchConfig
 from pilot.config.toml_store import BenchTomlStore
 from pilot.internal.site_paths import site_config_path, site_exists
 from pilot.internal.validators import validate_site_name
 from pilot.tasks import TaskRunner
-from pilot.utils import normalize_host
 
 from admin.backend.api.responses import accepted_task_response, created_response, error_response
 from admin.backend.middleware import rate_limit, require_scope
 
+from admin.backend.api.v1.sites.login import create_site_session
+from admin.backend.api.v1.sites.login import login_redirect_url as _login_redirect_url
+from admin.backend.api.v1.sites.login import no_store as _no_store
 from admin.backend.providers.apps import AppProvider
 from admin.backend.providers.sites import SiteInfo, SiteProvider
 from admin.backend.api.v1.sites import sites_bp
@@ -110,8 +108,10 @@ def create_site():
         return malformed_body()
     fields = text_fields(data, "name")
     apps_value = data.get("apps", [])
-    if fields is None or not isinstance(apps_value, list) or not all(
-        isinstance(app, str) for app in apps_value
+    if (
+        fields is None
+        or not isinstance(apps_value, list)
+        or not all(isinstance(app, str) for app in apps_value)
     ):
         return invalid_fields()
 
@@ -271,81 +271,8 @@ def _site_resource(site: SiteInfo) -> dict:
     return {
         "name": site.name,
         "exists": site.exists,
-        "installed_apps": [
-            app for app in site.installed_apps if isinstance(app, str)
-        ],
+        "installed_apps": [app for app in site.installed_apps if isinstance(app, str)],
         "framework_branch": framework_branch if isinstance(framework_branch, str) else "",
         "broken": site.broken,
         "provisioning": site.provisioning,
     }
-
-
-def create_site_session(bench_root: Path, site: str) -> str | None:
-    python = bench_root / "env" / "bin" / "python"
-    program = (
-        "import sys, frappe\n"
-        "from frappe.auth import CookieManager, LoginManager\n"
-        "frappe.init(site=sys.argv[1], sites_path='.')\n"
-        "frappe.connect()\n"
-        "frappe.utils.set_request(path='/')\n"
-        "frappe.local.cookie_manager = CookieManager()\n"
-        "frappe.local.login_manager = LoginManager()\n"
-        "frappe.local.login_manager.login_as('Administrator')\n"
-        "frappe.db.commit()\n"
-        "sys.stdout.write(frappe.session.sid)\n"
-    )
-    result = subprocess.run(
-        [str(python), "-c", program, site],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        cwd=str(bench_root / "sites"),
-    )
-    if result.returncode != 0:
-        return None
-    lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
-    sid = lines[-1] if lines else ""
-    return sid if re.fullmatch(r"[A-Za-z0-9._-]+", sid) else None
-
-
-def _login_redirect_url(config: BenchConfig, site: str, site_config: dict) -> str:
-    host = _primary_host(site, site_config)
-    if not config.production.enabled:
-        return _origin("http", host, config.http_port) + "/desk"
-
-    proxy_tls = current_app.config["SESSION_COOKIE_SECURE"] and not config.admin.tls
-    secure = proxy_tls or (config.admin.tls and bool(site_config.get("ssl")))
-    scheme = "https" if secure else "http"
-    port = 443 if proxy_tls else (config.nginx.https_port if secure else config.nginx.http_port)
-    return _origin(scheme, host, port) + "/desk"
-
-
-def _primary_host(site: str, site_config: dict) -> str:
-    candidates = {normalize_host(site)}
-    for entry in site_config.get("domains") or []:
-        domain = entry.get("domain") if isinstance(entry, dict) else entry
-        if isinstance(domain, str):
-            candidates.add(normalize_host(domain))
-    host_name = site_config.get("host_name")
-    if isinstance(host_name, str) and host_name.strip():
-        parsed = urlsplit(
-            host_name if "://" in host_name else f"//{host_name}"
-        )
-        primary = normalize_host(parsed.hostname or "")
-        if primary in candidates:
-            return primary
-    return normalize_host(site)
-
-
-def _origin(scheme: str, host: str, port: int) -> str:
-    default_port = 443 if scheme == "https" else 80
-    suffix = "" if port == default_port else f":{port}"
-    return f"{scheme}://{host}{suffix}"
-
-
-def _no_store(response):
-    response = make_response(response)
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    return response

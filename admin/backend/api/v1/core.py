@@ -191,11 +191,11 @@ def _setup_complete(bench_root: Path, config: BenchConfig) -> bool:
     if config.production.process_manager and not config.production.enabled:
         return False
     try:
-        from pilot.managers.task import ACTIVE_TASK_STATUSES, TaskReader
+        from pilot.managers.task import TaskReader
 
         tasks = TaskReader(bench_root).list_tasks(limit=20)
         return not any(
-            task.command == "wizard-setup" and task.status in ACTIVE_TASK_STATUSES for task in tasks
+            task.command == "wizard-setup" and task.status.is_active for task in tasks
         )
     except Exception:
         return True

@@ -100,19 +100,28 @@ admin/
 pilot/internal/                  # Zero-dependency helpers shared across the whole CLI
 ├── validators.py                # Regex validators (site/app names, cron, branch, email)
 ├── site_paths.py                # Symlink-safe resolution of a site's directory
-└── atomic_file.py, git.py, toml.py, site_session.py
+├── cli_command.py               # Command dataclass -> argparse adapter
+├── cli_dispatch.py              # console entrypoint routing and Frappe passthrough
+├── tasks/                       # Task runner implementation hidden from app authors
+│   ├── args.py                  # Task argument redaction/fingerprinting plumbing
+│   ├── callbacks.py             # Stored task callback validation/execution
+│   ├── files.py, payload.py
+│   ├── process.py, process_identity.py, wrapper.py
+│   ├── queue.py, store.py       # FIFO claim order and durable task files
+│   ├── runner.py                # Task discovery and submission engine
+│   └── worker.py, worker_state.py
+└── atomic_file.py, cli_fields.py, cli_registry.py, git.py, toml.py, site_session.py
 
 pilot/managers/cron.py           # CronManager — one crontab entry per (bench, job_key)
+pilot/managers/task/             # Task status models, readers, activity, worker control
 
-pilot/tasks/                     # The task engine itself (Flask-free) — see docs/tasks.md
-├── manager/                     # Task infrastructure
-│   ├── task_runner.py           # TaskRunner — validates + queues a task
-│   ├── task_reader.py           # TaskReader — reads task state from disk
-│   ├── task_store.py            # durable queue + idempotent creation
-│   ├── worker_registry.py, worker.py, worker_state.py  # single task worker
-│   ├── events.py                # SSE event shapes for task streaming
-│   └── models.py                # TaskInfo dataclass
-└── jobs/                        # One class per background job (get_app_task.py, new_site_task.py, ...)
+pilot/tasks/                     # Task definitions + public TaskRunner — see docs/tasks.md
+├── __init__.py                  # Public task API; TaskRunner discovers jobs lazily
+├── base.py                      # Task authoring API: BaseTask, step
+├── callbacks.py                 # Public callback types for task submission
+├── runner.py                    # Public TaskRunner and TaskSubmission
+├── migrate.py, build.py, ...
+└── new_site.py, setup_nginx.py, ...
 ```
 
 ---
@@ -212,7 +221,7 @@ A task is the JSON produced by `TaskInfo.as_dict()`:
 ```
 
 - `status` is one of `queued`, `running`, `success`, `failed`, `killed` (`TaskStatus`). Valid transitions: `queued → running | killed`, `running → success | failed | killed`; terminal states don't transition further.
-- `args` is redacted for display: password- and token-like keys are replaced with `"[redacted]"`, and credentials embedded in URLs are stripped, before the task is ever written to disk (`public_task_args`). A few commands (`new-site`, `new-site-from-backup`, `reinstall-site`) additionally keep their password argument out of `meta.json` entirely, in a private `secrets.json` the wrapper reads at exec time.
+- `args` is redacted for display: password- and token-like keys are replaced with `"[redacted]"`, and credentials embedded in URLs are stripped before the task is ever written to disk. A few commands (`new-site`, `new-site-from-backup`, `reinstall-site`) additionally keep their password argument out of `meta.json` entirely, in a private `secrets.json` the wrapper reads at exec time.
 - `failure` is populated only when `status == "failed"`, as `{"code": "command_failed" | "task_interrupted", "message": "..."}`.
 - Every mutating action that starts background work (`POST /sites`, `POST /apps`, `POST /sites/{name}/actions/*`, `POST /setup/actions/start`, ...) returns **202** with the task JSON above and a `Location: /api/v1/tasks/{task_id}` header, built by `accepted_task_response()`.
 - **Idempotency:** send `Idempotency-Key: <opaque>` on a task-creating POST to make retried requests safe. The key is hashed and checked against a fingerprint of `{command, args}`; a repeat with the same key and same request body returns the original task instead of creating a new one. `POST /setup/actions/start` requires this header (422 `idempotency_key_required` if missing); it's optional elsewhere.
@@ -352,7 +361,7 @@ Bench-lifecycle routes (`create`, `delete`, `actions/*`) take an exclusive file 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/tasks` | All tasks, newest first. `?status=queued\|running\|success\|failed\|killed` filters |
-| POST | `/tasks` | Generic task creation. Body `{"command", ...args}` against the same whitelist `TaskRunner` uses everywhere else; 202. Accepts `Idempotency-Key` |
+| POST | `/tasks` | Generic task creation. Body `{"command", ...args}` against the same command registry and required-args map `TaskRunner` uses everywhere else; 202. Accepts `Idempotency-Key` |
 | GET | `/tasks/{task_id}` | One task's detail |
 | DELETE | `/tasks/{task_id}` | Cancel a queued or running task; 204. 409 `task_not_active` if already finished |
 | POST | `/tasks/{task_id}/actions/retry` | Resubmit the task's command/args as a new task; 202. 409 if still active or if its secrets weren't retained |
@@ -440,7 +449,7 @@ Start/stop/restart deliberately exclude the admin's own supervisor program, so t
 - `bench issue-site-token` issues a scoped JWT (`scope: "site"`) restricted to one site, for programmatic site-to-bench calls (`Authorization: Bearer <token>`).
 - `admin.jwks_url` lets a remote issuer mint session/bearer tokens with its own key pair, verified against fetched public keys — see below.
 - Log filenames are validated to resolve inside `logs/`; any traversal returns 422.
-- Task commands run only through `TaskRunner`'s whitelist; no user-supplied string reaches a shell. `task_id` values are validated against `^\d{8}-\d{6}-[0-9a-f]{6}$` before use as a directory name.
+- Task commands run only through `TaskRunner`'s command registry; no user-supplied string reaches a shell. `task_id` values are validated against `^\d{8}-\d{6}-[0-9a-f]{6}$` before use as a directory name.
 - Repository URLs with embedded credentials (`https://user:pass@host/...`) are rejected outright — use the git connection instead.
 
 ### Site-to-bench API

@@ -1,51 +1,35 @@
 from __future__ import annotations
 
-import os
-import re
-import socket
-import subprocess
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request, url_for
+from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.providers.bench import BenchProvider
 from pilot.config.toml_store import BenchTomlStore
 from pilot.core.bench import Bench
-from pilot.exceptions import BenchAlreadyExistsError, BenchError
 from pilot.internal.atomic_file import exclusive_file_lock
-from pilot.loader import cli_root
 from pilot.managers.processes.local import ProcessManager
 
-from admin.backend.api.responses import created_response, error_response, no_content_response
-
-benches_bp = Blueprint("benches", __name__)
-bench_readiness_bp = Blueprint("bench-readiness", __name__)
-
-_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
-_ADMIN_DOMAIN_RE = re.compile(
-    r"^(?=.{1,253}$)[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+from admin.backend.api.responses import error_response, no_content_response
+from admin.backend.api.v1.benches_create import create_bench_locked as _create_bench_locked
+from admin.backend.api.v1.benches_readiness import bench_readiness_bp
+from admin.backend.api.v1.benches_support import (
+    _ADMIN_DOMAIN_RE,
+    _NAME_RE,
+    bench_busy_response as _bench_busy_response,
+    bench_lock_target as _bench_lock_target,
+    bench_management_lock_target as _bench_management_lock_target,
+    bench_resource as _bench_resource,
+    guard_bench_management,
+    target_bench_dir as _target_bench_dir,
 )
 
+benches_bp = Blueprint("benches", __name__)
 
-def guard_bench_management():
-    """The multi-bench UI and its API are gated by admin.allow_bench_management.
-    When off, every route here 403s — the CLI is the way to manage benches then."""
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    try:
-        config = BenchTomlStore.for_bench(bench_root).read_raw()
-    except Exception:
-        return error_response(
-            "bench_management_forbidden", "Bench management is disabled on this server.", 403
-        )
-
-    if not config.get("admin", {}).get("allow_bench_management", True):
-        return error_response(
-            "bench_management_forbidden", "Bench management is disabled on this server.", 403
-        )
+__all__ = ["bench_readiness_bp", "benches_bp"]
 
 
 benches_bp.before_request(guard_bench_management)
-bench_readiness_bp.before_request(guard_bench_management)
 
 
 @benches_bp.get("")
@@ -78,67 +62,6 @@ def get_bench(name: str):
         return jsonify(_bench_resource(bench_dir))
     except Exception:
         return error_response("bench_unavailable", "Could not read the bench.", 503)
-
-
-def _bench_resource(bench_dir: Path) -> dict:
-    toml_path = bench_dir / "bench.toml"
-    config = BenchTomlStore(toml_path).read_raw()
-    admin_config = config.get("admin", {})
-    production_config = config.get("production", {})
-    port = admin_config.get("port")
-    if not isinstance(port, int) or isinstance(port, bool):
-        raise ValueError("Bench admin port is unavailable")
-    process_manager = production_config.get("process_manager", "")
-    if not isinstance(process_manager, str):
-        process_manager = ""
-    process_manager = process_manager.lower()
-    if process_manager in ("", "none"):
-        process_manager = ""
-    elif process_manager == "supervisord":
-        process_manager = "supervisor"
-    enabled = production_config.get("enabled")
-    production = enabled if isinstance(enabled, bool) else process_manager != ""
-    domain = admin_config.get("domain", "")
-    if not isinstance(domain, str):
-        domain = ""
-    bench = BenchProvider(bench_dir)
-    tls = admin_config.get("tls") is True
-    scheme = "https" if tls and bench.has_admin_cert else "http"
-    return {
-        "name": bench_dir.name,
-        "port": port,
-        "domain": domain,
-        "production": production,
-        "process_manager": process_manager or None,
-        "reachable": bench.is_port_open(port) or bench.is_port_open(port + 1),
-        "admin_url": f"{scheme}://{domain}" if production and domain else "",
-        "workload_running": bench.is_workload_running if production else None,
-        "admin_running": bench.is_admin_running if production else None,
-        "site_count": bench.site_count,
-    }
-
-
-def _target_bench_dir(bench_root: Path, name: str) -> Path:
-    target = bench_root.parent / name
-    if target.is_symlink() or target.resolve(strict=False).parent != bench_root.parent.resolve():
-        raise ValueError("Invalid bench path")
-    return target
-
-
-def _bench_lock_target(bench_root: Path, name: str) -> Path:
-    return bench_root.parent / f"{name}.lifecycle"
-
-
-def _bench_management_lock_target(bench_root: Path) -> Path:
-    return bench_root.parent / "bench-management.lock-target"
-
-
-def _bench_busy_response(name: str):
-    return error_response(
-        "bench_busy",
-        f"Bench '{name}' is busy with another operation.",
-        409,
-    )
 
 
 @benches_bp.post("/<name>/actions/start")
@@ -364,203 +287,3 @@ def create_bench():
             )
     except BlockingIOError:
         return _bench_busy_response(name)
-
-
-def _create_bench_locked(
-    bench_root: Path,
-    name: str,
-    process_manager: str,
-    db_type: str,
-    admin_domain: str,
-    admin_tls: bool | None,
-):
-    from pilot.core.domains import DomainRouteProvider
-    from pilot.utils import host_owner, matches_wildcard, normalize_host
-
-    try:
-        new_dir = _target_bench_dir(bench_root, name)
-    except ValueError:
-        return error_response(
-            "bench_already_exists",
-            f"Bench '{name}' already exists.",
-            409,
-        )
-    owner = host_owner(new_dir, admin_domain)
-    if owner:
-        return error_response(
-            "admin_domain_conflict",
-            f"Admin domain '{admin_domain}' is already used by bench '{owner}'.",
-            409,
-        )
-    if normalize_host(admin_domain) == normalize_host(name):
-        return error_response(
-            "invalid_admin_domain",
-            "Admin domain must differ from the bench/site name.",
-            422,
-        )
-
-    patterns = DomainRouteProvider.wildcard_domains()
-    if patterns and not matches_wildcard(admin_domain, patterns):
-        return error_response(
-            "invalid_admin_domain",
-            f"Admin domain must match one of: {', '.join(patterns)}.",
-            422,
-        )
-
-    production_parent = BenchProvider(bench_root).is_production
-    if production_parent:
-        from pilot.managers.platform import has_passwordless_sudo
-
-        if not has_passwordless_sudo():
-            return error_response(
-                "privileged_operation_unavailable",
-                "Production bench creation requires non-interactive system privileges.",
-                409,
-            )
-
-    try:
-        Bench.create_at(
-            new_dir,
-            name,
-            process_manager=process_manager,
-            admin_domain=admin_domain,
-            admin_tls=admin_tls,
-            db_type=db_type,
-        )
-    except BenchAlreadyExistsError:
-        return error_response(
-            "bench_already_exists",
-            f"Bench '{name}' already exists.",
-            409,
-        )
-    except BenchError as exc:
-        return error_response("invalid_bench", str(exc), 422)
-
-    new_toml = BenchTomlStore.for_bench(new_dir).read_raw()
-    new_port = new_toml["admin"]["port"]
-
-    root = cli_root()
-
-    if production_parent:
-        try:
-            from pilot.managers.nginx import NginxManager
-            from pilot.managers.platform import noninteractive_privileges
-
-            with noninteractive_privileges():
-                bench = Bench(BenchTomlStore.for_bench(new_dir).read(), new_dir)
-                DomainRouteProvider(bench).register(admin_domain, admin_domain)
-                from pilot.managers.processes.base import ManagedProcessManager
-
-                configured_pm = bench.config.production.process_manager
-                PM: type[ManagedProcessManager]
-                if configured_pm == "systemd":
-                    from pilot.managers.processes.systemd import SystemdProcessManager as PM
-                else:
-                    from pilot.managers.processes.supervisor import SupervisorProcessManager as PM
-                pm = PM(bench)
-                pm.start_admin()
-                # Just enough to make the wizard reachable at its domain (over plain HTTP).
-                # The workload, TLS, and production.enabled all need the venv/framework app
-                # the wizard's init step installs, so WizardSetupTask finishes the rest via
-                # SetupProductionCommand once that's done.
-                nginx = NginxManager(bench)
-                nginx.generate_config()
-                nginx.install_config()
-                server_ip = DomainRouteProvider._server_ip()
-        except Exception:
-            return error_response(
-                "bench_start_failed",
-                "The bench was created but its Admin could not be started.",
-                500,
-                {"created": True, "name": name},
-            )
-        return created_response(
-            {
-                **_bench_resource(new_dir),
-                "wizard_at_domain": True,
-                "scheme": "http",
-                "server_ip": server_ip,
-            },
-            url_for("benches.get_bench", name=name),
-        )
-
-    spawn_env = {
-        k: v for k, v in os.environ.items()
-        if not k.startswith("WERKZEUG_") and not k.startswith("BENCH_ADMIN_")
-    }
-    spawn_env["PYTHONPATH"] = str(root)
-    try:
-        subprocess.Popen(
-            [
-                str(root / ".admin-venv" / "bin" / "python"),
-                "-m",
-                "admin.backend.run_server",
-                "--bench-root",
-                str(new_dir),
-                "--port",
-                str(new_port),
-                "--timeout",
-                "7200",
-                "--wizard",
-            ],
-            cwd=str(root), env=spawn_env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
-        )
-    except OSError:
-        return error_response(
-            "bench_start_failed",
-            "The bench was created but its setup server could not be started.",
-            500,
-            {"created": True, "name": name},
-        )
-    return created_response(
-        {
-            **_bench_resource(new_dir),
-            "wizard_at_domain": False,
-        },
-        url_for("benches.get_bench", name=name),
-    )
-
-
-@bench_readiness_bp.post("/bench-readiness-checks")
-def create_readiness_check():
-    bench_root = Path(current_app.config["BENCH_ROOT"])
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
-    if "domain" in data and not isinstance(data["domain"], str):
-        return error_response("invalid_domain", "domain must be a string.", 422)
-    if "scheme" in data and not isinstance(data["scheme"], str):
-        return error_response("invalid_scheme", "scheme must be a string.", 422)
-
-    domain = (data.get("domain") or "").strip()
-    if domain:
-        if "port" in data:
-            return error_response(
-                "invalid_readiness_check",
-                "Provide either domain or port, not both.",
-                422,
-            )
-        if not _ADMIN_DOMAIN_RE.fullmatch(domain):
-            return error_response("invalid_domain", "domain must be a valid hostname.", 422)
-        scheme = (data.get("scheme") or "http").strip()
-        if scheme not in ("http", "https"):
-            return error_response("invalid_scheme", "scheme must be 'http' or 'https'.", 422)
-        return jsonify({"ready": BenchProvider(bench_root).is_wizard_ready(domain, scheme)})
-    if "scheme" in data:
-        return error_response(
-            "invalid_readiness_check",
-            "scheme is valid only with domain.",
-            422,
-        )
-    port = data.get("port")
-    if isinstance(port, bool) or not isinstance(port, int):
-        return error_response("invalid_port", "port must be an integer.", 422)
-    if not 1 <= port <= 65535:
-        return error_response("invalid_port", "port must be between 1 and 65535.", 422)
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
-            pass
-        return jsonify({"ready": True})
-    except OSError:
-        return jsonify({"ready": False})

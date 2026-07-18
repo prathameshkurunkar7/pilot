@@ -1,4 +1,5 @@
 """Tests for /api/v1/sites/<name>/domains item routes and DNS guidance."""
+
 from __future__ import annotations
 
 import json
@@ -14,7 +15,9 @@ def _client(bench_root: Path, password: str = "secret"):
 
     bench_root.mkdir(parents=True, exist_ok=True)
     (bench_root / "bench.toml").write_text(
-        BenchTomlBuilder(bench_root.name, {"admin_enabled": True, "admin_password": password}).render()
+        BenchTomlBuilder(
+            bench_root.name, {"admin_enabled": True, "admin_password": password}
+        ).render()
     )
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
@@ -39,7 +42,7 @@ def _mocked_routes(domains=(), primary=None):
 
 def _request(client, method, path, **kwargs):
     with patch(
-        "pilot.managers.task.runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         return getattr(client, method)(path, **kwargs)
@@ -97,7 +100,8 @@ def test_update_domain_sets_primary_and_queues_nginx(tmp_path: Path) -> None:
 
     with patch("admin.backend.api.v1.sites.domains._domain_routes", return_value=routes):
         response = _request(
-            client, "patch",
+            client,
+            "patch",
             "/api/v1/sites/site.localhost/domains/custom.example.com",
             json={"primary": True},
         )
@@ -114,7 +118,8 @@ def test_update_domain_rejects_unsupported_fields(tmp_path: Path) -> None:
     client = _client(bench_root)
 
     response = _request(
-        client, "patch",
+        client,
+        "patch",
         "/api/v1/sites/site.localhost/domains/custom.example.com",
         json={"primary": False},
     )
@@ -129,7 +134,9 @@ def test_delete_domain_queues_removal(tmp_path: Path) -> None:
     routes = _mocked_routes(domains=["custom.example.com"])
 
     with patch("admin.backend.api.v1.sites.domains._domain_routes", return_value=routes):
-        response = _request(client, "delete", "/api/v1/sites/site.localhost/domains/custom.example.com")
+        response = _request(
+            client, "delete", "/api/v1/sites/site.localhost/domains/custom.example.com"
+        )
 
     body = response.get_json()
     assert response.status_code == 202
@@ -155,7 +162,12 @@ def test_domain_routes_reject_missing_site(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     client = _client(bench_root)
 
-    assert client.get("/api/v1/sites/missing.localhost/domains/custom.example.com").status_code == 404
-    assert _request(
-        client, "delete", "/api/v1/sites/missing.localhost/domains/custom.example.com"
-    ).status_code == 404
+    assert (
+        client.get("/api/v1/sites/missing.localhost/domains/custom.example.com").status_code == 404
+    )
+    assert (
+        _request(
+            client, "delete", "/api/v1/sites/missing.localhost/domains/custom.example.com"
+        ).status_code
+        == 404
+    )

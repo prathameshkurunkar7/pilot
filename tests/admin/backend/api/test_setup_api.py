@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from admin.backend.app import create_app
 from pilot.managers.task.models import TaskStatus
-from pilot.managers.task.store import TaskStore
+from pilot.internal.tasks.store import TaskStore
 from pilot.config.toml_store import BenchTomlStore
 
 
@@ -27,7 +27,7 @@ def save_configuration(client):
 
 
 def start_setup(client, key: str = "wizard-setup"):
-    with patch("pilot.managers.task.runner.task_workers.wake"):
+    with patch("pilot.internal.tasks.runner.task_workers.wake"):
         return client.post(
             "/api/v1/setup/actions/start",
             headers={"Idempotency-Key": key},

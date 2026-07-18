@@ -8,8 +8,7 @@ from flask import current_app, jsonify, request
 from pilot.exceptions import BenchError, ConfigError, DomainConflictError, DomainProviderError
 from pilot.internal.site_paths import site_config_path, site_exists
 from pilot.internal.validators import validate_email, validate_site_name
-from pilot.managers.task.runner import TaskCallback
-from pilot.tasks import TaskRunner
+from pilot.tasks import TaskCallback, TaskRunner
 
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.middleware import require_scope
@@ -48,9 +47,7 @@ def enable_tls(name: str):
     email = fields["email"]
     if email:
         if err := validate_email(email):
-            return error_response(
-                "invalid_email", err, 422, {"needs_email": True}
-            )
+            return error_response("invalid_email", err, 422, {"needs_email": True})
     else:
         try:
             config = store.read()
@@ -105,7 +102,9 @@ def _domain_routes(bench_root: Path):
 
 def _apply_domains(bench_root: Path, name: str) -> str:
     """Re-run the right task so nginx (and certs, for SSL sites) pick up the change."""
-    ssl = bool(json.loads((bench_root / "sites" / name / "site_config.json").read_text()).get("ssl"))
+    ssl = bool(
+        json.loads((bench_root / "sites" / name / "site_config.json").read_text()).get("ssl")
+    )
     return TaskRunner(bench_root).run("setup-letsencrypt" if ssl else "setup-nginx", {})
 
 
@@ -196,9 +195,7 @@ def update_domain(name: str, domain: str):
         return error_response("invalid_domain", err, 422)
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or data.get("primary") is not True:
-        return error_response(
-            "invalid_fields", 'Only setting {"primary": true} is supported.', 422
-        )
+        return error_response("invalid_fields", 'Only setting {"primary": true} is supported.', 422)
     try:
         _domain_routes(bench_root).set_primary(name, domain)
         task_id = _apply_domains(bench_root, name)

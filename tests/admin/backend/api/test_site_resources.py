@@ -10,9 +10,7 @@ from tests.admin.backend.test_admin_app import _client
 def _write_site(bench_root: Path, name: str) -> None:
     site_path = bench_root / "sites" / name
     site_path.mkdir(parents=True)
-    (site_path / "site_config.json").write_text(
-        json.dumps({"installed_apps": []})
-    )
+    (site_path / "site_config.json").write_text(json.dumps({"installed_apps": []}))
 
 
 def test_delete_site_returns_accepted_task_resource(tmp_path: Path) -> None:
@@ -21,7 +19,7 @@ def test_delete_site_returns_accepted_task_resource(tmp_path: Path) -> None:
     _write_site(bench_root, "s.localhost")
 
     with patch(
-        "pilot.managers.task.runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         response = client.delete("/api/v1/sites/s.localhost")
@@ -68,7 +66,7 @@ def test_same_site_mutations_cannot_queue_together(tmp_path: Path) -> None:
     with (
         patch("admin.backend.api.v1.sites.core.new_site_name_error", return_value=None),
         patch(
-            "pilot.managers.task.runner.task_workers.wake",
+            "pilot.internal.tasks.runner.task_workers.wake",
             return_value=False,
         ),
     ):

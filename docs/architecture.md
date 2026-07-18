@@ -11,11 +11,9 @@ pilot/
 └── pilot/                         # Python package
     ├── __init__.py
     ├── cli.py                   # thin entry point — global flags + Frappe passthrough
-    ├── registry.py              # auto-discovers commands, builds parser, dispatches
     ├── loader.py                # find_bench_root / load_bench — bench resolution
     ├── platform.py              # OS detection and system package manager abstraction
     ├── utils.py                 # write_toml — stdlib TOML serialiser
-    │
     ├── config/                  # Data classes that model bench.toml
     │   ├── __init__.py
     │   ├── bench_config.py      # BenchConfig — top-level config object
@@ -40,11 +38,12 @@ pilot/
     │   ├── python_environment.py     # PythonEnvManager
     │   ├── processes/local.py        # ProcessManager — built-in Procfile runner
     │   ├── nginx.py                   # NginxManager — config generation and reload
-    │   └── letsencrypt.py             # LetsEncryptManager — cert obtain and renew
+    │   ├── letsencrypt.py             # LetsEncryptManager — cert obtain and renew
+    │   └── task/                      # Task status models, readers, activity, worker control
     │
     ├── commands/                # One self-registering Command dataclass per file
     │   ├── __init__.py
-    │   ├── base.py              # Command, Arg — base dataclass + CLI-field inference
+    │   ├── base.py              # Command authoring API; re-exports Arg
     │   ├── bench/                # new, init, ls, drop
     │   ├── sites/                 # new-site, list-site-apps, rename-site, ...
     │   ├── apps/                  # get-app, install-app, uninstall-app, ...
@@ -53,12 +52,25 @@ pilot/
     │   ├── admin/                 # commands with group = None (admin session/config)
     │   └── tasks/                 # commands with group = "tasks"
     │
-    ├── tasks/                   # Task execution and tracking (see tasks.md)
+    ├── internal/                # Shared zero-dependency plumbing hidden from app authors
+    │   ├── cli_command.py       # Command dataclass -> argparse adapter
+    │   ├── cli_dispatch.py      # console entrypoint routing and Frappe passthrough
+    │   ├── cli_registry.py      # auto-discovers commands, builds parser, dispatches
+    │   ├── cli_fields.py        # Dataclass field -> argparse conversion
+    │   ├── tasks/               # Task runner implementation hidden from app authors
+    │   │   ├── args.py, callbacks.py, authoring.py
+    │   │   ├── process.py, process_identity.py, wrapper.py
+    │   │   ├── queue.py, store.py, runner.py
+    │   │   └── worker.py, worker_state.py, files.py, payload.py
+    │   └── validators.py, atomic_file.py, git.py, toml.py, ...
+    │
+    ├── tasks/                   # Task definitions and public TaskRunner (see tasks.md)
     │   ├── __init__.py
-    │   ├── models.py            # TaskInfo dataclass
-    │   ├── task_runner.py       # TaskRunner — forks child, writes task directory
-    │   ├── task_reader.py       # TaskReader — reads task directory (stateless)
-    │   └── wrapper.py           # entry point for the forked child (stdlib only)
+    │   ├── base.py              # Task authoring API: BaseTask, step
+    │   ├── callbacks.py         # Public task submission callback types
+    │   ├── runner.py            # Public TaskRunner and TaskSubmission wrapper
+    │   ├── migrate.py, build.py, new_site.py, ...
+    │   └── setup_production.py, setup_nginx.py, ...
     │
     └── admin/                   # Flask admin interface (see admin-api.md)
         ├── __init__.py
@@ -525,9 +537,8 @@ and adding one never touches the CLI layer.
 
 Declare a command as a `@dataclass(kw_only=True)` subclass of `Command`; each
 field becomes a CLI argument (positional if it has no default, `--flag` if it
-does, type inferred from the annotation — see the full inference table in
-`Command`'s docstring). `Arg(...)` overrides help text, a short flag, or opts
-a field out of the CLI entirely.
+does, type inferred from the annotation). `Arg(...)` overrides help text, a
+short flag, or opts a field out of the CLI entirely.
 
 ```python
 @dataclass(kw_only=True)
@@ -540,34 +551,45 @@ class RemoveAppCommand(Command):
 
     def run(self) -> None:
         self.confirm(f"Remove '{self.app_name}'?", skip=self.skip_confirm)
-        self.bench.app(self.app_name).remove(on_progress=self.print)
+        self.bench.app(self.app_name).remove(on_progress=self.report)
 ```
 
 `name`, `help`, `group`, `bench_mode` (a `BenchMode`: `AUTO`/`EXPLICIT`/
 `OPTIONAL`/`NONE` — how the registry resolves `self.bench`), and
 `supports_all_benches` are `ClassVar`s, not dataclass fields — they configure
 the command itself, not its arguments.
-`Command.add_arguments`/`Command.from_args` are concrete (derived from the
-fields); a command overrides them only for the rare shape the inference can't
-express (e.g. `FrappeCommand`'s raw passthrough, `NewCommand`'s bench path
-computed from global config before the instance exists).
 
-### `registry.py` — discovery, parser, dispatch
+Field inference:
+
+- no default -> required positional
+- has a default -> `--kebab-case` flag
+- `bool` -> `--flag`
+- `list[T]` -> one or more positional values, or zero or more for optional lists
+- `tuple[str, ...]` -> raw passthrough
+- `Literal["a", "b"]` -> choices
+- `Annotated[T, Arg(cli=False)]` -> constructor-only, never a CLI flag
+
+`bench` and `skip_confirm` are always excluded: `bench` is injected by the
+registry, and `skip_confirm` reads the global `-y`/`--yes` flag.
+
+### `cli_registry.py` — discovery, parser, dispatch
 
 1. **Discover** — imports every module under `commands/` and collects all `Command`
    subclasses that set a `name`. No hand-maintained list.
 2. **`build_parser()`** — adds the global flags (`--verbose`, `--yes`, `--bench`) once,
-   then one sub-parser per command (and a parent parser per `group`). Each command's
-   `add_arguments()` populates its own sub-parser, and `set_defaults(_command_cls=…)`
-   records which class owns it.
+   then one sub-parser per command (and a parent parser per `group`). The internal
+   `cli_command.py` adapter populates each sub-parser from the command's fields.
 3. **`dispatch(args)`** — reads `_command_cls`, resolves the `Bench` per its
-   `bench_mode`, then runs `cls.from_args(args, bench).run()`. No `elif` chain.
+   `bench_mode`, builds the command through the internal adapter, then runs it.
+   No `elif` chain.
 
-### `cli.py` — the thin entry point
+### `cli.py` / `internal/cli_dispatch.py` — the thin entry point
 
-Resolves global flags, then either forwards to the registry or handles the one special
-case: `bench frappe …` / unknown sub-commands are passed through to `env/bin/bench`
-inside the active bench (handled before argparse so flags like `--site` aren't consumed).
+`cli.py` only exports `main` for the console script. `internal/cli_dispatch.py`
+resolves global flags, then either forwards to the registry or handles the one
+special case: `bench frappe ...` / unknown sub-commands are passed through to
+`env/bin/bench` inside the active bench (handled before argparse so flags like
+`--site` aren't consumed).
 
 ### Adding a command
 
@@ -588,7 +610,7 @@ class ListAppsCommand(Command):
 
     def run(self) -> None:
         for line in (self.bench.sites_path / "apps.txt").read_text().splitlines():
-            self.print(line)
+            self.report(line)
 ```
 
 Set `group: ClassVar[str] = "setup"` to nest it as `bench setup <name>`. Set

@@ -35,7 +35,7 @@ def test_settings_report_config_generation_failure_after_save(tmp_path: Path) ->
     bench_root = tmp_path / "bench"
     client = _client(bench_root)
     with patch(
-        "admin.backend.api.v1.settings._regenerate_configs",
+        "admin.backend.api.v1.settings_apply._regenerate_configs",
         side_effect=RuntimeError("secret generator detail"),
     ):
         response = client.patch("/api/v1/settings", json=_worker_update())
@@ -55,9 +55,9 @@ def test_settings_report_config_generation_failure_after_save(tmp_path: Path) ->
 def test_settings_report_restart_failure_without_stderr(tmp_path: Path) -> None:
     client = _client(tmp_path / "bench")
     with (
-        patch("admin.backend.api.v1.settings._regenerate_configs"),
+        patch("admin.backend.api.v1.settings_apply._regenerate_configs"),
         patch(
-            "admin.backend.api.v1.settings._do_restart",
+            "admin.backend.api.v1.settings_apply._do_restart",
             side_effect=RuntimeError("secret supervisor stderr"),
         ),
     ):
@@ -83,10 +83,10 @@ def test_settings_report_nginx_failure_without_exception_text(tmp_path: Path) ->
         },
     }
     with (
-        patch("admin.backend.api.v1.settings._regenerate_configs"),
-        patch("admin.backend.api.v1.settings._do_restart", return_value=False),
+        patch("admin.backend.api.v1.settings_apply._regenerate_configs"),
+        patch("admin.backend.api.v1.settings_apply._do_restart", return_value=False),
         patch(
-            "admin.backend.api.v1.settings._regenerate_nginx",
+            "admin.backend.api.v1.settings_apply._regenerate_nginx",
             side_effect=RuntimeError("secret nginx detail"),
         ),
     ):
@@ -104,8 +104,8 @@ def test_settings_report_nginx_failure_without_exception_text(tmp_path: Path) ->
 def test_settings_success_has_no_legacy_error_fields(tmp_path: Path) -> None:
     client = _client(tmp_path / "bench")
     with (
-        patch("admin.backend.api.v1.settings._regenerate_configs"),
-        patch("admin.backend.api.v1.settings._do_restart", return_value=True),
+        patch("admin.backend.api.v1.settings_apply._regenerate_configs"),
+        patch("admin.backend.api.v1.settings_apply._do_restart", return_value=True),
     ):
         response = client.patch("/api/v1/settings", json=_worker_update())
 

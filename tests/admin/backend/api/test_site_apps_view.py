@@ -1,4 +1,5 @@
 """Tests for /api/v1/sites/<name>/apps: listing, install, and uninstall."""
+
 from __future__ import annotations
 
 import json
@@ -47,7 +48,9 @@ def _make_cloned_app(bench_root: Path, name: str) -> None:
 def test_site_apps_includes_title_and_description(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site1.localhost", ["suite"])
-    _make_app(bench_root, "suite", '[project]\nname = "suite"\ndescription = "A custom suite app"\n')
+    _make_app(
+        bench_root, "suite", '[project]\nname = "suite"\ndescription = "A custom suite app"\n'
+    )
 
     client = _client(bench_root)
     response = client.get("/api/v1/sites/site1.localhost/apps")
@@ -73,7 +76,7 @@ def test_site_apps_falls_back_to_name_when_app_missing(tmp_path: Path) -> None:
 
 def _post_install(client, site: str, **payload):
     with patch(
-        "pilot.managers.task.runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         return client.post(f"/api/v1/sites/{site}/apps", json=payload)
@@ -81,7 +84,7 @@ def _post_install(client, site: str, **payload):
 
 def _delete_app(client, site: str, app: str, **query):
     with patch(
-        "pilot.managers.task.runner.task_workers.wake",
+        "pilot.internal.tasks.runner.task_workers.wake",
         return_value=False,
     ):
         return client.delete(f"/api/v1/sites/{site}/apps/{app}", query_string=query)
