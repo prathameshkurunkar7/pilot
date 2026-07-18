@@ -58,7 +58,9 @@ class ProcessResolver:
         from pilot.managers.processes.supervisor import SupervisorProcessManager
 
         bench_process_manager = SupervisorProcessManager(self.bench)
-        result = run_command(["supervisorctl", "-c", bench_process_manager.supervisor_conf_path, "status"])
+        result = run_command(
+            ["supervisorctl", "-c", str(bench_process_manager.supervisor_conf_path), "status"]
+        )
         supervised_processes = result.stdout.decode().strip()
         return self._supervisor_pids(supervised_processes)
 

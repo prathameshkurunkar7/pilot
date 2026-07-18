@@ -18,7 +18,7 @@ class SiteProvisioner:
         bench: "Bench",
         name: str,
         apps: list[str],
-        admin_password: str,
+        admin_password: str | None,
         db_type: str | None = None,
     ) -> None:
         self.bench = bench

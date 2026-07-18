@@ -40,7 +40,7 @@ class SiteDomains:
         if normalized == normalize_host(self.site.config.name):
             return True, not primary or normalize_host(primary) == normalized
         attached = normalized in {normalize_host(name) for name in self.names()}
-        return attached, bool(primary) and normalize_host(primary) == normalized
+        return attached, primary is not None and normalize_host(primary) == normalized
 
     def apply_task(self, idempotency_key: str | None = None) -> str:
         from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask

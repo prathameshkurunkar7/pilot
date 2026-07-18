@@ -224,8 +224,8 @@ def _verify_s3_update(config: BenchConfig, old_s3_config: dict) -> None:
         raise _SettingsUpdateRejected(str(error)) from error
 
 
-def _settings_update_result(restarted: bool, waf_warning: str | None) -> dict:
-    result = {"restarted": restarted}
+def _settings_update_result(restarted: bool, waf_warning: str | None) -> dict[str, bool | str]:
+    result: dict[str, bool | str] = {"restarted": restarted}
     if waf_warning:
         result["waf_warning"] = waf_warning
     return result
