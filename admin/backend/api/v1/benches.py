@@ -8,7 +8,6 @@ from admin.backend.providers.bench import BenchProvider
 from pilot.config import BenchTomlStore
 from pilot.core.bench import Bench
 from pilot.internal.atomic_file import exclusive_file_lock
-from pilot.managers.processes.local import ProcessManager
 
 from admin.backend.api.responses import error_response, no_content_response
 from admin.backend.api.v1.benches_create import create_bench_locked as _create_bench_locked
@@ -120,9 +119,7 @@ def _run_action_locked(target_dir: Path, toml_path: Path, name: str, action: str
             409,
         )
     try:
-        manager = ProcessManager.for_bench(Bench(target_config, target_dir))
-        operation = manager.start_workload if action == "start" else getattr(manager, action)
-        operation()
+        Bench(target_config, target_dir).run_production_action(action)
         return jsonify(_bench_resource(target_dir))
     except Exception:
         return error_response(

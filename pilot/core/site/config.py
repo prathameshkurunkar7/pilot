@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import copy
+import re
 from pathlib import Path
 
 from pilot.exceptions import BenchError
@@ -12,6 +14,40 @@ _DB_SOCKET_CANDIDATES = [
     "/tmp/mysql.sock",
     "/usr/local/var/mysql/mysql.sock",
 ]
+
+PROTECTED_CONFIG_KEYS = frozenset(
+    {
+        "backup_retention",
+        "db_host",
+        "db_name",
+        "db_password",
+        "db_port",
+        "db_socket",
+        "db_type",
+        "db_user",
+        "domains",
+        "host_name",
+        "installed_apps",
+        "pilot_auth_token",
+        "pilot_endpoint",
+        "ssl",
+    }
+)
+_SENSITIVE_CONFIG_KEY_PARTS = (
+    "_key",
+    "access_key",
+    "api_key",
+    "authorization",
+    "bearer",
+    "cookie",
+    "credential",
+    "dsn",
+    "password",
+    "private_key",
+    "secret",
+    "session_id",
+    "token",
+)
 
 
 def list_installed_apps(site_config: dict, bench_root: Path, site_name: str) -> list[str]:
@@ -80,6 +116,99 @@ def set_site_ssl_flag(sites_root: Path, site_name: str, enabled: bool) -> None:
         replace_private_text_locked(config_path, json.dumps(config, indent=1))
 
 
+def read_public_config(site_path: Path) -> dict:
+    config = read_site_config(site_path)
+    return public_config(config)
+
+
+def update_public_config(site_path: Path, patch: dict) -> dict:
+    config_path = site_path / "site_config.json"
+    with exclusive_file_lock(config_path):
+        current = json.loads(config_path.read_text())
+        if not isinstance(current, dict):
+            raise ValueError("Site configuration must be a JSON object.")
+        if error := config_patch_error(current, patch):
+            raise BenchError(error)
+        merged = merge_public_config(current, patch)
+        replace_private_text_locked(config_path, json.dumps(merged, indent=1))
+    return public_config(merged)
+
+
+def read_site_config(site_path: Path) -> dict:
+    config = json.loads((site_path / "site_config.json").read_text())
+    if not isinstance(config, dict):
+        raise ValueError("Site configuration must be a JSON object.")
+    return config
+
+
+def public_config(config: dict) -> dict:
+    return {
+        key: _public_config_value(value)
+        for key, value in config.items()
+        if is_public_config_key(key)
+    }
+
+
+def merge_public_config(current: dict, submitted: dict) -> dict:
+    merged = copy.deepcopy(current)
+    for key, submitted_value in submitted.items():
+        if submitted_value is None:
+            merged.pop(key, None)
+            continue
+        current_value = current.get(key)
+        merged[key] = _merge_public_value(current_value, submitted_value)
+    return merged
+
+
+def config_patch_error(current, submitted) -> str | None:
+    if not isinstance(submitted, dict):
+        return "Configuration patches must be JSON objects."
+    for key, value in submitted.items():
+        if not isinstance(key, str) or not is_public_config_key(key):
+            return "System-managed and secret-like configuration keys cannot be changed."
+        existing = current.get(key) if isinstance(current, dict) else None
+        if value is None:
+            if _contains_protected_config(existing):
+                return "A configuration value containing protected fields cannot be removed."
+            continue
+        if isinstance(value, dict):
+            error = config_patch_error(existing if isinstance(existing, dict) else {}, value)
+            if error:
+                return error
+        elif isinstance(value, list):
+            if _contains_protected_config(existing):
+                return "A list containing protected fields cannot be replaced."
+            for item in value:
+                error = _submitted_config_value_error(item)
+                if error:
+                    return error
+        elif _contains_protected_config(existing):
+            return "A configuration value containing protected fields cannot change type."
+    return None
+
+
+def is_public_config_key(key: str) -> bool:
+    normalized = re.sub(
+        r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])",
+        "_",
+        key,
+    ).lower().replace("-", "_")
+    compact = normalized.replace("_", "")
+    compact_secret_parts = (
+        "accesskey",
+        "apikey",
+        "encryptionkey",
+        "privatekey",
+        "secretkey",
+    )
+    return (
+        normalized not in PROTECTED_CONFIG_KEYS
+        and normalized != "key"
+        and not any(part in compact for part in compact_secret_parts)
+        and not any(part in normalized for part in _SENSITIVE_CONFIG_KEY_PARTS)
+    )
+
+
 def safe_site_config_path(sites_root: Path, site_name: str) -> Path:
     if sites_root.is_symlink():
         raise BenchError("Site configuration path must stay within the bench.")
@@ -94,6 +223,41 @@ def safe_site_config_path(sites_root: Path, site_name: str) -> Path:
     ):
         raise BenchError("Site configuration is unavailable.")
     return config_path
+
+
+def _public_config_value(value):
+    if isinstance(value, dict):
+        return public_config(value)
+    if isinstance(value, list):
+        return [_public_config_value(item) for item in value]
+    return copy.deepcopy(value)
+
+
+def _merge_public_value(current, submitted):
+    if isinstance(current, dict) and isinstance(submitted, dict):
+        return merge_public_config(current, submitted)
+    return copy.deepcopy(submitted)
+
+
+def _submitted_config_value_error(value) -> str | None:
+    if isinstance(value, dict):
+        return config_patch_error({}, value)
+    if isinstance(value, list):
+        for item in value:
+            if error := _submitted_config_value_error(item):
+                return error
+    return None
+
+
+def _contains_protected_config(value) -> bool:
+    if isinstance(value, dict):
+        return any(
+            not is_public_config_key(key) or _contains_protected_config(child)
+            for key, child in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_protected_config(child) for child in value)
+    return False
 
 
 def query_installed_apps_via_frappe(bench_root: Path, site_name: str) -> list[str]:

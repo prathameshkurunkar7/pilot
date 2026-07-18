@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, ContextManager
 
@@ -59,6 +59,69 @@ class Task:
 
     bench: "Bench"
     bench_root: Path
+
+    @classmethod
+    def queue(
+        cls,
+        bench: "Bench",
+        callbacks: "TaskCallbacks | None" = None,
+        idempotency_key: str | None = None,
+        resource_key: str | None = None,
+        **args,
+    ) -> str:
+        callbacks = cls._queue_callbacks(bench, args, callbacks)
+        return bench.tasks.run_task(
+            cls,
+            callbacks=callbacks,
+            idempotency_key=idempotency_key,
+            resource_key=resource_key,
+            **args,
+        )
+
+    @classmethod
+    def queue_submission(
+        cls,
+        bench: "Bench",
+        callbacks: "TaskCallbacks | None" = None,
+        idempotency_key: str | None = None,
+        resource_key: str | None = None,
+        **args,
+    ) -> TaskSubmission:
+        callbacks = cls._queue_callbacks(bench, args, callbacks)
+        return bench.tasks.submit_task(
+            cls,
+            callbacks=callbacks,
+            idempotency_key=idempotency_key,
+            resource_key=resource_key,
+            **args,
+        )
+
+    @classmethod
+    def _queue_callbacks(
+        cls,
+        bench: "Bench",
+        args: dict,
+        explicit: "TaskCallbacks | None",
+    ) -> "TaskCallbacks | None":
+        from pilot.tasks.callbacks import task_callbacks_for
+
+        constructor_args = cls._constructor_args(args)
+        task = cls(bench=bench, bench_root=bench.path, **constructor_args)
+        declared = task_callbacks_for(task)
+        if not declared:
+            return explicit
+        if explicit:
+            return {**declared, **explicit}
+        return declared
+
+    @classmethod
+    def _constructor_args(cls, args: dict) -> dict:
+        valid = {
+            field.name
+            for field in fields(cls)
+            if field.init and field.name not in {"bench", "bench_root"}
+        }
+        return {key: value for key, value in args.items() if key in valid}
 
     def __post_init__(self) -> None:
         self._current_step: str | None = None
@@ -123,6 +186,38 @@ class TaskRunner:
 
         self.__engine = runner_class()(bench_root)
 
+    def run_task(
+        self,
+        task_type: type[Task],
+        callbacks: "TaskCallbacks | None" = None,
+        idempotency_key: str | None = None,
+        resource_key: str | None = None,
+        **args,
+    ) -> str:
+        return self.run(
+            task_type.command,
+            self._task_args(task_type, args),
+            callbacks=callbacks,
+            idempotency_key=idempotency_key,
+            resource_key=resource_key,
+        )
+
+    def submit_task(
+        self,
+        task_type: type[Task],
+        callbacks: "TaskCallbacks | None" = None,
+        idempotency_key: str | None = None,
+        resource_key: str | None = None,
+        **args,
+    ) -> TaskSubmission:
+        return self.submit(
+            task_type.command,
+            self._task_args(task_type, args),
+            callbacks=callbacks,
+            idempotency_key=idempotency_key,
+            resource_key=resource_key,
+        )
+
     def run(
         self,
         command: str,
@@ -158,6 +253,19 @@ class TaskRunner:
 
     def kill(self, task_id: str) -> None:
         self.__engine.kill(task_id)
+
+    def _task_args(self, task_type: type[Task], args: dict) -> dict:
+        valid = {
+            field.name
+            for field in fields(task_type)
+            if field.init and field.name not in {"bench", "bench_root"}
+        }
+        valid.update(task_type.required_submit_args)
+        unknown = set(args) - valid
+        if unknown:
+            names = ", ".join(sorted(unknown))
+            raise ValueError(f"Unknown args for {task_type.__name__}: {names}")
+        return {key: value for key, value in args.items() if value is not None}
 
 
 __all__ = ["Arg", "Task", "TaskRunner", "TaskSubmission", "step"]

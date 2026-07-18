@@ -129,6 +129,13 @@ class Site:
         on_progress(f"\nSite '{self.config.name}' dropped.")
         NginxManager(self.bench).reload_for_site_change()
 
+    def rename_to(
+        self, new_name: str, on_progress: Callable[[str], None] = lambda message: None
+    ) -> None:
+        from pilot.core.site.rename import SiteRename
+
+        SiteRename(self, new_name).run(on_progress)
+
     def _provider_domains(self) -> list[str]:
         """Hostnames this site claimed at the provider — its own name (the route a
         wildcard create registers) plus its custom domains — captured before the
@@ -168,6 +175,21 @@ class Site:
 
     def set_ssl(self, enabled: bool) -> None:
         set_site_ssl_flag(self.bench.sites_path, self.config.name, enabled)
+
+    def public_config(self) -> dict:
+        from pilot.core.site.config import read_public_config
+
+        return read_public_config(self.path)
+
+    def update_public_config(self, patch: dict) -> dict:
+        from pilot.core.site.config import update_public_config
+
+        return update_public_config(self.path, patch)
+
+    def admin_login_url(self, proxy_tls: bool = False) -> str | None:
+        from pilot.core.site.login import SiteLogin
+
+        return SiteLogin(self).admin_url(proxy_tls=proxy_tls)
 
     def _build_missing_assets(self) -> None:
         from pilot.core.site.provisioning import SiteProvisioner

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from unittest.mock import patch
 
 import pilot.managers.task as task_manager
 import pilot.managers.task.models as task_models
@@ -35,11 +36,43 @@ def test_task_submission_callback_types_are_public_on_tasks_package() -> None:
     assert tasks.TaskCallbacks.__name__ == "TaskCallbacks"
     assert tasks.TaskCallback.__module__ == "pilot.tasks.callbacks"
     assert tasks.TaskCallbacks.__module__ == "pilot.tasks.callbacks"
+    assert callable(tasks.on_success)
+    assert callable(tasks.on_failure)
+    assert callable(tasks.on_cancel)
 
 
 def test_task_runner_types_are_public_on_tasks_package() -> None:
     assert tasks.TaskRunner.__module__ == "pilot.tasks.base"
     assert tasks.TaskSubmission.__module__ == "pilot.tasks.base"
+
+
+def test_task_class_queue_adds_declared_callbacks(tmp_path) -> None:
+    from pilot.config import BenchConfig, MariaDBConfig, RedisConfig, WorkerConfig, WorkerGroup
+    from pilot.core.bench import Bench
+    from pilot.tasks.new_site import NewSiteTask
+
+    bench_root = tmp_path / "bench"
+    bench_root.mkdir()
+    bench = Bench(
+        BenchConfig(
+            name="bench",
+            python_version="3.14",
+            mariadb=MariaDBConfig(root_password="root"),
+            redis=RedisConfig(cache_port=13000, queue_port=11000),
+            workers=WorkerConfig(groups=[WorkerGroup(queues=["default"], count=1)]),
+        ),
+        bench_root,
+    )
+
+    with patch("pilot.internal.tasks.runner.task_workers.wake", return_value=False):
+        task_id = NewSiteTask.queue(bench, name="s.localhost", admin_password="secret")
+
+    callbacks = json.loads((bench_root / "tasks" / task_id / "callbacks.json").read_text())
+    assert callbacks["on_failure"] == {
+        "operation": "remove-failed-site",
+        "args": {"site": "s.localhost"},
+    }
+    assert callbacks["on_cancel"] == callbacks["on_failure"]
 
 
 def test_task_runner_does_not_forward_engine_internals(tmp_path) -> None:
@@ -50,7 +83,7 @@ def test_task_runner_does_not_forward_engine_internals(tmp_path) -> None:
     assert not hasattr(runner, "_generate_task_id")
 
 
-def test_importing_task_module_does_not_discover_task_modules() -> None:
+def test_importing_task_module_does_not_discover_concrete_task_modules() -> None:
     script = (
         "import json, sys; "
         "import pilot.tasks.base; "
@@ -67,7 +100,7 @@ def test_importing_task_module_does_not_discover_task_modules() -> None:
         capture_output=True,
     )
 
-    assert json.loads(result.stdout) == []
+    assert json.loads(result.stdout) == ["pilot.tasks.callbacks"]
 
 
 def test_importing_tasks_package_does_not_load_runner_internals() -> None:

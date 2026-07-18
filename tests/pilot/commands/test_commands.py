@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -657,7 +657,7 @@ def test_build_command_default_uses_prebuilt_per_app(tmp_path: Path) -> None:
 
 
 def test_requirements_skips_app_without_python_setup_files(tmp_path: Path) -> None:
-    from pilot.commands.setup.requirements import SetupRequirementsCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -670,12 +670,12 @@ def test_requirements_skips_app_without_python_setup_files(tmp_path: Path) -> No
         patch("pilot.managers.python_environment.PythonEnvManager._ensure_uv", return_value="uv"),
         patch("pilot.utils.run_command") as mock_rc,
     ):
-        SetupRequirementsCommand(bench)._install_python()
+        BenchRuntime(bench)._install_python_requirements(lambda _message: None)
         mock_rc.assert_not_called()
 
 
 def test_requirements_installs_app_with_pyproject_toml(tmp_path: Path) -> None:
-    from pilot.commands.setup.requirements import SetupRequirementsCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -688,12 +688,12 @@ def test_requirements_installs_app_with_pyproject_toml(tmp_path: Path) -> None:
         patch("pilot.managers.python_environment.PythonEnvManager._ensure_uv", return_value="uv"),
         patch("pilot.utils.run_command") as mock_rc,
     ):
-        SetupRequirementsCommand(bench)._install_python()
+        BenchRuntime(bench)._install_python_requirements(lambda _message: None)
         mock_rc.assert_called_once()
 
 
 def test_requirements_installs_app_with_setup_py(tmp_path: Path) -> None:
-    from pilot.commands.setup.requirements import SetupRequirementsCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -706,12 +706,12 @@ def test_requirements_installs_app_with_setup_py(tmp_path: Path) -> None:
         patch("pilot.managers.python_environment.PythonEnvManager._ensure_uv", return_value="uv"),
         patch("pilot.utils.run_command") as mock_rc,
     ):
-        SetupRequirementsCommand(bench)._install_python()
+        BenchRuntime(bench)._install_python_requirements(lambda _message: None)
         mock_rc.assert_called_once()
 
 
 def test_requirements_skips_js_for_app_without_package_json(tmp_path: Path) -> None:
-    from pilot.commands.setup.requirements import SetupRequirementsCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -721,12 +721,12 @@ def test_requirements_skips_js_for_app_without_package_json(tmp_path: Path) -> N
     # No package.json
 
     with patch("pilot.utils.run_command") as mock_rc:
-        SetupRequirementsCommand(bench)._install_js()
+        BenchRuntime(bench)._install_js_requirements(lambda _message: None)
         mock_rc.assert_not_called()
 
 
 def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> None:
-    from pilot.commands.setup.requirements import SetupRequirementsCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)
     bench.create_directories()
@@ -737,7 +737,7 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
 
     with patch("pilot.utils.get_yarn_bin", return_value="yarn"):
         with patch("pilot.utils.run_command") as mock_rc:
-            SetupRequirementsCommand(bench)._install_js()
+            BenchRuntime(bench)._install_js_requirements(lambda _message: None)
             mock_rc.assert_called_once()
             assert mock_rc.call_args[0][0] == ["yarn", "install"]
 
@@ -1095,48 +1095,49 @@ def _mark_initialized(bench: Bench) -> None:
 
 
 def test_start_dev_uninitialized_runs_wizard(tmp_path: Path) -> None:
-    from pilot.commands.runtime.start import RunCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)  # no process manager → dev
     with (
-        patch.object(RunCommand, "_start_wizard") as wizard,
-        patch.object(RunCommand, "_rebuild_config") as rebuild,
+        patch.object(BenchRuntime, "_start_wizard") as wizard,
+        patch.object(BenchRuntime, "_rebuild_manager_config") as rebuild,
         patch("pilot.managers.processes.local.ProcessManager.stop"),
     ):
-        RunCommand(bench).run()
+        BenchRuntime(bench).start(lambda _message: None)
     wizard.assert_called_once()
     rebuild.assert_not_called()
 
 
 def test_start_dev_initialized_stops_then_starts(tmp_path: Path) -> None:
-    from pilot.commands.runtime.start import RunCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)  # dev
     _mark_initialized(bench)
     with (
         patch("pilot.managers.processes.local.ProcessManager.stop") as stop,
-        patch.object(RunCommand, "_rebuild_config") as rebuild,
+        patch.object(BenchRuntime, "_rebuild_manager_config") as rebuild,
+        patch.object(BenchRuntime, "_ensure_admin_dist"),
         patch("pilot.managers.processes.local.ProcessManager.start") as start,
     ):
-        RunCommand(bench).run()
+        BenchRuntime(bench).start(lambda _message: None)
     stop.assert_called_once()
     rebuild.assert_called_once()
     start.assert_called_once()
 
 
 def test_start_dev_watch_admin_js_from_config_skips_static_admin_build(tmp_path: Path) -> None:
-    from pilot.commands.runtime.start import RunCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)
     bench.config.watch_admin_js = True
     _mark_initialized(bench)
     with (
         patch("pilot.managers.processes.local.ProcessManager.stop"),
-        patch.object(RunCommand, "_rebuild_config"),
-        patch.object(RunCommand, "_ensure_admin_dist") as ensure_admin_dist,
+        patch.object(BenchRuntime, "_rebuild_manager_config"),
+        patch.object(BenchRuntime, "_ensure_admin_dist") as ensure_admin_dist,
         patch("pilot.managers.processes.local.ProcessManager.start"),
     ):
-        RunCommand(bench).run()
+        BenchRuntime(bench).start(lambda _message: None)
 
     ensure_admin_dist.assert_not_called()
 
@@ -1144,24 +1145,24 @@ def test_start_dev_watch_admin_js_from_config_skips_static_admin_build(tmp_path:
 def test_start_production_uninitialized_brings_up_admin(tmp_path: Path) -> None:
     # A systemd bench that isn't initialized yet runs its admin under systemd
     # (to serve the wizard), not a foreground wizard server.
-    from pilot.commands.runtime.start import RunCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)
     bench.config.production.process_manager = "systemd"
     bench.config.admin.domain = "admin.example.com"
     with (
         patch("pilot.managers.processes.systemd.SystemdProcessManager.start_admin") as start_admin,
-        patch.object(RunCommand, "_rebuild_config") as rebuild,
-        patch.object(RunCommand, "_start_wizard") as wizard,
+        patch.object(BenchRuntime, "_rebuild_manager_config") as rebuild,
+        patch.object(BenchRuntime, "_start_wizard") as wizard,
     ):
-        RunCommand(bench).run()
+        BenchRuntime(bench).start(lambda _message: None)
     start_admin.assert_called_once()
     rebuild.assert_not_called()
     wizard.assert_not_called()
 
 
 def test_start_production_initialized_starts_manager(tmp_path: Path) -> None:
-    from pilot.commands.runtime.start import RunCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)
     bench.config.production.process_manager = "systemd"
@@ -1171,21 +1172,21 @@ def test_start_production_initialized_starts_manager(tmp_path: Path) -> None:
             "pilot.managers.processes.systemd.SystemdProcessManager.is_configured",
             return_value=True,
         ),
-        patch.object(RunCommand, "_rebuild_config") as rebuild,
+        patch.object(BenchRuntime, "_rebuild_manager_config") as rebuild,
         patch("pilot.managers.processes.systemd.SystemdProcessManager.start") as start,
     ):
-        RunCommand(bench).run()
+        BenchRuntime(bench).start(lambda _message: None)
     rebuild.assert_called_once()
     start.assert_called_once()
 
 
 def test_start_rebuild_config_writes_process_and_common_site_config(tmp_path: Path) -> None:
-    from pilot.commands.runtime.start import RunCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     bench = make_bench(tmp_path)
     manager = MagicMock()
     with patch.object(bench, "write_common_site_config") as common_site:
-        RunCommand(bench)._rebuild_config(manager)
+        BenchRuntime(bench)._rebuild_manager_config(manager)
 
     manager.write_config.assert_called_once()
     common_site.assert_called_once()
@@ -1378,46 +1379,44 @@ def _admin_source_checkout(tmp_path: Path, src_mtime: int, built_mtime: int) -> 
 
 
 def test_admin_source_is_newer_detects_edits(tmp_path: Path) -> None:
-    from pilot.commands.runtime.start import RunCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
     frontend = cli_root / "admin" / "frontend"
     dist = cli_root / "admin" / "backend" / "static" / "dist"
-    assert RunCommand._admin_source_is_newer(frontend, dist) is True
+    assert BenchRuntime._admin_source_is_newer(frontend, dist) is True
 
     import os
 
     os.utime(dist / "index.html", (200, 200))  # built after the edit
-    assert RunCommand._admin_source_is_newer(frontend, dist) is False
+    assert BenchRuntime._admin_source_is_newer(frontend, dist) is False
 
 
 def test_start_rebuilds_admin_when_source_changed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from pilot.commands.admin import start as admin_mod
-    from pilot.commands.runtime.start import RunCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
     build = MagicMock()
     monkeypatch.setattr("pilot.utils.cli_root", lambda: cli_root)
-    monkeypatch.setattr(admin_mod, "BuildAdminCommand", build)
+    monkeypatch.setattr("admin.backend.frontend.build_admin_frontend", build)
 
-    RunCommand(make_bench(tmp_path))._ensure_admin_dist()
+    BenchRuntime(make_bench(tmp_path))._ensure_admin_dist(lambda _message: None)
 
-    build.assert_called_once_with(force=True)
+    build.assert_called_once_with(True, on_progress=ANY)
 
 
 def test_start_skips_admin_rebuild_when_fresh(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from pilot.commands.admin import start as admin_mod
-    from pilot.commands.runtime.start import RunCommand
+    from pilot.core.bench.runtime import BenchRuntime
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=1, built_mtime=100)
     build = MagicMock()
     monkeypatch.setattr("pilot.utils.cli_root", lambda: cli_root)
-    monkeypatch.setattr(admin_mod, "BuildAdminCommand", build)
+    monkeypatch.setattr("admin.backend.frontend.build_admin_frontend", build)
 
-    RunCommand(make_bench(tmp_path))._ensure_admin_dist()
+    BenchRuntime(make_bench(tmp_path))._ensure_admin_dist(lambda _message: None)
 
     build.assert_not_called()

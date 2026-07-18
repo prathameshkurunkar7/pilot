@@ -1,25 +1,26 @@
 from __future__ import annotations
 
-import json
 import secrets
 from pathlib import Path
 
 from flask import current_app, jsonify, request
 
-from pilot.config import BenchTomlStore
 from pilot.internal.site_paths import site_config_path, site_exists
 from pilot.internal.validators import validate_site_name
-from pilot.tasks import TaskRunner
+from pilot.tasks.clear_cache import ClearCacheTask
+from pilot.tasks.drop_site import DropSiteTask
+from pilot.tasks.migrate import MigrateTask
+from pilot.tasks.new_site import NewSiteTask
+from pilot.tasks.reinstall_site import ReinstallSiteTask
 
 from admin.backend.api.responses import accepted_task_response, created_response, error_response
 from admin.backend.middleware import rate_limit, require_scope
 
-from admin.backend.api.v1.sites.login import create_site_session
-from admin.backend.api.v1.sites.login import login_redirect_url as _login_redirect_url
 from admin.backend.api.v1.sites.login import no_store as _no_store
 from admin.backend.providers.apps import AppProvider
 from admin.backend.providers.sites import SiteInfo, SiteProvider
 from admin.backend.api.v1.sites import sites_bp
+from pilot.core.bench import Bench
 from admin.backend.api.v1.sites.shared import (
     internal_error,
     invalid_fields,
@@ -66,7 +67,7 @@ def detail(name: str):
         installable = []
 
     try:
-        bench_config = BenchTomlStore.for_bench(bench_root).read()
+        bench_config = Bench.from_path(bench_root).config
         http_port = bench_config.http_port
         nginx_enabled = bench_config.production.enabled
         admin_tls = bench_config.admin.tls
@@ -122,21 +123,12 @@ def create_site():
     if err:
         return site_name_failure(err)
 
-    task_args: dict = {"name": name, "admin_password": admin_password}
-    if apps:
-        task_args["apps"] = apps
-    cleanup_callback = {
-        "operation": "remove-failed-site",
-        "args": {"site": name},
-    }
     try:
-        task_id = TaskRunner(bench_root).run(
-            "new-site",
-            task_args,
-            callbacks={
-                "on_failure": cleanup_callback,
-                "on_cancel": cleanup_callback,
-            },
+        task_id = NewSiteTask.queue(
+            Bench.from_path(bench_root),
+            name=name,
+            admin_password=admin_password,
+            apps=apps,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
@@ -153,9 +145,9 @@ def drop_site(name: str):
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
-        task_id = TaskRunner(bench_root).run(
-            "drop-site",
-            {"site": name},
+        task_id = DropSiteTask.queue(
+            Bench.from_path(bench_root),
+            site=name,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
@@ -179,9 +171,10 @@ def reinstall_site(name: str):
     if not isinstance(admin_password, str) or not admin_password.strip():
         admin_password = secrets.token_urlsafe(16)
     try:
-        task_id = TaskRunner(bench_root).run(
-            "reinstall-site",
-            {"site": name, "admin_password": admin_password},
+        task_id = ReinstallSiteTask.queue(
+            Bench.from_path(bench_root),
+            site=name,
+            admin_password=admin_password,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
@@ -197,9 +190,9 @@ def clear_cache(name: str):
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
-        task_id = TaskRunner(bench_root).run(
-            "clear-cache",
-            {"site": name},
+        task_id = ClearCacheTask.queue(
+            Bench.from_path(bench_root),
+            site=name,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
@@ -215,9 +208,9 @@ def migrate_site(name: str):
     if not site_exists(bench_root, name):
         return site_not_found()
     try:
-        task_id = TaskRunner(bench_root).run(
-            "migrate",
-            {"site": name},
+        task_id = MigrateTask.queue(
+            Bench.from_path(bench_root),
+            site=name,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
@@ -235,34 +228,22 @@ def create_login_link(name: str):
     if config_path is None:
         return site_not_found()
     try:
-        site_config = json.loads(config_path.read_text())
-        config = BenchTomlStore.for_bench(bench_root).read()
+        bench = Bench.from_path(bench_root)
+        proxy_tls = current_app.config["SESSION_COOKIE_SECURE"] and not bench.config.admin.tls
+        url = bench.site(name).admin_login_url(proxy_tls=proxy_tls)
     except Exception:
         return error_response(
             "configuration_unavailable",
             "Site login configuration is unavailable.",
             503,
         )
-    if not isinstance(site_config, dict):
-        return error_response(
-            "configuration_unavailable",
-            "Site login configuration is unavailable.",
-            503,
-        )
-
-    try:
-        sid = create_site_session(bench_root, name)
-    except Exception:
-        sid = None
-    if not sid:
+    if not url:
         return error_response(
             "site_login_unavailable",
             "Could not create a site login session.",
             503,
         )
 
-    redirect_url = _login_redirect_url(config, name, site_config)
-    url = f"{redirect_url}{'&' if '?' in redirect_url else '?'}sid={sid}"
     return _no_store(created_response({"url": url}, url))
 
 

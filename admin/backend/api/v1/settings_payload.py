@@ -11,87 +11,23 @@ from pilot.config import (
 from pilot.managers.platform import is_linux, native_process_manager
 from pilot.managers.redis import RedisManager
 from pilot.managers.waf import WafManager
+from pilot.core.bench.settings import (
+    firewall_payload as _firewall_payload,
+    needs_restart as _needs_restart,
+    restart_trigger_values as _restart_trigger_values,
+    s3_payload as _s3_payload,
+    waf_payload as _waf_payload,
+    worker_groups_payload as _worker_groups_payload,
+)
 
-_RESTART_KEYS = {
-    ("bench", "python"),
-    ("bench", "http_port"),
-    ("bench", "socketio_port"),
-    ("mariadb", "host"),
-    ("mariadb", "port"),
-    ("mariadb", "admin_user"),
-    ("mariadb", "socket_path"),
-    # postgres is intentionally absent: its connection is read fresh by the
-    # new-site subprocess, so no running process needs restarting on a change.
-    ("redis", "cache_port"),
-    ("redis", "queue_port"),
-    ("workers", "groups"),
-    ("production", "process_manager"),
-}
-
-
-def _needs_restart(old: dict, new: dict) -> bool:
-    return any(
-        old.get(section, {}).get(key) != new.get(section, {}).get(key)
-        for section, key in _RESTART_KEYS
-    )
-
-
-def _worker_groups_payload(config: BenchConfig) -> list[dict]:
-    return [{"queues": list(group.queues), "count": group.count} for group in config.workers.groups]
-
-
-def _firewall_payload(config: BenchConfig) -> dict:
-    firewall = config.firewall
-    return {
-        "enabled": firewall.enabled,
-        "default": firewall.default,
-        "rules": [
-            {"ip": rule.ip, "action": rule.action, "description": rule.description}
-            for rule in firewall.rules
-        ],
-    }
-
-
-def _waf_payload(config: BenchConfig) -> dict:
-    waf = config.waf
-    return {
-        "enabled": waf.enabled,
-        "mode": waf.mode,
-        "paranoia": waf.paranoia,
-        "inbound_threshold": waf.inbound_threshold,
-        "body_limit": waf.body_limit,
-        "inspect_responses": waf.inspect_responses,
-        "exclusions": list(waf.exclusions),
-        "exempt_paths": list(waf.exempt_paths),
-        "custom_rules": [
-            {
-                "name": rule.name,
-                "action": rule.action,
-                "match": rule.match,
-                "enabled": rule.enabled,
-                "conditions": [
-                    {
-                        "field": condition.field,
-                        "operator": condition.operator,
-                        "value": condition.value,
-                        "header_name": condition.header_name,
-                    }
-                    for condition in rule.conditions
-                ],
-            }
-            for rule in waf.custom_rules
-        ],
-    }
-
-
-def _s3_payload(config: BenchConfig) -> dict:
-    return {
-        "access_key": config.s3.access_key,
-        "secret_key_set": bool(config.s3.secret_key),
-        "bucket": config.s3.bucket,
-        "provider": config.s3.provider,
-        "region": config.s3.region,
-    }
+__all__ = [
+    "_build_settings_response",
+    "_firewall_payload",
+    "_needs_restart",
+    "_restart_trigger_values",
+    "_s3_payload",
+    "_waf_payload",
+]
 
 
 def _s3_provider_options() -> list[dict]:
@@ -101,25 +37,6 @@ def _s3_provider_options() -> list[dict]:
         {"value": provider, "label": PROVIDER_LABELS[provider], "regions": regions}
         for provider, regions in SUPPORTED_REGIONS.items()
     ]
-
-
-def _restart_trigger_values(config: BenchConfig) -> dict:
-    return {
-        "bench": {
-            "python": config.python_version,
-            "http_port": config.http_port,
-            "socketio_port": config.socketio_port,
-        },
-        "mariadb": {
-            "host": config.mariadb.host,
-            "port": config.mariadb.port,
-            "admin_user": config.mariadb.admin_user,
-            "socket_path": config.mariadb.socket_path,
-        },
-        "redis": {"cache_port": config.redis.cache_port, "queue_port": config.redis.queue_port},
-        "workers": {"groups": _worker_groups_payload(config)},
-        "production": {"process_manager": config.production.process_manager or "none"},
-    }
 
 
 def _build_settings_response(config: BenchConfig) -> dict:

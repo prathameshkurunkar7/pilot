@@ -4,6 +4,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify
 
+from pilot.core.bench import Bench
 from pilot.internal.git import GitRepo
 from pilot.utils import cli_root
 
@@ -30,12 +31,7 @@ def check_app_updates():
 
 def _app_updates(*, fetch: bool) -> list[dict]:
     bench_root = Path(current_app.config["BENCH_ROOT"])
-
-    from pilot.config import BenchTomlStore
-    from pilot.core.bench import Bench
-
-    config = BenchTomlStore.for_bench(bench_root).read()
-    bench = Bench(config, bench_root)
+    bench = Bench.from_path(bench_root)
 
     apps_info = []
     for app in bench.apps():

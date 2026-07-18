@@ -16,13 +16,4 @@ class BuildCommand(Command):
     )
 
     def run(self) -> None:
-        from pilot.managers.processes.local import ProcessManager
-        from pilot.managers.python_environment import PythonEnvManager
-
-        manager = PythonEnvManager(self.bench)
-        if self.force:
-            manager.build_assets()
-        else:
-            for app in self.bench.apps():
-                manager.build_assets_for_app(app)
-        ProcessManager.for_bench(self.bench).reload_workers(web_only=True)
+        self.bench.rebuild_assets(force=self.force)

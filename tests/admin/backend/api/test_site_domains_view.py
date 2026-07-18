@@ -33,10 +33,27 @@ def _make_site(bench_root: Path, name: str, **config) -> None:
     (site_dir / "site_config.json").write_text(json.dumps(config))
 
 
-def _mocked_site_domains(domains=(), primary=None):
+def _mocked_site_domains(bench_root: Path, site: str, domains=(), primary=None):
+    from pilot.tasks import TaskRunner
+    from pilot.tasks.setup_nginx import SetupNginxTask
+    from pilot.utils import normalize_host
+
     site_domains = Mock()
-    site_domains.names.return_value = list(domains)
+    domain_names = list(domains)
+    site_domains.names.return_value = domain_names
     site_domains.primary.return_value = primary
+    site_domains.apply_task.side_effect = lambda: TaskRunner(bench_root).run_task(
+        SetupNginxTask
+    )
+
+    def status(domain: str):
+        normalized = normalize_host(domain)
+        if normalized == normalize_host(site):
+            return True, not primary or normalize_host(primary) == normalized
+        attached = normalized in {normalize_host(name) for name in domain_names}
+        return attached, bool(primary) and normalize_host(primary) == normalized
+
+    site_domains.status.side_effect = status
     return site_domains
 
 
@@ -55,7 +72,7 @@ def test_get_domain_reports_the_site_itself_as_attached_and_primary(tmp_path: Pa
 
     with patch(
         "admin.backend.api.v1.sites.domains._site_domains",
-        return_value=_mocked_site_domains(primary=None),
+        return_value=_mocked_site_domains(bench_root, "site.localhost", primary=None),
     ):
         response = client.get("/api/v1/sites/site.localhost/domains/site.localhost")
 
@@ -71,6 +88,8 @@ def test_get_domain_reports_a_custom_domain(tmp_path: Path) -> None:
     with patch(
         "admin.backend.api.v1.sites.domains._site_domains",
         return_value=_mocked_site_domains(
+            bench_root,
+            "site.localhost",
             domains=["custom.example.com"], primary="custom.example.com"
         ),
     ):
@@ -87,7 +106,7 @@ def test_get_domain_404s_for_an_unattached_domain(tmp_path: Path) -> None:
 
     with patch(
         "admin.backend.api.v1.sites.domains._site_domains",
-        return_value=_mocked_site_domains(),
+        return_value=_mocked_site_domains(bench_root, "site.localhost"),
     ):
         response = client.get("/api/v1/sites/site.localhost/domains/other.example.com")
 
@@ -98,7 +117,9 @@ def test_update_domain_sets_primary_and_queues_nginx(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site.localhost", domains=["custom.example.com"])
     client = _client(bench_root)
-    site_domains = _mocked_site_domains(domains=["custom.example.com"])
+    site_domains = _mocked_site_domains(
+        bench_root, "site.localhost", domains=["custom.example.com"]
+    )
 
     with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
         response = _request(
@@ -133,7 +154,9 @@ def test_delete_domain_queues_removal(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site.localhost", domains=["custom.example.com"])
     client = _client(bench_root)
-    site_domains = _mocked_site_domains(domains=["custom.example.com"])
+    site_domains = _mocked_site_domains(
+        bench_root, "site.localhost", domains=["custom.example.com"]
+    )
 
     with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):
         response = _request(
@@ -150,7 +173,7 @@ def test_domain_dns_records_is_read_only_and_returns_records_directly(tmp_path: 
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site.localhost")
     client = _client(bench_root)
-    site_domains = _mocked_site_domains()
+    site_domains = _mocked_site_domains(bench_root, "site.localhost")
     site_domains.generate_dns_records.return_value = {"cname": [{"type": "CNAME"}], "a": []}
 
     with patch("admin.backend.api.v1.sites.domains._site_domains", return_value=site_domains):

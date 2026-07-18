@@ -205,7 +205,7 @@ def test_app_updates_reads_without_fetching(tmp_path: Path) -> None:
     repo = Mock()
 
     with (
-        patch("pilot.core.bench.Bench", return_value=bench),
+        patch("admin.backend.api.v1.updates.Bench.from_path", return_value=bench),
         patch("admin.backend.api.v1.updates.GitRepo", return_value=repo),
         patch("admin.backend.api.v1.updates._app_info", return_value={"name": "suite"}),
     ):
@@ -227,7 +227,7 @@ def test_app_update_checks_fetches_each_cloned_app(tmp_path: Path) -> None:
     repo = Mock()
 
     with (
-        patch("pilot.core.bench.Bench", return_value=bench),
+        patch("admin.backend.api.v1.updates.Bench.from_path", return_value=bench),
         patch("admin.backend.api.v1.updates.GitRepo", return_value=repo),
         patch("admin.backend.api.v1.updates._app_info", return_value={"name": "suite"}),
     ):

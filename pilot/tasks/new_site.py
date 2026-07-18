@@ -5,7 +5,7 @@ from pilot.core.app import App
 from pilot.core.site import Site
 from pilot.integrations.marketplace import Marketplace
 
-from pilot.tasks import Arg, Task, step
+from pilot.tasks import Arg, Task, on_cancel, on_failure, step
 
 
 @dataclass(kw_only=True)
@@ -21,6 +21,11 @@ class NewSiteTask(Task):
         self.require_production_privileges()
         self.fetch_missing_apps()
         self.create()
+
+    @on_failure
+    @on_cancel
+    def remove_failed_site(self) -> dict:
+        return {"site": self.name}
 
     @step("create", lambda self: f"Create site {self.name}")
     def create(self) -> None:

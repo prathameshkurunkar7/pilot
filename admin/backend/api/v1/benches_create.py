@@ -101,7 +101,7 @@ def _start_production_setup_wizard(new_dir: Path, name: str, admin_domain: str):
         from pilot.managers.platform import noninteractive_privileges
 
         with noninteractive_privileges():
-            bench = Bench(BenchTomlStore.for_bench(new_dir).read(), new_dir)
+            bench = Bench.from_path(new_dir)
             DomainRouteProvider(bench).register(admin_domain, admin_domain)
             pm = _process_manager(bench)
             pm.start_admin()

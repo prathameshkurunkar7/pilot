@@ -4,11 +4,14 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request
 
+from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
 from pilot.integrations.git import GitProviderError, resolve_app_name_from_repo
 from pilot.internal.site_paths import site_exists
 from pilot.internal.validators import validate_app_name
-from pilot.tasks import TaskRunner
+from pilot.tasks.get_and_install_app import GetAndInstallAppTask
+from pilot.tasks.install_app import InstallAppTask
+from pilot.tasks.uninstall_app import UninstallAppTask
 
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.middleware import require_scope
@@ -103,27 +106,18 @@ def _submit_install_task(
 ) -> str:
     """An app already cloned into the bench installs directly; otherwise it is
     fetched first, by repository URL or by marketplace name."""
-    runner = TaskRunner(bench_root)
+    bench = Bench.from_path(bench_root)
     if app and _is_app_cloned(bench_root, app):
-        return runner.run("install-app", {"site": site, "app": app})
+        return InstallAppTask.queue(bench, site=site, app=app)
     if repo:
-        app = app or resolve_app_name_from_repo(bench_root, repo, branch)["name"]
-        task_args = {"site": site, "app": app, "repo": repo}
-        if branch:
-            task_args["branch"] = branch
-        return runner.run("get-and-install-app", task_args)
-    return runner.run(
-        "get-and-install-app", {"site": site, "app": app, "marketplace_app": app}
-    )
+        resolve_app_name_from_repo(bench_root, repo, branch)
+        return GetAndInstallAppTask.queue(bench, repo=repo, branch=branch, site=site)
+    return GetAndInstallAppTask.queue(bench, marketplace_app=app, site=site)
 
 
 def _is_app_cloned(bench_root: Path, app: str) -> bool:
-    from pilot.config import BenchTomlStore
-    from pilot.core.bench import Bench
-
-    bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
     try:
-        return bench.app(app).is_cloned
+        return Bench.from_path(bench_root).app(app).is_cloned
     except BenchError:
         return False
 
@@ -140,8 +134,8 @@ def delete_site_app(name: str, app: str):
 
     force = request.args.get("force") == "true"
     try:
-        task_id = TaskRunner(bench_root).run(
-            "uninstall-app", {"site": name, "app": app, "force": force}
+        task_id = UninstallAppTask.queue(
+            Bench.from_path(bench_root), site=name, app=app, force=force
         )
     except Exception as error:
         return task_failure(error)

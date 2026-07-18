@@ -8,7 +8,7 @@ import threading
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import PropertyMock, patch
 
 from pilot.config.bench_toml_builder import BenchTomlBuilder
 
@@ -696,21 +696,21 @@ def test_api_benches_explicit_actions_return_updated_resource(tmp_path: Path) ->
     benches_dir = tmp_path / "benches"
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
-    manager = MagicMock()
-    manager.is_running.return_value = True
-    manager.is_admin_running.return_value = True
 
-    with patch("admin.backend.api.v1.benches.ProcessManager.for_bench", return_value=manager):
+    with patch("admin.backend.api.v1.benches.Bench.run_production_action") as run_action:
         responses = {
             action: client.post(f"/api/v1/benches/prod-bench/actions/{action}")
             for action in ("start", "stop", "restart")
         }
 
-    operations = {"start": "start_workload", "stop": "stop", "restart": "restart"}
     for action, resp in responses.items():
         assert resp.status_code == 200
         assert resp.get_json()["name"] == "prod-bench"
-        getattr(manager, operations[action]).assert_called_once_with()
+    assert [call.args[0] for call in run_action.call_args_list] == [
+        "start",
+        "stop",
+        "restart",
+    ]
 
 
 def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
@@ -718,9 +718,10 @@ def test_api_benches_control_reports_failure(tmp_path: Path) -> None:
     client = _client(benches_dir / "current")
     _write_prod_bench_toml(benches_dir / "prod-bench", "prod-bench")
 
-    manager = MagicMock()
-    manager.stop.side_effect = RuntimeError("manager detail")
-    with patch("admin.backend.api.v1.benches.ProcessManager.for_bench", return_value=manager):
+    with patch(
+        "admin.backend.api.v1.benches.Bench.run_production_action",
+        side_effect=RuntimeError("manager detail"),
+    ):
         resp = client.post("/api/v1/benches/prod-bench/actions/stop")
 
     assert resp.status_code == 500

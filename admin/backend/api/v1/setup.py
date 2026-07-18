@@ -20,10 +20,11 @@ from pilot.config.bench_toml_builder import (
     current_port_offset,
 )
 from pilot.config import BenchTomlStore
+from pilot.core.bench import Bench
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.managers.task import TaskReader, TaskStatus
-from pilot.tasks import TaskRunner
+from pilot.tasks.wizard_setup import WizardSetupTask
 
 setup_bp = Blueprint("setup", __name__)
 
@@ -169,9 +170,8 @@ def start_setup():
                 replace_private_text_locked(marker, existing.task_id)
                 return accepted_task_response(bench_root, existing.task_id)
             replace_private_text_locked(marker, "")
-            task_id = TaskRunner(bench_root).run(
-                "wizard-setup",
-                {},
+            task_id = WizardSetupTask.queue(
+                Bench.from_path(bench_root),
                 idempotency_key=idempotency_key,
             )
             replace_private_text_locked(marker, task_id)

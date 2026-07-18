@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from functools import cached_property
 from typing import TYPE_CHECKING, List
 
 from pilot.config import BenchConfig
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
     from pilot.core.app import App, RevisionPin
     from pilot.core.database import Database
     from pilot.core.site import Site
+    from pilot.tasks import TaskRunner
 
 
 class Bench:
@@ -19,6 +21,12 @@ class Bench:
         self.config = config
         self.path = path
         self._db: "Database | None" = None
+
+    @classmethod
+    def from_path(cls, path: Path) -> "Bench":
+        from pilot.config import BenchTomlStore
+
+        return cls(BenchTomlStore.for_bench(path).read(), path)
 
     @classmethod
     def create_at(
@@ -49,6 +57,12 @@ class Bench:
 
             self._db = make_database(self.config)
         return self._db
+
+    @cached_property
+    def tasks(self) -> "TaskRunner":
+        from pilot.tasks import TaskRunner
+
+        return TaskRunner(self.path)
 
     @property
     def apps_path(self) -> Path:
@@ -163,6 +177,63 @@ class Bench:
     def restart(self):
         """Restart bench in case we are running in production"""
         self.restart_processes()
+
+    def start(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        from pilot.core.bench.runtime import BenchRuntime
+
+        BenchRuntime(self).start(on_progress)
+
+    def stop(self, on_progress: Callable[[str], None] = lambda message: None) -> None:
+        from pilot.core.bench.runtime import BenchRuntime
+
+        BenchRuntime(self).stop(on_progress)
+
+    def restart_workload(
+        self,
+        include_admin: bool = False,
+        on_progress: Callable[[str], None] = lambda message: None,
+    ) -> None:
+        from pilot.core.bench.runtime import BenchRuntime
+
+        BenchRuntime(self).restart_workload(include_admin, on_progress)
+
+    def run_production_action(self, action: str) -> None:
+        from pilot.core.bench.runtime import BenchRuntime
+
+        BenchRuntime(self).run_production_action(action)
+
+    def rebuild_runtime_config(self) -> None:
+        from pilot.core.bench.runtime import BenchRuntime
+
+        BenchRuntime(self).rebuild_config()
+
+    def rebuild_assets(self, force: bool = False) -> None:
+        from pilot.core.bench.runtime import BenchRuntime
+
+        BenchRuntime(self).rebuild_assets(force)
+
+    def install_requirements(
+        self, on_progress: Callable[[str], None] = lambda message: None
+    ) -> None:
+        from pilot.core.bench.runtime import BenchRuntime
+
+        BenchRuntime(self).install_requirements(on_progress)
+
+    def apply_saved_settings(
+        self,
+        old_restart: dict,
+        old_firewall: dict,
+        old_waf: dict,
+        old_s3_config: dict,
+    ) -> tuple[bool, str | None]:
+        from pilot.core.bench.settings import BenchSettings
+
+        return BenchSettings(self).apply_saved_settings(
+            old_restart,
+            old_firewall,
+            old_waf,
+            old_s3_config,
+        )
 
     def restart_processes(self) -> None:
         from pilot.core.bench.production import BenchProduction

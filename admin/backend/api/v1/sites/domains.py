@@ -5,10 +5,11 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request
 
+from pilot.core.bench import Bench
 from pilot.exceptions import BenchError, ConfigError, DomainConflictError, DomainProviderError
 from pilot.internal.site_paths import site_config_path, site_exists
 from pilot.internal.validators import validate_email, validate_site_name
-from pilot.tasks import TaskCallback, TaskRunner
+from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
 
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.middleware import require_scope
@@ -71,18 +72,11 @@ def enable_tls(name: str):
     if current.get("ssl"):
         return error_response("tls_already_enabled", "TLS is already enabled.", 409)
 
-    rollback: TaskCallback = {"operation": "disable-site-ssl", "args": {"site": name}}
-    task_args = {"site": name}
-    if email:
-        task_args["email"] = email
     try:
-        task_id = TaskRunner(bench_root).run(
-            "setup-letsencrypt",
-            task_args,
-            callbacks={
-                "on_failure": rollback,
-                "on_cancel": rollback,
-            },
+        task_id = SetupLetsEncryptTask.queue(
+            Bench.from_path(bench_root),
+            site=name,
+            email=email,
             idempotency_key=request.headers.get("Idempotency-Key"),
             resource_key=f"site:{name.lower()}",
         )
@@ -92,19 +86,11 @@ def enable_tls(name: str):
 
 
 def _site_domains(bench_root: Path, name: str):
-    from pilot.config import BenchTomlStore
-    from pilot.core.bench import Bench
-
-    bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
-    return bench.site(name).domains
+    return Bench.from_path(bench_root).site(name).domains
 
 
 def _apply_domains(bench_root: Path, name: str) -> str:
-    """Re-run the right task so nginx (and certs, for SSL sites) pick up the change."""
-    ssl = bool(
-        json.loads((bench_root / "sites" / name / "site_config.json").read_text()).get("ssl")
-    )
-    return TaskRunner(bench_root).run("setup-letsencrypt" if ssl else "setup-nginx", {})
+    return _site_domains(bench_root, name).apply_task()
 
 
 @sites_bp.route("/<name>/domains", methods=["GET"])
@@ -174,7 +160,7 @@ def get_domain(name: str, domain: str):
     if err := validate_site_name(domain):
         return error_response("invalid_domain", err, 422)
     try:
-        attached, is_primary = _domain_status(_site_domains(bench_root, name), name, domain)
+        attached, is_primary = _site_domains(bench_root, name).status(domain)
     except BenchError as error:
         return _domain_failure(error, "Could not read the domain.")
     except Exception:
@@ -222,17 +208,6 @@ def remove_domain(name: str, domain: str):
     except Exception:
         return internal_error("Could not detach the domain.")
     return accepted_task_response(bench_root, task_id)
-
-
-def _domain_status(routes, site_name: str, domain: str) -> tuple[bool, bool]:
-    from pilot.utils import normalize_host
-
-    normalized = normalize_host(domain)
-    primary = routes.primary()
-    if normalized == normalize_host(site_name):
-        return True, not primary or normalize_host(primary) == normalized
-    attached = normalized in {normalize_host(d) for d in routes.names()}
-    return attached, bool(primary) and normalize_host(primary) == normalized
 
 
 def _domain_conflict():

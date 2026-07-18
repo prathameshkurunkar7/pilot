@@ -7,9 +7,13 @@ from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api.responses import accepted_task_response, error_response
 from admin.backend.providers.apps import AppProvider
+from pilot.core.bench import Bench
 from pilot.internal.validators import validate_app_name, validate_repo_url
 from pilot.internal.git import GitRepo
-from pilot.tasks import TaskRunner
+from pilot.tasks.fetch_app_updates import FetchAppUpdatesTask
+from pilot.tasks.get_and_install_app import GetAndInstallAppTask
+from pilot.tasks.get_app import GetAppTask
+from pilot.tasks.remove_app import RemoveAppTask
 
 apps_bp = Blueprint("apps", __name__)
 marketplace_bp = Blueprint("marketplace", __name__)
@@ -29,12 +33,9 @@ def index():
 def marketplace():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        from pilot.core.bench import Bench
         from pilot.integrations.marketplace import Marketplace
-        from pilot.config import BenchTomlStore
 
-        bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
-        apps = Marketplace(bench).read_all_apps()
+        apps = Marketplace(Bench.from_path(bench_root)).read_all_apps()
         return jsonify([a.to_dict() for a in apps])
     except Exception:
         return error_response("marketplace_unavailable", "Could not read marketplace apps.", 500)
@@ -76,11 +77,23 @@ def install():
         task_args = {"name": name, "marketplace_app": name}
 
     try:
+        bench = Bench.from_path(bench_root)
         if sites:
-            task_args["sites"] = sites
-            task_id = TaskRunner(bench_root).run("get-and-install-app", task_args)
+            task_id = GetAndInstallAppTask.queue(
+                bench,
+                repo=repo,
+                branch=branch,
+                marketplace_app=task_args.get("marketplace_app", ""),
+                sites=sites,
+            )
         else:
-            task_id = TaskRunner(bench_root).run("get-app", task_args)
+            task_id = GetAppTask.queue(
+                bench,
+                name=task_args["name"],
+                repo=task_args.get("repo", ""),
+                branch=task_args.get("branch", ""),
+                marketplace_app=task_args.get("marketplace_app", ""),
+            )
     except Exception:
         return error_response("app_install_failed", "Could not start app installation.", 500)
 
@@ -135,7 +148,7 @@ def remove(name: str):
         return error_response("app_not_found", f"App '{name}' not found in bench.", 404)
 
     try:
-        task_id = TaskRunner(bench_root).run("remove-app", {"name": name})
+        task_id = RemoveAppTask.queue(Bench.from_path(bench_root), name=name)
     except Exception:
         return error_response("app_removal_failed", "Could not start app removal.", 500)
 
@@ -146,7 +159,7 @@ def remove(name: str):
 def fetch_updates():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        task_id = TaskRunner(bench_root).run("fetch-all-app-updates", {})
+        task_id = FetchAppUpdatesTask.queue(Bench.from_path(bench_root))
     except Exception:
         return error_response("app_fetch_failed", "Could not start fetching app updates.", 500)
     return accepted_task_response(bench_root, task_id)

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from pilot.config import BenchTomlStore
-from pilot.tasks import Task, step
+from pilot.tasks import Task, on_cancel, on_failure, step
 
 
 @dataclass(kw_only=True)
@@ -14,6 +14,13 @@ class SetupLetsEncryptTask(Task):
 
     def run(self) -> None:
         self.setup_letsencrypt()
+
+    @on_failure
+    @on_cancel
+    def disable_site_ssl(self) -> dict | None:
+        if not self.site:
+            return None
+        return {"site": self.site}
 
     @step("letsencrypt", "Set up Let's Encrypt")
     def setup_letsencrypt(self) -> None:
