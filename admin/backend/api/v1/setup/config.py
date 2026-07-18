@@ -12,6 +12,16 @@ _PASSWORD_KEYS = ("admin_password", "mariadb_password", "postgres_password")
 
 
 def validate_configuration(data: dict) -> str | None:
+    if error := _validate_field_types(data):
+        return error
+    if error := _validate_required_fields(data):
+        return error
+    if error := _validate_existing_database(data):
+        return error
+    return _validate_app_source(data)
+
+
+def _validate_field_types(data: dict) -> str | None:
     text_fields = (
         "admin_password",
         "app_branch",
@@ -36,7 +46,10 @@ def validate_configuration(data: dict) -> str | None:
             isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 65535
         ):
             return f"{field} must be an integer between 1 and 65535"
+    return None
 
+
+def _validate_required_fields(data: dict) -> str | None:
     if not data.get("admin_password"):
         return "admin_password is required"
     db_type = data.get("db_type", "mariadb")
@@ -46,6 +59,11 @@ def validate_configuration(data: dict) -> str | None:
         return "mariadb_password is required"
     if db_type == "postgres" and not data.get("postgres_password"):
         return "postgres_password is required"
+    return None
+
+
+def _validate_existing_database(data: dict) -> str | None:
+    db_type = data.get("db_type", "mariadb")
     if data.get(f"{db_type}_existing"):
         if not data.get(f"{db_type}_host"):
             return f"{db_type}_host is required when connecting to an existing database server"
@@ -53,6 +71,10 @@ def validate_configuration(data: dict) -> str | None:
             return (
                 f"{db_type}_admin_user is required when connecting to an existing database server"
             )
+    return None
+
+
+def _validate_app_source(data: dict) -> str | None:
     if "app_repo" in data and (error := validate_repo_url(data["app_repo"])):
         return error
     if "app_branch" in data and (error := validate_branch_name(data["app_branch"])):

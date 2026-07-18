@@ -49,28 +49,16 @@ def get_schema():
 def execute_query():
     bench_root: Path = current_app.config["BENCH_ROOT"]
     data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
-    site = data.get("site", "")
-    query = data.get("query", "")
-    read_only = data.get("read_only", True)
-    if not isinstance(site, str):
-        return error_response("invalid_site", "Site must be a string.", 422)
-    if not isinstance(query, str):
-        return error_response("invalid_query", "Query must be a string.", 422)
-    if not isinstance(read_only, bool):
-        return error_response("invalid_read_only", "read_only must be a boolean.", 422)
-    site = site.strip()
-    query = query.strip()
-    if not site:
-        return error_response("invalid_site", "Site is required.", 422)
-    if not query:
-        return error_response("invalid_query", "Query is required.", 422)
+
+    query_data, response = _query_request(data)
+    if response is not None:
+        return response
+
     try:
         from pilot.core.database import make_site_database
 
-        db = make_site_database(bench_root, site)
-        result = db.execute(query, read_only=read_only)
+        db = make_site_database(bench_root, query_data["site"])
+        result = db.execute(query_data["query"], read_only=query_data["read_only"])
         return jsonify(
             {
                 "columns": result.columns,
@@ -85,3 +73,28 @@ def execute_query():
         return error_response("site_not_found", "Site was not found.", 404)
     except Exception:
         return error_response("query_failed", "Could not execute query.", 500)
+
+
+def _query_request(data):
+    if not isinstance(data, dict):
+        return {}, error_response("malformed_request", "Expected a JSON object.", 400)
+
+    site = data.get("site", "")
+    query = data.get("query", "")
+    read_only = data.get("read_only", True)
+
+    if not isinstance(site, str):
+        return {}, error_response("invalid_site", "Site must be a string.", 422)
+    if not isinstance(query, str):
+        return {}, error_response("invalid_query", "Query must be a string.", 422)
+    if not isinstance(read_only, bool):
+        return {}, error_response("invalid_read_only", "read_only must be a boolean.", 422)
+
+    site = site.strip()
+    query = query.strip()
+    if not site:
+        return {}, error_response("invalid_site", "Site is required.", 422)
+    if not query:
+        return {}, error_response("invalid_query", "Query is required.", 422)
+
+    return {"site": site, "query": query, "read_only": read_only}, None

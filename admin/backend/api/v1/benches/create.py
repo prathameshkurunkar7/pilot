@@ -23,9 +23,6 @@ def create_bench_locked(
     admin_domain: str,
     admin_tls: bool | None,
 ):
-    from pilot.core.adapters.domain_provider import DomainRouteProvider
-    from pilot.utils import host_owner, matches_wildcard, normalize_host
-
     try:
         new_dir = target_bench_dir(bench_root, name)
     except ValueError:
@@ -34,38 +31,11 @@ def create_bench_locked(
             f"Bench '{name}' already exists.",
             409,
         )
-    owner = host_owner(new_dir, admin_domain)
-    if owner:
-        return error_response(
-            "admin_domain_conflict",
-            f"Admin domain '{admin_domain}' is already used by bench '{owner}'.",
-            409,
-        )
-    if normalize_host(admin_domain) == normalize_host(name):
-        return error_response(
-            "invalid_admin_domain",
-            "Admin domain must differ from the bench/site name.",
-            422,
-        )
-
-    patterns = DomainRouteProvider.wildcard_domains()
-    if patterns and not matches_wildcard(admin_domain, patterns):
-        return error_response(
-            "invalid_admin_domain",
-            f"Admin domain must match one of: {', '.join(patterns)}.",
-            422,
-        )
 
     production_parent = BenchProvider(bench_root).is_production
-    if production_parent:
-        from pilot.managers.platform import has_passwordless_sudo
-
-        if not has_passwordless_sudo():
-            return error_response(
-                "privileged_operation_unavailable",
-                "Production bench creation requires non-interactive system privileges.",
-                409,
-            )
+    response = _validate_bench_creation(new_dir, name, admin_domain, production_parent)
+    if response is not None:
+        return response
 
     try:
         Bench.create_at(
@@ -91,6 +61,55 @@ def create_bench_locked(
     if production_parent:
         return _start_production_setup_wizard(new_dir, name, admin_domain)
     return _start_standalone_setup_wizard(new_dir, name, new_port)
+
+
+def _validate_bench_creation(new_dir: Path, name: str, admin_domain: str, production_parent: bool):
+    response = _validate_admin_domain(new_dir, name, admin_domain)
+    if response is not None:
+        return response
+    if production_parent:
+        return _validate_production_privileges()
+    return None
+
+
+def _validate_admin_domain(new_dir: Path, name: str, admin_domain: str):
+    from pilot.core.adapters.domain_provider import DomainRouteProvider
+    from pilot.utils import host_owner, matches_wildcard, normalize_host
+
+    owner = host_owner(new_dir, admin_domain)
+    if owner:
+        return error_response(
+            "admin_domain_conflict",
+            f"Admin domain '{admin_domain}' is already used by bench '{owner}'.",
+            409,
+        )
+    if normalize_host(admin_domain) == normalize_host(name):
+        return error_response(
+            "invalid_admin_domain",
+            "Admin domain must differ from the bench/site name.",
+            422,
+        )
+
+    patterns = DomainRouteProvider.wildcard_domains()
+    if patterns and not matches_wildcard(admin_domain, patterns):
+        return error_response(
+            "invalid_admin_domain",
+            f"Admin domain must match one of: {', '.join(patterns)}.",
+            422,
+        )
+    return None
+
+
+def _validate_production_privileges():
+    from pilot.managers.platform import has_passwordless_sudo
+
+    if has_passwordless_sudo():
+        return None
+    return error_response(
+        "privileged_operation_unavailable",
+        "Production bench creation requires non-interactive system privileges.",
+        409,
+    )
 
 
 def _start_production_setup_wizard(new_dir: Path, name: str, admin_domain: str):

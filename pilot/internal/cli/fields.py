@@ -40,41 +40,58 @@ def arg_fields(
 
 
 def add_argument(parser: argparse.ArgumentParser, arg_field: ArgField) -> None:
-    kwargs: dict[str, Any] = {"help": arg_field.metadata.help} if arg_field.metadata.help else {}
-    if arg_field.metadata.metavar:
-        kwargs["metavar"] = arg_field.metadata.metavar
     base_hint = strip_optional(arg_field.hint)
+    kwargs = argument_kwargs(arg_field, base_hint)
 
     if base_hint == tuple[str, ...]:
         parser.add_argument(arg_field.name, nargs=argparse.REMAINDER, **kwargs)
         return
     if base_hint is bool:
-        flags = [f"--{to_kebab_case(arg_field.name)}"]
-        if arg_field.metadata.short:
-            flags.append(f"-{arg_field.metadata.short}")
-        parser.add_argument(*flags, action="store_true", default=arg_field.default, **kwargs)
+        parser.add_argument(
+            *option_flags(arg_field),
+            action="store_true",
+            default=arg_field.default,
+            **kwargs,
+        )
         return
-    if get_origin(base_hint) is Literal:
-        kwargs["choices"] = get_args(base_hint)
-    elif get_origin(base_hint) is list:
-        (item_type,) = get_args(base_hint)
-        kwargs["nargs"] = "*" if arg_field.has_default else "+"
-        if item_type is not str:
-            kwargs["type"] = item_type
-    elif base_hint is not str:
-        kwargs["type"] = base_hint
 
     if not arg_field.has_default and not arg_field.metadata.required:
         parser.add_argument(arg_field.name, **kwargs)
         return
-    flags = [f"--{to_kebab_case(arg_field.name)}"]
-    if arg_field.metadata.short:
-        flags.append(f"-{arg_field.metadata.short}")
     if arg_field.has_default:
         kwargs["default"] = arg_field.default
     else:
         kwargs["required"] = True
-    parser.add_argument(*flags, **kwargs)
+    parser.add_argument(*option_flags(arg_field), **kwargs)
+
+
+def argument_kwargs(arg_field: ArgField, base_hint: Any) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {"help": arg_field.metadata.help} if arg_field.metadata.help else {}
+    if arg_field.metadata.metavar:
+        kwargs["metavar"] = arg_field.metadata.metavar
+    if base_hint in (bool, tuple[str, ...]):
+        return kwargs
+    if get_origin(base_hint) is Literal:
+        kwargs["choices"] = get_args(base_hint)
+    elif get_origin(base_hint) is list:
+        update_list_kwargs(kwargs, arg_field, base_hint)
+    elif base_hint is not str:
+        kwargs["type"] = base_hint
+    return kwargs
+
+
+def update_list_kwargs(kwargs: dict[str, Any], arg_field: ArgField, base_hint: Any) -> None:
+    (item_type,) = get_args(base_hint)
+    kwargs["nargs"] = "*" if arg_field.has_default else "+"
+    if item_type is not str:
+        kwargs["type"] = item_type
+
+
+def option_flags(arg_field: ArgField) -> list[str]:
+    flags = [f"--{to_kebab_case(arg_field.name)}"]
+    if arg_field.metadata.short:
+        flags.append(f"-{arg_field.metadata.short}")
+    return flags
 
 
 def value_from_namespace(args: argparse.Namespace, arg_field: ArgField) -> Any:

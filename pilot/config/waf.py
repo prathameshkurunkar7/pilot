@@ -153,29 +153,33 @@ class WafConfig:
         self._validate_custom_rules()
 
     def _validate_custom_rules(self) -> None:
-        """Validate SecLang-bound custom rule input."""
         if len(self.custom_rules) > _WAF_MAX_RULES:
             raise ConfigError(f"waf.custom_rules has too many rules (max {_WAF_MAX_RULES}).")
         for i, rule in enumerate(self.custom_rules):
-            prefix = f"waf.custom_rules[{i}]"
-            if rule.action not in WAF_RULE_ACTIONS:
-                raise ConfigError(
-                    f"{prefix}.action '{rule.action}' is invalid. Must be one of: {', '.join(WAF_RULE_ACTIONS)}."
-                )
-            if rule.match not in WAF_RULE_MATCH:
-                raise ConfigError(
-                    f"{prefix}.match '{rule.match}' is invalid. Must be one of: {', '.join(WAF_RULE_MATCH)}."
-                )
-            if _WAF_RULE_NAME_FORBIDDEN.search(rule.name) or len(rule.name) > 128:
-                raise ConfigError(
-                    f"{prefix}.name is invalid. Must be under 128 chars with no quotes or newlines."
-                )
-            if not rule.conditions:
-                raise ConfigError(f"{prefix} must have at least one condition.")
-            if len(rule.conditions) > _WAF_MAX_CONDITIONS:
-                raise ConfigError(f"{prefix} has too many conditions (max {_WAF_MAX_CONDITIONS}).")
-            for j, cond in enumerate(rule.conditions):
-                self._validate_condition(f"{prefix}.conditions[{j}]", cond)
+            self._validate_custom_rule(f"waf.custom_rules[{i}]", rule)
+
+    def _validate_custom_rule(self, prefix: str, rule: WafRule) -> None:
+        if rule.action not in WAF_RULE_ACTIONS:
+            raise ConfigError(
+                f"{prefix}.action '{rule.action}' is invalid. Must be one of: {', '.join(WAF_RULE_ACTIONS)}."
+            )
+        if rule.match not in WAF_RULE_MATCH:
+            raise ConfigError(
+                f"{prefix}.match '{rule.match}' is invalid. Must be one of: {', '.join(WAF_RULE_MATCH)}."
+            )
+        if _WAF_RULE_NAME_FORBIDDEN.search(rule.name) or len(rule.name) > 128:
+            raise ConfigError(
+                f"{prefix}.name is invalid. Must be under 128 chars with no quotes or newlines."
+            )
+        self._validate_rule_conditions(prefix, rule.conditions)
+
+    def _validate_rule_conditions(self, prefix: str, conditions: list[WafCondition]) -> None:
+        if not conditions:
+            raise ConfigError(f"{prefix} must have at least one condition.")
+        if len(conditions) > _WAF_MAX_CONDITIONS:
+            raise ConfigError(f"{prefix} has too many conditions (max {_WAF_MAX_CONDITIONS}).")
+        for j, cond in enumerate(conditions):
+            self._validate_condition(f"{prefix}.conditions[{j}]", cond)
 
     @staticmethod
     def _validate_condition(prefix: str, cond: WafCondition) -> None:
@@ -193,17 +197,25 @@ class WafConfig:
             raise ConfigError(
                 f"{prefix}.value is invalid. Must be under {_WAF_MAX_VALUE_LEN} chars with no double quotes or newlines."
             )
-        if cond.field == "header" and not _WAF_HEADER_NAME_PATTERN.match(cond.header_name):
-            raise ConfigError(
-                f"{prefix}.header_name '{cond.header_name}' is invalid. Must be an HTTP header token (letters, digits, hyphen)."
-            )
-        if cond.field == "source_ip":
-            import ipaddress
+        _validate_header_condition(prefix, cond)
+        _validate_source_ip_condition(prefix, cond)
 
-            for entry in cond.value.split(","):
-                try:
-                    ipaddress.ip_network(entry.strip(), strict=False)
-                except ValueError:
-                    raise ConfigError(
-                        f"{prefix}.value '{entry.strip()}' is not a valid IP or CIDR range."
-                    )
+
+def _validate_header_condition(prefix: str, cond: WafCondition) -> None:
+    if cond.field == "header" and not _WAF_HEADER_NAME_PATTERN.match(cond.header_name):
+        raise ConfigError(
+            f"{prefix}.header_name '{cond.header_name}' is invalid. Must be an HTTP header token (letters, digits, hyphen)."
+        )
+
+
+def _validate_source_ip_condition(prefix: str, cond: WafCondition) -> None:
+    if cond.field != "source_ip":
+        return
+
+    import ipaddress
+
+    for entry in cond.value.split(","):
+        try:
+            ipaddress.ip_network(entry.strip(), strict=False)
+        except ValueError:
+            raise ConfigError(f"{prefix}.value '{entry.strip()}' is not a valid IP or CIDR range.")

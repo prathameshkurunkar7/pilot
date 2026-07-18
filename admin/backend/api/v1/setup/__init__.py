@@ -204,10 +204,27 @@ def finish_setup():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return error_response("malformed_request", "Expected a JSON object.", 400)
+
     task_id = data.get("task_id")
     if not isinstance(task_id, str) or not task_id:
         return error_response("invalid_task", "task_id is required.", 422)
 
+    response = _validate_finished_setup_task(bench_root, task_id)
+    if response is not None:
+        return response
+
+    response = no_content_response()
+    if current_app.config.get("WIZARD_SERVER"):
+        response.call_on_close(
+            lambda: threading.Timer(
+                0.1,
+                lambda: os.kill(os.getpid(), signal.SIGTERM),
+            ).start()
+        )
+    return response
+
+
+def _validate_finished_setup_task(bench_root: Path, task_id: str):
     try:
         task = TaskReader(bench_root).read_task(task_id)
     except TaskNotFoundError as error:
@@ -245,12 +262,4 @@ def finish_setup():
                 409,
             )
         marker.unlink(missing_ok=True)
-    response = no_content_response()
-    if current_app.config.get("WIZARD_SERVER"):
-        response.call_on_close(
-            lambda: threading.Timer(
-                0.1,
-                lambda: os.kill(os.getpid(), signal.SIGTERM),
-            ).start()
-        )
-    return response
+    return None

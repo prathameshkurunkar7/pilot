@@ -130,6 +130,11 @@ class ConfigPatcher:
         if waf is None:
             return
         waf_config = self.config.waf
+        self._apply_waf_scalars(waf, waf_config)
+        self._apply_waf_lists(waf, waf_config)
+
+    @staticmethod
+    def _apply_waf_scalars(waf: dict, waf_config) -> None:
         if "enabled" in waf:
             waf_config.enabled = bool(waf["enabled"])
         if "mode" in waf:
@@ -142,6 +147,8 @@ class ConfigPatcher:
             waf_config.body_limit = str(waf["body_limit"]).strip()
         if "inspect_responses" in waf:
             waf_config.inspect_responses = bool(waf["inspect_responses"])
+
+    def _apply_waf_lists(self, waf: dict, waf_config) -> None:
         if "exclusions" in waf:
             waf_config.exclusions = [
                 str(line).strip() for line in (waf["exclusions"] or []) if str(line).strip()
@@ -190,7 +197,17 @@ class ConfigPatcher:
         if s3.get("disconnect"):
             self.config.s3 = S3Config()
             return None
+
         s3_config = self.config.s3
+        self._update_s3_config(s3, s3_config)
+        if not self._s3_has_any_value(s3_config):
+            return None
+        if not self._s3_is_complete(s3_config):
+            return "s3.access_key, s3.secret_key, s3.bucket, s3.provider, and s3.region are all required."
+        return self._validate_s3_region(s3_config)
+
+    @staticmethod
+    def _update_s3_config(s3: dict, s3_config: S3Config) -> None:
         if "access_key" in s3:
             s3_config.access_key = str(s3["access_key"]).strip()
         secret_key = str(s3.get("secret_key", "")).strip()
@@ -203,24 +220,28 @@ class ConfigPatcher:
         if "region" in s3:
             s3_config.region = str(s3["region"]).strip()
 
-        if not (
+    @staticmethod
+    def _s3_has_any_value(s3_config: S3Config) -> bool:
+        return bool(
             s3_config.access_key
             or s3_config.secret_key
             or s3_config.bucket
             or s3_config.provider
             or s3_config.region
-        ):
-            return None
+        )
 
-        if not (
+    @staticmethod
+    def _s3_is_complete(s3_config: S3Config) -> bool:
+        return bool(
             s3_config.access_key
             and s3_config.secret_key
             and s3_config.bucket
             and s3_config.provider
             and s3_config.region
-        ):
-            return "s3.access_key, s3.secret_key, s3.bucket, s3.provider, and s3.region are all required."
+        )
 
+    @staticmethod
+    def _validate_s3_region(s3_config: S3Config) -> str | None:
         from pilot.integrations.s3.base import SUPPORTED_REGIONS
 
         if s3_config.provider not in SUPPORTED_REGIONS:

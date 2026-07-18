@@ -164,26 +164,42 @@ def config_patch_error(current, submitted) -> str | None:
     if not isinstance(submitted, dict):
         return "Configuration patches must be JSON objects."
     for key, value in submitted.items():
-        if not isinstance(key, str) or not is_public_config_key(key):
-            return "System-managed and secret-like configuration keys cannot be changed."
-        existing = current.get(key) if isinstance(current, dict) else None
-        if value is None:
-            if _contains_protected_config(existing):
-                return "A configuration value containing protected fields cannot be removed."
-            continue
-        if isinstance(value, dict):
-            error = config_patch_error(existing if isinstance(existing, dict) else {}, value)
-            if error:
-                return error
-        elif isinstance(value, list):
-            if _contains_protected_config(existing):
-                return "A list containing protected fields cannot be replaced."
-            for item in value:
-                error = _submitted_config_value_error(item)
-                if error:
-                    return error
-        elif _contains_protected_config(existing):
-            return "A configuration value containing protected fields cannot change type."
+        error = _config_patch_item_error(current, key, value)
+        if error:
+            return error
+    return None
+
+
+def _config_patch_item_error(current, key, value) -> str | None:
+    if not isinstance(key, str) or not is_public_config_key(key):
+        return "System-managed and secret-like configuration keys cannot be changed."
+
+    existing = current.get(key) if isinstance(current, dict) else None
+    if value is None:
+        return _config_remove_error(existing)
+    if isinstance(value, dict):
+        nested = existing if isinstance(existing, dict) else {}
+        return config_patch_error(nested, value)
+    if isinstance(value, list):
+        return _config_list_replace_error(existing, value)
+    if _contains_protected_config(existing):
+        return "A configuration value containing protected fields cannot change type."
+    return None
+
+
+def _config_remove_error(existing) -> str | None:
+    if _contains_protected_config(existing):
+        return "A configuration value containing protected fields cannot be removed."
+    return None
+
+
+def _config_list_replace_error(existing, value: list) -> str | None:
+    if _contains_protected_config(existing):
+        return "A list containing protected fields cannot be replaced."
+    for item in value:
+        error = _submitted_config_value_error(item)
+        if error:
+            return error
     return None
 
 

@@ -34,17 +34,10 @@ def find_bench_root(context: CliContext, require_explicit: bool = False) -> Path
     benches_dir = context.installation_root / "benches"
 
     if context.bench_name:
-        bench_dir = benches_dir / context.bench_name
-        if not (bench_dir / "bench.toml").exists():
-            raise BenchError(
-                f"Bench '{context.bench_name}' not found.\n{available_hint(benches_dir)}"
-            )
-        return bench_dir
+        return _explicit_bench_root(benches_dir, context.bench_name)
 
-    current = Path.cwd()
-    for directory in [current, *current.parents]:
-        if (directory / "bench.toml").exists():
-            return directory
+    if current_root := _cwd_bench_root():
+        return current_root
 
     if require_explicit:
         raise BenchError(
@@ -52,6 +45,25 @@ def find_bench_root(context: CliContext, require_explicit: bool = False) -> Path
             "directory, or pass -b <name>.\n" + available_hint(benches_dir, sort=True)
         )
 
+    return _implicit_bench_root(benches_dir)
+
+
+def _explicit_bench_root(benches_dir: Path, bench_name: str) -> Path:
+    bench_dir = benches_dir / bench_name
+    if not (bench_dir / "bench.toml").exists():
+        raise BenchError(f"Bench '{bench_name}' not found.\n{available_hint(benches_dir)}")
+    return bench_dir
+
+
+def _cwd_bench_root() -> Path | None:
+    current = Path.cwd()
+    for directory in [current, *current.parents]:
+        if (directory / "bench.toml").exists():
+            return directory
+    return None
+
+
+def _implicit_bench_root(benches_dir: Path) -> Path:
     if benches_dir.is_dir():
         candidates = [
             d for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()

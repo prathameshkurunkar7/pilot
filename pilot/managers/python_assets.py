@@ -168,35 +168,42 @@ class PythonAssetBuilder:
         print(f"  Linked {app_link} -> {app_public_dir.resolve()}")
 
     def write_assets_json(self, app_name: str, dist_dir: Path, assets_dir: Path) -> None:
-        assets: dict[str, str] = {}
-        rtl_assets: dict[str, str] = {}
-
-        js_dir = dist_dir / "js"
-        if js_dir.is_dir():
-            for f in sorted(js_dir.iterdir()):
-                m = _BUNDLE_RE.match(f.name)
-                if m and m.group(2) == "js":
-                    assets[f"{m.group(1)}.bundle.js"] = f"/assets/{app_name}/dist/js/{f.name}"
-
-        css_dir = dist_dir / "css"
-        if css_dir.is_dir():
-            for f in sorted(css_dir.iterdir()):
-                m = _BUNDLE_RE.match(f.name)
-                if m and m.group(2) == "css":
-                    assets[f"{m.group(1)}.bundle.css"] = f"/assets/{app_name}/dist/css/{f.name}"
-
-        rtl_dir = dist_dir / "css-rtl"
-        if rtl_dir.is_dir():
-            for f in sorted(rtl_dir.iterdir()):
-                m = _BUNDLE_RE.match(f.name)
-                if m and m.group(2) == "css":
-                    rtl_assets[f"rtl_{m.group(1)}.bundle.css"] = (
-                        f"/assets/{app_name}/dist/css-rtl/{f.name}"
-                    )
+        assets = {
+            **self._bundle_manifest(app_name, dist_dir, "js", "js"),
+            **self._bundle_manifest(app_name, dist_dir, "css", "css"),
+        }
+        rtl_assets = self._bundle_manifest(
+            app_name,
+            dist_dir,
+            "css-rtl",
+            "css",
+            key_prefix="rtl_",
+        )
 
         self.merge_json(assets_dir / "assets.json", assets)
         if rtl_assets:
             self.merge_json(assets_dir / "assets-rtl.json", rtl_assets)
+
+    @staticmethod
+    def _bundle_manifest(
+        app_name: str,
+        dist_dir: Path,
+        directory: str,
+        extension: str,
+        *,
+        key_prefix: str = "",
+    ) -> dict[str, str]:
+        bundle_dir = dist_dir / directory
+        if not bundle_dir.is_dir():
+            return {}
+
+        entries = {}
+        for path in sorted(bundle_dir.iterdir()):
+            match = _BUNDLE_RE.match(path.name)
+            if match and match.group(2) == extension:
+                key = f"{key_prefix}{match.group(1)}.bundle.{extension}"
+                entries[key] = f"/assets/{app_name}/dist/{directory}/{path.name}"
+        return entries
 
     @staticmethod
     def merge_json(path: Path, new_entries: dict) -> None:

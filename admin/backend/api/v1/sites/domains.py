@@ -34,43 +34,13 @@ def enable_tls(name: str):
     if config_path is None:
         return site_not_found()
 
-    from pilot.config import BenchTomlStore
+    email, response = _tls_email_request(bench_root)
+    if response is not None:
+        return response
 
-    store = BenchTomlStore.for_bench(bench_root)
-    data = request.get_json(silent=True)
-    if data is None:
-        data = {}
-    elif not isinstance(data, dict):
-        return malformed_body()
-    fields = text_fields(data, "email")
-    if fields is None:
-        return invalid_fields()
-    email = fields["email"]
-    if email:
-        if err := validate_email(email):
-            return error_response("invalid_email", err, 422, {"needs_email": True})
-    else:
-        try:
-            config = store.read()
-        except Exception:
-            return internal_error("Could not read certificate configuration.")
-
-    if not email and not config.letsencrypt.email:
-        return error_response(
-            "missing_certificate_email",
-            "A Let's Encrypt account email is required to issue certificates.",
-            422,
-            {"needs_email": True},
-        )
-
-    try:
-        current = json.loads(config_path.read_text())
-    except Exception:
-        return internal_error("Could not read the site configuration.")
-    if not isinstance(current, dict):
-        return internal_error("Could not read the site configuration.")
-    if current.get("ssl"):
-        return error_response("tls_already_enabled", "TLS is already enabled.", 409)
+    response = _validate_tls_not_enabled(config_path)
+    if response is not None:
+        return response
 
     try:
         task_id = SetupLetsEncryptTask.queue(
@@ -83,6 +53,52 @@ def enable_tls(name: str):
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)
+
+
+def _tls_email_request(bench_root: Path):
+    from pilot.config import BenchTomlStore
+
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    elif not isinstance(data, dict):
+        return "", malformed_body()
+
+    fields = text_fields(data, "email")
+    if fields is None:
+        return "", invalid_fields()
+
+    email = fields["email"]
+    if email:
+        if err := validate_email(email):
+            return "", error_response("invalid_email", err, 422, {"needs_email": True})
+        return email, None
+
+    try:
+        config = BenchTomlStore.for_bench(bench_root).read()
+    except Exception:
+        return "", internal_error("Could not read certificate configuration.")
+
+    if config.letsencrypt.email:
+        return "", None
+    return "", error_response(
+        "missing_certificate_email",
+        "A Let's Encrypt account email is required to issue certificates.",
+        422,
+        {"needs_email": True},
+    )
+
+
+def _validate_tls_not_enabled(config_path: Path):
+    try:
+        current = json.loads(config_path.read_text())
+    except Exception:
+        return internal_error("Could not read the site configuration.")
+    if not isinstance(current, dict):
+        return internal_error("Could not read the site configuration.")
+    if current.get("ssl"):
+        return error_response("tls_already_enabled", "TLS is already enabled.", 409)
+    return None
 
 
 def _site_domains(bench_root: Path, name: str):

@@ -109,27 +109,45 @@ class TaskProcess:
     def cancel(self, task_id: str, grace_seconds: float | None = None) -> None:
         if self._store.read_status(task_id) != TaskStatus.RUNNING:
             raise TaskNotRunningError(f"Task is not running: {task_id}")
+
+        record = self._running_record(task_id)
+        ownership = self._inspector.inspect(record.identity, record.argv)
+        if self._ownership_prevents_cancel(task_id, ownership):
+            return
+
+        outcome = self._signal(record, signal.SIGTERM)
+        if self._ownership_prevents_cancel(task_id, outcome, changed=True):
+            return
+
+        self._mark_killed(task_id)
+        grace = CANCEL_GRACE_SECONDS if grace_seconds is None else grace_seconds
+        self._wait_for_exit(record, grace)
+
+    def _running_record(self, task_id: str) -> TaskProcessRecord:
         try:
             record = self.read(task_id)
         except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
             record = None
         if record is None or record.task_id != task_id:
             raise TaskNotRunningError(f"Task process ownership is unavailable: {task_id}")
+        return record
 
-        ownership = self._inspector.inspect(record.identity, record.argv)
+    def _ownership_prevents_cancel(
+        self,
+        task_id: str,
+        ownership: ProcessOwnership,
+        *,
+        changed: bool = False,
+    ) -> bool:
         if ownership in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
             self._interrupt(task_id)
-            return
+            return True
         if ownership == ProcessOwnership.UNKNOWN:
-            raise TaskNotRunningError(f"Task process ownership is uncertain: {task_id}")
+            detail = "changed" if changed else "is uncertain"
+            raise TaskNotRunningError(f"Task process ownership {detail}: {task_id}")
+        return False
 
-        outcome = self._signal(record, signal.SIGTERM)
-        if outcome in {ProcessOwnership.DEAD, ProcessOwnership.STALE}:
-            self._interrupt(task_id)
-            return
-        if outcome == ProcessOwnership.UNKNOWN:
-            raise TaskNotRunningError(f"Task process ownership changed: {task_id}")
-
+    def _mark_killed(self, task_id: str) -> None:
         self._store.remove_private_files(task_id, "secrets.json")
         transitioned = self._store.transition(
             task_id,
@@ -141,9 +159,6 @@ class TaskProcess:
             status = self._store.read_status(task_id)
             if not status.is_terminal:
                 raise TaskNotRunningError(f"Task state changed during cancellation: {task_id}")
-
-        grace = CANCEL_GRACE_SECONDS if grace_seconds is None else grace_seconds
-        self._wait_for_exit(record, grace)
 
     def _environment(self, task_dir: Path, launch_id: str, read_fd: int) -> dict[str, str]:
         environment = {

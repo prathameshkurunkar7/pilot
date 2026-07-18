@@ -147,26 +147,11 @@ class TaskReader:
 
         open_private(output_path, "a").close()
         with open(output_path, "r", errors="replace", newline="") as log_file:
-            # No seek: replay from the start so a fresh connection gets history too.
-            # Raw current line, envelope and carriage returns and all. We only
-            # strip the syslog envelope and resolve \r at emit time via
-            # display_line, so the live stream matches read_output and the
-            # frontend exactly: a CRLF keeps its text, a progress line cleared
-            # with \r + padding collapses to its last real segment instead of
-            # leaking a row of spaces, and the UI never sees the raw envelope.
             cur = ""
-
             while True:
                 chunk = log_file.read(8192)
                 if chunk:
-                    for ch in chunk:
-                        if ch == "\n":
-                            yield output_event(display_line(cur))
-                            cur = ""
-                        else:
-                            cur += ch
-                    if cur:
-                        yield output_event(display_line(cur), overwrite=True)
+                    cur = yield from self._stream_chunk(chunk, cur)
                     continue
 
                 task = self.read_task(task_id)
@@ -176,13 +161,31 @@ class TaskReader:
                     last_state = current_state
 
                 if not task.status.is_active:
-                    if cur:
-                        yield output_event(display_line(cur))
-                    failure = task.as_dict()["failure"]
-                    yield done_event(task.status.value, task.exit_code, failure)
+                    yield from self._stream_done(task, cur)
                     return
 
                 time.sleep(_TASK_POLL_SECONDS)
+
+    def _stream_chunk(self, chunk: str, cur: str) -> Generator[TaskStreamEvent, None, str]:
+        for ch in chunk:
+            if ch == "\n":
+                yield output_event(display_line(cur))
+                cur = ""
+            else:
+                cur += ch
+        if cur:
+            yield output_event(display_line(cur), overwrite=True)
+        return cur
+
+    def _stream_done(
+        self,
+        task: TaskInfo,
+        cur: str,
+    ) -> Generator[TaskStreamEvent, None, None]:
+        if cur:
+            yield output_event(display_line(cur))
+        failure = task.as_dict()["failure"]
+        yield done_event(task.status.value, task.exit_code, failure)
 
 
 def _read_task_dir(

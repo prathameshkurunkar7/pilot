@@ -111,48 +111,67 @@ def get_authorization_error(claims: dict | None, view, view_args: dict) -> str |
 
 
 def install_auth_guard(app: Flask, config_store: BenchTomlStore) -> None:
-    """Reject every API request that its endpoint's AuthPolicy doesn't allow."""
-
     @app.before_request
     def check_auth():
         g.jwt_claims = None
-        if not is_api_path(request.path):
-            return None
+        return _check_auth_request(app, config_store)
 
-        view = app.view_functions.get(request.endpoint) if request.endpoint else None
-        if view is None:
-            return None
 
-        policy = get_auth_policy(view)
-        if policy == AuthPolicy.OPEN:
-            return None
+def _check_auth_request(app: Flask, config_store: BenchTomlStore):
+    if not is_api_path(request.path):
+        return None
 
-        allowed_before_setup = policy == AuthPolicy.SETUP_CONDITIONAL
-        try:
-            config = config_store.read()
-        except Exception:
-            if allowed_before_setup and not config_store.exists():
-                return None
-            return error_response(
-                "configuration_unavailable",
-                "Bench configuration is unavailable.",
-                503,
-                {"enabled": False},
-            )
+    view = app.view_functions.get(request.endpoint) if request.endpoint else None
+    if view is None:
+        return None
 
-        if allowed_before_setup and not config.admin.password:
-            return None
-        if not config.admin.enabled:
-            return error_response("admin_disabled", "Admin is disabled.", 503, {"enabled": False})
-        if not config.admin.password:
-            return error_response(
-                "session_unavailable", "No admin password is configured.", 503, {"enabled": False}
-            )
-        if not authenticate_request(config):
-            return error_response("authentication_required", "Authentication is required.", 401)
+    policy = get_auth_policy(view)
+    if policy == AuthPolicy.OPEN:
+        return None
 
-        error = get_authorization_error(g.jwt_claims, view, request.view_args or {})
-        return error_response("forbidden", error, 403) if error else None
+    config, response = _auth_config(config_store, policy)
+    if response is not None:
+        return response
+    if config is None:
+        return None
+
+    response = _admin_session_response(config)
+    if response is not None:
+        return response
+
+    error = get_authorization_error(g.jwt_claims, view, request.view_args or {})
+    return error_response("forbidden", error, 403) if error else None
+
+
+def _auth_config(config_store: BenchTomlStore, policy: AuthPolicy):
+    allowed_before_setup = policy == AuthPolicy.SETUP_CONDITIONAL
+    try:
+        config = config_store.read()
+    except Exception:
+        if allowed_before_setup and not config_store.exists():
+            return None, None
+        return None, error_response(
+            "configuration_unavailable",
+            "Bench configuration is unavailable.",
+            503,
+            {"enabled": False},
+        )
+
+    if allowed_before_setup and not config.admin.password:
+        return None, None
+    return config, None
+
+
+def _admin_session_response(config):
+    if not config.admin.enabled:
+        return error_response("admin_disabled", "Admin is disabled.", 503, {"enabled": False})
+    if not config.admin.password:
+        return error_response(
+            "session_unavailable", "No admin password is configured.", 503, {"enabled": False}
+        )
+    if not authenticate_request(config):
+        return error_response("authentication_required", "Authentication is required.", 401)
+    return None
 
 
 def client_ip(default: str = "unknown") -> str:

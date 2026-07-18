@@ -28,6 +28,13 @@ exclude = ["benches*", "tests*", "docs*", "admin.frontend*"]
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+extend-select = ["C901"]
+per-file-ignores = { "tests/**" = ["C901"] }
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
 [tool.ruff.format]
 line-ending = "auto"
 

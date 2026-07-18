@@ -212,10 +212,27 @@ def get_domain_options():
 @benches_bp.post("")
 def create_bench():
     bench_root = Path(current_app.config["BENCH_ROOT"])
-
     data = request.get_json(silent=True)
+
+    request_data, response = _create_bench_request(data)
+    if response is not None:
+        return response
+
+    name = request_data["name"]
+
+    try:
+        with (
+            exclusive_file_lock(bench_management_lock_target(bench_root), blocking=False),
+            exclusive_file_lock(bench_lock_target(bench_root, name), blocking=False),
+        ):
+            return create_bench_locked(bench_root, **request_data)
+    except BlockingIOError:
+        return bench_busy_response(name)
+
+
+def _create_bench_request(data):
     if not isinstance(data, dict):
-        return error_response("malformed_request", "Expected a JSON object.", 400)
+        return {}, error_response("malformed_request", "Expected a JSON object.", 400)
     if any(
         value is not None and not isinstance(value, str)
         for value in (
@@ -225,62 +242,68 @@ def create_bench():
             data.get("admin_domain"),
         )
     ):
-        return error_response("invalid_bench", "Bench fields must be strings.", 422)
+        return {}, error_response("invalid_bench", "Bench fields must be strings.", 422)
     if "admin_tls" in data and not isinstance(data["admin_tls"], bool):
-        return error_response("invalid_admin_tls", "admin_tls must be a boolean.", 422)
+        return {}, error_response("invalid_admin_tls", "admin_tls must be a boolean.", 422)
 
     name = (data.get("name") or "").strip()
     if not name or not BENCH_NAME_RE.fullmatch(name):
-        return error_response(
+        return {}, error_response(
             "invalid_bench_name",
             "Bench name must contain only letters, numbers, '-' and '_'.",
             422,
         )
 
-    from pilot.config import VALID_PROCESS_MANAGERS
-
-    process_manager = (data.get("process_manager") or "").strip().lower()
-    if process_manager == "supervisord":
-        process_manager = "supervisor"
-    if process_manager not in VALID_PROCESS_MANAGERS:
-        return error_response(
-            "invalid_process_manager",
-            f"Choose a process manager: {', '.join(VALID_PROCESS_MANAGERS)}.",
-            422,
-        )
+    process_manager, response = _process_manager_request(data)
+    if response is not None:
+        return {}, response
 
     db_type = (data.get("db_type") or "mariadb").strip()
     if db_type not in ("mariadb", "postgres", "sqlite"):
-        return error_response(
+        return {}, error_response(
             "invalid_database",
             "Database must be 'mariadb', 'postgres', or 'sqlite'.",
             422,
         )
 
+    admin_domain, response = _admin_domain_request(data)
+    if response is not None:
+        return {}, response
+
+    return {
+        "name": name,
+        "process_manager": process_manager,
+        "db_type": db_type,
+        "admin_domain": admin_domain,
+        "admin_tls": bool(data["admin_tls"]) if "admin_tls" in data else None,
+    }, None
+
+
+def _admin_domain_request(data):
     admin_domain = (data.get("admin_domain") or "").strip()
     if not admin_domain:
-        return error_response(
+        return "", error_response(
             "admin_domain_required",
             "Admin domain is required so the bench is reachable in production.",
             422,
         )
-    if not ADMIN_DOMAIN_RE.match(admin_domain):
-        return error_response(
-            "invalid_admin_domain", f"'{admin_domain}' is not a valid hostname.", 422
-        )
+    if ADMIN_DOMAIN_RE.match(admin_domain):
+        return admin_domain, None
+    return "", error_response(
+        "invalid_admin_domain", f"'{admin_domain}' is not a valid hostname.", 422
+    )
 
-    try:
-        with (
-            exclusive_file_lock(bench_management_lock_target(bench_root), blocking=False),
-            exclusive_file_lock(bench_lock_target(bench_root, name), blocking=False),
-        ):
-            return create_bench_locked(
-                bench_root,
-                name,
-                process_manager,
-                db_type,
-                admin_domain,
-                bool(data["admin_tls"]) if "admin_tls" in data else None,
-            )
-    except BlockingIOError:
-        return bench_busy_response(name)
+
+def _process_manager_request(data):
+    from pilot.config import VALID_PROCESS_MANAGERS
+
+    process_manager = (data.get("process_manager") or "").strip().lower()
+    if process_manager == "supervisord":
+        process_manager = "supervisor"
+    if process_manager in VALID_PROCESS_MANAGERS:
+        return process_manager, None
+    return "", error_response(
+        "invalid_process_manager",
+        f"Choose a process manager: {', '.join(VALID_PROCESS_MANAGERS)}.",
+        422,
+    )

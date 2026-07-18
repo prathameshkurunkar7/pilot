@@ -199,37 +199,68 @@ class ProcessInspector:
             return False
 
     def _inspect_group(self, identity: ProcessIdentity) -> ProcessOwnership:
-        matching_group = False
-        unknown = False
         try:
             entries = list(_PROC_ROOT.iterdir())
         except OSError:
             return ProcessOwnership.UNKNOWN
+
+        states = self._inspect_group_states(entries, identity)
+        if ProcessOwnership.OWNED in states:
+            return ProcessOwnership.OWNED
+        if ProcessOwnership.UNKNOWN in states:
+            return ProcessOwnership.UNKNOWN
+        return ProcessOwnership.STALE if ProcessOwnership.STALE in states else ProcessOwnership.DEAD
+
+    def _inspect_group_states(
+        self,
+        entries: list[Path],
+        identity: ProcessIdentity,
+    ) -> list[ProcessOwnership]:
+        states = []
         for entry in entries:
             if not entry.name.isdigit():
                 continue
-            pid = int(entry.name)
-            try:
-                snapshot = self._read_process(pid)
-            except (FileNotFoundError, ProcessLookupError):
-                continue
-            except (PermissionError, OSError, ValueError):
-                unknown = True
-                continue
-            if snapshot.state == "Z":
-                continue
-            if snapshot.uid == identity.uid:
-                try:
-                    if self._has_launch_id(pid, identity.launch_id):
-                        return ProcessOwnership.OWNED
-                except (PermissionError, OSError):
-                    if snapshot.pgid == identity.pgid:
-                        unknown = True
-            if snapshot.pgid == identity.pgid:
-                matching_group = True
-        if unknown:
+            state = self._inspect_group_entry(int(entry.name), identity)
+            if state is not None:
+                states.append(state)
+        return states
+
+    def _inspect_group_entry(self, pid: int, identity: ProcessIdentity) -> ProcessOwnership | None:
+        snapshot, failed_unknown = self._process_snapshot(pid)
+        if snapshot is None:
+            return ProcessOwnership.UNKNOWN if failed_unknown else None
+        if snapshot.state == "Z":
+            return None
+
+        has_launch_id, launch_unknown = self._snapshot_launch_id(pid, snapshot, identity)
+        if has_launch_id:
+            return ProcessOwnership.OWNED
+        if snapshot.pgid != identity.pgid:
+            return None
+        if launch_unknown:
             return ProcessOwnership.UNKNOWN
-        return ProcessOwnership.STALE if matching_group else ProcessOwnership.DEAD
+        return ProcessOwnership.STALE
+
+    def _process_snapshot(self, pid: int) -> tuple[_ProcessSnapshot | None, bool]:
+        try:
+            return self._read_process(pid), False
+        except (FileNotFoundError, ProcessLookupError):
+            return None, False
+        except (PermissionError, OSError, ValueError):
+            return None, True
+
+    def _snapshot_launch_id(
+        self,
+        pid: int,
+        snapshot: _ProcessSnapshot,
+        identity: ProcessIdentity,
+    ) -> tuple[bool, bool]:
+        if snapshot.uid != identity.uid:
+            return False, False
+        try:
+            return self._has_launch_id(pid, identity.launch_id), False
+        except (PermissionError, OSError):
+            return False, True
 
     def _read_process(self, pid: int) -> _ProcessSnapshot:
         process_dir = _PROC_ROOT / str(pid)

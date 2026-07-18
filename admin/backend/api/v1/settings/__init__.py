@@ -169,26 +169,9 @@ def update_settings():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return error_response("malformed_request", "Expected a JSON object.", 400)
-    store = BenchTomlStore.for_bench(bench_root)
+
     try:
-        with store.edit() as config:
-            old_restart = restart_trigger_values(config)
-            old_firewall = firewall_payload(config)
-            old_waf = waf_payload(config)
-            old_s3_config = s3_payload(config)
-
-            if error := ConfigPatcher(config, data).apply():
-                raise _SettingsUpdateRejected(error)
-
-            # Verify the bucket before persisting while the config transaction
-            # is still locked, so the validated value is exactly what commits.
-            if s3_payload(config) != old_s3_config and config.s3.access_key:
-                from pilot.integrations.s3.base import S3, S3IntegrationError
-
-                try:
-                    S3.from_config(config.s3)
-                except S3IntegrationError as error:
-                    raise _SettingsUpdateRejected(str(error)) from error
+        update = _save_settings_update(bench_root, data)
     except _SettingsUpdateRejected as error:
         return error_response("invalid_settings", str(error), 422)
     except Exception:
@@ -197,19 +180,56 @@ def update_settings():
     try:
         restarted, waf_warning = apply_post_save_changes(
             bench_root,
-            config,
-            old_restart,
-            old_firewall,
-            old_waf,
-            old_s3_config,
+            update["config"],
+            update["old_restart"],
+            update["old_firewall"],
+            update["old_waf"],
+            update["old_s3_config"],
         )
     except SettingsApplyFailed as error:
         return error_response(error.code, error.message, 500, {"saved": True})
 
+    return jsonify(_settings_update_result(restarted, waf_warning))
+
+
+def _save_settings_update(bench_root: Path, data: dict) -> dict:
+    store = BenchTomlStore.for_bench(bench_root)
+    with store.edit() as config:
+        old_restart = restart_trigger_values(config)
+        old_firewall = firewall_payload(config)
+        old_waf = waf_payload(config)
+        old_s3_config = s3_payload(config)
+
+        if error := ConfigPatcher(config, data).apply():
+            raise _SettingsUpdateRejected(error)
+        _verify_s3_update(config, old_s3_config)
+
+    return {
+        "config": config,
+        "old_restart": old_restart,
+        "old_firewall": old_firewall,
+        "old_waf": old_waf,
+        "old_s3_config": old_s3_config,
+    }
+
+
+def _verify_s3_update(config: BenchConfig, old_s3_config: dict) -> None:
+    if s3_payload(config) == old_s3_config or not config.s3.access_key:
+        return
+
+    from pilot.integrations.s3.base import S3, S3IntegrationError
+
+    try:
+        S3.from_config(config.s3)
+    except S3IntegrationError as error:
+        raise _SettingsUpdateRejected(str(error)) from error
+
+
+def _settings_update_result(restarted: bool, waf_warning: str | None) -> dict:
     result = {"restarted": restarted}
     if waf_warning:
         result["waf_warning"] = waf_warning
-    return jsonify(result)
+    return result
 
 
 def apply_post_save_changes(

@@ -52,38 +52,7 @@ class BenchCreator:
 
         offset = self._pick_port_offset(self.target_directory)
         on_progress("Writing bench.toml")
-        admin_tls = self.admin_tls if self.admin_tls is not None else self._sibling_admin_tls()
-        # admin.domain is left empty unless given: development serves the admin on
-        # localhost, and 'bench setup production' requires a real domain (via its
-        # --admin-domain flag or here), erroring rather than deploying a placeholder.
-        settings = {
-            "admin_enabled": True,
-            "admin_domain": self.admin_domain,
-            "admin_tls": admin_tls,
-            "db_type": self.db_type,
-        }
-        if self.db_type == "mariadb":
-            settings["mariadb_port"] = self._sibling_mariadb_port() or self._pick_mariadb_port()
-            settings["mariadb_password"] = self._sibling_mariadb_password() or secrets.token_hex(
-                nbytes=8
-            )
-        if self.db_type == "postgres":
-            settings["postgres_port"] = self._sibling_postgres_port() or self._pick_postgres_port()
-            settings["postgres_password"] = self._sibling_postgres_password() or secrets.token_hex(
-                nbytes=8
-            )
-        if self.process_manager:
-            settings["production_process_manager"] = self.process_manager
-
-        sibling_email = self._sibling_letsencrypt_email()
-        if sibling_email:
-            settings["letsencrypt_email"] = sibling_email
-
-        sibling_admin = self._sibling_jwks_admin()
-        if sibling_admin:
-            settings["admin_jwks_url"] = sibling_admin.jwks_url
-            if sibling_admin.jwks_audience:
-                settings["admin_jwks_audience"] = sibling_admin.jwks_audience
+        settings = self._initial_settings()
 
         BenchTomlStore(bench_toml).write_flat(self.name, settings, port_offset=offset)
 
@@ -96,6 +65,50 @@ class BenchCreator:
         )
 
         return Bench(self.target_directory)
+
+    def _initial_settings(self) -> dict:
+        settings = {
+            "admin_enabled": True,
+            "admin_domain": self.admin_domain,
+            "admin_tls": self._admin_tls_setting(),
+            "db_type": self.db_type,
+        }
+        self._add_database_settings(settings)
+        self._add_production_settings(settings)
+        self._add_shared_admin_settings(settings)
+        return settings
+
+    def _admin_tls_setting(self) -> bool:
+        if self.admin_tls is not None:
+            return self.admin_tls
+        return self._sibling_admin_tls()
+
+    def _add_database_settings(self, settings: dict) -> None:
+        if self.db_type == "mariadb":
+            settings["mariadb_port"] = self._sibling_mariadb_port() or self._pick_mariadb_port()
+            settings["mariadb_password"] = self._sibling_mariadb_password() or secrets.token_hex(
+                nbytes=8
+            )
+        if self.db_type == "postgres":
+            settings["postgres_port"] = self._sibling_postgres_port() or self._pick_postgres_port()
+            settings["postgres_password"] = self._sibling_postgres_password() or secrets.token_hex(
+                nbytes=8
+            )
+
+    def _add_production_settings(self, settings: dict) -> None:
+        if self.process_manager:
+            settings["production_process_manager"] = self.process_manager
+
+    def _add_shared_admin_settings(self, settings: dict) -> None:
+        sibling_email = self._sibling_letsencrypt_email()
+        if sibling_email:
+            settings["letsencrypt_email"] = sibling_email
+
+        sibling_admin = self._sibling_jwks_admin()
+        if sibling_admin:
+            settings["admin_jwks_url"] = sibling_admin.jwks_url
+            if sibling_admin.jwks_audience:
+                settings["admin_jwks_audience"] = sibling_admin.jwks_audience
 
     def _sibling_letsencrypt_email(self) -> str:
         """Return the shared Let's Encrypt email from a sibling bench."""
