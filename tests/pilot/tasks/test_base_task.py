@@ -12,11 +12,11 @@ from pilot.internal.tasks.authoring import (
     task_from_args,
     task_parser,
 )
-from pilot.tasks.base import Arg, BaseTask, step
+from pilot.tasks.base import Arg, Task, step
 from tests.pilot.commands.test_commands import make_bench
 
 
-class DemoTask(BaseTask):
+class DemoTask(Task):
     @step("work", "Do work")
     def fail(self) -> None:
         raise RuntimeError("boom")
@@ -31,7 +31,7 @@ def task(tmp_path: Path) -> DemoTask:
     return DemoTask(bench=bench, bench_root=tmp_path)
 
 
-def parse_task(cls: type[BaseTask], tmp_path: Path, argv: list[str]) -> BaseTask:
+def parse_task(cls: type[Task], tmp_path: Path, argv: list[str]) -> Task:
     args = task_parser(cls).parse_args([str(tmp_path), *argv])
     return task_from_args(cls, make_bench(tmp_path), tmp_path, args)
 
@@ -77,7 +77,7 @@ def test_manual_step_can_still_report_failure(
 
 
 @dataclass(kw_only=True)
-class ParserTask(BaseTask):
+class ParserTask(Task):
     command: ClassVar[str] = "parser-test"
 
     site: str
@@ -130,7 +130,7 @@ def test_task_cli_false_field_is_not_a_cli_argument(tmp_path: Path) -> None:
 
 def test_task_secret_field_still_counts_as_required_submit_arg() -> None:
     @dataclass(kw_only=True)
-    class SecretTask(BaseTask):
+    class SecretTask(Task):
         command: ClassVar[str] = "secret-test"
 
         site: str
@@ -141,7 +141,7 @@ def test_task_secret_field_still_counts_as_required_submit_arg() -> None:
 
 def test_task_can_declare_required_submit_arg_without_constructor_field() -> None:
     @dataclass(kw_only=True)
-    class MetadataTask(BaseTask):
+    class MetadataTask(Task):
         command: ClassVar[str] = "metadata-test"
         required_submit_args: ClassVar[tuple[str, ...]] = ("name",)
 

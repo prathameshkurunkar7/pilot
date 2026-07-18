@@ -66,9 +66,9 @@ class SiteProvisioner:
             site.install_app(self.bench.app(app_name))
 
     def write_pilot_communication_config(self, site: "Site") -> None:
-        from pilot.admin_url import admin_url
+        from pilot.utils import admin_url
         from pilot.core.admin_auth import ensure_jwt_secret, issue_site_token
-        from pilot.secure_files import write_private_text
+        from pilot.utils import write_private_text
 
         config_path = site.path / "site_config.json"
         if not config_path.exists():

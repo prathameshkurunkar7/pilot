@@ -3,14 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 from pilot.core.backup_pruning import BackupPruner, parse_backup_timestamp
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError
 
 
 @dataclass(kw_only=True)
-class DeleteBackupTask(BaseTask):
+class DeleteBackupTask(Task):
     command: ClassVar[str] = "delete-backup"
 
     site: str

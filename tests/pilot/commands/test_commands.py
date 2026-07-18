@@ -749,7 +749,7 @@ def test_upgrade_command_installs_admin_python_deps() -> None:
     from pilot.commands.runtime.upgrade import UpgradeCommand
 
     with (
-        patch("pilot.loader.cli_root", return_value=Path("/tmp/pilot")),
+        patch("pilot.utils.cli_root", return_value=Path("/tmp/pilot")),
         patch("pilot.utils.run_command") as mock_run_command,
         patch("pilot.commands.admin.start.download_admin_frontend", return_value=True),
         patch("pilot.managers.admin_environment.AdminEnvManager") as mock_admin_env,
@@ -1054,7 +1054,7 @@ def test_ls_lists_benches_with_mode_and_address(
     (benches / "beta" / "bench.toml").write_text('[bench]\nname = "beta"\n\n[admin]\nport = 7005\n')
 
     with (
-        patch("pilot.loader.cli_root", return_value=tmp_path),
+        patch("pilot.utils.cli_root", return_value=tmp_path),
         patch("pilot.commands.bench.list.ListCommand._state", return_value="stopped"),
     ):
         ListCommand().run()
@@ -1084,7 +1084,7 @@ def test_ls_empty_when_no_benches(tmp_path: Path, capsys: pytest.CaptureFixture)
     from pilot.commands.bench.list import ListCommand
 
     (tmp_path / "benches").mkdir()
-    with patch("pilot.loader.cli_root", return_value=tmp_path):
+    with patch("pilot.utils.cli_root", return_value=tmp_path):
         ListCommand().run()
     assert "No benches yet" in capsys.readouterr().out
 
@@ -1399,7 +1399,7 @@ def test_start_rebuilds_admin_when_source_changed(
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=100, built_mtime=1)
     build = MagicMock()
-    monkeypatch.setattr("pilot.loader.cli_root", lambda: cli_root)
+    monkeypatch.setattr("pilot.utils.cli_root", lambda: cli_root)
     monkeypatch.setattr(admin_mod, "BuildAdminCommand", build)
 
     RunCommand(make_bench(tmp_path))._ensure_admin_dist()
@@ -1415,7 +1415,7 @@ def test_start_skips_admin_rebuild_when_fresh(
 
     cli_root = _admin_source_checkout(tmp_path, src_mtime=1, built_mtime=100)
     build = MagicMock()
-    monkeypatch.setattr("pilot.loader.cli_root", lambda: cli_root)
+    monkeypatch.setattr("pilot.utils.cli_root", lambda: cli_root)
     monkeypatch.setattr(admin_mod, "BuildAdminCommand", build)
 
     RunCommand(make_bench(tmp_path))._ensure_admin_dist()

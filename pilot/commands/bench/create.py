@@ -31,7 +31,7 @@ class NewCommand(Command):
     def __post_init__(self) -> None:
         if self.target_directory is not None:
             return
-        from pilot.loader import cli_root
+        from pilot.utils import cli_root
 
         self.target_directory = cli_root() / "benches" / self.bench_name
 

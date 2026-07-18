@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.loader import cli_root
+from pilot.utils import cli_root
 from pilot.managers.admin_environment import AdminEnvManager
 
 if TYPE_CHECKING:

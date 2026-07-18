@@ -3,11 +3,11 @@ from typing import Annotated, ClassVar
 
 from pilot.core.site import Site
 
-from pilot.tasks.base import Arg, BaseTask, step
+from pilot.tasks.base import Arg, Task, step
 
 
 @dataclass(kw_only=True)
-class ReinstallSiteTask(BaseTask):
+class ReinstallSiteTask(Task):
     command: ClassVar[str] = "reinstall-site"
 
     site: str

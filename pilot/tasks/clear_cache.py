@@ -3,11 +3,11 @@ import sys
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 
 
 @dataclass(kw_only=True)
-class ClearCacheTask(BaseTask):
+class ClearCacheTask(Task):
     command: ClassVar[str] = "clear-cache"
 
     site: str

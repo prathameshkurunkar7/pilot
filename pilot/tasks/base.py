@@ -4,9 +4,9 @@ import functools
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, ClassVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, ContextManager
 
-from pilot.cli_args import Arg
+from pilot.commands.base import Arg
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -17,8 +17,8 @@ class _TaskStep:
         self.task = task
         self.key = key
 
-    def __enter__(self) -> "_TaskStep":
-        return self
+    def __enter__(self) -> None:
+        return None
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         if exc_type is None or (issubclass(exc_type, SystemExit) and exc_value.code in (0, None)):
@@ -43,8 +43,8 @@ def step(key: str, label: str | Callable[[Any], str] = ""):
 
 
 @dataclass(kw_only=True)
-class BaseTask:
-    """Base class for dataclass task modules discovered by pilot.tasks."""
+class Task:
+    """Dataclass task module discovered by pilot.tasks."""
 
     command: ClassVar[str] = ""
     has_done_step: ClassVar[bool] = True
@@ -57,7 +57,7 @@ class BaseTask:
         self._current_step: str | None = None
         self._failed_steps: set[str] = set()
 
-    def step(self, key: str, label: str = "") -> _TaskStep:
+    def step(self, key: str, label: str = "") -> ContextManager[None]:
         self._current_step = key
         print(f"STEP {key},{time.time():.3f} {label}", flush=True)
         return _TaskStep(self, key)
@@ -109,4 +109,5 @@ class BaseTask:
     def run(self) -> None:
         raise NotImplementedError
 
-__all__ = ["Arg", "BaseTask", "step"]
+
+__all__ = ["Arg", "Task", "step"]

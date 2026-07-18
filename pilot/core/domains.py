@@ -8,7 +8,7 @@ import urllib.request
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError, DomainConflictError, DomainProviderError
-from pilot.secure_files import write_private_text
+from pilot.utils import write_private_text
 from pilot.managers.platform import which
 from pilot.utils import host_owner, normalize_host
 

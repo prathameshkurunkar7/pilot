@@ -223,9 +223,9 @@ Notably, **queued-but-not-yet-claimed tasks do not count as activity** — if th
 
 ## Job contract
 
-Every job subclasses `BaseTask` from `pilot.tasks.base`. Task modules live directly under `pilot/tasks/`, and `pilot.tasks.TaskRunner` discovers any dataclass task with a non-empty `command`.
+Every job subclasses `Task` from `pilot.tasks.base`. Task modules live directly under `pilot/tasks/`, and `pilot.tasks.TaskRunner` discovers any dataclass task with a non-empty `command`.
 
-Task fields are the task API: required dataclass fields become required submit args and subprocess CLI arguments; defaults become optional flags; `Annotated[..., Arg(cli=False)]` fields use `Arg` from `pilot.tasks.base` (re-exported from `pilot.cli_args`), are accepted from `secrets.json`, and are never exposed on the subprocess command line. Internal task-authoring plumbing loads `BENCH_TASK_SECRETS_FILE`, constructs the bench and task, calls `run()`, and emits a final `done` step unless `has_done_step = False`.
+Task fields are the task API: required dataclass fields become required submit args and subprocess CLI arguments; defaults become optional flags; `Annotated[..., Arg(cli=False)]` fields use `Arg` from `pilot.tasks.base`, are accepted from `secrets.json`, and are never exposed on the subprocess command line. Internal task-authoring plumbing loads `BENCH_TASK_SECRETS_FILE`, constructs the bench and task, calls `run()`, and emits a final `done` step unless `has_done_step = False`.
 
 Use `required_submit_args` only for a value that must be submitted for validation or UI metadata but is not a constructor field. `GetAppTask` uses this for `name`; most tasks should not need it.
 

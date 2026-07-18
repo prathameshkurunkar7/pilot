@@ -64,6 +64,6 @@ class OSProvider:
     @property
     def bench_admin_commit(self) -> str:
         from pilot.internal.git import GitRepo
-        from pilot.loader import cli_root
+        from pilot.utils import cli_root
 
         return GitRepo(cli_root()).short_head

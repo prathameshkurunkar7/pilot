@@ -12,7 +12,7 @@ from pathlib import Path
 from pilot.internal.tasks.authoring import required_task_args
 from pilot.internal.tasks.payload import TaskPayloadBuilder
 from pilot.tasks.callbacks import TaskCallback as TaskCallback, TaskCallbacks
-from pilot.tasks.base import BaseTask
+from pilot.tasks.base import Task
 from pilot.managers.task.models import (
     TaskStatus,
 )
@@ -24,7 +24,7 @@ from pilot.exceptions import TaskNotRunningError
 TASK_RETENTION_LIMIT = 100
 _TASK_PACKAGE_DIR = Path(__file__).resolve().parents[2] / "tasks"
 _NOT_A_TASK_MODULE = {"base"}
-_REGISTRY: tuple[dict[str, type[BaseTask]], dict[str, list[str]]] | None = None
+_REGISTRY: tuple[dict[str, type[Task]], dict[str, list[str]]] | None = None
 _RUNNER_CLASS: type | None = None
 
 
@@ -47,7 +47,7 @@ class TaskRunner:
     def __init__(
         self,
         bench_root: Path,
-        jobs: dict[str, type[BaseTask]],
+        jobs: dict[str, type[Task]],
         required_args: dict[str, list[str]],
     ) -> None:
         self._bench_root = bench_root
@@ -160,7 +160,7 @@ def runner_class() -> type:
     return _RUNNER_CLASS
 
 
-def task_registry() -> tuple[dict[str, type[BaseTask]], dict[str, list[str]]]:
+def task_registry() -> tuple[dict[str, type[Task]], dict[str, list[str]]]:
     global _REGISTRY
     if _REGISTRY is None:
         tasks = discover_tasks()
@@ -170,13 +170,13 @@ def task_registry() -> tuple[dict[str, type[BaseTask]], dict[str, list[str]]]:
     return _REGISTRY
 
 
-def discover_tasks() -> list[type[BaseTask]]:
+def discover_tasks() -> list[type[Task]]:
     tasks = []
     for module_info in pkgutil.iter_modules([str(_TASK_PACKAGE_DIR)], prefix="pilot.tasks."):
         if module_info.name.rsplit(".", 1)[-1] in _NOT_A_TASK_MODULE:
             continue
         module = importlib.import_module(module_info.name)
         for value in vars(module).values():
-            if isinstance(value, type) and issubclass(value, BaseTask) and value.command:
+            if isinstance(value, type) and issubclass(value, Task) and value.command:
                 tasks.append(value)
     return tasks

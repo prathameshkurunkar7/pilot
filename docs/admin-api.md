@@ -100,8 +100,11 @@ admin/
 pilot/internal/                  # Zero-dependency helpers shared across the whole CLI
 ├── validators.py                # Regex validators (site/app names, cron, branch, email)
 ├── site_paths.py                # Symlink-safe resolution of a site's directory
-├── cli_command.py               # Command dataclass -> argparse adapter
-├── cli_dispatch.py              # console entrypoint routing and Frappe passthrough
+├── cli/                         # argparse command plumbing and console dispatch
+│   ├── command.py               # Command dataclass -> argparse adapter
+│   ├── dispatch.py              # console entrypoint routing and Frappe passthrough
+│   ├── registry.py              # auto-discovers commands, builds parser, dispatches
+│   └── fields.py                # Dataclass field -> argparse conversion
 ├── tasks/                       # Task runner implementation hidden from app authors
 │   ├── args.py                  # Task argument redaction/fingerprinting plumbing
 │   ├── callbacks.py             # Stored task callback validation/execution
@@ -110,14 +113,14 @@ pilot/internal/                  # Zero-dependency helpers shared across the who
 │   ├── queue.py, store.py       # FIFO claim order and durable task files
 │   ├── runner.py                # Task discovery and submission engine
 │   └── worker.py, worker_state.py
-└── atomic_file.py, cli_fields.py, cli_registry.py, git.py, toml.py, site_session.py
+└── atomic_file.py, git.py, toml.py, site_session.py
 
 pilot/managers/cron.py           # CronManager — one crontab entry per (bench, job_key)
 pilot/managers/task/             # Task status models, readers, activity, worker control
 
 pilot/tasks/                     # Task definitions + public TaskRunner — see docs/tasks.md
 ├── __init__.py                  # Public task API; TaskRunner discovers jobs lazily
-├── base.py                      # Task authoring API: BaseTask, step
+├── base.py                      # Task authoring API: Task, step
 ├── callbacks.py                 # Public callback types for task submission
 ├── runner.py                    # Public TaskRunner and TaskSubmission
 ├── migrate.py, build.py, ...

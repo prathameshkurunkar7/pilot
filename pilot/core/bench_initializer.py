@@ -119,7 +119,7 @@ class BenchInitializer:
 
     def _download_admin_frontend(self, on_progress: Callable[[str], None]) -> None:
         from pilot.core.admin_frontend import build_admin_frontend, download_admin_frontend
-        from pilot.loader import cli_root
+        from pilot.utils import cli_root
 
         if not download_admin_frontend(cli_root()):
             on_progress("  Pre-built download failed — building from source (requires Node.js)...")

@@ -45,7 +45,7 @@ def download_admin_frontend(cli_root: Path) -> bool:
 
 
 def build_admin_frontend(force_build: bool = False, on_progress: Callable[[str], None] = lambda message: None) -> None:
-    from pilot.loader import cli_root
+    from pilot.utils import cli_root
     from pilot.utils import run_command
 
     if not force_build and download_admin_frontend(cli_root()):
@@ -66,7 +66,7 @@ def build_admin_frontend(force_build: bool = False, on_progress: Callable[[str],
 
 
 def _find_frontend() -> Path:
-    from pilot.loader import cli_root
+    from pilot.utils import cli_root
 
     candidate = cli_root() / "admin" / "frontend"
     if (candidate / "package.json").exists():

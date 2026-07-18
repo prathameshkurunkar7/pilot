@@ -3,14 +3,15 @@ from typing import ClassVar
 
 from pilot.config.app import AppConfig
 from pilot.core.app import App
+from pilot.core.app_install_result import AppInstallResult
 from pilot.core.site import Site
 from pilot.integrations.marketplace import Marketplace
 
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 
 
 @dataclass(kw_only=True)
-class GetAndInstallAppTask(BaseTask):
+class GetAndInstallAppTask(Task):
     """Fetch an app (by repo or marketplace name) and install it on zero or
     more sites. Zero sites is valid: it just fetches (and, for marketplace
     apps, resolves dependencies) without installing anywhere."""
@@ -37,7 +38,7 @@ class GetAndInstallAppTask(BaseTask):
         self.build_assets([result.app] + result.installed_dependencies)
 
     @step("fetch", lambda self: f"Fetch {self.marketplace_app or self.repo}")
-    def fetch(self):
+    def fetch(self) -> AppInstallResult:
         # get-app resolves and installs marketplace dependencies itself; a
         # plain repo has none to resolve.
         if self.marketplace_app:

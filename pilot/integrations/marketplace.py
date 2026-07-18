@@ -125,7 +125,7 @@ class Marketplace:
     @staticmethod
     def _read_apps_json() -> str:
         from pilot.core.registry_cache import RegistryCache
-        from pilot.loader import cli_root
+        from pilot.utils import cli_root
 
         cache = RegistryCache(cli_root())
         cache.ensure_fresh()

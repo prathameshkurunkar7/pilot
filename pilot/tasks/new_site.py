@@ -5,11 +5,11 @@ from pilot.core.app import App
 from pilot.core.site import Site
 from pilot.integrations.marketplace import Marketplace
 
-from pilot.tasks.base import Arg, BaseTask, step
+from pilot.tasks.base import Arg, Task, step
 
 
 @dataclass(kw_only=True)
-class NewSiteTask(BaseTask):
+class NewSiteTask(Task):
     command: ClassVar[str] = "new-site"
 
     name: str

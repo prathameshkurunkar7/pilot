@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pilot.exceptions import BenchError
-from pilot.loader import cli_root
+from pilot.utils import cli_root
 from pilot.managers.admin_environment import AdminEnvManager
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.processes.definitions import ProcessDefinition, ProcessDefinitionBuilder

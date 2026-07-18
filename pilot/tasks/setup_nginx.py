@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 
 
 @dataclass(kw_only=True)
-class SetupNginxTask(BaseTask):
+class SetupNginxTask(Task):
     command: ClassVar[str] = "setup-nginx"
 
     def run(self) -> None:

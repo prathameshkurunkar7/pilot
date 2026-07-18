@@ -7,10 +7,9 @@ import logging
 import pkgutil
 
 from pilot.commands.base import BenchMode, Command
-from pilot.context import CliContext
 from pilot.exceptions import BenchError
-from pilot.internal.cli_command import add_command_arguments, command_from_args
-from pilot.loader import load_bench
+from pilot.internal.cli.command import add_command_arguments, command_from_args
+from pilot.internal.cli.dispatch import CliContext, load_bench
 
 # Help text for command groups (e.g. `bench setup ...`).
 GROUP_HELP = {

@@ -138,7 +138,7 @@ class BenchProduction:
             production.pop("nginx", None)
 
     def _report_removed_production(self, on_progress: Callable[[str], None]) -> None:
-        from pilot.admin_url import admin_url
+        from pilot.utils import admin_url
 
         name = self.bench.config.name
         self.bench.config.production.enabled = False

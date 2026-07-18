@@ -2,11 +2,11 @@ import sys
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 
 
 @dataclass(kw_only=True)
-class SwitchBranchTask(BaseTask):
+class SwitchBranchTask(Task):
     command: ClassVar[str] = "switch-branch"
 
     name: str

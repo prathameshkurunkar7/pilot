@@ -5,7 +5,7 @@ from dataclasses import fields
 from typing import TYPE_CHECKING
 
 from pilot.commands.base import Command
-from pilot.internal.cli_fields import add_argument, arg_fields, value_from_namespace
+from pilot.internal.cli.fields import add_argument, arg_fields, value_from_namespace
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench

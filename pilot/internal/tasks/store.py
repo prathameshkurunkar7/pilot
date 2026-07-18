@@ -13,7 +13,7 @@ from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text
 from pilot.internal.tasks.files import TaskFiles
 from pilot.internal.tasks.state import parse_task_status, validate_task_transition
 from pilot.managers.task.models import TaskStatus
-from pilot.secure_files import make_private_directory
+from pilot.utils import make_private_directory
 
 
 @dataclass(frozen=True)

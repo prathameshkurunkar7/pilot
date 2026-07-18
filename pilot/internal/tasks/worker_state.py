@@ -14,7 +14,7 @@ from pilot.internal.atomic_file import (
     exclusive_file_lock,
     replace_private_text_locked,
 )
-from pilot.secure_files import make_private_directory, open_private
+from pilot.utils import make_private_directory, open_private
 
 
 class WorkerLock:

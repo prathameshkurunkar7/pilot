@@ -3,11 +3,11 @@ import sys
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 
 
 @dataclass(kw_only=True)
-class MigrateTask(BaseTask):
+class MigrateTask(Task):
     command: ClassVar[str] = "migrate"
 
     site: str

@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from pilot.config.backup import BackupConfig
-from pilot.secure_files import write_private_text
+from pilot.utils import write_private_text
 
 _KEY = "backup_retention"
 _FIELDS = set(BackupConfig().__dict__)

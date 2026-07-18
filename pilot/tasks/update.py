@@ -3,11 +3,11 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from pilot.exceptions import MigrateError
-from pilot.tasks.base import BaseTask
+from pilot.tasks.base import Task
 
 
 @dataclass(kw_only=True)
-class UpdateTask(BaseTask):
+class UpdateTask(Task):
     command: ClassVar[str] = "update"
     # Bench.update() emits its own on_step("done", ...) as its last phase.
     has_done_step: ClassVar[bool] = False

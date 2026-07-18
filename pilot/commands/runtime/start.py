@@ -56,7 +56,7 @@ class RunCommand(Command):
             # No workload yet — bring up just the admin (socket-activated) so the
             # setup wizard is served at the bench's domain. The workload starts
             # once the bench is initialized and `setup production` is run.
-            from pilot.admin_url import admin_url
+            from pilot.utils import admin_url
 
             manager.start_admin()
             self.report(f"Admin running at {admin_url(self.bench.config)}")
@@ -81,7 +81,7 @@ class RunCommand(Command):
         # so `bench start` reflects local UI edits without a manual `build-admin`.
         # A non-source install (no admin/frontend) just downloads the prebuilt copy.
         from pilot.commands.admin.start import BuildAdminCommand, download_admin_frontend
-        from pilot.loader import cli_root
+        from pilot.utils import cli_root
 
         root = cli_root()
         dist = root / "admin" / "backend" / "static" / "dist"
@@ -125,7 +125,7 @@ class RunCommand(Command):
 
     def _start_wizard(self) -> None:
         from pilot.commands.admin.start import download_admin_frontend
-        from pilot.loader import cli_root
+        from pilot.utils import cli_root
         from pilot.managers.admin_environment import AdminEnvManager
 
         root = cli_root()

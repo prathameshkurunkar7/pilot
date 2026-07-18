@@ -1,12 +1,16 @@
 import sys
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
+
+if TYPE_CHECKING:
+    from pilot.core.app import App
+    from pilot.core.site import Site
 
 
 @dataclass(kw_only=True)
-class InstallAppTask(BaseTask):
+class InstallAppTask(Task):
     command: ClassVar[str] = "install-app"
 
     site: str
@@ -21,7 +25,7 @@ class InstallAppTask(BaseTask):
         self.build_assets([app, *dependencies])
 
     @step("install", lambda self: f"Install {self.app} into {self.site}")
-    def install(self, site, app):
+    def install(self, site: "Site", app: "App") -> list["App"]:
         from pilot.exceptions import BenchError
 
         try:
@@ -30,7 +34,7 @@ class InstallAppTask(BaseTask):
             print(str(exc), file=sys.stderr)
             sys.exit(1)
 
-    def build_assets(self, apps) -> None:
+    def build_assets(self, apps: list["App"]) -> None:
         from pilot.managers.python_environment import PythonEnvManager
 
         env = PythonEnvManager(self.bench)

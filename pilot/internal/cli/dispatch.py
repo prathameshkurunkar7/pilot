@@ -2,12 +2,72 @@ from __future__ import annotations
 
 import sys
 from contextlib import contextmanager
-from typing import Iterator
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Iterator, TYPE_CHECKING
 
-from pilot.context import CliContext
 from pilot.exceptions import BenchError
+from pilot.utils import cli_root
+
+if TYPE_CHECKING:
+    from pilot.core.bench import Bench
 
 _OWN_GROUP_OPTIONS = frozenset(["--verbose", "--yes", "-y", "--bench", "-b", "--help", "-h"])
+
+
+@dataclass(frozen=True)
+class CliContext:
+    installation_root: Path
+    bench_name: str | None = None
+    verbose: bool = False
+    assume_yes: bool = False
+
+    @property
+    def all_benches(self) -> bool:
+        return self.bench_name == "all"
+
+    def for_bench(self, name: str) -> "CliContext":
+        return replace(self, bench_name=name)
+
+
+def find_bench_root(context: CliContext, require_explicit: bool = False) -> Path:
+    benches_dir = context.installation_root / "benches"
+
+    if context.bench_name:
+        bench_dir = benches_dir / context.bench_name
+        if not (bench_dir / "bench.toml").exists():
+            raise BenchError(f"Bench '{context.bench_name}' not found.\n{available_hint(benches_dir)}")
+        return bench_dir
+
+    current = Path.cwd()
+    for directory in [current, *current.parents]:
+        if (directory / "bench.toml").exists():
+            return directory
+
+    if require_explicit:
+        raise BenchError(
+            "This command needs an explicit bench — run it from inside the bench "
+            "directory, or pass -b <name>.\n" + available_hint(benches_dir, sort=True)
+        )
+
+    if benches_dir.is_dir():
+        candidates = [d for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()]
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            names = ", ".join(d.name for d in sorted(candidates))
+            raise BenchError(f"Multiple benches found: {names}\nSpecify one with: bench -b <name> <command>")
+
+    raise BenchError("No bench found. Create one with: bench new <name>")
+
+
+def load_bench(context: CliContext, require_explicit: bool = False) -> "Bench":
+    from pilot.config.toml_store import BenchTomlStore
+    from pilot.core.bench import Bench
+
+    bench_root = find_bench_root(context, require_explicit=require_explicit)
+    config = BenchTomlStore.for_bench(bench_root).read()
+    return Bench(config, bench_root)
 
 
 def strip_bench_flag(args: list[str]) -> tuple[str | None, list[str]]:
@@ -33,7 +93,7 @@ def is_frappe_passthrough(
     args: list[str], own_commands: frozenset[str] | None = None
 ) -> bool:
     if own_commands is None:
-        from pilot.internal.cli_registry import command_names
+        from pilot.internal.cli.registry import command_names
 
         own_commands = command_names()
 
@@ -92,8 +152,6 @@ def error_boundary(context: CliContext) -> Iterator[None]:
 
 
 def build_context(bench_name: str | None, verbose: bool, assume_yes: bool) -> CliContext:
-    from pilot.loader import cli_root
-
     return CliContext(
         installation_root=cli_root(),
         bench_name=bench_name,
@@ -111,17 +169,16 @@ def forwarded_frappe_args(remaining: list[str]) -> list[str] | None:
 
 
 def run_frappe(context: CliContext, args: list[str]) -> None:
-    from pilot import loader
     from pilot.commands.runtime.frappe import FrappeCommand
 
     with error_boundary(context):
-        FrappeCommand(loader.load_bench(context), args=tuple(args)).run()
+        FrappeCommand(load_bench(context), args=tuple(args)).run()
 
 
 def run_native(context: CliContext, remaining: list[str]) -> None:
     import time
 
-    from pilot.internal import cli_registry as registry
+    from pilot.internal.cli import registry
 
     parser = registry.build_parser()
     args = parser.parse_args(remaining)
@@ -138,3 +195,12 @@ def report_elapsed(elapsed: float) -> None:
     if elapsed >= 2:
         minutes, seconds = divmod(int(elapsed), 60)
         print(f"\nDone in {minutes}m {seconds}s" if minutes else f"\nDone in {seconds}s")
+
+
+def available_hint(benches_dir: Path, sort: bool = False) -> str:
+    if not benches_dir.is_dir():
+        return "  No benches found. Run: bench new <name>"
+    names = [d.name for d in benches_dir.iterdir() if d.is_dir() and (d / "bench.toml").exists()]
+    if not names:
+        return "  No benches found. Run: bench new <name>"
+    return f"  Available: {', '.join(sorted(names) if sort else names)}"

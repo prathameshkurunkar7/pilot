@@ -17,7 +17,7 @@ from pilot.managers.task.models import (
     TaskInfo,
     TaskStatus,
 )
-from pilot.secure_files import open_private
+from pilot.utils import open_private
 
 _TASK_POLL_SECONDS = 0.5
 

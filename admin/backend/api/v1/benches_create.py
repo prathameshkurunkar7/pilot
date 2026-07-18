@@ -12,7 +12,7 @@ from admin.backend.providers.bench import BenchProvider
 from pilot.config.toml_store import BenchTomlStore
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchAlreadyExistsError, BenchError
-from pilot.loader import cli_root
+from pilot.utils import cli_root
 
 
 def create_bench_locked(

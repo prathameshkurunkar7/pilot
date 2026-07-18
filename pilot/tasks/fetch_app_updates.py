@@ -5,11 +5,11 @@ from typing import ClassVar
 
 from pilot.integrations.marketplace import Marketplace
 
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 
 
 @dataclass(kw_only=True)
-class FetchAppUpdatesTask(BaseTask):
+class FetchAppUpdatesTask(Task):
     command: ClassVar[str] = "fetch-all-app-updates"
     # Sites.vue reads output[-1] as the JSON result, so the dumped JSON must
     # stay the last line — no trailing "done" step.

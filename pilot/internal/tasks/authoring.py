@@ -6,14 +6,14 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.internal.cli_fields import (
+from pilot.internal.cli.fields import (
     add_argument,
     arg_fields,
     strip_optional,
     to_kebab_case,
     value_from_namespace,
 )
-from pilot.tasks.base import BaseTask
+from pilot.tasks.base import Task
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
@@ -30,12 +30,12 @@ def apply_task_secrets(args: argparse.Namespace) -> None:
         setattr(args, key, value)
 
 
-def required_task_args(cls: type[BaseTask]) -> list[str]:
+def required_task_args(cls: type[Task]) -> list[str]:
     required = [field.name for field in task_fields(cls) if not field.has_default]
     return [*required, *cls.required_submit_args]
 
 
-def task_parser(cls: type[BaseTask]) -> argparse.ArgumentParser:
+def task_parser(cls: type[Task]) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("bench_root")
     for arg_field in task_fields(cls):
@@ -49,11 +49,11 @@ def task_parser(cls: type[BaseTask]) -> argparse.ArgumentParser:
 
 
 def task_from_args(
-    cls: type[BaseTask],
+    cls: type[Task],
     bench: Bench,
     bench_root: Path,
     args: argparse.Namespace,
-) -> BaseTask:
+) -> Task:
     kwargs = {
         arg_field.name: value_from_namespace(args, arg_field)
         for arg_field in task_fields(cls)
@@ -61,7 +61,7 @@ def task_from_args(
     return cls(bench=bench, bench_root=bench_root, **kwargs)
 
 
-def task_argv_suffix(cls: type[BaseTask], args: dict) -> list[str]:
+def task_argv_suffix(cls: type[Task], args: dict) -> list[str]:
     argv: list[str] = []
     for arg_field in task_fields(cls):
         if not arg_field.metadata.cli or arg_field.name not in args:
@@ -78,7 +78,7 @@ def task_argv_suffix(cls: type[BaseTask], args: dict) -> list[str]:
     return argv
 
 
-def run_task_main(cls: type[BaseTask]) -> None:
+def run_task_main(cls: type[Task]) -> None:
     from pilot.config.toml_store import BenchTomlStore
     from pilot.core.bench import Bench
 
@@ -89,7 +89,7 @@ def run_task_main(cls: type[BaseTask]) -> None:
     run_task(task_from_args(cls, bench, bench_root, args))
 
 
-def run_task(task: BaseTask) -> None:
+def run_task(task: Task) -> None:
     try:
         task.run()
     except SystemExit as exit_error:
@@ -104,7 +104,7 @@ def run_task(task: BaseTask) -> None:
             task.done()
 
 
-def task_fields(cls: type[BaseTask]) -> list:
+def task_fields(cls: type[Task]) -> list:
     return arg_fields(cls, exclude=_EXCLUDED_FIELDS, hint_namespace=_HINT_NAMESPACE)
 
 

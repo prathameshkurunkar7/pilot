@@ -4,13 +4,13 @@ import subprocess
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.loader import cli_root
+from pilot.utils import cli_root
 
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 
 
 @dataclass(kw_only=True)
-class UpdateCliTask(BaseTask):
+class UpdateCliTask(Task):
     command: ClassVar[str] = "update-cli"
 
     def run(self) -> None:

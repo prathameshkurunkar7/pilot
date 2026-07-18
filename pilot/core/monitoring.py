@@ -11,7 +11,7 @@ from pathlib import Path
 from pilot.core.monitoring_config import MonitorConfigurator
 from pilot.core.monitoring_proc import ProcMetricsReader
 from pilot.core.monitoring_processes import ProcessResolver
-from pilot.loader import cli_root
+from pilot.utils import cli_root
 from pilot.utils import iter_sibling_benches
 
 if typing.TYPE_CHECKING:

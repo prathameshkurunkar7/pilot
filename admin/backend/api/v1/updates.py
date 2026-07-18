@@ -5,7 +5,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify
 
 from pilot.internal.git import GitRepo
-from pilot.loader import cli_root
+from pilot.utils import cli_root
 
 from admin.backend.api.responses import error_response
 

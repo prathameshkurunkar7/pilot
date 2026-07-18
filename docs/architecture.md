@@ -53,10 +53,11 @@ pilot/
     │   └── tasks/                 # commands with group = "tasks"
     │
     ├── internal/                # Shared zero-dependency plumbing hidden from app authors
-    │   ├── cli_command.py       # Command dataclass -> argparse adapter
-    │   ├── cli_dispatch.py      # console entrypoint routing and Frappe passthrough
-    │   ├── cli_registry.py      # auto-discovers commands, builds parser, dispatches
-    │   ├── cli_fields.py        # Dataclass field -> argparse conversion
+    │   ├── cli/                 # argparse command plumbing and console dispatch
+    │   │   ├── command.py       # Command dataclass -> argparse adapter
+    │   │   ├── dispatch.py      # console entrypoint routing and Frappe passthrough
+    │   │   ├── registry.py      # auto-discovers commands, builds parser, dispatches
+    │   │   └── fields.py        # Dataclass field -> argparse conversion
     │   ├── tasks/               # Task runner implementation hidden from app authors
     │   │   ├── args.py, callbacks.py, authoring.py
     │   │   ├── process.py, process_identity.py, wrapper.py
@@ -66,7 +67,7 @@ pilot/
     │
     ├── tasks/                   # Task definitions and public TaskRunner (see tasks.md)
     │   ├── __init__.py
-    │   ├── base.py              # Task authoring API: BaseTask, step
+    │   ├── base.py              # Task authoring API: Task, step
     │   ├── callbacks.py         # Public task submission callback types
     │   ├── runner.py            # Public TaskRunner and TaskSubmission wrapper
     │   ├── migrate.py, build.py, new_site.py, ...
@@ -572,20 +573,20 @@ Field inference:
 `bench` and `skip_confirm` are always excluded: `bench` is injected by the
 registry, and `skip_confirm` reads the global `-y`/`--yes` flag.
 
-### `cli_registry.py` — discovery, parser, dispatch
+### `internal/cli/registry.py` — discovery, parser, dispatch
 
 1. **Discover** — imports every module under `commands/` and collects all `Command`
    subclasses that set a `name`. No hand-maintained list.
 2. **`build_parser()`** — adds the global flags (`--verbose`, `--yes`, `--bench`) once,
    then one sub-parser per command (and a parent parser per `group`). The internal
-   `cli_command.py` adapter populates each sub-parser from the command's fields.
+   `internal/cli/command.py` adapter populates each sub-parser from the command's fields.
 3. **`dispatch(args)`** — reads `_command_cls`, resolves the `Bench` per its
    `bench_mode`, builds the command through the internal adapter, then runs it.
    No `elif` chain.
 
-### `cli.py` / `internal/cli_dispatch.py` — the thin entry point
+### `cli.py` / `internal/cli/dispatch.py` — the thin entry point
 
-`cli.py` only exports `main` for the console script. `internal/cli_dispatch.py`
+`cli.py` only exports `main` for the console script. `internal/cli/dispatch.py`
 resolves global flags, then either forwards to the registry or handles the one
 special case: `bench frappe ...` / unknown sub-commands are passed through to
 `env/bin/bench` inside the active bench (handled before argparse so flags like

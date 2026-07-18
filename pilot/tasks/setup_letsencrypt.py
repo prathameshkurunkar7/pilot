@@ -2,11 +2,11 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from pilot.config.toml_store import BenchTomlStore
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 
 
 @dataclass(kw_only=True)
-class SetupLetsEncryptTask(BaseTask):
+class SetupLetsEncryptTask(Task):
     command: ClassVar[str] = "setup-letsencrypt"
 
     site: str = ""

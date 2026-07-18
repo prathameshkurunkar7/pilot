@@ -20,7 +20,7 @@ class GenerateSessionCommand(Command):
     ] = False
 
     def run(self) -> None:
-        from pilot.admin_url import admin_url
+        from pilot.utils import admin_url
         from pilot.core.admin_auth import issue_login_token
 
         if not self.bench.config.admin.password:

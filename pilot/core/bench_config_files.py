@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from pilot.secure_files import write_private_text
+from pilot.utils import write_private_text
 
 if TYPE_CHECKING:
     from pilot.config.s3 import S3Config

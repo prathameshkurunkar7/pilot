@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from pilot.secure_files import PRIVATE_FILE_MODE, open_private
+from pilot.utils import PRIVATE_FILE_MODE, open_private
 
 
 def _lock_path(path: Path) -> Path:

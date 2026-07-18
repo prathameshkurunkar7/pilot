@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pilot.secure_files import write_private_text
+from pilot.utils import write_private_text
 
 CREDENTIALS_FILENAME = ".bench.git.info"
 

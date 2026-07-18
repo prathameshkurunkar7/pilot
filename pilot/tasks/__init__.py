@@ -4,7 +4,7 @@ from importlib import import_module
 
 __all__ = [
     "Arg",
-    "BaseTask",
+    "Task",
     "TaskCallback",
     "TaskCallbacks",
     "TaskRunner",
@@ -14,7 +14,7 @@ __all__ = [
 
 _EXPORTS = {
     "Arg": ("pilot.tasks.base", "Arg"),
-    "BaseTask": ("pilot.tasks.base", "BaseTask"),
+    "Task": ("pilot.tasks.base", "Task"),
     "step": ("pilot.tasks.base", "step"),
     "TaskCallback": ("pilot.tasks.callbacks", "TaskCallback"),
     "TaskCallbacks": ("pilot.tasks.callbacks", "TaskCallbacks"),

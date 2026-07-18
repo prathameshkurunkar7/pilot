@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 
-from pilot.admin_url import admin_url
+from pilot.utils import admin_url
 from pilot.config.bench import BenchConfig
 
 BASE = {

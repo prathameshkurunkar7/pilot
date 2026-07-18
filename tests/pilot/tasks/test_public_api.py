@@ -11,22 +11,23 @@ import pilot.tasks as tasks
 
 def test_task_authoring_api_is_public_on_tasks_package() -> None:
     assert tasks.Arg.__name__ == "Arg"
-    assert tasks.Arg.__module__ == "pilot.cli_args"
-    assert tasks.BaseTask.__name__ == "BaseTask"
+    assert tasks.Arg.__module__ == "pilot.commands.base"
+    assert tasks.Task.__name__ == "Task"
     assert callable(tasks.step)
 
 
-def test_base_task_does_not_expose_subprocess_parser_plumbing() -> None:
-    assert not hasattr(tasks.BaseTask, "parser")
-    assert not hasattr(tasks.BaseTask, "from_args")
-    assert not hasattr(tasks.BaseTask, "get_required_args")
+def test_task_does_not_expose_subprocess_parser_plumbing() -> None:
+    assert not hasattr(tasks.Task, "parser")
+    assert not hasattr(tasks.Task, "from_args")
+    assert not hasattr(tasks.Task, "get_required_args")
     assert not hasattr(tasks, "apply_task_secrets")
 
 
-def test_task_base_module_does_not_expose_step_implementation() -> None:
+def test_task_module_does_not_expose_step_implementation() -> None:
     import pilot.tasks.base as task_base
 
     assert not hasattr(task_base, "Step")
+    assert "_TaskStep" not in str(task_base.Task.step.__annotations__)
 
 
 def test_task_submission_callback_types_are_public_on_tasks_package() -> None:
@@ -121,7 +122,7 @@ def test_task_registry_internals_are_not_public_on_tasks_package() -> None:
 
 
 def test_task_authoring_api_is_not_reexported_from_manager_package() -> None:
-    assert not hasattr(task_manager, "BaseTask")
+    assert not hasattr(task_manager, "Task")
     assert not hasattr(task_manager, "step")
 
 

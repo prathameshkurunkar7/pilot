@@ -16,7 +16,7 @@ from pilot.internal.tasks.args import (
 )
 from pilot.internal.tasks.authoring import task_argv_suffix
 from pilot.internal.tasks.callbacks import validate_callback
-from pilot.tasks.base import BaseTask
+from pilot.tasks.base import Task
 from pilot.tasks.callbacks import TaskCallbacks
 
 
@@ -70,7 +70,7 @@ class TaskPayloadBuilder:
     def __init__(
         self,
         bench_root: Path,
-        jobs: dict[str, type[BaseTask]],
+        jobs: dict[str, type[Task]],
         required_args: dict[str, list[str]],
         generate_task_id: Callable[[], str],
     ) -> None:

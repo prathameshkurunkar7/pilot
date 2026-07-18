@@ -6,7 +6,7 @@ from typing import Annotated, ClassVar
 
 from pilot.commands.base import Arg, Command
 from pilot.exceptions import BenchError
-from pilot.secure_files import write_private_text
+from pilot.utils import write_private_text
 
 
 @dataclass(kw_only=True)

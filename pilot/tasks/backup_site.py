@@ -6,14 +6,14 @@ from functools import cached_property
 from pathlib import Path
 from typing import ClassVar
 
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 from pilot.core.backup_pruning import BackupPruner
 from pilot.integrations.s3.backups import OffsiteBackup
 from pilot.integrations.s3.base import S3IntegrationError
 
 
 @dataclass(kw_only=True)
-class BackupSiteTask(BaseTask):
+class BackupSiteTask(Task):
     command: ClassVar[str] = "backup-site"
 
     site: str

@@ -8,8 +8,8 @@ import sys
 import pytest
 
 import pilot.cli as cli
-import pilot.internal.cli_dispatch as dispatch
-import pilot.internal.cli_registry as registry
+import pilot.internal.cli.dispatch as dispatch
+import pilot.internal.cli.registry as registry
 
 
 def test_cli_module_is_only_the_console_entrypoint() -> None:
@@ -126,7 +126,7 @@ def _tracing_import(name, *args, **kwargs):
     return result
 
 builtins.__import__ = _tracing_import
-import pilot.internal.cli_registry as r; r._discover()
+import pilot.internal.cli.registry as r; r._discover()
 builtins.__import__ = _orig
 print('\\n'.join(_leaks))
 """

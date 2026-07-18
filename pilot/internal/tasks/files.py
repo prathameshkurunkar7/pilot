@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pilot.exceptions import TaskNotFoundError
 from pilot.internal.atomic_file import replace_private_text_locked
-from pilot.secure_files import open_private
+from pilot.utils import open_private
 
 _QUEUED_STATUS = "queued"
 _TASK_ID_PATTERN = re.compile(r"^\d{8}-\d{6}-[a-f0-9]{6}$")

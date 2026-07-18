@@ -5,15 +5,15 @@ from unittest.mock import patch
 
 import pytest
 
-from pilot.tasks import BaseTask
+from pilot.tasks import Task
 from pilot.exceptions import BenchError
 from tests.pilot.commands.test_commands import make_bench
 
 
-def _task(tmp_path: Path, production: bool) -> BaseTask:
+def _task(tmp_path: Path, production: bool) -> Task:
     bench = make_bench(tmp_path)
     bench.config.production.enabled = production
-    return BaseTask(bench=bench, bench_root=tmp_path)
+    return Task(bench=bench, bench_root=tmp_path)
 
 
 def test_production_site_task_fails_before_password_prompt(tmp_path: Path) -> None:

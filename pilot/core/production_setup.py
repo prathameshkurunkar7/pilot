@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Optional
 
 from pilot.exceptions import BenchError
 from pilot.core.production_admin_domain import ProductionAdminDomain
-from pilot.secure_files import write_private_text
+from pilot.utils import write_private_text
 
 if TYPE_CHECKING:
     from pilot.core.bench import Bench

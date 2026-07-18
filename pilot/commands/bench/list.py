@@ -15,7 +15,7 @@ class ListCommand(Command):
     bench_mode: ClassVar[BenchMode] = BenchMode.NONE
 
     def run(self) -> None:
-        from pilot.loader import cli_root
+        from pilot.utils import cli_root
 
         benches_dir = cli_root() / "benches"
         rows = self._collect(benches_dir)
@@ -69,7 +69,7 @@ class ListCommand(Command):
             else:
                 mode = "development"
                 manager = "foreground"
-            from pilot.admin_url import admin_url
+            from pilot.utils import admin_url
 
             address = admin_url(config)
             state = self._state(Bench(config, bench_dir), prod.enabled)

@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 
 
 @dataclass(kw_only=True)
-class WizardSetupTask(BaseTask):
+class WizardSetupTask(Task):
     """Initialize the bench — the only thing the setup wizard does for a plain
     dev bench; production is a deliberate, separate step the user runs from the
     terminal afterwards (`bench setup production --admin-domain ... --tls`).

@@ -7,7 +7,7 @@ import json
 import re
 from datetime import datetime, timezone
 
-from pilot.secure_files import open_private
+from pilot.utils import open_private
 
 _FILE_RE = re.compile(r"^audit_\d{4}_\d{2}\.jsonl$")
 

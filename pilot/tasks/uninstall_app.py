@@ -2,11 +2,11 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from pilot.core.site import Site
-from pilot.tasks.base import BaseTask, step
+from pilot.tasks.base import Task, step
 
 
 @dataclass(kw_only=True)
-class UninstallAppTask(BaseTask):
+class UninstallAppTask(Task):
     command: ClassVar[str] = "uninstall-app"
 
     site: str

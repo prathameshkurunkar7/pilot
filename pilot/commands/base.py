@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING, ClassVar
 
-from pilot.cli_args import Arg
 from pilot.exceptions import BenchError
 
 __all__ = ["Arg", "BenchMode", "Command"]
@@ -21,6 +20,15 @@ class BenchMode(Enum):
     OPTIONAL = auto()
     AUTO = auto()
     EXPLICIT = auto()
+
+
+@dataclass(frozen=True)
+class Arg:
+    help: str = ""
+    short: str | None = None
+    cli: bool = True
+    metavar: str | None = None
+    required: bool = False
 
 
 @dataclass
