@@ -298,10 +298,12 @@ def test_nginx_upstream_uses_gunicorn_bind(tmp_path: Path) -> None:
     )
     bench = Bench(config, tmp_path)
     renderer = NginxConfigRenderer(bench)
+    renderer._proxy_servers_cache = []
 
-    upstream = renderer._render_upstream_block("test-bench")
+    config_text = renderer.generate_bench_config([], admin_ssl=False)
 
-    assert "server 127.0.0.1:9000;" in upstream
+    assert "upstream bench-test-bench {" in config_text
+    assert "server 127.0.0.1:9000;" in config_text
 
 
 def test_toml_writer_includes_gunicorn_section(tmp_path: Path) -> None:
@@ -411,11 +413,11 @@ def test_gunicorn_config_uses_explicit_combined_worker_group(tmp_path: Path) -> 
     GunicornManager(bench).generate_config()
 
     content = (bench.config_path / "gunicorn.conf.py").read_text()
-    assert '"FRAPPE_COMPANION_QUEUE": "default,short,long"' in content
-    assert '"FRAPPE_COMPANION_QUEUE": "short"' not in content
-    assert '"FRAPPE_COMPANION_QUEUE": "long"' not in content
+    assert "'FRAPPE_COMPANION_QUEUE': 'default,short,long'" in content
+    assert "'FRAPPE_COMPANION_QUEUE': 'short'" not in content
+    assert "'FRAPPE_COMPANION_QUEUE': 'long'" not in content
     # A single group of one worker -> one pool worker.
-    assert '"FRAPPE_COMPANION_NUM_WORKERS": "1"' in content
+    assert "'FRAPPE_COMPANION_NUM_WORKERS': '1'" in content
 
 
 def test_worker_pool_aggregates_groups_into_one_pool(tmp_path: Path) -> None:
@@ -453,8 +455,8 @@ def test_worker_pool_aggregates_groups_into_one_pool(tmp_path: Path) -> None:
 
     content = (bench.config_path / "gunicorn.conf.py").read_text()
     assert content.count("run_worker_pool") == 1
-    assert '"FRAPPE_COMPANION_QUEUE": "default,short,long"' in content  # union, order-preserving, deduped
-    assert '"FRAPPE_COMPANION_NUM_WORKERS": "4"' in content  # 2 + 1 + 1
+    assert "'FRAPPE_COMPANION_QUEUE': 'default,short,long'" in content  # union, order-preserving, deduped
+    assert "'FRAPPE_COMPANION_NUM_WORKERS': '4'" in content  # 2 + 1 + 1
 
 
 def test_gunicorn_config_excludes_companion_without_flag(tmp_path: Path) -> None:

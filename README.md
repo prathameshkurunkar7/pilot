@@ -48,27 +48,11 @@ On a root-only VPS, run it as root; the installer creates a non-root bench user.
 Create a bench and launch the setup wizard:
 
 ```bash
-bench new main
-bench -b main start
+bench new dev-bench
+bench -b dev-bench start
 ```
 
-The first `start` opens the Admin setup wizard at `http://localhost:8002`. The wizard asks for the Admin password, database settings, and Frappe source settings, then initializes the bench with live task progress.
-
-Manual setup:
-
-```bash
-bench new main
-$EDITOR benches/main/bench.toml
-bench -b main init
-bench -b main get-app https://github.com/frappe/erpnext --branch version-16
-bench -b main new-site site1.localhost
-bench -b main start
-```
-
-After start:
-
-- Site: `http://site1.localhost:8000`
-- Admin UI: `http://localhost:8002`
+The first `start` will print the url to access the admin wizard. The wizard asks for the Admin password, database settings, and Frappe source settings, then initializes the bench with live task progress.
 
 Common commands:
 

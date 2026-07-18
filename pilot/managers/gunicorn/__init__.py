@@ -4,8 +4,12 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pilot.internal.template import Template
+
 if TYPE_CHECKING:
     from pilot.core.bench import Bench
+
+_CONFIG_TEMPLATE = Template.from_path(Path(__file__).parent / "templates" / "gunicorn.conf.py.template")
 
 
 # Stop timeouts for companion processes (seconds), matching legacy bench defaults.
@@ -52,74 +56,20 @@ class GunicornManager:
         # gthread is required for threads to actually be used.
         if cfg.threads > 0 and worker_class == "sync":
             worker_class = "gthread"
-        base = (
-            f'bind = "{self._bind()}"\n'
-            f"workers = {cfg.workers}\n"
-            f"threads = {cfg.threads}\n"
-            f'worker_class = "{worker_class}"\n'
-            f"timeout = {cfg.timeout}\n"
-            f"preload_app = True\n"
+        companion = self.bench.config.production.use_companion_manager
+        workers = self._build_companion_workers(self.bench.sites_path, self.bench.logs_path) if companion else []
+        return _CONFIG_TEMPLATE.render(
+            bind=self._bind(),
+            workers=cfg.workers,
+            threads=cfg.threads,
+            worker_class=worker_class,
+            timeout=cfg.timeout,
+            max_requests=cfg.max_requests,
+            max_requests_jitter=cfg.max_requests_jitter,
+            companion=companion,
+            control_socket=self.bench.config_path / "gunicorn-companion.sock",
+            companion_workers=repr(workers),
         )
-        if cfg.max_requests > 0:
-            base += f"max_requests = {cfg.max_requests}\n"
-            base += f"max_requests_jitter = {cfg.max_requests_jitter}\n"
-        if not self.bench.config.production.use_companion_manager:
-            return base
-        return self._render_companion_config(base)
-
-    def _render_companion_config(self, base: str) -> str:
-        sites_dir = self.bench.sites_path
-        logs_dir = self.bench.logs_path
-        control_socket = self.bench.config_path / "gunicorn-companion.sock"
-        workers_code = self._render_companion_workers(sites_dir, logs_dir)
-
-        return (
-            "import os\n\n"
-            "# Allow the Python socketio companion to run gevent by skipping\n"
-            "# frappe.app's eager mysqlclient import before preload.\n"
-            'os.environ.setdefault("FRAPPE_GUNICORN_COMPANION", "1")\n\n'
-            'wsgi_app = "frappe.app:application"\n'
-            "\n"
-            + base
-            + "graceful_timeout = 30\n"
-            + f'companion_control_socket = "{control_socket}"\n'
-            + "companion_control_socket_mode = 0o660\n"
-            + "companion_manager_shutdown_buffer = 15\n"
-            + "\n"
-            + f"companion_workers = {workers_code}\n"
-            + "\n\n"
-            + "def on_starting(server):\n"
-            + "    import frappe.gunicorn_companion as companion\n"
-            + "    companion.warmup()\n"
-            + "\n\n"
-            + "def when_ready(server):\n"
-            + "    from frappe._optimizations import freeze_gc\n"
-            + "    freeze_gc()\n"
-        )
-
-    def _render_companion_workers(self, sites_dir: Path, logs_dir: Path) -> str:
-        workers = self._build_companion_workers(sites_dir, logs_dir)
-        lines = ["["]
-        for i, worker in enumerate(workers):
-            comma = "," if i < len(workers) - 1 else ""
-            lines.append(self._render_worker_dict(worker) + comma)
-        lines.append("]")
-        return "\n".join(lines)
-
-    def _render_worker_dict(self, worker: dict) -> str:
-        items = []
-        for key, value in worker.items():
-            items.append(self._render_dict_item(key, value))
-        return "    {\n" + ",\n".join(items) + "\n    }"
-
-    @staticmethod
-    def _render_dict_item(key: str, value) -> str:
-        if isinstance(value, str):
-            return f'        "{key}": "{value}"'
-        if isinstance(value, dict):
-            inner = ", ".join(f'"{k}": "{v}"' for k, v in value.items())
-            return f'        "{key}": {{{inner}}}'
-        return f'        "{key}": {value}'
 
     def _build_companion_workers(self, sites_dir: Path, logs_dir: Path) -> list[dict]:
         # A single RQ worker-pool runs all queues; the Frappe scheduler runs as a
