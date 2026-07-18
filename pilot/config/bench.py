@@ -3,11 +3,11 @@ from __future__ import annotations
 import copy
 import re
 import tomllib
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pilot.config.admin import AdminConfig
 from pilot.config.app import AppConfig
@@ -168,19 +168,7 @@ class BenchConfig:
             )
             for a in data.get("apps", [])
         ]
-        mariadb = MariaDBConfig(**cls._known_fields(MariaDBConfig, data.get("mariadb", {})))
-        postgres = PostgresConfig(**cls._known_fields(PostgresConfig, data.get("postgres", {})))
-        redis = RedisConfig.from_dict(data.get("redis", {}))
-        workers = WorkerConfig.from_dict(data.get("workers", []))
-        production = ProductionConfig.from_dict(data.get("production"))
-        monitor = MonitorConfig.from_dict(data.get("monitor", {}))
-        gunicorn = GunicornConfig.from_dict(data.get("gunicorn", {}))
-        letsencrypt = LetsEncryptConfig.from_dict(data.get("letsencrypt", {}))
-        admin = AdminConfig.from_dict(data.get("admin", {}))
-        central = CentralConfig.from_dict(data.get("central", {}))
-        firewall = FirewallConfig.from_dict(data.get("firewall"))
-        waf = WafConfig.from_dict(data.get("waf"))
-        s3 = S3Config(**cls._known_fields(S3Config, data.get("s3", {})))
+        sections = {section.attr: section.read(data) for section in _SECTIONS}
         return cls(
             name=bench_data.get("name", ""),
             python_version=bench_data.get("python", ""),
@@ -193,19 +181,7 @@ class BenchConfig:
             db_type=bench_data.get("db_type", "mariadb"),
             default_branch=bench_data.get("default_branch", ""),
             apps=apps,
-            mariadb=mariadb,
-            postgres=postgres,
-            redis=redis,
-            workers=workers,
-            production=production,
-            monitor=monitor,
-            gunicorn=gunicorn,
-            letsencrypt=letsencrypt,
-            admin=admin,
-            central=central,
-            firewall=firewall,
-            waf=waf,
-            s3=s3,
+            **sections,
         )
 
     @staticmethod
@@ -411,19 +387,11 @@ class BenchConfig:
         return Toml.dumps(self._to_toml_dict())
 
     def _to_toml_dict(self) -> ConfigDict:
-        data: ConfigDict = {
-            "bench": self._bench_section(),
-            "apps": self._apps_section(),
-            "mariadb": self._mariadb_section(),
-            "postgres": self._postgres_section(),
-            "redis": self._redis_section(),
-            "workers": self._workers_section(),
-            "production": self._production_section(),
-            "gunicorn": self._gunicorn_section(),
-            "letsencrypt": self._letsencrypt_section(),
-            "admin": self._admin_section(),
-        }
-        self._add_optional_sections(data)
+        data: ConfigDict = {"bench": self._bench_section(), "apps": self._apps_section()}
+        for section in _SECTIONS:
+            value = section.write(self)
+            if value is not None:
+                data[section.attr] = value
         return data
 
     def _bench_section(self) -> ConfigDict:
@@ -526,78 +494,77 @@ class BenchConfig:
         admin.update({key: value for key, value in optional_admin.items() if value})
         return admin
 
-    def _add_optional_sections(self, data: ConfigDict) -> None:
-        if self.central.endpoint or self.central.auth_token:
-            data["central"] = {
-                "endpoint": self.central.endpoint,
-                "auth_token": self.central.auth_token,
-            }
+    def _central_section(self) -> ConfigDict:
+        return {
+            "endpoint": self.central.endpoint,
+            "auth_token": self.central.auth_token,
+        }
 
-        if self.firewall.enabled or self.firewall.rules:
-            data["firewall"] = {
-                "enabled": self.firewall.enabled,
-                "default": self.firewall.default,
-                "rules": [
-                    {
-                        "ip": rule.ip,
-                        "action": rule.action,
-                        "description": rule.description,
-                    }
-                    for rule in self.firewall.rules
-                ],
-            }
+    def _firewall_section(self) -> ConfigDict:
+        return {
+            "enabled": self.firewall.enabled,
+            "default": self.firewall.default,
+            "rules": [
+                {
+                    "ip": rule.ip,
+                    "action": rule.action,
+                    "description": rule.description,
+                }
+                for rule in self.firewall.rules
+            ],
+        }
 
+    def _waf_section(self) -> ConfigDict:
         waf = self.waf
-        if waf != WafConfig():
-            data["waf"] = {
-                "enabled": waf.enabled,
-                "mode": waf.mode,
-                "paranoia": waf.paranoia,
-                "inbound_threshold": waf.inbound_threshold,
-                "body_limit": waf.body_limit,
-                "inspect_responses": waf.inspect_responses,
-                "exclusions": waf.exclusions,
-                "exempt_paths": waf.exempt_paths,
-                "custom_rules": [
-                    {
-                        "name": rule.name,
-                        "action": rule.action,
-                        "match": rule.match,
-                        "enabled": rule.enabled,
-                        "conditions": [
-                            {
-                                "field": c.field,
-                                "operator": c.operator,
-                                "value": c.value,
-                                "header_name": c.header_name,
-                            }
-                            for c in rule.conditions
-                        ],
-                    }
-                    for rule in waf.custom_rules
-                ],
-            }
+        return {
+            "enabled": waf.enabled,
+            "mode": waf.mode,
+            "paranoia": waf.paranoia,
+            "inbound_threshold": waf.inbound_threshold,
+            "body_limit": waf.body_limit,
+            "inspect_responses": waf.inspect_responses,
+            "exclusions": waf.exclusions,
+            "exempt_paths": waf.exempt_paths,
+            "custom_rules": [
+                {
+                    "name": rule.name,
+                    "action": rule.action,
+                    "match": rule.match,
+                    "enabled": rule.enabled,
+                    "conditions": [
+                        {
+                            "field": c.field,
+                            "operator": c.operator,
+                            "value": c.value,
+                            "header_name": c.header_name,
+                        }
+                        for c in rule.conditions
+                    ],
+                }
+                for rule in waf.custom_rules
+            ],
+        }
 
-        s3 = self.s3
-        if s3.access_key or s3.secret_key or s3.bucket or s3.provider or s3.region:
-            data["s3"] = {
-                "access_key": s3.access_key,
-                "secret_key": s3.secret_key,
-                "bucket": s3.bucket,
-                "provider": s3.provider,
-                "region": s3.region,
-            }
+    def _s3_section(self) -> ConfigDict:
+        return {
+            "access_key": self.s3.access_key,
+            "secret_key": self.s3.secret_key,
+            "bucket": self.s3.bucket,
+            "provider": self.s3.provider,
+            "region": self.s3.region,
+        }
 
-        if self.production.enabled:
-            monitor = self.monitor
-            data["monitor"] = {
-                "system_log_path": str(monitor.system_log_path),
-                "authority_file_path": str(monitor.authority_file_path),
-                "system_log_max_size": monitor.system_log_max_size,
-                "application_log_max_size": monitor.application_log_max_size,
-            }
-            if monitor.log_path:
-                data["monitor"]["log_path"] = str(monitor.log_path)
+    def _monitor_section(self) -> ConfigDict:
+        monitor = self.monitor
+        data: ConfigDict = {
+            "system_log_path": str(monitor.system_log_path),
+            "authority_file_path": str(monitor.authority_file_path),
+            "system_log_max_size": monitor.system_log_max_size,
+            "application_log_max_size": monitor.application_log_max_size,
+        }
+        if monitor.log_path:
+            data["log_path"] = str(monitor.log_path)
+        return data
 
     # -- wizard flat-key interface --
 
@@ -665,6 +632,96 @@ class BenchConfig:
     def _preserve_unknown_config(original: Mapping, replacement: Mapping) -> dict:
         """Keep fields outside the managed schema when replacing known config."""
         return _preserve_unknown(original, replacement, _SCHEMA_ROOT)
+
+
+@dataclass(frozen=True)
+class _Section:
+    """One nested bench.toml table, wired for both reading and writing.
+
+    To add a new nested section: add the field to BenchConfig (with a
+    dataclass, plus a ``from_dict`` classmethod if it needs custom parsing),
+    write its ``_xxx_section()`` method, and add one entry here. attr is both
+    the BenchConfig field name and the TOML table name. write returns None to
+    omit the section from output entirely (for config that's only written
+    when actually used, like s3 or waf).
+    """
+
+    attr: str
+    read: Callable[[dict], Any]
+    write: Callable[[BenchConfig], Any | None]
+
+
+_SECTIONS: tuple[_Section, ...] = (
+    _Section(
+        "mariadb",
+        lambda data: MariaDBConfig(**BenchConfig._known_fields(MariaDBConfig, data.get("mariadb", {}))),
+        lambda config: config._mariadb_section(),
+    ),
+    _Section(
+        "postgres",
+        lambda data: PostgresConfig(**BenchConfig._known_fields(PostgresConfig, data.get("postgres", {}))),
+        lambda config: config._postgres_section(),
+    ),
+    _Section(
+        "redis",
+        lambda data: RedisConfig.from_dict(data.get("redis", {})),
+        lambda config: config._redis_section(),
+    ),
+    _Section(
+        "workers",
+        lambda data: WorkerConfig.from_dict(data.get("workers", [])),
+        lambda config: config._workers_section(),
+    ),
+    _Section(
+        "production",
+        lambda data: ProductionConfig.from_dict(data.get("production")),
+        lambda config: config._production_section(),
+    ),
+    _Section(
+        "gunicorn",
+        lambda data: GunicornConfig.from_dict(data.get("gunicorn", {})),
+        lambda config: config._gunicorn_section(),
+    ),
+    _Section(
+        "letsencrypt",
+        lambda data: LetsEncryptConfig.from_dict(data.get("letsencrypt", {})),
+        lambda config: config._letsencrypt_section(),
+    ),
+    _Section(
+        "admin",
+        lambda data: AdminConfig.from_dict(data.get("admin", {})),
+        lambda config: config._admin_section(),
+    ),
+    _Section(
+        "central",
+        lambda data: CentralConfig.from_dict(data.get("central", {})),
+        lambda config: config._central_section()
+        if (config.central.endpoint or config.central.auth_token)
+        else None,
+    ),
+    _Section(
+        "firewall",
+        lambda data: FirewallConfig.from_dict(data.get("firewall")),
+        lambda config: config._firewall_section() if (config.firewall.enabled or config.firewall.rules) else None,
+    ),
+    _Section(
+        "waf",
+        lambda data: WafConfig.from_dict(data.get("waf")),
+        lambda config: config._waf_section() if config.waf != WafConfig() else None,
+    ),
+    _Section(
+        "s3",
+        lambda data: S3Config(**BenchConfig._known_fields(S3Config, data.get("s3", {}))),
+        lambda config: config._s3_section()
+        if (config.s3.access_key or config.s3.secret_key or config.s3.bucket or config.s3.provider or config.s3.region)
+        else None,
+    ),
+    _Section(
+        "monitor",
+        lambda data: MonitorConfig.from_dict(data.get("monitor", {})),
+        lambda config: config._monitor_section() if config.production.enabled else None,
+    ),
+)
 
 
 def _get_path(config: BenchConfig, path: str):
