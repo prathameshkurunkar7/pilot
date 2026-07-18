@@ -78,16 +78,16 @@ def test_config_without_apps_is_valid() -> None:
     assert config.apps == []
 
 
-def test_watch_apps_js_defaults_to_enabled() -> None:
+def test_watch_apps_js_defaults_to_disabled() -> None:
     config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
-    assert config.watch_apps_js is True
-
-
-def test_watch_apps_js_can_be_disabled() -> None:
-    data = copy.deepcopy(MINIMAL_VALID_DATA)
-    data["bench"]["watch_apps_js"] = False
-    config = load_from_dict(data)
     assert config.watch_apps_js is False
+
+
+def test_watch_apps_js_can_be_enabled() -> None:
+    data = copy.deepcopy(MINIMAL_VALID_DATA)
+    data["bench"]["watch_apps_js"] = True
+    config = load_from_dict(data)
+    assert config.watch_apps_js is True
 
 
 def test_toml_writer_includes_watch_apps_js() -> None:

@@ -330,12 +330,12 @@ def test_process_definitions_returns_correct_count(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
     # workers: default=2, short=1, long=1 => 4 worker processes
     # plus web, socketio, redis_cache, redis_queue = 4
-    # plus admin, watch (on by default in dev) = 2
-    # total = 10
+    # plus admin = 1
+    # total = 9
     process_manager = ProcessManager(bench)
     definitions = process_manager._process_definitions()
-    assert len(definitions) == 10
-    assert "watch" in [pd.name for pd in definitions]
+    assert len(definitions) == 9
+    assert "watch" not in [pd.name for pd in definitions]
     assert "admin-ui" not in [pd.name for pd in definitions]
 
 
@@ -343,23 +343,18 @@ def test_process_definitions_watch_admin_js_adds_vite_ui(tmp_path: Path) -> None
     bench = make_bench(tmp_path)
     definitions = ProcessManager(bench, watch_admin_js=True)._process_definitions()
     assert "admin-ui" in [pd.name for pd in definitions]
-    assert len(definitions) == 11
+    assert len(definitions) == 10
 
 
-def test_process_definitions_can_disable_app_watch(tmp_path: Path) -> None:
+def test_process_definitions_can_enable_app_watch(tmp_path: Path) -> None:
     bench = make_bench(tmp_path)
-    bench.config.watch_apps_js = False
+    bench.config.watch_apps_js = True
     definitions = ProcessManager(bench)._process_definitions()
-    assert "watch" not in [pd.name for pd in definitions]
-    assert len(definitions) == 9
-
-
-def test_watch_definition_runs_frappe_watch_in_sites(tmp_path: Path) -> None:
-    bench = make_bench(tmp_path)
-    definitions = ProcessManager(bench)._process_definitions()
+    assert "watch" in [pd.name for pd in definitions]
     watch = next(pd for pd in definitions if pd.name == "watch")
     assert "frappe watch" in shlex.join(watch.argv)
     assert watch.working_dir == bench.sites_path
+    assert len(definitions) == 10
 
 
 def test_process_definitions_worker_names_are_numbered(tmp_path: Path) -> None:
@@ -420,7 +415,7 @@ def test_honcho_generate_config_writes_procfile(tmp_path: Path) -> None:
     assert "web:" in content
     assert "socketio:" in content
     assert "worker_default_1:" in content
-    assert "watch:" in content
+    assert "watch:" not in content
     assert "redis_cache:" in content
 
 
