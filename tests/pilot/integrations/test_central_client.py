@@ -7,12 +7,12 @@ from unittest.mock import patch
 import pytest
 
 from pilot.commands.admin.set_central_config import SetCentralConfigCommand
-from pilot.config.app_config import AppConfig
-from pilot.config.bench_config import BenchConfig
-from pilot.config.mariadb_config import MariaDBConfig
-from pilot.config.redis_config import RedisConfig
+from pilot.config.app import AppConfig
+from pilot.config.bench import BenchConfig
+from pilot.config.mariadb import MariaDBConfig
+from pilot.config.redis import RedisConfig
 from pilot.config.toml_store import BenchTomlStore
-from pilot.config.worker_config import WorkerConfig, WorkerGroup
+from pilot.config.worker import WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
 from pilot.integrations.central import CentralClient, CentralClientError
 from pilot.exceptions import BenchError
@@ -174,7 +174,7 @@ def test_heartbeat_wraps_non_json_response(tmp_path: Path) -> None:
 
 def _app_client(bench_root: Path):
 	from admin.backend.app import create_app
-	from pilot.commands.admin.generate_session import ensure_jwt_secret, issue_token
+	from pilot.core.admin_auth import ensure_jwt_secret, issue_token
 	from pilot.config.bench_toml_builder import BenchTomlBuilder
 
 	bench_root.mkdir(parents=True, exist_ok=True)
