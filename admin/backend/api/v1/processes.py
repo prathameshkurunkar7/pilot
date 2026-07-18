@@ -7,14 +7,14 @@ from flask import Blueprint, current_app, jsonify
 
 from admin.backend.api.responses import error_response
 from admin.backend.providers.processes import ProcessProvider
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig
 
 processes_bp = Blueprint("processes", __name__)
 
 
 def _bench_name(bench_root: Path) -> str:
     try:
-        return BenchTomlStore.for_bench(bench_root).read_raw().get("bench", {}).get("name", "bench")
+        return BenchConfig.read_raw(bench_root).get("bench", {}).get("name", "bench")
     except Exception:
         return "bench"
 

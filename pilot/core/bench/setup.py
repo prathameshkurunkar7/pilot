@@ -142,12 +142,11 @@ class ProductionSetup:
 
     def _setup_monitoring(self):
         """Install the shared bench-monitor timer unit and persist monitor config to bench.toml."""
-        from pilot.config import BenchTomlStore
         from pilot.core.server.monitoring import MonitorConfigurator, resolve_monitor_log_path
 
         MonitorConfigurator().install()
         self.bench.config.monitor.log_path = resolve_monitor_log_path(self.bench.config)
-        BenchTomlStore(self.bench.path).write(self.bench.config)
+        self.bench.config.write(self.bench.path)
 
     def _persist_production_state(self) -> None:
         """Write the production state to bench.toml LAST, so the switcher never
@@ -202,10 +201,9 @@ class ProductionSetup:
 
     def _persist(self, updates: dict) -> None:
         """Merge ``updates`` into bench.toml in place, preserving all other fields."""
-        from pilot.config import BenchTomlStore
+        from pilot.config import BenchConfig
 
-        store = BenchTomlStore.for_bench(self.bench.path)
-        with store.edit_raw() as data:
+        with BenchConfig.open(self.bench.path, mode="raw") as data:
             for section, values in updates.items():
                 data.setdefault(section, {}).update(values)
             # Drop the deprecated production.nginx key - nginx is always on in prod.

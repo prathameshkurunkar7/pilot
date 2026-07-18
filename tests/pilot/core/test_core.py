@@ -12,7 +12,6 @@ from pilot.config import (
     WorkerConfig,
     WorkerGroup,
 )
-from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.core.app import App, RevisionPin
 from pilot.core.bench import Bench
 from pilot.core.server import Server
@@ -45,7 +44,7 @@ def make_bench(tmp_path: Path) -> Bench:
 
 def _write_bench_toml(bench_dir: Path, name: str) -> None:
     bench_dir.mkdir(parents=True)
-    (bench_dir / "bench.toml").write_text(BenchTomlBuilder(name).render())
+    (bench_dir / "bench.toml").write_text(BenchConfig.from_flat(name).dumps())
 
 
 def test_bench_loads_from_path(tmp_path: Path) -> None:

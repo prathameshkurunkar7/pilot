@@ -4,7 +4,7 @@ import http.client
 import socket
 from pathlib import Path
 
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig
 
 
 class BenchProvider:
@@ -24,7 +24,7 @@ class BenchProvider:
     @property
     def is_production(self) -> bool:
         try:
-            prod = BenchTomlStore.for_bench(self._bench_dir).read_raw().get("production", {})
+            prod = BenchConfig.read_raw(self._bench_dir).get("production", {})
             pm = str(prod.get("process_manager", "")).lower()
             return bool(prod.get("enabled", pm not in ("", "none")))
         except Exception:
@@ -70,7 +70,7 @@ class BenchProvider:
         """Whether a production bench's wizard answers at its admin domain."""
         try:
             port = int(
-                BenchTomlStore.for_bench(self._bench_dir).read_raw().get("nginx", {}).get("http_port", 80)
+                BenchConfig.read_raw(self._bench_dir).get("nginx", {}).get("http_port", 80)
             )
         except Exception:
             port = 80

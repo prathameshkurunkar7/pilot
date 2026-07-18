@@ -16,7 +16,6 @@ from admin.backend.auth import (
     issue_token,
 )
 from pilot.config import BenchConfig
-from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
 
@@ -53,7 +52,7 @@ def test_login_token_carries_jti() -> None:
 
 def _bench(tmp_path: Path, password: str = "secret") -> Bench:
     toml_path = tmp_path / "bench.toml"
-    toml_path.write_text(BenchTomlBuilder(tmp_path.name, {"admin_password": password}).render())
+    toml_path.write_text(BenchConfig.from_flat(tmp_path.name, {"admin_password": password}).dumps())
     return _load_bench(tmp_path)
 
 
@@ -94,16 +93,14 @@ def test_command_requires_password(tmp_path) -> None:
 
 
 def _initialized_bench(bench_dir: Path, password: str, jwt_secret: str) -> None:
-    from pilot.config import BenchTomlStore
-
     bench_dir.mkdir(parents=True, exist_ok=True)
     toml_path = bench_dir / "bench.toml"
     toml_path.write_text(
-        BenchTomlBuilder(bench_dir.name, {"admin_enabled": True, "admin_password": password}).render()
+        BenchConfig.from_flat(bench_dir.name, {"admin_enabled": True, "admin_password": password}).dumps()
     )
     config = BenchConfig.from_file(toml_path)
     config.admin.jwt_secret = jwt_secret
-    BenchTomlStore(toml_path).write(config)
+    config.write(toml_path)
     python = bench_dir / "env" / "bin" / "python"
     python.parent.mkdir(parents=True, exist_ok=True)
     python.touch()
@@ -191,14 +188,12 @@ def test_bootstrap_reports_sanitized_task_activity(tmp_path: Path) -> None:
 
 def test_bootstrap_reports_postgres_engine(tmp_path: Path) -> None:
     from admin.backend.app import create_app
-    from pilot.config import BenchTomlStore
-
     bench_root = tmp_path / "benches" / "pg"
     _initialized_bench(bench_root, "secret", "k3y")
     toml_path = bench_root / "bench.toml"
     config = BenchConfig.from_file(toml_path)
     config.db_type = "postgres"
-    BenchTomlStore(toml_path).write(config)
+    config.write(toml_path)
 
     app = create_app(bench_root)
     app.config["TESTING"] = True
@@ -212,14 +207,12 @@ def test_bootstrap_reports_allow_bench_management_default_true(tmp_path: Path) -
 
 def test_bootstrap_reports_allow_bench_management_when_disabled(tmp_path: Path) -> None:
     from admin.backend.app import create_app
-    from pilot.config import BenchTomlStore
-
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")
     toml_path = bench_root / "bench.toml"
     config = BenchConfig.from_file(toml_path)
     config.admin.allow_bench_management = False
-    BenchTomlStore(toml_path).write(config)
+    config.write(toml_path)
 
     app = create_app(bench_root)
     app.config["TESTING"] = True
@@ -277,20 +270,21 @@ def test_is_secure_cookie_requires_tls_or_configured_proxy(monkeypatch) -> None:
         production=SimpleNamespace(enabled=True),
         admin=SimpleNamespace(tls=False),
     )
-    store = SimpleNamespace(read=lambda: config)
+    monkeypatch.setattr(BenchConfig, "read", lambda bench_root: config)
+    unused_root = Path("unused")
 
     monkeypatch.setattr("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: [])
-    assert is_secure_cookie(store) is False
+    assert is_secure_cookie(unused_root) is False
 
     monkeypatch.setattr(
         "pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers",
         lambda: ["203.0.113.10"],
     )
-    assert is_secure_cookie(store) is True
+    assert is_secure_cookie(unused_root) is True
 
     config.admin.tls = True
     monkeypatch.setattr("pilot.core.adapters.domain_provider.DomainRouteProvider.proxy_servers", lambda: [])
-    assert is_secure_cookie(store) is True
+    assert is_secure_cookie(unused_root) is True
 
 
 def test_login_with_invalid_sid_rejected(tmp_path: Path) -> None:
@@ -366,14 +360,18 @@ def test_login_rate_limit_ignores_spoofed_forwarded_ips(tmp_path: Path) -> None:
     assert response.status_code == 429
 
 
-def test_forwarded_headers_are_trusted_only_behind_production_nginx() -> None:
+def test_forwarded_headers_are_trusted_only_behind_production_nginx(monkeypatch) -> None:
     from admin.backend.app import trusted_proxy_peers
 
-    development = SimpleNamespace(read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=False)))
-    production = SimpleNamespace(read=lambda: SimpleNamespace(production=SimpleNamespace(enabled=True)))
+    development = SimpleNamespace(production=SimpleNamespace(enabled=False))
+    production = SimpleNamespace(production=SimpleNamespace(enabled=True))
+    unused_root = Path("unused")
 
-    assert trusted_proxy_peers(development) == ()
-    assert trusted_proxy_peers(production) == ("127.0.0.1", "::1", "")
+    monkeypatch.setattr(BenchConfig, "read", lambda bench_root: development)
+    assert trusted_proxy_peers(unused_root) == ()
+
+    monkeypatch.setattr(BenchConfig, "read", lambda bench_root: production)
+    assert trusted_proxy_peers(unused_root) == ("127.0.0.1", "::1", "")
 
 
 def test_setup_endpoint_requires_auth_once_password_set(tmp_path: Path) -> None:

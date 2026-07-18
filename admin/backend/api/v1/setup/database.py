@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.config import BenchTomlStore
+from pilot.config import BenchConfig
 
 if TYPE_CHECKING:
     from pilot.managers.database import MariaDBManager, PostgresManager
@@ -95,7 +95,7 @@ def _mariadb_config(
     toml_path = bench_root / "bench.toml"
     if toml_path.exists():
         try:
-            settings = BenchTomlStore(toml_path).read_flat()
+            settings = BenchConfig.read_flat(toml_path)
             config.socket_path = settings.get("mariadb_socket_path", "") or ""
         except Exception as exc:
             logging.debug("Could not read the existing mariadb socket path: %s", exc)

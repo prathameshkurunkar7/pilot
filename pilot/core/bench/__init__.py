@@ -31,9 +31,7 @@ class Bench:
             if path is not None:
                 raise TypeError("Use Bench(config, path) or Bench(path_or_name).")
             bench_path = self._resolve_path(config_or_path)
-            from pilot.config import BenchTomlStore
-
-            config = BenchTomlStore.for_bench(bench_path).read()
+            config = BenchConfig.read(bench_path)
 
         self.config = config
         self.path = bench_path

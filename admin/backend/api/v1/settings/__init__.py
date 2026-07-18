@@ -14,7 +14,6 @@ from pilot.config import (
     WAF_RULE_MATCH,
     WAF_RULE_OPERATORS,
     BenchConfig,
-    BenchTomlStore,
 )
 from pilot.core.bench import Bench
 from pilot.core.bench.settings import (
@@ -122,7 +121,7 @@ def s3_provider_options() -> list[dict]:
 def get_settings():
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
-        config = BenchTomlStore.for_bench(bench_root).read()
+        config = BenchConfig.read(bench_root)
     except Exception:
         return error_response("settings_unavailable", "Could not read settings.", 500)
     return jsonify(build_settings_response(config))
@@ -192,8 +191,7 @@ def update_settings():
 
 
 def _save_settings_update(bench_root: Path, data: dict) -> dict:
-    store = BenchTomlStore.for_bench(bench_root)
-    with store.edit() as config:
+    with BenchConfig.open(bench_root) as config:
         old_restart = restart_trigger_values(config)
         old_firewall = firewall_payload(config)
         old_waf = waf_payload(config)

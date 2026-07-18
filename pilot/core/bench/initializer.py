@@ -100,13 +100,11 @@ class BenchInitializer:
     def _ensure_admin_password(self) -> None:
         import secrets
 
-        from pilot.config import BenchTomlStore
-
         admin = self.bench.config.admin
         if not admin.enabled or admin.password:
             return
         admin.password = secrets.token_hex(nbytes=5)
-        BenchTomlStore.for_bench(self.bench.path).write(self.bench.config)
+        self.bench.config.write(self.bench.path)
 
     def _configure_redis(self) -> None:
         from pilot.managers.redis import RedisManager

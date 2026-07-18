@@ -77,10 +77,10 @@ class WafProvider:
         }
 
     def _mode(self) -> str:
-        from pilot.config import BenchTomlStore
+        from pilot.config import BenchConfig
 
         try:
-            return BenchTomlStore.for_bench(self._bench_root).read().waf.mode
+            return BenchConfig.read(self._bench_root).waf.mode
         except Exception:
             return "DetectionOnly"
 

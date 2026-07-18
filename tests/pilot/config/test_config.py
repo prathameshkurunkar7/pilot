@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest
 
 from pilot.config import BenchConfig, ProductionConfig
-from pilot.config.bench_toml import dumps_config as bench_config_to_toml
 from pilot.exceptions import ConfigError
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
@@ -90,7 +89,7 @@ def test_watch_apps_js_can_be_enabled() -> None:
 def test_toml_writer_includes_watch_apps_js() -> None:
     config = BenchConfig._from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
     config.watch_apps_js = True
-    toml = bench_config_to_toml(config)
+    toml = config.dumps()
     assert "watch_apps_js = true" in toml
 
 
@@ -109,7 +108,7 @@ def test_reload_python_can_be_enabled() -> None:
 def test_toml_writer_includes_reload_python() -> None:
     config = BenchConfig._from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
     config.reload_python = True
-    toml = bench_config_to_toml(config)
+    toml = config.dumps()
     assert "reload_python = true" in toml
 
 
@@ -128,7 +127,7 @@ def test_watch_admin_js_can_be_enabled() -> None:
 def test_toml_writer_includes_watch_admin_js() -> None:
     config = BenchConfig._from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
     config.watch_admin_js = True
-    toml = bench_config_to_toml(config)
+    toml = config.dumps()
     assert "watch_admin_js = true" in toml
 
 
@@ -226,7 +225,7 @@ def test_central_config_round_trips_through_typed_writer() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["central"] = {"endpoint": "https://central.test", "auth_token": "tok-123"}
     config = load_from_dict(data)
-    toml = bench_config_to_toml(config)
+    toml = config.dumps()
 
     assert "[central]" in toml
     assert 'endpoint = "https://central.test"' in toml
@@ -252,7 +251,7 @@ def test_postgres_section_roundtrip() -> None:
     config = load_from_dict(data)
     assert config.postgres.host == "db.internal"
     assert config.postgres.port == 5433
-    toml = bench_config_to_toml(config)
+    toml = config.dumps()
     assert "[postgres]" in toml
     assert 'host = "db.internal"' in toml
     assert "port = 5433" in toml
@@ -399,7 +398,7 @@ def test_toml_writer_production_emits_enabled_and_pm() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     data["production"] = {"enabled": True, "process_manager": "supervisor"}
     config = load_from_dict(data)
-    toml = bench_config_to_toml(config)
+    toml = config.dumps()
     assert "enabled = true" in toml.split("[production]")[1].split("[")[0]
     assert 'process_manager = "supervisor"' in toml
     assert "nginx" not in toml.split("[production]")[1].split("[")[0]
@@ -409,7 +408,7 @@ def test_toml_writer_production_emits_enabled_and_pm() -> None:
 def test_toml_writer_production_disabled_omits_pm() -> None:
     data = copy.deepcopy(MINIMAL_VALID_DATA)
     config = load_from_dict(data)
-    section = bench_config_to_toml(config).split("[production]")[1].split("[")[0]
+    section = config.dumps().split("[production]")[1].split("[")[0]
     assert "enabled = false" in section
     assert "process_manager" not in section
 
@@ -419,13 +418,13 @@ def test_admin_tls_roundtrip() -> None:
     data["admin"] = {"domain": "admin.example.com", "tls": False}
     config = load_from_dict(data)
     assert config.admin.tls is False
-    assert "tls = false" in bench_config_to_toml(config)
+    assert "tls = false" in config.dumps()
 
 
 def test_admin_allow_bench_management_defaults_to_true() -> None:
     config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
     assert config.admin.allow_bench_management is True
-    assert "allow_bench_management = true" in bench_config_to_toml(config)
+    assert "allow_bench_management = true" in config.dumps()
 
 
 def test_admin_allow_bench_management_can_be_disabled() -> None:
@@ -433,7 +432,7 @@ def test_admin_allow_bench_management_can_be_disabled() -> None:
     data["admin"] = {"domain": "admin.example.com", "allow_bench_management": False}
     config = load_from_dict(data)
     assert config.admin.allow_bench_management is False
-    assert "allow_bench_management = false" in bench_config_to_toml(config)
+    assert "allow_bench_management = false" in config.dumps()
 
 
 def test_admin_internal_port_is_port_plus_one() -> None:
@@ -453,7 +452,7 @@ def test_db_type_postgres_roundtrip() -> None:
     data["bench"]["db_type"] = "postgres"
     config = load_from_dict(data)
     assert config.db_type == "postgres"
-    assert 'db_type = "postgres"' in bench_config_to_toml(config)
+    assert 'db_type = "postgres"' in config.dumps()
 
 
 def test_db_type_sqlite_roundtrip() -> None:
@@ -461,7 +460,7 @@ def test_db_type_sqlite_roundtrip() -> None:
     data["bench"]["db_type"] = "sqlite"
     config = load_from_dict(data)
     assert config.db_type == "sqlite"
-    assert 'db_type = "sqlite"' in bench_config_to_toml(config)
+    assert 'db_type = "sqlite"' in config.dumps()
 
 
 def test_invalid_db_type_rejected() -> None:
@@ -504,7 +503,7 @@ def test_monitor_custom_sizes_roundtrip() -> None:
     config = BenchConfig._from_dict(data)
     assert config.monitor.system_log_max_size == "200M"
     assert config.monitor.application_log_max_size == "100M"
-    toml = bench_config_to_toml(config)
+    toml = config.dumps()
     assert 'system_log_max_size = "200M"' in toml
     assert 'application_log_max_size = "100M"' in toml
 
@@ -512,7 +511,7 @@ def test_monitor_custom_sizes_roundtrip() -> None:
 def test_toml_writer_monitor_section_omitted_when_production_disabled() -> None:
     config = BenchConfig._from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
     assert not config.production.enabled
-    assert "[monitor]" not in bench_config_to_toml(config)
+    assert "[monitor]" not in config.dumps()
 
 
 def test_toml_writer_monitor_section_emitted_when_production_enabled() -> None:
@@ -520,7 +519,7 @@ def test_toml_writer_monitor_section_emitted_when_production_enabled() -> None:
     data["production"] = {"enabled": True, "process_manager": "systemd"}
     data["admin"] = {"domain": "admin.example.com"}
     config = BenchConfig._from_dict(data)
-    toml = bench_config_to_toml(config)
+    toml = config.dumps()
     assert "[monitor]" in toml
     assert "system_log_path" in toml
     assert "authority_file_path" in toml
@@ -532,7 +531,7 @@ def test_toml_writer_monitor_log_path_omitted_when_none() -> None:
     data["admin"] = {"domain": "admin.example.com"}
     config = BenchConfig._from_dict(data)
     assert config.monitor.log_path is None
-    monitor_section = bench_config_to_toml(config).split("[monitor]")[1].split("[")[0]
+    monitor_section = config.dumps().split("[monitor]")[1].split("[")[0]
     assert "\nlog_path =" not in monitor_section
 
 
@@ -544,7 +543,7 @@ def test_toml_writer_monitor_log_path_written_when_set() -> None:
     data["admin"] = {"domain": "admin.example.com"}
     config = BenchConfig._from_dict(data)
     config.monitor.log_path = Path("/var/log/test-bench-stats.log")
-    toml = bench_config_to_toml(config)
+    toml = config.dumps()
     assert 'log_path = "/var/log/test-bench-stats.log"' in toml
 
 
@@ -608,7 +607,7 @@ def test_firewall_toml_round_trip() -> None:
     config = load_from_dict(data)
     import tomllib
 
-    reparsed = BenchConfig._from_dict(tomllib.loads(bench_config_to_toml(config)))
+    reparsed = BenchConfig._from_dict(tomllib.loads(config.dumps()))
     reparsed.validate()
     assert reparsed.firewall.enabled is True
     assert reparsed.firewall.default == "deny"
@@ -618,4 +617,4 @@ def test_firewall_toml_round_trip() -> None:
 
 def test_firewall_section_omitted_when_off_and_empty() -> None:
     config = load_from_dict(copy.deepcopy(MINIMAL_VALID_DATA))
-    assert "[firewall]" not in bench_config_to_toml(config)
+    assert "[firewall]" not in config.dumps()

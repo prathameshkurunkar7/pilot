@@ -106,19 +106,18 @@ def test_new_command_inherits_sibling_jwks_url_and_audience(
     """The remote JWKS issuer is server-wide, so a new bench carries both the
     URL and the audience forward from a sibling that already trusts one."""
     from pilot.commands.bench.create import NewCommand
-    from pilot.config import BenchTomlStore
+    from pilot.config import BenchConfig
     from pilot.core.bench.creator import BenchCreator
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
     benches_dir = tmp_path / "benches"
     NewCommand(target_directory=benches_dir / "first", bench_name="first").run()
-    store = BenchTomlStore.for_bench(benches_dir / "first")
-    data = store.read_raw()
+    data = BenchConfig.read_raw(benches_dir / "first")
     admin = data.setdefault("admin", {})
     admin["jwks_url"] = "https://issuer.example.com/jwks.json"
     admin["jwks_audience"] = "bench-fleet"
-    store.write_raw(data)
+    BenchConfig.write_raw(benches_dir / "first", data)
 
     NewCommand(target_directory=benches_dir / "second", bench_name="second").run()
     with open(benches_dir / "second" / "bench.toml", "rb") as f:
