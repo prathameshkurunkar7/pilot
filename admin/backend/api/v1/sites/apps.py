@@ -20,9 +20,8 @@ from admin.backend.providers.apps import AppProvider
 from admin.backend.providers.sites import SiteProvider
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
-from pilot.integrations.git import GitProviderError, resolve_app_name_from_repo
 from pilot.internal.site_paths import site_exists
-from pilot.internal.validators import validate_app_name
+from pilot.internal.validators import validate_app_name, validate_repo_url
 from pilot.tasks.get_and_install_app import GetAndInstallAppTask
 from pilot.tasks.install_app import InstallAppTask
 from pilot.tasks.uninstall_app import UninstallAppTask
@@ -87,11 +86,11 @@ def install_site_app(name: str):
     app, repo, branch = fields["app"], fields["repo"], fields["branch"]
     if not app and not repo:
         return error_response("missing_app", "App name or repository is required.", 422)
+    if repo and (err := validate_repo_url(repo)):
+        return error_response("invalid_repository", err, 422)
 
     try:
         task_id = _submit_install_task(bench_root, name, app, repo, branch)
-    except GitProviderError:
-        return error_response("invalid_repository", "Could not determine the application name.", 422)
     except Exception as error:
         return task_failure(error)
     return accepted_task_response(bench_root, task_id)
@@ -104,7 +103,6 @@ def _submit_install_task(bench_root: Path, site: str, app: str, repo: str, branc
     if app and _is_app_cloned(bench_root, app):
         return InstallAppTask.queue(bench, site=site, app=app)
     if repo:
-        resolve_app_name_from_repo(bench_root, repo, branch)
         return GetAndInstallAppTask.queue(bench, repo=repo, branch=branch, site=site)
     return GetAndInstallAppTask.queue(bench, marketplace_app=app, site=site)
 

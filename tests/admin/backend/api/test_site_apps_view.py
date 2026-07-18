@@ -122,6 +122,26 @@ def test_install_app_fetches_by_repo_when_not_cloned(tmp_path: Path) -> None:
     assert body["args"]["branch"] == "develop"
 
 
+def test_install_app_does_not_resolve_repo_before_queueing(tmp_path: Path) -> None:
+    bench_root = tmp_path / "benches" / "current"
+    _make_site(bench_root, "site1.localhost", [])
+    client = _client(bench_root)
+
+    response = _post_install(
+        client,
+        "site1.localhost",
+        app="blog",
+        repo="https://github.com/frappe/blog",
+        branch="",
+    )
+
+    body = response.get_json()
+    assert response.status_code == 202
+    assert body["command"] == "get-and-install-app"
+    assert body["args"]["repo"] == "https://github.com/frappe/blog"
+    assert body["args"]["site"] == "site1.localhost"
+
+
 def test_install_app_treats_bare_name_as_marketplace_when_not_cloned(tmp_path: Path) -> None:
     bench_root = tmp_path / "benches" / "current"
     _make_site(bench_root, "site1.localhost", [])
