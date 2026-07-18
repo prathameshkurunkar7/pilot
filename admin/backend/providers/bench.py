@@ -24,9 +24,7 @@ class BenchProvider:
     @property
     def is_production(self) -> bool:
         try:
-            prod = BenchConfig.read_raw(self._bench_dir).get("production", {})
-            pm = str(prod.get("process_manager", "")).lower()
-            return bool(prod.get("enabled", pm not in ("", "none")))
+            return BenchConfig.read(self._bench_dir, validate=False).production.enabled
         except Exception:
             return False
 
@@ -69,9 +67,7 @@ class BenchProvider:
     def is_wizard_ready(self, domain: str, scheme: str = "http") -> bool:
         """Whether a production bench's wizard answers at its admin domain."""
         try:
-            port = int(
-                BenchConfig.read_raw(self._bench_dir).get("nginx", {}).get("http_port", 80)
-            )
+            port = int(BenchConfig.read_raw(self._bench_dir).get("nginx", {}).get("http_port", 80))
         except Exception:
             port = 80
 

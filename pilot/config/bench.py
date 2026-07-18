@@ -357,17 +357,17 @@ class BenchConfig:
         with exclusive_file_lock(path):
             if mode == "raw":
                 data = Toml.loads(path.read_text(encoding="utf-8"))
-                original = copy.deepcopy(data)
+                original_data = copy.deepcopy(data)
                 yield data
-                if data != original:
+                if data != original_data:
                     content = Toml.dumps(data)
                     cls._validate_serialized(content)
                     replace_private_text_locked(path, content)
             else:
                 config = cls.read(bench_root)
-                original = copy.deepcopy(config)
+                original_config = copy.deepcopy(config)
                 yield config
-                if config != original:
+                if config != original_config:
                     replace_private_text_locked(path, config._validated_dumps())
 
     @classmethod

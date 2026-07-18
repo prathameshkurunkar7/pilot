@@ -215,7 +215,7 @@ class BenchRuntime:
         from pilot.config import BenchConfig
 
         try:
-            return BenchConfig.read_raw(self.bench.path).get("admin", {}).get("port", 7000)
+            return BenchConfig.read(self.bench.path, validate=False).admin.port
         except (OSError, tomllib.TOMLDecodeError):
             return 7000
 

@@ -14,7 +14,7 @@ processes_bp = Blueprint("processes", __name__)
 
 def _bench_name(bench_root: Path) -> str:
     try:
-        return BenchConfig.read_raw(bench_root).get("bench", {}).get("name", "bench")
+        return BenchConfig.read(bench_root, validate=False).name or "bench"
     except Exception:
         return "bench"
 

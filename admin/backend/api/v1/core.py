@@ -170,8 +170,7 @@ def _validate_login(data: dict, config: BenchConfig):
 def _setup_bootstrap(bench_root: Path) -> dict:
     name = bench_root.name
     try:
-        raw = BenchConfig.read_raw(bench_root)
-        name = raw.get("bench", {}).get("name", name)
+        name = BenchConfig.read(bench_root, validate=False).name or name
     except Exception as exc:
         logging.debug("Could not read bench name during setup bootstrap: %s", exc)
     return {"mode": "setup", "name": name, "enabled": True}
