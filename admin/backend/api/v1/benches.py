@@ -5,7 +5,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.providers.bench import BenchProvider
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 from pilot.core.bench import Bench
 from pilot.internal.atomic_file import exclusive_file_lock
 from pilot.managers.processes.local import ProcessManager
@@ -240,7 +240,7 @@ def create_bench():
             422,
         )
 
-    from pilot.config.production import VALID_PROCESS_MANAGERS
+    from pilot.config import VALID_PROCESS_MANAGERS
 
     process_manager = (data.get("process_manager") or "").strip().lower()
     if process_manager == "supervisord":

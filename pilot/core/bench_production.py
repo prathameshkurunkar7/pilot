@@ -128,7 +128,7 @@ class BenchProduction:
             on_progress(f"  (nginx cleanup skipped: {exc})")
 
     def _persist_production_disabled(self) -> None:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.bench.path)
         with store.edit_raw() as data:

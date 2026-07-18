@@ -79,7 +79,7 @@ def task_argv_suffix(cls: type[Task], args: dict) -> list[str]:
 
 
 def run_task_main(cls: type[Task]) -> None:
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
     from pilot.core.bench import Bench
 
     args = task_parser(cls).parse_args()

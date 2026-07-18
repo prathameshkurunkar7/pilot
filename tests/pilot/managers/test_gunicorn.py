@@ -7,12 +7,12 @@ from unittest.mock import patch
 
 import pytest
 
-from pilot.config.app import AppConfig
-from pilot.config.bench import BenchConfig
-from pilot.config.gunicorn import GunicornConfig
-from pilot.config.mariadb import MariaDBConfig
-from pilot.config.redis import RedisConfig
-from pilot.config.worker import WorkerConfig, WorkerGroup
+from pilot.config import AppConfig
+from pilot.config import BenchConfig
+from pilot.config import GunicornConfig
+from pilot.config import MariaDBConfig
+from pilot.config import RedisConfig
+from pilot.config import WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
 from pilot.exceptions import ConfigError
 from pilot.managers.gunicorn import GunicornManager

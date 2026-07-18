@@ -215,7 +215,7 @@ class Monitor:
 
 
 def resolve_monitor_log_path(bench_config: "BenchConfig"):
-    from pilot.config.monitor import MonitorConfig
+    from pilot.config import MonitorConfig
 
     return MonitorConfig.default_log_path(bench_config.name)
 

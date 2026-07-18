@@ -30,7 +30,7 @@ class SiteDropper:
             routes.release(domain)
 
     def remove_from_bench_toml(self) -> None:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.site.bench.path)
         with store.edit_raw() as raw:

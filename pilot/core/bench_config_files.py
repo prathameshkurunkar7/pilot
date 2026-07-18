@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from pilot.utils import write_private_text
 
 if TYPE_CHECKING:
-    from pilot.config.s3 import S3Config
+    from pilot.config import S3Config
     from pilot.core.bench import Bench
 
 

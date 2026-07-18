@@ -15,7 +15,7 @@ from pilot.core.admin_auth import (
     issue_token,
     verify_token,
 )
-from pilot.config.bench import BenchConfig
+from pilot.config import BenchConfig
 from pilot.config.bench_toml_builder import BenchTomlBuilder
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchError
@@ -103,7 +103,7 @@ def test_command_requires_password(tmp_path) -> None:
 
 
 def _initialized_bench(bench_dir: Path, password: str, jwt_secret: str) -> None:
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
 
     bench_dir.mkdir(parents=True, exist_ok=True)
     toml_path = bench_dir / "bench.toml"
@@ -202,7 +202,7 @@ def test_bootstrap_reports_sanitized_task_activity(tmp_path: Path) -> None:
 
 def test_bootstrap_reports_postgres_engine(tmp_path: Path) -> None:
     from admin.backend.app import create_app
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
 
     bench_root = tmp_path / "benches" / "pg"
     _initialized_bench(bench_root, "secret", "k3y")
@@ -223,7 +223,7 @@ def test_bootstrap_reports_allow_bench_management_default_true(tmp_path: Path) -
 
 def test_bootstrap_reports_allow_bench_management_when_disabled(tmp_path: Path) -> None:
     from admin.backend.app import create_app
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
 
     bench_root = tmp_path / "benches" / "current"
     _initialized_bench(bench_root, "secret", "k3y")

@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pilot.config.app import AppConfig
-from pilot.config.bench import BenchConfig
-from pilot.config.mariadb import MariaDBConfig
-from pilot.config.redis import RedisConfig
-from pilot.config.worker import WorkerConfig, WorkerGroup
+from pilot.config import AppConfig
+from pilot.config import BenchConfig
+from pilot.config import MariaDBConfig
+from pilot.config import RedisConfig
+from pilot.config import WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchAlreadyExistsError, BenchError
 
@@ -124,7 +124,7 @@ def test_new_command_inherits_sibling_jwks_url_and_audience(
     URL and the audience forward from a sibling that already trusts one."""
     from pilot.commands.bench.create import NewCommand
     from pilot.core.bench_creator import BenchCreator
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
 
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(BenchCreator, "_port_is_live", staticmethod(lambda port: False))
@@ -421,7 +421,7 @@ def test_new_site_validate_passes_with_no_apps_requested(tmp_path: Path) -> None
 
 
 def test_build_missing_assets_skips_cloned_but_unregistered_apps(tmp_path: Path) -> None:
-    from pilot.config.site import SiteConfig
+    from pilot.config import SiteConfig
     from pilot.core.site import Site
 
     bench = make_bench(tmp_path)
@@ -951,7 +951,7 @@ def test_bench_migrate_sites_passes_skip_failing_patches(tmp_path: Path) -> None
 
 def test_drop_site_removes_site_from_bench_toml(tmp_path: Path) -> None:
     import tomllib
-    from pilot.config.site import SiteConfig
+    from pilot.config import SiteConfig
     from pilot.core.site import Site
 
     bench = make_bench(tmp_path)
@@ -977,7 +977,7 @@ def test_drop_site_removes_site_from_bench_toml(tmp_path: Path) -> None:
 
 
 def test_drop_site_removes_from_toml_when_no_sites_key(tmp_path: Path) -> None:
-    from pilot.config.site import SiteConfig
+    from pilot.config import SiteConfig
     from pilot.core.site import Site
 
     bench = make_bench(tmp_path)

@@ -82,7 +82,7 @@ class WafProvider:
         }
 
     def _mode(self) -> str:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         try:
             return BenchTomlStore.for_bench(self._bench_root).read().waf.mode

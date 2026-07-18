@@ -15,7 +15,17 @@ from pilot.config.redis import RedisConfig
 from pilot.config.s3 import S3Config
 from pilot.config.site import SiteConfig
 from pilot.config.toml_store import BenchTomlStore
-from pilot.config.waf import WafConfig, WAF_MODES, parse_nginx_size
+from pilot.config.waf import (
+    WAF_MODES,
+    WAF_RULE_ACTIONS,
+    WAF_RULE_FIELDS,
+    WAF_RULE_MATCH,
+    WAF_RULE_OPERATORS,
+    WafCondition,
+    WafConfig,
+    WafRule,
+    parse_nginx_size,
+)
 from pilot.config.worker import WorkerConfig, WorkerGroup
 
 __all__ = [
@@ -42,7 +52,13 @@ __all__ = [
     "SiteConfig",
     "BenchTomlStore",
     "WafConfig",
+    "WafCondition",
+    "WafRule",
     "WAF_MODES",
+    "WAF_RULE_ACTIONS",
+    "WAF_RULE_FIELDS",
+    "WAF_RULE_MATCH",
+    "WAF_RULE_OPERATORS",
     "parse_nginx_size",
     "WorkerConfig",
     "WorkerGroup",

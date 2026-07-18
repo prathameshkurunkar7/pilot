@@ -10,8 +10,8 @@ import psutil
 from flask import Blueprint, current_app, jsonify, request
 
 from admin.backend.api.responses import error_response
-from pilot.config.bench import BenchConfig
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchConfig
+from pilot.config import BenchTomlStore
 
 stats_bp = Blueprint("stats", __name__)
 
@@ -99,8 +99,8 @@ def _log_file_info(description: str, path: Path) -> dict:
 
 @stats_bp.get("/monitor/status")
 def get_monitor_status():
-    from pilot.config.monitor import MonitorConfig
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import MonitorConfig
+    from pilot.config import BenchTomlStore
     bench_root = Path(current_app.config["BENCH_ROOT"])
     try:
         config = BenchTomlStore.for_bench(bench_root).read()

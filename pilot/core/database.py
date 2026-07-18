@@ -9,7 +9,7 @@ from pilot.core.database_engines import MariaDB, PostgreSQL, SQLite
 from pilot.exceptions import DatabaseError
 
 if TYPE_CHECKING:
-    from pilot.config.bench import BenchConfig
+    from pilot.config import BenchConfig
 
 __all__ = [
     "Database",

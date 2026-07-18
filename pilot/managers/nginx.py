@@ -38,7 +38,7 @@ def _stock_default_sites() -> list[Path]:
 
 
 if TYPE_CHECKING:
-    from pilot.config.site import SiteConfig
+    from pilot.config import SiteConfig
     from pilot.core.bench import Bench
 
 

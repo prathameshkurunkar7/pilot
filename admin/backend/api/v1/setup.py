@@ -19,7 +19,7 @@ from pilot.config.bench_toml_builder import (
     FRAMEWORK_BRANCHES,
     current_port_offset,
 )
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 from pilot.exceptions import TaskConflictError, TaskNotFoundError
 from pilot.internal.atomic_file import exclusive_file_lock, replace_private_text_locked
 from pilot.managers.task import TaskReader, TaskStatus

@@ -16,7 +16,7 @@ from admin.backend.api.v1.settings_payload import (
     _s3_payload,
     _waf_payload,
 )
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 from pilot.core.bench import Bench
 
 settings_bp = Blueprint("settings", __name__)

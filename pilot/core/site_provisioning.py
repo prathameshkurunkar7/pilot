@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from pilot.config.site import SiteConfig
+from pilot.config import SiteConfig
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:

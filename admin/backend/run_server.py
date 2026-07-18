@@ -30,7 +30,7 @@ def main() -> None:
     args = parser.parse_args()
 
     from admin.backend.app import create_app
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
 
     bench_root = Path(args.bench_root)
     app = create_app(bench_root)

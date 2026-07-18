@@ -164,7 +164,7 @@ class RunCommand(Command):
     def _admin_port(self) -> int:
         import tomllib
 
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         try:
             return (

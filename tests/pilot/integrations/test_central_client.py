@@ -7,12 +7,12 @@ from unittest.mock import patch
 import pytest
 
 from pilot.commands.admin.set_central_config import SetCentralConfigCommand
-from pilot.config.app import AppConfig
-from pilot.config.bench import BenchConfig
-from pilot.config.mariadb import MariaDBConfig
-from pilot.config.redis import RedisConfig
-from pilot.config.toml_store import BenchTomlStore
-from pilot.config.worker import WorkerConfig, WorkerGroup
+from pilot.config import AppConfig
+from pilot.config import BenchConfig
+from pilot.config import MariaDBConfig
+from pilot.config import RedisConfig
+from pilot.config import BenchTomlStore
+from pilot.config import WorkerConfig, WorkerGroup
 from pilot.core.bench import Bench
 from pilot.integrations.central import CentralClient, CentralClientError
 from pilot.exceptions import BenchError

@@ -7,7 +7,7 @@ from enum import StrEnum
 
 from flask import Flask, current_app, g, request
 
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 
 from admin.backend.api.responses import error_response
 from admin.backend.api.routes import is_api_path

@@ -77,7 +77,7 @@ class RenameSiteCommand(Command):
             write_private_text(path, json.dumps(data, indent=2) + "\n")
 
     def _rename_in_bench_toml(self) -> None:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.bench.path)
         with store.edit_raw() as raw:

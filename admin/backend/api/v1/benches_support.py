@@ -7,7 +7,7 @@ from flask import current_app
 
 from admin.backend.api.responses import error_response
 from admin.backend.providers.bench import BenchProvider
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _ADMIN_DOMAIN_RE = re.compile(

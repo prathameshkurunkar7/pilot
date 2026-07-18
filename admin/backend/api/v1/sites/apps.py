@@ -118,7 +118,7 @@ def _submit_install_task(
 
 
 def _is_app_cloned(bench_root: Path, app: str) -> bool:
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
     from pilot.core.bench import Bench
 
     bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)

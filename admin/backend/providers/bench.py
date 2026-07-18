@@ -4,8 +4,8 @@ import http.client
 import socket
 from pathlib import Path
 
-from pilot.config.bench import BenchConfig
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchConfig
+from pilot.config import BenchTomlStore
 
 
 class BenchProvider:

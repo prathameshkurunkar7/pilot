@@ -74,7 +74,7 @@ class ProductionSetup:
 
     def _resolve_target(self) -> None:
         """Apply CLI args in memory. The toml is written last."""
-        from pilot.config.production import VALID_PROCESS_MANAGERS, ProductionConfig
+        from pilot.config import VALID_PROCESS_MANAGERS, ProductionConfig
 
         pm = (
             ProductionConfig._normalize_process_manager(
@@ -142,7 +142,7 @@ class ProductionSetup:
 
     def _setup_monitoring(self):
         """Install the shared bench-monitor timer unit and persist monitor config to bench.toml."""
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
         from pilot.core.monitoring import MonitorConfigurator, resolve_monitor_log_path
 
         MonitorConfigurator().install()
@@ -202,7 +202,7 @@ class ProductionSetup:
 
     def _persist(self, updates: dict) -> None:
         """Merge ``updates`` into bench.toml in place, preserving all other fields."""
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.bench.path)
         with store.edit_raw() as data:

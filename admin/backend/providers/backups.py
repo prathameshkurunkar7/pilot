@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 from pilot.core.bench import Bench
 from pilot.integrations.s3.backups import OffsiteBackup
 

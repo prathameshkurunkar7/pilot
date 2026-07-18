@@ -60,7 +60,7 @@ def site_name_failure(message: str):
 def new_site_name_error(bench_root: Path, name: str) -> str | None:
     """Validate a new-site name before any task starts, so the error lands in the UI
     instead of failing mid-run. Mirrors NewSiteCommand._validate."""
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
     from pilot.utils import host_owner, normalize_host
 
     sites_path = bench_root / "sites"

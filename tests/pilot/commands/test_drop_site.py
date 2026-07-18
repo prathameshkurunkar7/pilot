@@ -3,9 +3,9 @@ import json
 import os
 from pathlib import Path
 
-from pilot.config.bench import BenchConfig
-from pilot.config.site import SiteConfig
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchConfig
+from pilot.config import SiteConfig
+from pilot.config import BenchTomlStore
 from pilot.core.bench import Bench
 from pilot.core.site import Site
 

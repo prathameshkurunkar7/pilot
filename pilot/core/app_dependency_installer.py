@@ -44,7 +44,7 @@ class AppDependencyInstaller:
         if all(self.bench.is_app_installed(dep) for dep in resolver.dependencies):
             return
 
-        from pilot.config.app import AppConfig
+        from pilot.config import AppConfig
         from pilot.core.app import App
 
         try:

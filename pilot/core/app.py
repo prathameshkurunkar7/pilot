@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.config.app import AppConfig
+from pilot.config import AppConfig
 from pilot.core.app_install_result import AppInstallResult
 from pilot.core.app_repository import AppRepository
 from pilot.core.app_revisions import RevisionPin

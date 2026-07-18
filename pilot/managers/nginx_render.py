@@ -17,9 +17,9 @@ ERROR_PAGES = nginx_error_pages.ERROR_PAGES
 render_error_html = nginx_error_pages.render_error_html
 
 if TYPE_CHECKING:
-    from pilot.config.nginx import NginxConfig
-    from pilot.config.site import SiteConfig
-    from pilot.config.waf import WafConfig
+    from pilot.config import NginxConfig
+    from pilot.config import SiteConfig
+    from pilot.config import WafConfig
     from pilot.core.bench import Bench
 
 

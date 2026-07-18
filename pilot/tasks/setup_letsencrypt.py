@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 from pilot.tasks import Task, step
 
 

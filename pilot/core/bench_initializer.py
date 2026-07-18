@@ -99,7 +99,7 @@ class BenchInitializer:
     def _ensure_admin_password(self) -> None:
         import secrets
 
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         admin = self.bench.config.admin
         if not admin.enabled or admin.password:

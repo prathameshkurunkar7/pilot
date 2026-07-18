@@ -22,7 +22,7 @@ class SetCentralConfigCommand(Command):
     token: Annotated[str, Arg(help="Opaque token the pilot presents to Central", required=True)]
 
     def run(self) -> None:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.bench.path)
         try:

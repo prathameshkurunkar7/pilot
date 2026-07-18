@@ -15,11 +15,11 @@ from pilot.core.database import (
     make_site_database,
 )
 from pilot.exceptions import DatabaseError
-from pilot.config.bench import BenchConfig
-from pilot.config.mariadb import MariaDBConfig
-from pilot.config.postgres import PostgresConfig
-from pilot.config.redis import RedisConfig
-from pilot.config.worker import WorkerConfig, WorkerGroup
+from pilot.config import BenchConfig
+from pilot.config import MariaDBConfig
+from pilot.config import PostgresConfig
+from pilot.config import RedisConfig
+from pilot.config import WorkerConfig, WorkerGroup
 
 
 def _bench_config(db_type: str = "mariadb") -> BenchConfig:

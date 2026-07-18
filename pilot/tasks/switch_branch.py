@@ -44,7 +44,7 @@ class SwitchBranchTask(Task):
         env.build_assets_for_app(app)
 
     def update_bench_toml_branch(self) -> None:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         store = BenchTomlStore.for_bench(self.bench_root)
         with store.edit_raw() as raw:

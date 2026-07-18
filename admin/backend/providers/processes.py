@@ -43,7 +43,7 @@ class ProcessProvider:
         self._bench_root = bench_root
 
     def get_all(self) -> list[ProcessInfo]:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
         from pilot.core.bench import Bench
 
         config = BenchTomlStore.for_bench(self._bench_root).read()

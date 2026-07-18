@@ -17,7 +17,7 @@ except ImportError:
     class EndpointConnectionError(Exception):  # type: ignore[no-redef]
         pass
 
-from pilot.config.s3 import S3Config
+from pilot.config import S3Config
 from pilot.exceptions import BenchError
 
 # Non-seekable streams (e.g. a subprocess's stdin pipe) still get parallel

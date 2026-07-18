@@ -5,7 +5,7 @@ import socket
 import subprocess
 from pathlib import Path
 
-from pilot.config.postgres import PostgresConfig
+from pilot.config import PostgresConfig
 from pilot.exceptions import DatabaseError
 from pilot.managers.user_database import UserOwnedDBManager
 from pilot.managers.platform import is_macos, which

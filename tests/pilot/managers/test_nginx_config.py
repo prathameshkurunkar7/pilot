@@ -5,8 +5,8 @@ from unittest.mock import patch, PropertyMock
 
 import pytest
 
-from pilot.config.bench import BenchConfig
-from pilot.config.site import SiteConfig
+from pilot.config import BenchConfig
+from pilot.config import SiteConfig
 from pilot.core.bench import Bench
 from pilot.exceptions import CommandError
 from pilot.managers.nginx import NginxConfigRenderer, NginxManager

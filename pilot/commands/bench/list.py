@@ -53,7 +53,7 @@ class ListCommand(Command):
         return rows
 
     def _describe(self, bench_dir: Path, toml_path: Path) -> dict:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
         from pilot.core.bench import Bench
 
         name = bench_dir.name

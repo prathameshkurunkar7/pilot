@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pilot.config.site import SiteConfig
+    from pilot.config import SiteConfig
     from pilot.core.bench import Bench
 
 

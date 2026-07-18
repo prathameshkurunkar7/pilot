@@ -37,7 +37,7 @@ class BenchCreator:
 
     def run(self, on_progress: Callable[[str], None] = lambda message: None) -> "Bench":
         from pilot.config.bench_toml_builder import default_ports
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
         from pilot.core.bench import Bench
 
         bench_toml = self.target_directory / "bench.toml"
@@ -125,7 +125,7 @@ class BenchCreator:
         MariaDBManager just starts Homebrew's single shared service via
         `brew services`.
         """
-        from pilot.config.mariadb import MariaDBConfig
+        from pilot.config import MariaDBConfig
         from pilot.managers.platform import is_macos
 
         port = MariaDBConfig().port
@@ -162,7 +162,7 @@ class BenchCreator:
         PostgresManager just starts Homebrew's single shared service via
         `brew services`
         """
-        from pilot.config.postgres import PostgresConfig
+        from pilot.config import PostgresConfig
         from pilot.managers.platform import is_macos
 
         port = PostgresConfig().port

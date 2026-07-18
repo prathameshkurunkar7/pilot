@@ -31,7 +31,7 @@ def marketplace():
     try:
         from pilot.core.bench import Bench
         from pilot.integrations.marketplace import Marketplace
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         bench = Bench(BenchTomlStore.for_bench(bench_root).read(), bench_root)
         apps = Marketplace(bench).read_all_apps()

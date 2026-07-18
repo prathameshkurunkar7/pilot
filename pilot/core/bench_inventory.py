@@ -17,7 +17,7 @@ class BenchInventory:
         self.bench = bench
 
     def app(self, name: str) -> "App":
-        from pilot.config.app import AppConfig
+        from pilot.config import AppConfig
         from pilot.core.app import App
 
         app_path = self.bench.apps_path / name
@@ -37,7 +37,7 @@ class BenchInventory:
         )
 
     def apps(self) -> list["App"]:
-        from pilot.config.app import AppConfig
+        from pilot.config import AppConfig
         from pilot.core.app import App
 
         if not self.bench.apps_path.is_dir():
@@ -62,7 +62,7 @@ class BenchInventory:
         return apps_txt.read_text().splitlines() if apps_txt.exists() else []
 
     def is_app_installed(self, name: str) -> bool:
-        from pilot.config.app import AppConfig
+        from pilot.config import AppConfig
         from pilot.core.app import App
 
         module_name = App(AppConfig(name=name, repo="", branch=""), self.bench).module_name
@@ -92,7 +92,7 @@ class BenchInventory:
         apps_txt.write_text("\n".join(names) + "\n" if names else "")
 
     def _site_config(self, name: str, raw: dict):
-        from pilot.config.site import SiteConfig
+        from pilot.config import SiteConfig
 
         raw_domains = [
             entry.get("domain") if isinstance(entry, dict) else entry

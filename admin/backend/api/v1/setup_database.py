@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 
 if TYPE_CHECKING:
     from pilot.managers.mariadb import MariaDBManager
@@ -48,7 +48,7 @@ def database_validation(bench_root: Path, data: dict):
         )
         return engine, MariaDBManager(config), password, existing
 
-    from pilot.config.postgres import PostgresConfig
+    from pilot.config import PostgresConfig
     from pilot.managers.postgres import PostgresManager
 
     config = PostgresConfig(
@@ -88,7 +88,7 @@ def _mariadb_config(
     existing: bool = False,
 ):
     """Build a MariaDBConfig from the bench's toml with the entered credentials applied."""
-    from pilot.config.mariadb import MariaDBConfig
+    from pilot.config import MariaDBConfig
 
     config = MariaDBConfig(
         root_password=password,

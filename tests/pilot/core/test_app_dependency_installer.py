@@ -15,7 +15,7 @@ from tests.pilot.commands.test_get_app import make_resolver
 
 
 def make_app(bench, name: str):
-    from pilot.config.app import AppConfig
+    from pilot.config import AppConfig
     from pilot.core.app import App
 
     return App(AppConfig(name=name, repo=f"https://github.com/frappe/{name}", branch="main"), bench)

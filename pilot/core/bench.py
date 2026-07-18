@@ -4,11 +4,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, List
 
-from pilot.config.bench import BenchConfig
+from pilot.config import BenchConfig
 from pilot.exceptions import BenchError
 
 if TYPE_CHECKING:
-    from pilot.config.s3 import S3Config
+    from pilot.config import S3Config
     from pilot.core.app import App, RevisionPin
     from pilot.core.database import Database
     from pilot.core.site import Site

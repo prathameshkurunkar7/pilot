@@ -6,7 +6,7 @@ from pathlib import Path
 
 from flask import current_app, jsonify, request
 
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 from pilot.internal.site_paths import site_config_path, site_exists
 from pilot.internal.validators import validate_site_name
 from pilot.tasks import TaskRunner

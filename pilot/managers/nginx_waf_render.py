@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from pilot.managers.waf import SHARED_MODSEC_DIR
 
 if TYPE_CHECKING:
-    from pilot.config.waf import WafCondition, WafConfig, WafRule
+    from pilot.config import WafCondition, WafConfig, WafRule
     from pilot.core.bench import Bench
 
 
@@ -53,7 +53,7 @@ class ModSecurityRenderer:
         )
 
     def render_engine(self, waf: "WafConfig") -> str:
-        from pilot.config.waf import parse_nginx_size
+        from pilot.config import parse_nginx_size
 
         audit_log = self.bench.path / "logs" / "modsec_audit.log"
         body_action = "Reject" if waf.mode == "On" else "ProcessPartial"

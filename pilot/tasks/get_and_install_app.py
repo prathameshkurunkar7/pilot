@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import ClassVar
 
-from pilot.config.app import AppConfig
+from pilot.config import AppConfig
 from pilot.core.app import App
 from pilot.core.app_install_result import AppInstallResult
 from pilot.core.site import Site

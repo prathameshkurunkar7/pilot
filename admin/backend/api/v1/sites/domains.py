@@ -33,7 +33,7 @@ def enable_tls(name: str):
     if config_path is None:
         return site_not_found()
 
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
 
     store = BenchTomlStore.for_bench(bench_root)
     data = request.get_json(silent=True)
@@ -92,7 +92,7 @@ def enable_tls(name: str):
 
 
 def _domain_routes(bench_root: Path):
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
     from pilot.core.bench import Bench
     from pilot.core.domains import DomainRouteProvider
 

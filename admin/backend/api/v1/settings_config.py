@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pilot.config.bench import BenchConfig
-from pilot.config.firewall import FirewallRule
-from pilot.config.s3 import S3Config
-from pilot.config.waf import WafCondition, WafRule
-from pilot.config.worker import WorkerGroup
+from pilot.config import BenchConfig
+from pilot.config import FirewallRule
+from pilot.config import S3Config
+from pilot.config import WafCondition, WafRule
+from pilot.config import WorkerGroup
 
 
 def _coerce_int(value):
@@ -257,7 +257,7 @@ class ConfigPatcher:
         if not production:
             return None
         if "process_manager" in production:
-            from pilot.config.production import VALID_PROCESS_MANAGERS
+            from pilot.config import VALID_PROCESS_MANAGERS
 
             process_manager = str(production["process_manager"])
             valid = ("none", *VALID_PROCESS_MANAGERS)

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from pilot.tasks.setup_letsencrypt import SetupLetsEncryptTask
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 from pilot.exceptions import BenchError
 from tests.pilot.commands.test_commands import make_bench
 

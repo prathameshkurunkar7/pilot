@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pilot.config.bench import BenchConfig
-from pilot.config.waf import (
+from pilot.config import BenchConfig
+from pilot.config import (
     WAF_MODES,
     WAF_RULE_ACTIONS,
     WAF_RULE_FIELDS,

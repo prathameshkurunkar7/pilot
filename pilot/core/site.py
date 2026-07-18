@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.config.site import SiteConfig
+from pilot.config import SiteConfig
 from pilot.utils import run_command
 
 if TYPE_CHECKING:

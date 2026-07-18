@@ -97,7 +97,7 @@ def download_backup_file(name: str, timestamp: str, file_id: str):
 def backup_download_links(name: str, timestamp: str):
     """Pre-signed S3 URLs for a backup run's files — the user downloads
     straight from the bucket, so this server never proxies the transfer."""
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
     from pilot.integrations.s3.backups import OffsiteBackup
 
     bench_root = Path(current_app.config["BENCH_ROOT"])
@@ -129,7 +129,7 @@ def _backup_cron_command(bench_root: Path, site: str) -> str:
 def _retention_from_payload(block: dict | None):
     """Build a validated BackupConfig from the UI payload, defaulting to GFS.
     Returns the config, or an error string."""
-    from pilot.config.backup import VALID_SCHEMES, BackupConfig
+    from pilot.config import VALID_SCHEMES, BackupConfig
 
     block = block or {}
     config = BackupConfig()

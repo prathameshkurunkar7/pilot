@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
-from pilot.config.postgres import PostgresConfig
+from pilot.config import PostgresConfig
 from pilot.exceptions import DatabaseError
 from pilot.managers.postgres import PostgresManager
 

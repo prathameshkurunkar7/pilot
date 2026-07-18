@@ -147,9 +147,9 @@ def test_session_decode_skips_jwks_when_unconfigured() -> None:
 
 def _client(tmp_path: Path):
     from admin.backend.app import create_app
-    from pilot.config.bench import BenchConfig
+    from pilot.config import BenchConfig
     from pilot.config.bench_toml_builder import BenchTomlBuilder
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
 
     bench_root = tmp_path / "benches" / "current"
     bench_root.mkdir(parents=True)

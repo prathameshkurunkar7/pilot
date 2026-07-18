@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 from flask import current_app, make_response
 
-from pilot.config.bench import BenchConfig
+from pilot.config import BenchConfig
 from pilot.utils import normalize_host
 
 

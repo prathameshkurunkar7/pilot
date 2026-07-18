@@ -16,7 +16,7 @@ class SetAdminPasswordCommand(Command):
     password: Annotated[str | None, Arg(help="New password; omit to be prompted securely.")] = None
 
     def run(self) -> None:
-        from pilot.config.toml_store import BenchTomlStore
+        from pilot.config import BenchTomlStore
 
         password = self.password or self._prompt()
         if not password:

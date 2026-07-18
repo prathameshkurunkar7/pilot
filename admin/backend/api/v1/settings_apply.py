@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from pilot.config.bench import BenchConfig
+from pilot.config import BenchConfig
 from pilot.core.bench import Bench
 from pilot.managers.waf import WafManager
 

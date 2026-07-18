@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from pilot.config.bench_toml_builder import BenchTomlBuilder
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 from pilot.exceptions import ConfigError
 from pilot.internal.atomic_file import exclusive_file_lock
 

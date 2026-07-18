@@ -5,7 +5,7 @@ from pathlib import Path
 
 from admin.backend.api.v1.setup_state import setup_handoff_task
 from pilot.config.bench_toml_builder import BenchTomlBuilder
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 from pilot.internal.validators import validate_branch_name, validate_repo_url
 
 _PASSWORD_KEYS = ("admin_password", "mariadb_password", "postgres_password")

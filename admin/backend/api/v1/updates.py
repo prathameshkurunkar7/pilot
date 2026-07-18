@@ -31,7 +31,7 @@ def check_app_updates():
 def _app_updates(*, fetch: bool) -> list[dict]:
     bench_root = Path(current_app.config["BENCH_ROOT"])
 
-    from pilot.config.toml_store import BenchTomlStore
+    from pilot.config import BenchTomlStore
     from pilot.core.bench import Bench
 
     config = BenchTomlStore.for_bench(bench_root).read()

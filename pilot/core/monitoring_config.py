@@ -79,7 +79,7 @@ class MonitorConfigurator:
 
     @property
     def log_path(self) -> Path:
-        from pilot.config.monitor import MonitorConfig
+        from pilot.config import MonitorConfig
 
         bench = self._require_bench()
         return bench.config.monitor.log_path or MonitorConfig.default_log_path(bench.config.name)

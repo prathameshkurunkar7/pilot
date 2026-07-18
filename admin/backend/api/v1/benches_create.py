@@ -9,7 +9,7 @@ from flask import url_for
 from admin.backend.api.responses import created_response, error_response
 from admin.backend.api.v1.benches_support import bench_resource, target_bench_dir
 from admin.backend.providers.bench import BenchProvider
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 from pilot.core.bench import Bench
 from pilot.exceptions import BenchAlreadyExistsError, BenchError
 from pilot.utils import cli_root

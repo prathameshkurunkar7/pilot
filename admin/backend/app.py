@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import Flask, send_file
 
-from pilot.config.toml_store import BenchTomlStore
+from pilot.config import BenchTomlStore
 
 from admin.backend.api.errors import install_api_error_handlers
 from admin.backend.api.responses import error_response
