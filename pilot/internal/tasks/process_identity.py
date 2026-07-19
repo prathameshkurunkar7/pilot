@@ -166,11 +166,10 @@ class _DarwinPsBackend:
         command = self._run(["ps", "-p", str(pid), "-o", "command="])
         if not command:
             raise ProcessLookupError(pid)
-        pgid = int(parts[2])
         return _ProcessSnapshot(
             state=parts[3][0],
-            pgid=pgid,
-            sid=pgid,
+            pgid=int(parts[2]),
+            sid=os.getsid(pid),
             start_ticks=self._token_id(parts[5]),
             uid=int(parts[4]),
             argv_hash=self._hash(self._drop_executable(command)),
