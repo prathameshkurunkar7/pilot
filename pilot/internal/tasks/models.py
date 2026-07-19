@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-__all__ = ["TaskFailure", "TaskStatus"]
+__all__ = ["TERMINAL_TASK_STATUSES", "TaskFailure", "TaskStatus"]
 
 
 class TaskStatus(StrEnum):
@@ -19,10 +19,10 @@ class TaskStatus(StrEnum):
 
     @property
     def is_terminal(self) -> bool:
-        return self in _TERMINAL_TASK_STATUSES
+        return self in TERMINAL_TASK_STATUSES
 
 
-_TERMINAL_TASK_STATUSES = frozenset({TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.KILLED})
+TERMINAL_TASK_STATUSES = frozenset({TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.KILLED})
 _ACTIVE_TASK_STATUSES = frozenset({TaskStatus.QUEUED, TaskStatus.RUNNING})
 
 
