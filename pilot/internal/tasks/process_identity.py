@@ -163,7 +163,7 @@ class _DarwinPsBackend:
         parts = listing.split()
         if len(parts) < 6:
             raise ProcessLookupError(pid)
-        command = self._run(["ps", "-p", str(pid), "-o", "command="])
+        command = self._run(["ps", "-ww", "-p", str(pid), "-o", "command="])
         if not command:
             raise ProcessLookupError(pid)
         return _ProcessSnapshot(
