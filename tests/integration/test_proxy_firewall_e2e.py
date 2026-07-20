@@ -142,6 +142,7 @@ def _bench_nginx(tmp_path: Path, firewall: dict | None):
         data = {**data, "firewall": firewall}
     bench = Bench(BenchConfig._from_dict(data), tmp_path / "bench")
     bench.config.nginx.http_port = _BENCH_PORT
+    bench.create_directories()
     site = bench.sites_path / "site1.localhost"
     site.mkdir(parents=True, exist_ok=True)
     (site / "site_config.json").write_text("{}")

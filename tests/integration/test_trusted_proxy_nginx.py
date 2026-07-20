@@ -63,6 +63,7 @@ def _install_provider(tmp_path: Path, monkeypatch) -> None:
 def _make_bench(tmp_path: Path) -> Bench:
     bench = Bench(BenchConfig._from_dict(_BENCH_DATA), tmp_path)
     bench.config.nginx.http_port = _HTTP_PORT
+    bench.create_directories()
     site = bench.sites_path / "site1.localhost"
     site.mkdir(parents=True, exist_ok=True)
     (site / "site_config.json").write_text("{}")

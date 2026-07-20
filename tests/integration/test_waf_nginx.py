@@ -37,6 +37,7 @@ def _make_bench(tmp_path: Path) -> Bench:
     config.nginx.http_port = _HTTP_PORT
     config.waf = WafConfig(enabled=True, mode="DetectionOnly")
     bench = Bench(config, tmp_path)
+    bench.create_directories()
     site = bench.sites_path / "site1.localhost"
     site.mkdir(parents=True, exist_ok=True)
     (site / "site_config.json").write_text("{}")
