@@ -37,6 +37,9 @@
       <ChartCard title="Frequent IPs">
         <AxisChart :config="topIpsConfig" class="w-full min-w-0 h-full min-h-[360px] px-2 sm:px-4 py-2" />
       </ChartCard>
+      <ChartCard title="Slowest reports">
+        <AxisChart :config="slowestReportsConfig" class="w-full min-w-0 h-full min-h-[360px] px-2 sm:px-4 py-2" />
+      </ChartCard>
     </div>
   </div>
 </template>
@@ -77,7 +80,8 @@ const empty = computed(() => {
   const d = data.value
   if (!d) return true
   return !d.top_paths.categories.length && !d.slowest_requests.categories.length &&
-    !d.top_jobs.categories.length && !d.slowest_jobs.categories.length && !d.top_ips.categories.length
+    !d.top_jobs.categories.length && !d.slowest_jobs.categories.length && !d.top_ips.categories.length &&
+    !d.slowest_reports.categories.length
 })
 
 const numberFormat = new Intl.NumberFormat()
@@ -126,6 +130,7 @@ const slowestRequestsConfig = computed(() => timelineConfig(data.value?.slowest_
 const topJobsConfig = computed(() => timelineConfig(data.value?.top_jobs, 'Runs'))
 const slowestJobsConfig = computed(() => timelineConfig(data.value?.slowest_jobs, 'Duration (ms)'))
 const topIpsConfig = computed(() => timelineConfig(data.value?.top_ips, 'Requests'))
+const slowestReportsConfig = computed(() => timelineConfig(data.value?.slowest_reports, 'Duration (ms)'))
 
 async function load() {
   loading.value = true

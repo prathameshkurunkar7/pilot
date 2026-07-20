@@ -30,6 +30,7 @@ class SiteMonitoringProvider(WindowedLogProvider):
             "top_jobs": self._timeline(entries, "job", self._job_method, "count"),
             "slowest_jobs": self._timeline(entries, "job", self._job_method, "duration"),
             "top_ips": self._timeline(entries, "request", self._request_ip, "count"),
+            "slowest_reports": self._timeline(entries, "request", self._report_name, "duration"),
         }
 
     def _timeline(
@@ -64,6 +65,11 @@ class SiteMonitoringProvider(WindowedLogProvider):
     @staticmethod
     def _job_method(entry: dict) -> str | None:
         return (entry.get("job") or {}).get("method")
+
+    @staticmethod
+    def _report_name(entry: dict) -> str | None:
+        report = entry.get("report")
+        return report if isinstance(report, str) and report else None
 
     def _entries_in_window(self):
         for record in self.records_in_window(self._log_path, time_key="timestamp"):
