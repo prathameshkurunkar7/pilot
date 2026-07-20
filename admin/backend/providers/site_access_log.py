@@ -11,7 +11,7 @@ _MAX_BUCKETS = 48
 _TOP_LIMIT = 5
 
 _LINE_RE = re.compile(
-    r'^(?P<ip>\S+) \[(?P<time>[^\]]+)\] '
+    r"^(?P<ip>\S+) \[(?P<time>[^\]]+)\] "
     r'"(?P<method>\S+) (?P<uri>\S*)" (?P<status>\d{3}) '
     r'"(?P<host>[^"]*)" (?P<request_time>\S+)\s*$'
 )
