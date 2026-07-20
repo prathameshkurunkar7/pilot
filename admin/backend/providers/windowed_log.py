@@ -62,9 +62,18 @@ class WindowedLogProvider:
         when = cls.get_time(record.get(time_key))
         return cls.to_epoch_ms(when) if when else None
 
-    @staticmethod
-    def _iter_records_reversed(path: Path, block_size: int = 65536) -> Iterator[dict]:
+    @classmethod
+    def _iter_records_reversed(cls, path: Path, block_size: int = 65536) -> Iterator[dict]:
         """Yields JSON records newest-first, in blocks from the end."""
+        for line in cls._iter_lines_reversed(path, block_size):
+            record = _safe_json(line)
+            if record is not None:
+                yield record
+
+    @staticmethod
+    def _iter_lines_reversed(path: Path, block_size: int = 65536) -> Iterator[bytes]:
+        """Yields raw lines newest-first, in blocks from the end, so a short
+        window never touches the whole file."""
         if not path.exists():
             return
         with path.open("rb") as handle:
@@ -77,13 +86,9 @@ class WindowedLogProvider:
                 handle.seek(position)
                 lines = (handle.read(size) + remainder).split(b"\n")
                 remainder = lines[0]
-                for line in reversed(lines[1:]):
-                    record = _safe_json(line)
-                    if record is not None:
-                        yield record
-            record = _safe_json(remainder)
-            if record is not None:
-                yield record
+                yield from reversed(lines[1:])
+            if remainder:
+                yield remainder
 
 
 def _safe_json(line: bytes):

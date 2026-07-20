@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from admin.backend.internal.timeline import TimelinePoint, build_timeline
+from admin.backend.providers.site_access_log import SiteAccessLogProvider
 from admin.backend.providers.windowed_log import WindowedLogProvider
 
 _MAX_BUCKETS = 48
@@ -11,13 +12,19 @@ _TOP_LIMIT = 5
 
 
 class SiteMonitoringProvider(WindowedLogProvider):
-    """Aggregates one site's slice of Frappe's monitor.json.log for one time window."""
+    """Aggregates one site's slice of Frappe's monitor.json.log for one time window.
+
+    top_ips is a special case: monitor.json.log's IP comes from Frappe's own
+    X-Forwarded-For parsing, which trusts an unvalidated, spoofable header. When
+    the site has a real nginx access log (production, nginx in front), that's
+    used instead - it's sourced from nginx's own trustworthy $remote_addr."""
 
     def __init__(self, bench_root: Path, site_name: str, window: str) -> None:
         super().__init__(window)
         self._log_path = bench_root / "logs" / "monitor.json.log"
         self._site_name = site_name
         self._bucket_seconds = max(60, self.window_seconds // _MAX_BUCKETS)
+        self._access_log = SiteAccessLogProvider(bench_root, site_name, window)
 
     def get_analytics(self) -> dict:
         entries = list(self._entries_in_window())
@@ -29,9 +36,14 @@ class SiteMonitoringProvider(WindowedLogProvider):
             "slowest_requests": self._timeline(entries, "request", self._request_path, "duration"),
             "top_jobs": self._timeline(entries, "job", self._job_method, "count"),
             "slowest_jobs": self._timeline(entries, "job", self._job_method, "duration"),
-            "top_ips": self._timeline(entries, "request", self._request_ip, "count"),
+            "top_ips": self._top_ips(entries),
             "slowest_reports": self._timeline(entries, "request", self._report_name, "duration"),
         }
+
+    def _top_ips(self, entries: list[dict]) -> dict:
+        if self._access_log.is_available():
+            return self._access_log.get_top_ips()
+        return self._timeline(entries, "request", self._request_ip, "count")
 
     def _timeline(
         self, entries: list[dict], transaction_type: str, category: Callable[[dict], str | None], by: str
