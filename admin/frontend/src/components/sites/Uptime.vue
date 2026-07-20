@@ -5,7 +5,8 @@
         <h3 class="font-medium text-ink-gray-8 text-base">Uptime</h3>
         <span class="size-3.5 text-ink-gray-4 lucide-link" />
       </div>
-      <div v-if="data && data.overall_percent !== null" class="flex items-center gap-1 text-sm">
+      <div v-if="data && data.production_enabled && data.overall_percent !== null"
+        class="flex items-center gap-1 text-sm">
         <span class="font-semibold text-ink-gray-8">{{ formatPercent(data.overall_percent) }}</span>
         <span class="text-ink-gray-5">Overall Uptime</span>
         <span class="size-3.5 text-ink-gray-4 lucide-circle-help"
