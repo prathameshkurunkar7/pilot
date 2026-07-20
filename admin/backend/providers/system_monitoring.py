@@ -9,7 +9,7 @@ MAX_POINTS = 400
 DISK_SERIES = "Root Disk"
 
 
-class MonitorProvider(WindowedLogProvider):
+class SystemMonitoringProvider(WindowedLogProvider):
     """Time-series for a window from the monitor logs: system metrics in a
     shared JSON-Lines log, application metrics in a per-bench one."""
 

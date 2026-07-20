@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from admin.backend.providers.timeline import TimelinePoint, build_timeline
+from admin.backend.internal.timeline import TimelinePoint, build_timeline
 from admin.backend.providers.windowed_log import WindowedLogProvider
 
 _MAX_BUCKETS = 48
@@ -32,7 +32,9 @@ class SiteMonitoringProvider(WindowedLogProvider):
             "top_ips": self._timeline(entries, "request", self._request_ip, "count"),
         }
 
-    def _timeline(self, entries: list[dict], transaction_type: str, category: Callable[[dict], str | None], by: str) -> dict:
+    def _timeline(
+        self, entries: list[dict], transaction_type: str, category: Callable[[dict], str | None], by: str
+    ) -> dict:
         points = self._points(entries, transaction_type, category)
         return build_timeline(points, _TOP_LIMIT, self._bucket_seconds, by)
 

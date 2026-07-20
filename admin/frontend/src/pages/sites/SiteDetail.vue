@@ -51,7 +51,7 @@
     <!-- Sections -->
     <SiteApps v-if="activeTab === 'apps'" :site-name="siteName" />
     <SiteBackups v-else-if="activeTab === 'backups'" :site-name="siteName" />
-    <SiteMonitoring v-else-if="activeTab === 'monitoring'" :site-name="siteName" />
+    <SiteMonitoring v-else-if="activeTab === 'analytics'" :site-name="siteName" />
     <SiteConfig v-else-if="activeTab === 'config'" :site-name="siteName" />
     <SiteSettings v-else-if="activeTab === 'settings'" :site-name="siteName" />
   </div>
@@ -104,7 +104,7 @@ const statusBadgeTheme = computed(() => STATUS_THEMES[status.value] ?? 'gray')
 const tabs = [
   { value: 'apps', label: 'Apps' },
   { value: 'backups', label: 'Backups' },
-  { value: 'monitoring', label: 'Monitoring' },
+  { value: 'analytics', label: 'Analytics' },
   { value: 'config', label: 'Config' },
   { value: 'settings', label: 'Settings' },
 ]
