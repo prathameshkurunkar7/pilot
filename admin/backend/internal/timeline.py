@@ -42,10 +42,11 @@ def build_timeline(
     }
 
 
-def _rank(points: list[TimelinePoint], top: int, by: str) -> list[tuple[str, float | int]] | Counter:
+def _rank(points: list[TimelinePoint], top: int, by: str) -> list[tuple[str, int | float]]:
     if by == "count":
-        return Counter(point.category for point in points).most_common(top)
-    slowest: dict[str, int] = {}
+        counts = Counter(point.category for point in points)
+        return [(name, count) for name, count in counts.most_common(top)]
+    slowest: dict[str, int | float] = {}
     for point in points:
         slowest[point.category] = max(slowest.get(point.category, 0), point.duration)
     return sorted(slowest.items(), key=lambda item: item[1], reverse=True)[:top]

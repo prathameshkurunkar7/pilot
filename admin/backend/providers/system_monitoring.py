@@ -104,8 +104,12 @@ class SystemMonitoringProvider(WindowedLogProvider):
             ],
         }
 
-    def get_records_in_window(self, path: Path) -> list[tuple[datetime | None, dict]]:
-        rows = [(self.get_time(record["time"]), record) for record in self.records_in_window(path)]
+    def get_records_in_window(self, path: Path) -> list[tuple[datetime, dict]]:
+        rows = [
+            (when, record)
+            for record in self.records_in_window(path)
+            if (when := self.get_time(record["time"])) is not None
+        ]
         rows.reverse()
 
         if len(rows) <= MAX_POINTS:
