@@ -13,11 +13,14 @@ class TimelinePoint:
 
     time_ms: int
     category: str
-    duration: int
+    duration: int | float
 
 
 def build_timeline(
-    points: list[TimelinePoint], top: int = DEFAULT_TOP, bucket_seconds: int = DEFAULT_BUCKET_SECONDS, by: str = "count"
+    points: list[TimelinePoint],
+    top: int = DEFAULT_TOP,
+    bucket_seconds: int = DEFAULT_BUCKET_SECONDS,
+    by: str = "count",
 ) -> dict:
     """Bucket points into a per-category time series for the top N categories,
     ranked by request count (by="count") or worst duration (by="duration")."""
@@ -39,7 +42,7 @@ def build_timeline(
     }
 
 
-def _rank(points: list[TimelinePoint], top: int, by: str) -> list[tuple[str, float]]:
+def _rank(points: list[TimelinePoint], top: int, by: str) -> list[tuple[str, float | int]] | Counter:
     if by == "count":
         return Counter(point.category for point in points).most_common(top)
     slowest: dict[str, int] = {}

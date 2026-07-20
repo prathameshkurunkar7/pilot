@@ -51,6 +51,8 @@ def _wrapper_conf(tmp_path: Path, include_conf: Path, module: str) -> Path:
         f"error_log {tmp_path}/error.log;\n"
         "events {}\n"
         "http {\n"
+        "    log_format pilot_access '$remote_addr [$time_local] \"$request_method $uri\" "
+        "$status \"$host\" $request_time';\n"
         f"    access_log {tmp_path}/access.log;\n"
         f"    include {include_conf};\n"
         "}\n"

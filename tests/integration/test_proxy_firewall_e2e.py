@@ -101,11 +101,15 @@ def _stop(proc: subprocess.Popen) -> None:
 
 
 def _http_wrapper(prefix: Path, http_body: str) -> str:
+    log_format = (
+        "    log_format pilot_access '$remote_addr [$time_local] \"$request_method $uri\" "
+        "$status \"$host\" $request_time';\n"
+    )
     return (
         f"pid {prefix}/nginx.pid;\n"
         f"error_log {prefix}/error.log;\n"
         "events {}\n"
-        f"http {{\n    access_log off;\n{http_body}}}\n"
+        f"http {{\n{log_format}    access_log off;\n{http_body}}}\n"
     )
 
 

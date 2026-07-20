@@ -10,6 +10,7 @@ from admin.backend.api.v1.sites import (  # noqa: E402
     core,
     domains,
     monitoring,
+    uptime,
 )
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "core",
     "domains",
     "monitoring",
+    "uptime",
     "sites_bp",
 ]

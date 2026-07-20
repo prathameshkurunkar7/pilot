@@ -104,7 +104,7 @@ class SystemMonitoringProvider(WindowedLogProvider):
             ],
         }
 
-    def get_records_in_window(self, path: Path) -> list[tuple[datetime, dict]]:
+    def get_records_in_window(self, path: Path) -> list[tuple[datetime | None, dict]]:
         rows = [(self.get_time(record["time"]), record) for record in self.records_in_window(path)]
         rows.reverse()
 

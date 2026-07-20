@@ -58,6 +58,7 @@ declare module 'vue' {
     TerminalOutput: typeof import('./src/components/common/TerminalOutput.vue')['default']
     UpdateAppsDialog: typeof import('./src/components/apps/UpdateAppsDialog.vue')['default']
     UpdatesAvailableButton: typeof import('./src/components/common/UpdatesAvailableButton.vue')['default']
+    Uptime: typeof import('./src/components/sites/Uptime.vue')['default']
     Waf: typeof import('./src/components/settings/Waf.vue')['default']
     WafAnalytics: typeof import('./src/components/common/WafAnalytics.vue')['default']
     WafCustomRules: typeof import('./src/components/settings/WafCustomRules.vue')['default']

@@ -10,6 +10,7 @@
         </template>
       </Dropdown>
     </div>
+    <SiteUptime :site-name="props.siteName" :window="activeWindow" />
     <div v-if="loading" class="flex justify-center py-12">
       <LoadingText />
     </div>
@@ -38,6 +39,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { AxisChart, Button, Dropdown, ErrorMessage, LoadingText } from 'frappe-ui'
 import ChartCard from '@/components/common/ChartCard.vue'
+import SiteUptime from '@/components/sites/Uptime.vue'
 import { apiErrorMessage } from '@/api/client'
 import { sitesApi } from '@/api/sites'
 
