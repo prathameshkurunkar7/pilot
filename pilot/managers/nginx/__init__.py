@@ -17,8 +17,10 @@ from pilot.managers.platform import (
     _privileged,
     default_nginx_config_dir,
     is_linux,
+    is_root,
     service_command,
     service_running,
+    which,
 )
 from pilot.managers.waf import WafManager
 from pilot.utils import run_command
@@ -209,6 +211,17 @@ class NginxManager:
         )
         self._stage_and_copy(sudoers_content, sudoers_file)
         run_command(_privileged(["chmod", "440", str(sudoers_file)]))
+
+    @property
+    def has_passwordless_sudo(self) -> bool:
+        """True when the sudoers grant from `setup_sudoers` lets this user run
+        nginx commands without a password prompt."""
+        if is_root():
+            return True
+        if which("sudo") is None:
+            return False
+        result = subprocess.run(["sudo", "-n", "-l", "/usr/sbin/nginx"], capture_output=True, timeout=5)
+        return result.returncode == 0
 
     def generate_config(self, ssl_ready: bool = False) -> None:
         nginx_dir = self.bench.config_path / "nginx"
