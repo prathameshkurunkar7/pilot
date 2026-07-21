@@ -66,6 +66,7 @@ class BenchProduction:
         (self.bench.config_path / "nginx").mkdir(parents=True, exist_ok=True)
         nginx_manager.generate_config(ssl_ready=True)
         nginx_manager.install_config()
+        nginx_manager.setup_sudoers()
         self._report_site_urls(nginx_manager, on_progress)
 
     def setup_letsencrypt(self) -> None:

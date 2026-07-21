@@ -197,8 +197,6 @@ class NginxManager:
         if not self.is_installed():
             get_package_manager().install("nginx")
 
-        self.setup_sudoers()
-
     def setup_sudoers(self):
         """Give nginx password less sudo access to allow reloads and other actions.
         Idempotent: same deterministic content every call."""
