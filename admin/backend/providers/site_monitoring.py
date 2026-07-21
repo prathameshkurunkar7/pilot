@@ -69,6 +69,22 @@ class SiteMonitoringProvider(WindowedLogProvider):
 
     @staticmethod
     def _request_path(entry: dict) -> str | None:
+        """Entry example:
+        {
+            "duration": 845,
+            "request": {
+                "ip": "13.206.253.38",
+                "method": "GET",
+                "path": "/api/method/ping",
+                "response_length": 18,
+                "status_code": 200,
+            },
+            "site": "x.site.frappe.cloud",
+            "timestamp": "2026-07-21 17:43:57.747746+00:00",
+            "transaction_type": "request",
+            "uuid": "xxx",
+        }
+        """
         return (entry.get("request") or {}).get("path")
 
     @classmethod
