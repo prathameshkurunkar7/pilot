@@ -101,11 +101,11 @@ class LetsEncryptManager:
             "certbot",
             [
                 # obtain(): multiple -d flags + --cert-name + --expand
-                f'{certbot} certonly --webroot -w {webroot_path} * --cert-name * '
-                f'--expand --email * --agree-tos --non-interactive --deploy-hook "{hook}"',
+                f"{certbot} certonly --webroot -w {webroot_path} * --cert-name * "
+                f"--expand --email * --agree-tos --non-interactive --deploy-hook {hook}",
                 # obtain_admin(): single -d, no --cert-name/--expand
-                f'{certbot} certonly --webroot -w {webroot_path} -d * --email * '
-                f'--agree-tos --non-interactive --deploy-hook "{hook}"',
+                f"{certbot} certonly --webroot -w {webroot_path} -d * --email * "
+                f"--agree-tos --non-interactive --deploy-hook {hook}",
                 f"{certbot} renew --quiet",
                 f"{mkdir} -p {webroot_path}",
                 f"{openssl} x509 -noout -ext subjectAltName -in {LETSENCRYPT_LIVE}/*/fullchain.pem",
