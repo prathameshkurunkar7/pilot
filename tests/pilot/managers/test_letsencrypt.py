@@ -40,8 +40,10 @@ def test_setup_sudoers_grants_only_certbot_and_cert_reads(tmp_path: Path) -> Non
     # on both sides, so nothing can be appended or substituted after a match.
     for clause in content.removeprefix("runner ALL=(ALL) NOPASSWD: ").rstrip("\n").split(","):
         assert not clause.rstrip().endswith("*"), f"unanchored trailing wildcard: {clause!r}"
-    assert 'certonly --webroot -w /var/www/letsencrypt * --cert-name * --expand --email *' in content
-    assert '--deploy-hook "systemctl reload nginx"' in content
+    assert "certonly --webroot -w /var/www/letsencrypt * --cert-name * --expand --email *" in content
+    # unquoted: the real invocation never contains a literal `"` byte to match against
+    assert "--deploy-hook systemctl reload nginx" in content
+    assert '"' not in content
     assert "certonly --webroot -w /var/www/letsencrypt -d * --email *" in content
     assert "certbot renew --quiet," in content
     assert "certbot renew *" not in content
