@@ -571,39 +571,19 @@ def test_config_dir_honors_explicit_value(tmp_path: Path) -> None:
     assert NginxManager(bench).config_dir == Path("/custom/nginx/dir")
 
 
-def test_cert_files_exist_raises_when_sudo_grant_missing() -> None:
-    """A missing sudoers grant must fail loudly, not read as "no certificate" -
-    that silently renders every vhost HTTP-only."""
-    from pilot.exceptions import ConfigError
+def test_cert_files_exist_falls_back_to_http_on_failure() -> None:
+    """Any failure - cert absent, or sudo denied - renders the vhost HTTP-only."""
     from pilot.managers.nginx import cert_files_exist
 
-    with (
-        patch("pilot.managers.nginx.has_passwordless_sudo_for", return_value=False),
-        patch("pilot.managers.nginx.run_command") as mock_run,
-        pytest.raises(ConfigError, match="sudoers grant"),
-    ):
-        cert_files_exist("site.example.com")
-    mock_run.assert_not_called()
-
-
-def test_cert_files_exist_reports_missing_cert() -> None:
-    from pilot.managers.nginx import cert_files_exist
-
-    missing = CommandError("Command 'sudo' failed with exit code 1.")
-    with (
-        patch("pilot.managers.nginx.has_passwordless_sudo_for", return_value=True),
-        patch("pilot.managers.nginx.run_command", side_effect=missing),
-    ):
+    denied = CommandError("Command 'sudo' failed with exit code 1.\nsudo: a password is required")
+    with patch("pilot.managers.nginx.run_command", side_effect=denied):
         assert cert_files_exist("site.example.com") is False
 
 
 def test_cert_files_exist_true_when_both_files_present() -> None:
     from pilot.managers.nginx import cert_files_exist
 
-    with (
-        patch("pilot.managers.nginx.has_passwordless_sudo_for", return_value=True),
-        patch("pilot.managers.nginx.run_command") as mock_run,
-    ):
+    with patch("pilot.managers.nginx.run_command") as mock_run:
         assert cert_files_exist("site.example.com") is True
     argv = mock_run.call_args.args[0]
     assert argv[-4:] == [

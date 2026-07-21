@@ -73,7 +73,7 @@ def live_key_path(domain: str) -> Path:
 
 def cert_files_exist(domain: str) -> bool:
     """Ensure a missing sudo grant does not take the whole bench to http."""
-    # /etc/letsencrypt/live is root-only (0700), so stat with privilege..
+    # /etc/letsencrypt/live is root-only (0700), so stat with privilege.
     command = ["test", "-f", str(live_cert_path(domain)), "-a", "-f", str(live_key_path(domain))]
     try:
         run_command(_privileged(command))
