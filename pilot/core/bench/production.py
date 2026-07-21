@@ -81,7 +81,7 @@ class BenchProduction:
         letsencrypt_manager.install()
         letsencrypt_manager.setup_sudoers()
         letsencrypt_manager.ensure_webroot()
-        nginx_manager.generate_config(ssl_ready=False)
+        nginx_manager.generate_config(ssl_ready=True)
         nginx_manager.reload()
         letsencrypt_manager.obtain_all()
         nginx_manager.generate_config(ssl_ready=True)
