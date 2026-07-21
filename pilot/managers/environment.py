@@ -42,9 +42,14 @@ class AdminEnvManager:
         return uv
 
     def ensure(self) -> None:
-        """Create the admin venv and install admin dependencies if not already done."""
-        if self._ensure_venv():
-            self.install_python_deps()
+        """Create the admin venv and reconcile admin dependencies.
+
+        Deps are reconciled on every call, not just at creation, so an existing venv
+        picks up dependencies added since. Announce only the one-time setup; the
+        reconcile is a no-op once satisfied and should stay silent.
+        """
+        created = self._ensure_venv()
+        self.install_python_deps(announce=created)
         self._ensure_frontend_deps()
 
     def _ensure_venv(self) -> bool:
@@ -56,19 +61,22 @@ class AdminEnvManager:
         print("done")
         return True
 
-    def install_python_deps(self) -> None:
+    def install_python_deps(self, announce: bool = True) -> None:
         """Install any missing admin Python dependencies into the admin venv."""
         self._ensure_venv()
         deps = self._read_admin_deps()
         if not deps:
-            print("  No admin dependencies specified, skipping installation.")
+            if announce:
+                print("  No admin dependencies specified, skipping installation.")
             return
 
-        print(f"  Installing {', '.join(deps)}...", end=" ", flush=True)
+        if announce:
+            print(f"  Installing {', '.join(deps)}...", end=" ", flush=True)
         subprocess.run(
             [self.uv, "pip", "install", "--python", str(self.python), "--quiet", *deps], check=True
         )
-        print("done")
+        if announce:
+            print("done")
 
     def _ensure_frontend_deps(self) -> None:
         frontend = self.venv_path.parent / "admin" / "frontend"
