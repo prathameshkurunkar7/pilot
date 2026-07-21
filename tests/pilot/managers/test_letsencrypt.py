@@ -36,10 +36,17 @@ def test_setup_sudoers_grants_only_certbot_and_cert_reads(tmp_path: Path) -> Non
     assert mock_stage.call_args.kwargs == {"validate": ["visudo", "-cf"]}
     assert target == sudoers_file
     assert "runner ALL=(ALL) NOPASSWD:" in content
-    assert "certbot certonly *," in content
-    assert "certbot renew *," in content
+    # no bare trailing wildcard anywhere - every "*" is anchored by fixed text
+    # on both sides, so nothing can be appended or substituted after a match.
+    for clause in content.removeprefix("runner ALL=(ALL) NOPASSWD: ").rstrip("\n").split(","):
+        assert not clause.rstrip().endswith("*"), f"unanchored trailing wildcard: {clause!r}"
+    assert 'certonly --webroot -w /var/www/letsencrypt * --cert-name * --expand --email *' in content
+    assert '--deploy-hook "systemctl reload nginx"' in content
+    assert "certonly --webroot -w /var/www/letsencrypt -d * --email *" in content
+    assert "certbot renew --quiet," in content
+    assert "certbot renew *" not in content
     assert "mkdir -p /var/www/letsencrypt," in content
-    assert "-in /etc/letsencrypt/live/*" in content
+    assert "-in /etc/letsencrypt/live/*/fullchain.pem" in content
     assert content.count("openssl") == 2
     assert "ALL=(ALL) NOPASSWD: ALL" not in content
 
@@ -56,4 +63,4 @@ def test_has_passwordless_sudo_checks_certbot_grant(tmp_path: Path) -> None:
         assert manager.has_passwordless_sudo is True
 
     checked_command = mock_check.call_args.args[0]
-    assert checked_command[-2:] == ["renew", "--dry-run"]
+    assert checked_command[-2:] == ["renew", "--quiet"]

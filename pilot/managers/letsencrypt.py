@@ -90,16 +90,26 @@ class LetsEncryptManager:
         openssl = which("openssl") or "/usr/bin/openssl"
         mkdir = which("mkdir") or "/bin/mkdir"
         webroot_path = self.bench.config.letsencrypt.webroot_path
+        hook = _nginx_reload_hook()
+        # Domain/cert-name/email tokens must stay wildcarded (new sites arrive after
+        # this grant is installed), but every wildcard here is anchored between fixed
+        # literal text on both sides - nothing can smuggle in extra flags (e.g. a
+        # different --deploy-hook, or openssl -out) before or after the match.
         install_sudoers_grant(
             self.bench.config_path / "letsencrypt",
             bench_user,
             "certbot",
             [
-                f"{certbot} certonly *",
-                f"{certbot} renew *",
+                # obtain(): multiple -d flags + --cert-name + --expand
+                f'{certbot} certonly --webroot -w {webroot_path} * --cert-name * '
+                f'--expand --email * --agree-tos --non-interactive --deploy-hook "{hook}"',
+                # obtain_admin(): single -d, no --cert-name/--expand
+                f'{certbot} certonly --webroot -w {webroot_path} -d * --email * '
+                f'--agree-tos --non-interactive --deploy-hook "{hook}"',
+                f"{certbot} renew --quiet",
                 f"{mkdir} -p {webroot_path}",
-                f"{openssl} x509 -noout -ext subjectAltName -in {LETSENCRYPT_LIVE}/*",
-                f"{openssl} x509 -enddate -noout -in {LETSENCRYPT_LIVE}/*",
+                f"{openssl} x509 -noout -ext subjectAltName -in {LETSENCRYPT_LIVE}/*/fullchain.pem",
+                f"{openssl} x509 -enddate -noout -in {LETSENCRYPT_LIVE}/*/fullchain.pem",
             ],
         )
 
@@ -108,7 +118,7 @@ class LetsEncryptManager:
         """True when the sudoers grant from `setup_sudoers` lets this user run
         certbot without a password prompt."""
         certbot = which("certbot") or "/usr/bin/certbot"
-        return has_passwordless_sudo_for([certbot, "renew", "--dry-run"])
+        return has_passwordless_sudo_for([certbot, "renew", "--quiet"])
 
     def ensure_webroot(self) -> None:
         # /var/www is root-owned, so create the webroot with sudo. Default 0755
