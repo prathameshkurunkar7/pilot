@@ -3,12 +3,12 @@ from __future__ import annotations
 import pwd
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
+from pilot.exceptions import CommandError, ConfigError
 from pilot.internal.template import Template
 from pilot.managers.gunicorn import GunicornManager
 from pilot.managers.nginx.waf_render import ModSecurityRenderer
@@ -73,8 +73,9 @@ def live_key_path(domain: str) -> Path:
 
 def cert_files_exist(domain: str) -> bool:
     # /etc/letsencrypt/live is root-only (0700), so stat with privilege.
-    return (
-        subprocess.run(
+    """Ensure no sudo does not take the whole bench to http"""
+    try:
+        run_command(
             _privileged(
                 [
                     "test",
@@ -84,11 +85,16 @@ def cert_files_exist(domain: str) -> bool:
                     "-f",
                     str(live_key_path(domain)),
                 ]
-            ),
-            capture_output=True,
-        ).returncode
-        == 0
-    )
+            )
+        )
+    except CommandError as exc:
+        if "password is required" in str(exc):
+            raise ConfigError(
+                f"Cannot check certificates for {domain}: the certbot sudoers grant is missing or "
+                "stale. Run bench setup letsencrypt as root to reinstall it."
+            ) from exc
+        return False
+    return True
 
 
 class NginxConfigRenderer:

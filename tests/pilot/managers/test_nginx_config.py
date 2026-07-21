@@ -569,3 +569,39 @@ def test_config_dir_honors_explicit_value(tmp_path: Path) -> None:
     bench = _make_bench(tmp_path, _BASE_DATA)
     bench.config.nginx.config_dir = Path("/custom/nginx/dir")
     assert NginxManager(bench).config_dir == Path("/custom/nginx/dir")
+
+
+def test_cert_files_exist_raises_when_sudo_denies() -> None:
+    """A missing sudoers grant must fail loudly, not read as "no certificate" -
+    that silently renders every vhost HTTP-only."""
+    from pilot.exceptions import ConfigError
+    from pilot.managers.nginx import cert_files_exist
+
+    denied = CommandError("Command 'sudo' failed with exit code 1.\nsudo: a password is required")
+    with (
+        patch("pilot.managers.nginx.run_command", side_effect=denied),
+        pytest.raises(ConfigError, match="sudoers grant"),
+    ):
+        cert_files_exist("site.example.com")
+
+
+def test_cert_files_exist_reports_missing_cert() -> None:
+    from pilot.managers.nginx import cert_files_exist
+
+    missing = CommandError("Command 'sudo' failed with exit code 1.")
+    with patch("pilot.managers.nginx.run_command", side_effect=missing):
+        assert cert_files_exist("site.example.com") is False
+
+
+def test_cert_files_exist_true_when_both_files_present() -> None:
+    from pilot.managers.nginx import cert_files_exist
+
+    with patch("pilot.managers.nginx.run_command") as mock_run:
+        assert cert_files_exist("site.example.com") is True
+    argv = mock_run.call_args.args[0]
+    assert argv[-4:] == [
+        "/etc/letsencrypt/live/site.example.com/fullchain.pem",
+        "-a",
+        "-f",
+        "/etc/letsencrypt/live/site.example.com/privkey.pem",
+    ]
