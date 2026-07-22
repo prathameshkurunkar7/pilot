@@ -104,6 +104,26 @@ def get_process_list():
         return error_response("processlist_unavailable", "Could not read the database process list.", 500)
 
 
+@database_bp.post("/processlist/kill")
+def kill_process():
+    # A killed connection can belong to any bench sharing this server.
+    forbidden = guard_bench_management()
+    if forbidden is not None:
+        return forbidden
+
+    data = request.get_json(silent=True)
+    process_id = data.get("process_id") if isinstance(data, dict) else None
+    if not isinstance(process_id, int) or isinstance(process_id, bool) or process_id <= 0:
+        return error_response("invalid_process_id", "process_id must be a positive integer.", 422)
+    try:
+        _provider().kill_process(process_id)
+        return jsonify({"status": "ok"})
+    except DatabaseError as exc:
+        return error_response("kill_failed", str(exc), 422)
+    except Exception:
+        return error_response("kill_failed", "Could not kill the database process.", 500)
+
+
 @database_bp.get("/binlogs")
 def get_binlogs():
     try:

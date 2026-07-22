@@ -23,18 +23,21 @@ class DatabaseDiagnosticsProvider:
     belongs to the consumer.
     """
 
-    def __init__(self, bench_root: Path, database: Database | None = None) -> None:
+    def __init__(self, bench_root: Path, database: Database | None = None, engine: str = "mariadb") -> None:
         if database is not None:
             self._db: Database | None = database
+            self._engine = engine
             return
         config = BenchConfig.read(bench_root, validate=False)
+        self._engine = config.db_type
         self._db = None if config.db_type == "sqlite" else make_database(config)
 
     def get_diagnostics(self) -> dict:
         if self._db is None:
-            return {"supported": False, "reason": NO_DATABASE_SERVER}
+            return {"engine": self._engine, "supported": False, "reason": NO_DATABASE_SERVER}
         database = self._require_server()
         return {
+            "engine": self._engine,
             "supported": True,
             "active_connections": database.get_active_connections(),
             "lock_waits": asdict(database.get_lock_waits()),
@@ -43,6 +46,9 @@ class DatabaseDiagnosticsProvider:
 
     def get_process_list(self) -> list[dict]:
         return self._require_server().get_process_list()
+
+    def kill_process(self, process_id: int) -> None:
+        self._require_server().kill_process(process_id)
 
     def get_binlog_files(self) -> list[dict]:
         return [asdict(file) for file in self._require_server().get_binlog_files()]

@@ -52,6 +52,9 @@ class Database(ABC):
     def get_process_list(self) -> list[dict]: ...
 
     @abstractmethod
+    def kill_process(self, process_id: int) -> None: ...
+
+    @abstractmethod
     def get_active_connections(self) -> int: ...
 
     @abstractmethod

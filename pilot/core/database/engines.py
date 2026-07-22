@@ -13,6 +13,16 @@ def _rows_as_dicts(result: QueryResult) -> list[dict]:
     return [dict(zip(result.columns, row, strict=True)) for row in result.rows]
 
 
+def _validated_process_id(process_id: int) -> int:
+    """Neither KILL nor pg_terminate_backend take placeholders here, so the id
+    is interpolated - reject anything that is not a positive integer."""
+    if isinstance(process_id, bool) or not isinstance(process_id, int):
+        raise DatabaseError(f"Process id must be an integer, got {process_id!r}")
+    if process_id <= 0:
+        raise DatabaseError(f"Process id must be positive, got {process_id}")
+    return process_id
+
+
 def _file_modified_ms(path: Path) -> int | None:
     """Best-effort: the server may be remote or its datadir unreadable."""
     try:
@@ -126,6 +136,10 @@ class MariaDB(Database):
 
     def get_process_list(self) -> list[dict]:
         return _rows_as_dicts(self.execute("SHOW FULL PROCESSLIST"))
+
+    def kill_process(self, process_id: int) -> None:
+        """Drop a connection and roll back whatever it was running."""
+        self.execute(f"KILL CONNECTION {_validated_process_id(process_id)}", read_only=False)
 
     def get_active_connections(self) -> int:
         return self.get_status_value("Threads_connected")
@@ -294,6 +308,13 @@ class PostgreSQL(Database):
             )
         )
 
+    def kill_process(self, process_id: int) -> None:
+        """pg_terminate_backend reports a missing backend by returning false."""
+        pid = _validated_process_id(process_id)
+        result = self.execute(f"SELECT pg_terminate_backend({pid})")
+        if not result.rows or not result.rows[0][0]:
+            raise DatabaseError(f"No such process: {pid}")
+
     def get_active_connections(self) -> int:
         return int(self.execute("SELECT COUNT(*) FROM pg_stat_activity").rows[0][0])
 
@@ -394,6 +415,9 @@ class SQLite(Database):
 
     def get_process_list(self) -> list[dict]:
         raise DatabaseError("SQLite has no server; there is no process list")
+
+    def kill_process(self, process_id: int) -> None:
+        raise DatabaseError("SQLite has no server; there are no processes to kill")
 
     def get_active_connections(self) -> int:
         raise DatabaseError("SQLite has no server; there are no client connections")
