@@ -124,6 +124,16 @@ def kill_process():
         return error_response("kill_failed", "Could not kill the database process.", 500)
 
 
+@database_bp.get("/lockwaits")
+def get_lock_wait_rows():
+    try:
+        return jsonify(_provider().get_lock_wait_rows())
+    except DatabaseError as exc:
+        return error_response("lockwaits_unavailable", str(exc), 422)
+    except Exception:
+        return error_response("lockwaits_unavailable", "Could not read database lock waits.", 500)
+
+
 @database_bp.get("/binlogs")
 def get_binlogs():
     try:

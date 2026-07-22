@@ -51,6 +51,9 @@ class DatabaseDiagnosticsProvider:
     def kill_process(self, process_id: int) -> None:
         self._call(self._require_server().kill_process, process_id)
 
+    def get_lock_wait_rows(self) -> list[dict]:
+        return [asdict(row) for row in self._call(self._require_server().get_lock_wait_rows)]
+
     def get_binlog_files(self) -> list[dict]:
         return [asdict(file) for file in self._call(self._require_server().get_binlog_files)]
 

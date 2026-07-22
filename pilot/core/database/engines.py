@@ -3,7 +3,14 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from pilot.core.database.base import BinlogFile, BinlogStatus, Database, LockWaitStatus, QueryResult
+from pilot.core.database.base import (
+    BinlogFile,
+    BinlogStatus,
+    Database,
+    LockWaitRow,
+    LockWaitStatus,
+    QueryResult,
+)
 from pilot.exceptions import DatabaseError
 
 _MAX_ROWS = 5000
@@ -215,6 +222,32 @@ class MariaDB(Database):
             timeout_seconds=int(self.get_scalar("SELECT @@innodb_lock_wait_timeout")),
         )
 
+    def get_lock_wait_rows(self) -> list[LockWaitRow]:
+        """Each row is the waiting side of a lock wait, joined to its own
+        transaction for state/query/row-count context."""
+        result = self.execute(
+            "SELECT w.requesting_trx_id, l.lock_type, l.lock_mode, l.lock_table, l.lock_index, "
+            "t.trx_state, t.trx_started, t.trx_query, t.trx_rows_locked, t.trx_rows_modified "
+            "FROM information_schema.INNODB_LOCK_WAITS w "
+            "JOIN information_schema.INNODB_LOCKS l ON l.lock_id = w.requested_lock_id "
+            "JOIN information_schema.INNODB_TRX t ON t.trx_id = w.requesting_trx_id"
+        )
+        return [
+            LockWaitRow(
+                id=str(row[0]),
+                type=row[1],
+                mode=row[2],
+                table=row[3],
+                index=row[4],
+                state=row[5],
+                started=str(row[6]) if row[6] is not None else None,
+                query=row[7],
+                rows_locked=int(row[8]) if row[8] is not None else None,
+                rows_modified=int(row[9]) if row[9] is not None else None,
+            )
+            for row in result.rows
+        ]
+
     def get_binlog_status(self) -> BinlogStatus:
         files = self.get_binlog_files()
         if not files:
@@ -391,6 +424,32 @@ class PostgreSQL(Database):
             total_waits=None,
             timeout_seconds=timeout_ms // 1000 if timeout_ms else None,
         )
+
+    def get_lock_wait_rows(self) -> list[LockWaitRow]:
+        """PostgreSQL has no lock-index concept and no per-transaction row
+        counters, so index/rows_locked/rows_modified are always None."""
+        result = self.execute(
+            "SELECT blocked.pid, blocked.locktype, blocked.mode, "
+            "blocked.relation::regclass::text, a.state, a.query_start, a.query "
+            "FROM pg_locks blocked "
+            "JOIN pg_stat_activity a ON a.pid = blocked.pid "
+            "WHERE NOT blocked.granted"
+        )
+        return [
+            LockWaitRow(
+                id=str(row[0]),
+                type=row[1],
+                mode=row[2],
+                table=row[3],
+                index=None,
+                state=row[4],
+                started=str(row[5]) if row[5] is not None else None,
+                query=row[6],
+                rows_locked=None,
+                rows_modified=None,
+            )
+            for row in result.rows
+        ]
 
     # No binary log: WAL archiving is configured server-side. Falls back to
     # Database's default get_binlog_status/get_binlog_files/purge_binlogs.

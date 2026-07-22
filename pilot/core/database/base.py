@@ -22,6 +22,24 @@ class LockWaitStatus:
 
 
 @dataclass
+class LockWaitRow:
+    """One waiting lock request. `table`/`index`/`rows_locked`/`rows_modified`
+    are None where an engine has no equivalent (e.g. PostgreSQL tracks
+    neither an index name nor per-transaction row counts)."""
+
+    id: str
+    type: str
+    mode: str
+    table: str | None
+    index: str | None
+    state: str | None
+    started: str | None
+    query: str | None
+    rows_locked: int | None
+    rows_modified: int | None
+
+
+@dataclass
 class BinlogStatus:
     enabled: bool
     file_count: int
@@ -58,6 +76,9 @@ class Database(ABC):
         raise NotImplementedError
 
     def get_lock_waits(self) -> LockWaitStatus:
+        raise NotImplementedError
+
+    def get_lock_wait_rows(self) -> list[LockWaitRow]:
         raise NotImplementedError
 
     def get_binlog_status(self) -> BinlogStatus:

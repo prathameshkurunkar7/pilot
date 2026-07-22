@@ -4,7 +4,14 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pilot.core.database.base import BinlogFile, BinlogStatus, Database, LockWaitStatus, QueryResult
+from pilot.core.database.base import (
+    BinlogFile,
+    BinlogStatus,
+    Database,
+    LockWaitRow,
+    LockWaitStatus,
+    QueryResult,
+)
 from pilot.core.database.engines import MariaDB, PostgreSQL, SQLite
 from pilot.exceptions import DatabaseError
 
@@ -15,6 +22,7 @@ __all__ = [
     "BinlogFile",
     "BinlogStatus",
     "Database",
+    "LockWaitRow",
     "LockWaitStatus",
     "MariaDB",
     "PostgreSQL",
