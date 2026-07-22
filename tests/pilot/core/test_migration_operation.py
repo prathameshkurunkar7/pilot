@@ -326,7 +326,7 @@ def test_operation_site_lifecycle(tmp_path: Path) -> None:
     # Site backup step
     op.back_up_site("site1.localhost")
     assert op.sites[0].backup_status == "backed_up"
-    assert op.sites[0].previous_tables == ["tabUser", "tabDocType"]
+    site_mock.migration_backup.create.assert_called_once_with(op.id)
     assert op.state == "migrating"
 
     # Site migrate step

@@ -78,7 +78,6 @@ class SiteProgress:
     name: str
     original_config: dict = field(default_factory=dict)
     backup_status: str = "pending"  # pending | backing_up | backed_up | failed
-    previous_tables: list[str] = field(default_factory=list)
     touched_tables: list[str] = field(default_factory=list)  # cumulative across attempts
     touched_tables_trusted: bool = True
     migration_status: str = "pending"  # pending | running | success | failed | recovering | recovered
@@ -173,7 +172,7 @@ class MigrationOperation:
         self._save()
         try:
             on_progress(f"Backing up {name}...")
-            site.previous_tables = self.bench.site(name).migration_backup.create(self.id)
+            self.bench.site(name).migration_backup.create(self.id)
             site.backup_status = "backed_up"
         except Exception as error:
             site.backup_status = "failed"
