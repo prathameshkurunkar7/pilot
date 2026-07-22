@@ -13,12 +13,19 @@ import {
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import PilotLogo from '@/components/common/PilotLogo.vue'
 import MigrationStatusButton from '@/components/common/MigrationStatusButton.vue'
+import SettingsDialog from '@/components/settings/SettingsDialog.vue'
+import BenchSwitcherDialog from '@/components/benches/BenchSwitcherDialog.vue'
+import NewBenchDialog from '@/components/benches/NewBenchDialog.vue'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useIsMobile } from '@/composables/common/useIsMobile'
+import { useSession } from '@/composables/auth/useSession'
+import { useAppMenu } from '@/components/navigation/useAppMenu'
 
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
 const isMobile = useIsMobile()
+const { session } = useSession()
+const { showSettings, showBenches, showNewBench } = useAppMenu()
 
 const mobileNavDrawer = ref(false)
 
@@ -100,4 +107,9 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
     </div>
   </DesktopShell>
 
+  <SettingsDialog v-model="showSettings" />
+  <template v-if="session.allowBenchManagement">
+    <BenchSwitcherDialog v-model="showBenches" @new-bench="showNewBench = true" />
+    <NewBenchDialog v-model="showNewBench" />
+  </template>
 </template>

@@ -2,11 +2,8 @@
 import { computed } from 'vue'
 import { Button, TabButtons, useTheme } from 'frappe-ui'
 import { useAppMenu } from '@/components/navigation/useAppMenu'
-import SettingsDialog from '@/components/settings/SettingsDialog.vue'
-import BenchSwitcherDialog from '@/components/benches/BenchSwitcherDialog.vue'
-import NewBenchDialog from '@/components/benches/NewBenchDialog.vue'
 
-const { showSettings, showBenches, showNewBench, logout, session } = useAppMenu()
+const { showSettings, showBenches, logout, session } = useAppMenu()
 const { currentTheme, setTheme } = useTheme()
 
 const themeOptions = computed(() => [
@@ -58,11 +55,4 @@ const themeOptions = computed(() => [
       </Button>
     </div>
   </div>
-
-  <SettingsDialog v-model="showSettings" />
-
-  <template v-if="session.allowBenchManagement">
-    <BenchSwitcherDialog v-model="showBenches" @new-bench="showNewBench = true" />
-    <NewBenchDialog v-model="showNewBench" />
-  </template>
 </template>

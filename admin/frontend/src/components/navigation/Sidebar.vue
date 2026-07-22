@@ -3,11 +3,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { Sidebar, SidebarItem } from 'frappe-ui'
 import { sidebarSections } from './list'
-import { useSession } from '@/composables/auth/useSession'
 import { useAppMenu } from './useAppMenu'
-import SettingsDialog from '@/components/settings/SettingsDialog.vue'
-import BenchSwitcherDialog from '@/components/benches/BenchSwitcherDialog.vue'
-import NewBenchDialog from '@/components/benches/NewBenchDialog.vue'
 import PilotLogo from '@/components/common/PilotLogo.vue'
 
 const props = defineProps({
@@ -15,8 +11,7 @@ const props = defineProps({
 })
 
 const route = useRoute()
-const { session } = useSession()
-const { menuItems, showSettings, showBenches, showNewBench } = useAppMenu()
+const { menuItems } = useAppMenu()
 
 // Prefix match, not just exact: a site's detail page (/sites/foo/general)
 // should still light up the "Sites" item, not just the bare list page.
@@ -39,12 +34,4 @@ const header = computed(() => ({ title: 'Pilot', menuItems: menuItems.value }))
       <PilotLogo class="size-8" />
     </template>
   </Sidebar>
-
-  <template v-if="!isMobile">
-    <SettingsDialog v-model="showSettings" />
-    <template v-if="session.allowBenchManagement">
-      <BenchSwitcherDialog v-model="showBenches" @new-bench="showNewBench = true" />
-      <NewBenchDialog v-model="showNewBench" />
-    </template>
-  </template>
 </template>
