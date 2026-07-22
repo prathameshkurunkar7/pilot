@@ -15,6 +15,8 @@ export const databaseApi = {
 
   processList: () => request.get('database/processlist').json(),
 
+  lockWaitRows: () => request.get('database/lockwaits').json(),
+
   killProcess: (processId) =>
     request.post('database/processlist/kill', { json: { process_id: processId } }).json(),
 
