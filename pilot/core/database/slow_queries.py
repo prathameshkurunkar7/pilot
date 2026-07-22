@@ -42,9 +42,10 @@ def to_iso(value: object) -> str | None:
 
 
 def fingerprint(db: str, raw_text: str, query_time: float) -> str:
-    """Identifies a row by content rather than position, since `mysql.slow_log`
-    has no stable ordering for rows tied on `start_time` - a rescan can return
-    them in a different order, so position-based de-duplication is unsafe."""
+    """A content identity for a row, used as a defense-in-depth duplicate
+    check alongside the (start_time, sql_text) keyset cursor - see
+    SlowQueryLog.watermark()'s docstring for why the cursor alone needs a
+    stable secondary key."""
     digest = hashlib.sha1(f"{db}\n{raw_text}\n{query_time}".encode()).hexdigest()
     return digest[:16]
 
@@ -62,20 +63,27 @@ class SlowQueryLog:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
 
-    def watermark(self) -> str | None:
-        records = self._read()
-        return records[-1]["time"] if records else None
+    def watermark(self) -> tuple[str, str] | None:
+        """(time, raw sql_text) - `mysql.slow_log` has no auto-increment id,
+        so `start_time` alone can't page past a group of rows tied on the
+        same timestamp in a way that's stable across scans. Pairing it with
+        the row's own `sql_text` gives a deterministic composite key that
+        `scan_slow_queries` can keyset-page past ties with."""
+        watermark = self._read_all().get("watermark")
+        return (watermark["time"], watermark["sql_text"]) if watermark else None
 
     def records(self) -> list[dict]:
-        return self._read()
+        return self._read_all().get("records", [])
 
     def append(self, rows: list[dict]) -> None:
-        existing = self._read()
-        # A rescan re-fetches everything from the watermark onward (`>=`), so
-        # rows already recorded at that exact timestamp must be skipped by
-        # content, not position - see fingerprint()'s docstring.
+        data = self._read_all()
+        existing = data.get("records", [])
+        # Defense-in-depth: two rows can share the exact (start_time, sql_text)
+        # keyset cursor value if the same query runs twice in the same
+        # microsecond, which would otherwise repeat forever.
         seen = {(record["time"], record["fp"]) for record in existing if "fp" in record}
         new_records = []
+        watermark = data.get("watermark")
         for row in rows:
             raw_text = to_text(row.get("sql_text"))
             normalized = normalize(raw_text)
@@ -84,6 +92,7 @@ class SlowQueryLog:
             if not normalized or not when:
                 continue
             fp = fingerprint(row.get("db") or "", raw_text, seconds)
+            watermark = {"time": when, "sql_text": raw_text}
             if (when, fp) in seen:
                 continue
             seen.add((when, fp))
@@ -94,17 +103,17 @@ class SlowQueryLog:
                 "query_time": seconds,
                 "fp": fp,
             })
-        if not new_records:
+        if not new_records and watermark == data.get("watermark"):
             return
         records = existing + new_records
         records.sort(key=lambda r: r["time"])
-        self.path.write_text(json.dumps(records[-MAX_RECORDS:]))
+        self.path.write_text(json.dumps({"watermark": watermark, "records": records[-MAX_RECORDS:]}))
 
-    def _read(self) -> list[dict]:
+    def _read_all(self) -> dict:
         if not self.path.exists():
-            return []
+            return {}
         try:
             data = json.loads(self.path.read_text())
         except (OSError, ValueError):
-            return []
-        return data if isinstance(data, list) else []
+            return {}
+        return data if isinstance(data, dict) else {}

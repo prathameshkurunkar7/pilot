@@ -155,27 +155,30 @@ class MariaDB(Database):
         finally:
             conn.close()
 
-    def scan_slow_queries(self, since: str | None = None, limit: int = 5000) -> list[dict]:
+    def scan_slow_queries(self, since: tuple[str, str] | None = None, limit: int = 5000) -> list[dict]:
         """New mysql.slow_log rows across all schemas, oldest first, for aggregation.
 
-        Uses `>=` rather than a strict `>` so rows tied with `since` on
-        `start_time` are always included; `mysql.slow_log` has no stable
-        secondary ordering key to break ties consistently across scans, so
-        the caller (SlowQueryLog.append) de-duplicates by content instead of
-        relying on row order."""
+        `mysql.slow_log` has no auto-increment id, so `start_time` alone can't
+        page past a batch boundary that lands mid-group of same-timestamp rows:
+        a strict `>` drops the rest of the group, and `>=` with no secondary
+        key can return the same arbitrary rows forever if a group exceeds
+        `limit`. `(start_time, sql_text)` is a deterministic composite key -
+        row-constructor comparison keyset-pages past ties in a stable order,
+        so every row is eventually reached exactly once."""
         conn = self._connect()
         try:
             with conn.cursor() as cursor:
                 if since:
                     cursor.execute(
                         "SELECT db, sql_text, query_time, start_time FROM mysql.slow_log "
-                        "WHERE start_time >= %s ORDER BY start_time ASC LIMIT %s",
-                        (since, int(limit)),
+                        "WHERE (start_time, sql_text) > (%s, %s) "
+                        "ORDER BY start_time ASC, sql_text ASC LIMIT %s",
+                        (since[0], since[1], int(limit)),
                     )
                 else:
                     cursor.execute(
                         "SELECT db, sql_text, query_time, start_time FROM mysql.slow_log "
-                        "ORDER BY start_time ASC LIMIT %s",
+                        "ORDER BY start_time ASC, sql_text ASC LIMIT %s",
                         (int(limit),),
                     )
                 return list(cursor.fetchall())

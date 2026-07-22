@@ -1,5 +1,6 @@
-"""MariaDB.scan_slow_queries: `>=` includes ties at the watermark; the caller
-(SlowQueryLog.append) is responsible for de-duplicating them by content."""
+"""MariaDB.scan_slow_queries: (start_time, sql_text) is a deterministic
+composite cursor, so pagination past a group of same-timestamp rows is
+stable across scans instead of depending on undefined tie ordering."""
 
 from __future__ import annotations
 
@@ -29,19 +30,19 @@ def test_first_scan_has_no_since_clause() -> None:
 
     query = cursor.execute.call_args[0][0]
     assert "WHERE" not in query
-    assert "ORDER BY start_time ASC" in query
+    assert "ORDER BY start_time ASC, sql_text ASC" in query
 
 
-def test_rescan_uses_gte_and_returns_ties_unfiltered() -> None:
+def test_rescan_uses_composite_keyset_cursor() -> None:
     conn, cursor = _mock_connection([
-        {"db": "a", "sql_text": "SELECT 1", "query_time": 1.0, "start_time": "2026-01-01T00:00:00"},
         {"db": "a", "sql_text": "SELECT 2", "query_time": 1.0, "start_time": "2026-01-01T00:00:00"},
+        {"db": "a", "sql_text": "SELECT 3", "query_time": 1.0, "start_time": "2026-01-01T00:00:01"},
     ])
     with patch.object(MariaDB, "_connect", return_value=conn):
-        rows = _mariadb().scan_slow_queries(since="2026-01-01T00:00:00")
+        rows = _mariadb().scan_slow_queries(since=("2026-01-01T00:00:00", "SELECT 1"))
 
     query, params = cursor.execute.call_args[0]
-    assert "start_time >= %s" in query
-    assert params == ("2026-01-01T00:00:00", 5000)
-    # scan_slow_queries itself never filters; both ties come back as-is.
-    assert [r["sql_text"] for r in rows] == ["SELECT 1", "SELECT 2"]
+    assert "(start_time, sql_text) > (%s, %s)" in query
+    assert "ORDER BY start_time ASC, sql_text ASC" in query
+    assert params == ("2026-01-01T00:00:00", "SELECT 1", 5000)
+    assert [r["sql_text"] for r in rows] == ["SELECT 2", "SELECT 3"]

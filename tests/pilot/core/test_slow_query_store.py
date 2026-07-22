@@ -27,7 +27,7 @@ def test_append_records_each_occurrence(tmp_path: Path) -> None:
     assert len(records) == 2
     assert records[0]["query"] == "SELECT * FROM t WHERE id = ?"
     assert records[1]["query_time"] == 3.0
-    assert log.watermark() == "2026-01-01T00:00:02"
+    assert log.watermark() == ("2026-01-01T00:00:02", "SELECT * FROM t WHERE id = 2 /* t-2 */")
 
 
 def test_append_separates_by_db(tmp_path: Path) -> None:
@@ -36,26 +36,25 @@ def test_append_separates_by_db(tmp_path: Path) -> None:
     assert {r["db"] for r in log.records()} == {"a", "b"}
 
 
-def test_rescan_does_not_duplicate_ties_at_the_watermark(tmp_path: Path) -> None:
-    # First poll: two rows tied on start_time.
+def test_append_is_defensively_idempotent_on_exact_repeats(tmp_path: Path) -> None:
+    # The (start_time, sql_text) keyset cursor makes true re-delivery of an
+    # already-consumed row unlikely, but append() still guards against it by
+    # content fingerprint (e.g. two identical queries at the same microsecond
+    # both matching the cursor value).
     log = SlowQueryLog(tmp_path / "slow.json")
     log.append([
         _row("SELECT 1", 1.0, started="2026-01-01T00:00:00"),
         _row("SELECT 2", 1.0, started="2026-01-01T00:00:00"),
     ])
-
-    # Rescan (mysql.slow_log has no stable secondary order, so a `>=` rescan
-    # can legitimately return the same tied rows back in reversed order) plus
-    # one genuinely new row at the same timestamp.
     log.append([
-        _row("SELECT 2", 1.0, started="2026-01-01T00:00:00"),
         _row("SELECT 1", 1.0, started="2026-01-01T00:00:00"),
+        _row("SELECT 2", 1.0, started="2026-01-01T00:00:00"),
         _row("SELECT 3", 1.0, started="2026-01-01T00:00:00"),
     ])
 
     records = log.records()
     assert sorted(r["query"] for r in records) == ["SELECT ?", "SELECT ?", "SELECT ?"]
-    assert len(records) == 3  # no duplicates from the reordered rescan, and the new row wasn't dropped
+    assert len(records) == 3  # exact repeats collapsed, the new row wasn't dropped
 
 
 def test_identical_content_at_different_times_is_not_deduped(tmp_path: Path) -> None:
@@ -64,6 +63,30 @@ def test_identical_content_at_different_times_is_not_deduped(tmp_path: Path) -> 
     log.append([_row("SELECT SLEEP(2)", 2.0, started="2026-01-01T00:00:05")])
 
     assert len(log.records()) == 2
+
+
+def test_composite_cursor_makes_progress_past_a_tie_group_larger_than_one_batch(tmp_path: Path) -> None:
+    """Simulates scan_slow_queries' (start_time, sql_text) keyset pagination
+    against an oversized group of rows sharing one start_time, batch size 2,
+    to prove every row is reached with no stall or duplication - the
+    scenario the position-based `since_count` approach couldn't handle."""
+    all_rows = [_row(f"SELECT {i}", 1.0, started="2026-01-01T00:00:00") for i in range(5)]
+    all_rows.sort(key=lambda r: r["sql_text"])  # mysql.slow_log's ORDER BY sql_text ASC
+
+    def fake_scan(since, limit):
+        pool = [r for r in all_rows if since is None or (r["start_time"].isoformat(), r["sql_text"]) > since]
+        return pool[:limit]
+
+    log = SlowQueryLog(tmp_path / "slow.json")
+    for _ in range(len(all_rows)):  # one poll per batch, worst case one row of progress each
+        batch = fake_scan(log.watermark(), limit=2)
+        if not batch:
+            break
+        log.append(batch)
+
+    records = log.records()
+    assert len(records) == 5  # every row reached, none stalled on or dropped
+    assert len({r["fp"] for r in records}) == 5  # each is a distinct row, none duplicated
 
 
 def test_records_sorted_and_capped_to_max_records(tmp_path: Path) -> None:
