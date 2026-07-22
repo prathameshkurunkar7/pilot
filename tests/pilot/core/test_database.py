@@ -332,6 +332,33 @@ def test_mariadb_get_lock_waits_raises_on_unknown_status_variable() -> None:
         db.get_lock_waits()
 
 
+def test_mariadb_get_lock_wait_rows_maps_joined_columns() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {
+        "INNODB_LOCK_WAITS": (
+            ["requesting_trx_id", "lock_type", "lock_mode", "lock_table", "lock_index",
+             "trx_state", "trx_started", "trx_query", "trx_rows_locked", "trx_rows_modified"],
+            [[42, "RECORD", "X", "`db`.`tabDoc`", "PRIMARY", "LOCK WAIT",
+              "2026-01-01 00:00:00", "UPDATE tabDoc SET x=1", 3, 1]],
+        )
+    }
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        rows = db.get_lock_wait_rows()
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.id == "42"
+    assert row.type == "RECORD"
+    assert row.mode == "X"
+    assert row.table == "`db`.`tabDoc`"
+    assert row.index == "PRIMARY"
+    assert row.state == "LOCK WAIT"
+    assert row.started == "2026-01-01 00:00:00"
+    assert row.query == "UPDATE tabDoc SET x=1"
+    assert row.rows_locked == 3
+    assert row.rows_modified == 1
+
+
 def test_mariadb_get_binlog_status_disabled() -> None:
     db = MariaDB(host="h", port=3306, user="u", password="p", database="")
     responses = {"@@log_bin": (["@@log_bin"], [[0]])}
@@ -424,6 +451,32 @@ def test_postgres_get_lock_waits_treats_zero_timeout_as_disabled() -> None:
     assert waits.current_waits == 1
     assert waits.total_waits is None
     assert waits.timeout_seconds is None
+
+
+def test_postgres_get_lock_wait_rows_leaves_unsupported_fields_none() -> None:
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
+    responses = {
+        "blocked.granted": (
+            ["pid", "locktype", "mode", "relation", "state", "query_start", "query"],
+            [[123, "relation", "RowExclusiveLock", "tabDoc", "active",
+              "2026-01-01 00:00:00", "UPDATE tabDoc SET x=1"]],
+        )
+    }
+    with patch.object(PostgreSQL, "execute", _canned_execute(responses)):
+        rows = db.get_lock_wait_rows()
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.id == "123"
+    assert row.type == "relation"
+    assert row.mode == "RowExclusiveLock"
+    assert row.table == "tabDoc"
+    assert row.index is None
+    assert row.state == "active"
+    assert row.started == "2026-01-01 00:00:00"
+    assert row.query == "UPDATE tabDoc SET x=1"
+    assert row.rows_locked is None
+    assert row.rows_modified is None
 
 
 def test_postgres_get_binlog_status_falls_back_to_not_implemented() -> None:

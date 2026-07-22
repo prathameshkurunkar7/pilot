@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 from admin.backend.providers.database import DatabaseDiagnosticsProvider
-from pilot.core.database import BinlogFile, BinlogStatus, LockWaitStatus
+from pilot.core.database import BinlogFile, BinlogStatus, LockWaitRow, LockWaitStatus
 
 
 def _provider(db: Mock) -> DatabaseDiagnosticsProvider:
@@ -56,6 +56,25 @@ def test_get_binlog_files_shapes_files_as_dicts() -> None:
 
     assert _provider(db).get_binlog_files() == [
         {"name": "mysql-bin.000001", "size_bytes": 1024, "modified_ms": 17}
+    ]
+
+
+def test_get_lock_wait_rows_shapes_rows_as_dicts() -> None:
+    db = Mock()
+    db.get_lock_wait_rows.return_value = [
+        LockWaitRow(
+            id="42", type="RECORD", mode="X", table="tabDoc", index="PRIMARY",
+            state="LOCK WAIT", started="2026-01-01T00:00:00", query="UPDATE tabDoc SET x=1",
+            rows_locked=3, rows_modified=1,
+        )
+    ]
+
+    assert _provider(db).get_lock_wait_rows() == [
+        {
+            "id": "42", "type": "RECORD", "mode": "X", "table": "tabDoc", "index": "PRIMARY",
+            "state": "LOCK WAIT", "started": "2026-01-01T00:00:00", "query": "UPDATE tabDoc SET x=1",
+            "rows_locked": 3, "rows_modified": 1,
+        }
     ]
 
 
