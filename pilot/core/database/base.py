@@ -48,23 +48,23 @@ class Database(ABC):
     def get_schema(self) -> list[dict]:
         return [{"name": t, "columns": self.get_table_columns(t)} for t in self.get_tables()]
 
-    @abstractmethod
-    def get_process_list(self) -> list[dict]: ...
+    def get_process_list(self) -> list[dict]:
+        raise NotImplementedError
 
-    @abstractmethod
-    def kill_process(self, process_id: int) -> None: ...
+    def kill_process(self, process_id: int) -> None:
+        raise NotImplementedError
 
-    @abstractmethod
-    def get_active_connections(self) -> int: ...
+    def get_active_connections(self) -> int:
+        raise NotImplementedError
 
-    @abstractmethod
-    def get_lock_waits(self) -> LockWaitStatus: ...
+    def get_lock_waits(self) -> LockWaitStatus:
+        raise NotImplementedError
 
-    @abstractmethod
-    def get_binlog_status(self) -> BinlogStatus: ...
+    def get_binlog_status(self) -> BinlogStatus:
+        raise NotImplementedError
 
-    @abstractmethod
-    def get_binlog_files(self) -> list[BinlogFile]: ...
+    def get_binlog_files(self) -> list[BinlogFile]:
+        raise NotImplementedError
 
-    @abstractmethod
-    def purge_binlogs(self, up_to: str) -> None: ...
+    def purge_binlogs(self, up_to: str) -> None:
+        raise NotImplementedError

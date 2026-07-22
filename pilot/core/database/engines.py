@@ -328,14 +328,8 @@ class PostgreSQL(Database):
             timeout_seconds=timeout_ms // 1000 if timeout_ms else None,
         )
 
-    def get_binlog_status(self) -> BinlogStatus:
-        raise DatabaseError("PostgreSQL has no binary log; WAL archiving is configured server-side")
-
-    def get_binlog_files(self) -> list[BinlogFile]:
-        raise DatabaseError("PostgreSQL has no binary log; WAL archiving is configured server-side")
-
-    def purge_binlogs(self, up_to: str) -> None:
-        raise DatabaseError("PostgreSQL has no binary log; WAL archiving is configured server-side")
+    # No binary log: WAL archiving is configured server-side. Falls back to
+    # Database's default get_binlog_status/get_binlog_files/purge_binlogs.
 
 
 class SQLite(Database):
@@ -413,23 +407,5 @@ class SQLite(Database):
         finally:
             conn.close()
 
-    def get_process_list(self) -> list[dict]:
-        raise DatabaseError("SQLite has no server; there is no process list")
-
-    def kill_process(self, process_id: int) -> None:
-        raise DatabaseError("SQLite has no server; there are no processes to kill")
-
-    def get_active_connections(self) -> int:
-        raise DatabaseError("SQLite has no server; there are no client connections")
-
-    def get_lock_waits(self) -> LockWaitStatus:
-        raise DatabaseError("SQLite has no server; lock waits are not observable")
-
-    def get_binlog_status(self) -> BinlogStatus:
-        raise DatabaseError("SQLite has no binary log")
-
-    def get_binlog_files(self) -> list[BinlogFile]:
-        raise DatabaseError("SQLite has no binary log")
-
-    def purge_binlogs(self, up_to: str) -> None:
-        raise DatabaseError("SQLite has no binary log")
+    # SQLite has no server: no process list, connections, lock waits, or
+    # binary log. Falls back to Database's default implementations.

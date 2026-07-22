@@ -63,3 +63,15 @@ def test_purge_binlogs_delegates() -> None:
     db = Mock()
     _provider(db).purge_binlogs("mysql-bin.000002")
     db.purge_binlogs.assert_called_once_with("mysql-bin.000002")
+
+
+def test_unsupported_operation_surfaces_generic_message() -> None:
+    import pytest
+
+    from admin.backend.providers.database import NOT_SUPPORTED
+    from pilot.exceptions import DatabaseError
+
+    db = Mock()
+    db.get_binlog_files.side_effect = NotImplementedError
+    with pytest.raises(DatabaseError, match=NOT_SUPPORTED):
+        _provider(db).get_binlog_files()

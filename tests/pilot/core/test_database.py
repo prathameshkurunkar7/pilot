@@ -426,23 +426,25 @@ def test_postgres_get_lock_waits_treats_zero_timeout_as_disabled() -> None:
     assert waits.timeout_seconds is None
 
 
-def test_postgres_get_binlog_status_raises() -> None:
+def test_postgres_get_binlog_status_falls_back_to_not_implemented() -> None:
+    # PostgreSQL doesn't override the binlog trio - it inherits Database's default.
     db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
-    with pytest.raises(DatabaseError, match="binary log"):
+    with pytest.raises(NotImplementedError):
         db.get_binlog_status()
 
 
-def test_sqlite_server_diagnostics_raise(tmp_path: Path) -> None:
+def test_sqlite_server_diagnostics_fall_back_to_not_implemented(tmp_path: Path) -> None:
+    # SQLite has no server - it inherits every server-only op from Database's default.
     db = SQLite(str(tmp_path / "x.db"))
-    with pytest.raises(DatabaseError, match="no server"):
+    with pytest.raises(NotImplementedError):
         db.get_process_list()
-    with pytest.raises(DatabaseError, match="no server"):
+    with pytest.raises(NotImplementedError):
         db.kill_process(1)
-    with pytest.raises(DatabaseError, match="no server"):
+    with pytest.raises(NotImplementedError):
         db.get_active_connections()
-    with pytest.raises(DatabaseError, match="no server"):
+    with pytest.raises(NotImplementedError):
         db.get_lock_waits()
-    with pytest.raises(DatabaseError, match="binary log"):
+    with pytest.raises(NotImplementedError):
         db.get_binlog_status()
 
 

@@ -10,6 +10,7 @@ from pilot.exceptions import DatabaseError
 NO_DATABASE_SERVER = (
     "SQLite is a per-site database file, not a shared server"
 )
+NOT_SUPPORTED = "The selected engine does not support this operation"
 
 
 class DatabaseDiagnosticsProvider:
@@ -39,24 +40,34 @@ class DatabaseDiagnosticsProvider:
         return {
             "engine": self._engine,
             "supported": True,
-            "active_connections": database.get_active_connections(),
-            "lock_waits": asdict(database.get_lock_waits()),
-            "binlog": asdict(database.get_binlog_status()),
+            "active_connections": self._call(database.get_active_connections),
+            "lock_waits": asdict(self._call(database.get_lock_waits)),
+            "binlog": asdict(self._call(database.get_binlog_status)),
         }
 
     def get_process_list(self) -> list[dict]:
-        return self._require_server().get_process_list()
+        return self._call(self._require_server().get_process_list)
 
     def kill_process(self, process_id: int) -> None:
-        self._require_server().kill_process(process_id)
+        self._call(self._require_server().kill_process, process_id)
 
     def get_binlog_files(self) -> list[dict]:
-        return [asdict(file) for file in self._require_server().get_binlog_files()]
+        return [asdict(file) for file in self._call(self._require_server().get_binlog_files)]
 
     def purge_binlogs(self, up_to: str) -> None:
-        self._require_server().purge_binlogs(up_to)
+        self._call(self._require_server().purge_binlogs, up_to)
 
     def _require_server(self) -> Database:
         if self._db is None:
             raise DatabaseError(NO_DATABASE_SERVER)
         return self._db
+
+    @staticmethod
+    def _call(fn, *args):
+        """Engines that don't implement an operation raise NotImplementedError
+        (see Database's defaults); surface that as a generic, engine-agnostic
+        message the UI can key off of, without leaking engine internals."""
+        try:
+            return fn(*args)
+        except NotImplementedError as exc:
+            raise DatabaseError(NOT_SUPPORTED) from exc
