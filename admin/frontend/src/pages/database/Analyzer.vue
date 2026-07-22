@@ -55,34 +55,15 @@
       <DiagnosticsSection title="Database processes" icon="lucide-activity"
         :subtitle="processes.length ? `${processes.length}` : ''">
         <p v-if="!processes.length" class="py-3 text-ink-gray-5 text-sm">No active processes.</p>
-        <div v-else class="pt-3 overflow-x-auto">
-          <table class="w-full min-w-max text-sm">
-            <thead>
-              <tr class="text-ink-gray-5 text-xs text-left uppercase">
-                <th v-for="column in processColumns" :key="column" class="py-2 pr-4 font-normal">
-                  {{ column }}
-                </th>
-                <th class="py-2 w-10" />
-              </tr>
-            </thead>
-            <tbody class="divide-outline-gray-1 divide-y">
-              <tr v-for="process in processes" :key="process.Id">
-                <td class="py-2 pr-4 text-ink-gray-8 tabular-nums">{{ process.Id }}</td>
-                <td class="py-2 pr-4 text-ink-gray-8">{{ process.Command }}</td>
-                <td class="py-2 pr-4 font-mono text-ink-gray-7 text-xs">{{ process.User }}</td>
-                <td class="py-2 pr-4 text-ink-gray-7">{{ process.db || '—' }}</td>
-                <td class="py-2 pr-4 max-w-xs text-ink-gray-7 truncate">{{ process.Info || '—' }}</td>
-                <td class="py-2 pr-4 text-ink-gray-7 tabular-nums whitespace-nowrap">{{ process.Time }}s</td>
-                <td class="py-2 text-right">
-                  <button type="button" class="font-medium text-ink-red-3 hover:text-ink-red-4 text-xs"
-                    @click="confirmKill(process)">
-                    Kill
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <ListView v-else class="pt-3" :columns="processColumns" :rows="processRows" row-key="id"
+          :options="{ selectable: false, showTooltip: false }">
+          <template #cell="{ column, row, item }">
+            <div v-if="column.key === 'actions'" class="flex justify-end">
+              <Button variant="ghost" theme="red" size="sm" @click="confirmKill(row.process)">Kill</Button>
+            </div>
+            <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
+          </template>
+        </ListView>
       </DiagnosticsSection>
 
       <DiagnosticsSection title="Database locks" icon="lucide-lock">
@@ -101,39 +82,22 @@
         <p v-if="!binlogs.length" class="py-3 text-ink-gray-5 text-sm">
           Binary logging is off, so there are no files to show.
         </p>
-        <div v-else>
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-ink-gray-5 text-xs">
-                <th class="py-2 pr-3 w-8" />
-                <th class="py-2 pr-4 font-normal text-left">File</th>
-                <th class="py-2 pr-4 font-normal text-left">Date</th>
-                <th class="py-2 pr-4 font-normal text-right">Size</th>
-                <th class="py-2 w-8" />
-              </tr>
-            </thead>
-            <tbody class="divide-outline-gray-1 divide-y">
-              <tr v-for="(file, index) in binlogs" :key="file.name">
-                <td class="py-2 pr-3">
-                  <Checkbox :modelValue="index <= selectedIndex" :disabled="isActiveLog(index)"
-                    @update:modelValue="toggle(index, $event)" />
-                </td>
-                <td class="py-2 pr-4 font-mono text-ink-gray-8 text-xs">{{ file.name }}</td>
-                <td class="py-2 pr-4 text-ink-gray-6">{{ fileAge(file) }}</td>
-                <td class="py-2 pr-4 text-ink-gray-7 text-right whitespace-nowrap">
-                  {{ formatBytes(file.size_bytes) }}
-                </td>
-                <td class="py-2">
-                  <Tooltip v-if="!isActiveLog(index)" text="Delete this file and every older one">
-                    <button type="button" class="text-ink-red-3 hover:text-ink-red-4"
-                      @click="confirmPurge(index)">
-                      <span class="size-4 lucide-trash-2" />
-                    </button>
-                  </Tooltip>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-else class="pt-3">
+          <ListView :columns="binlogColumns" :rows="binlogRows" row-key="name"
+            :options="{ selectable: false, showTooltip: false }">
+            <template #cell="{ column, row, item }">
+              <Checkbox v-if="column.key === 'selected'" :modelValue="row.index <= selectedIndex"
+                :disabled="row.isActive" @update:modelValue="toggle(row.index, $event)" />
+              <div v-else-if="column.key === 'actions'" class="flex justify-end">
+                <Tooltip v-if="!row.isActive" text="Delete this file and every older one">
+                  <Button variant="ghost" theme="red" size="sm" @click="confirmPurge(row.index)">
+                    <span class="size-4 lucide-trash-2" />
+                  </Button>
+                </Tooltip>
+              </div>
+              <ListRowItem v-else :column="column" :row="row" :item="item" :align="column.align" />
+            </template>
+          </ListView>
 
           <div class="flex flex-wrap justify-between items-center gap-2 mt-3">
             <p class="text-ink-gray-5 text-xs">
@@ -157,18 +121,20 @@
         Any bench sharing this server may own it.
       </p>
 
-      <dl class="bg-surface-gray-1 mt-3 p-3 rounded-lg text-xs">
-        <div v-for="item in killDetails" :key="item.label" class="flex justify-between items-baseline gap-4 py-1">
+      <dl class="space-y-1.5 bg-surface-gray-1 mt-3 p-3 rounded-lg text-xs">
+        <div v-for="item in killDetails" :key="item.label" class="flex justify-between items-baseline gap-4">
           <dt class="text-ink-gray-5 shrink-0">{{ item.label }}</dt>
           <dd class="font-medium text-ink-gray-8 truncate">{{ item.value }}</dd>
         </div>
-        <div v-if="killQuery" class="mt-1 pt-2 border-t border-outline-gray-2">
-          <dt class="mb-1 text-ink-gray-5">Query</dt>
-          <dd class="max-h-24 overflow-y-auto font-mono text-ink-gray-8 break-all">{{ killQuery }}</dd>
+        <div v-if="killQuery" class="space-y-1.5 pt-1.5 border-t border-outline-gray-2">
+          <dt class="text-ink-gray-5">Query</dt>
+          <dd class="max-h-24 overflow-y-auto font-mono font-medium text-ink-gray-8 break-all">
+            {{ killQuery }}
+          </dd>
         </div>
       </dl>
 
-      <ErrorMessage v-if="killError" :message="killError" class="mt-2" />
+      <ErrorMessage v-if="killError" :message="killError" class="mt-3" />
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showKillDialog = false">Cancel</Button>
         <Button variant="solid" theme="red" :loading="killing" @click="kill">Kill process</Button>
@@ -184,10 +150,15 @@
         logs are shared by every bench on this server and are used for point-in-time recovery and
         replication.
       </p>
-      <ul class="bg-surface-gray-1 mt-3 p-3 rounded-lg max-h-32 overflow-y-auto font-mono text-ink-gray-7 text-xs">
-        <li v-for="file in pendingFiles" :key="file.name" class="py-0.5">{{ file.name }}</li>
-      </ul>
-      <ErrorMessage v-if="purgeError" :message="purgeError" class="mt-2" />
+
+      <dl class="space-y-1.5 bg-surface-gray-1 mt-3 p-3 rounded-lg text-xs">
+        <div v-for="item in purgeDetails" :key="item.label" class="flex justify-between items-baseline gap-4">
+          <dt class="text-ink-gray-5 shrink-0">{{ item.label }}</dt>
+          <dd class="font-mono font-medium text-ink-gray-8 truncate">{{ item.value }}</dd>
+        </div>
+      </dl>
+
+      <ErrorMessage v-if="purgeError" :message="purgeError" class="mt-3" />
       <div class="flex justify-end gap-2 mt-4">
         <Button variant="ghost" @click="showPurgeDialog = false">Cancel</Button>
         <Button variant="solid" theme="red" :loading="purging" @click="purge">Delete</Button>
@@ -198,7 +169,18 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { Button, Checkbox, Dialog, ErrorMessage, FormControl, LoadingText, Tooltip, toast } from 'frappe-ui'
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  ErrorMessage,
+  FormControl,
+  ListRowItem,
+  ListView,
+  LoadingText,
+  Tooltip,
+  toast,
+} from 'frappe-ui'
 import DiagnosticsSection from '@/components/database/DiagnosticsSection.vue'
 import DiagnosticsStat from '@/components/database/DiagnosticsStat.vue'
 import { apiErrorMessage } from '@/api/client'
@@ -206,7 +188,24 @@ import { databaseApi } from '@/api/database'
 import { formatBytes } from '@/utils/format'
 import { relativeTime } from '@/utils/taskFormat'
 
-const processColumns = ['ID', 'Command', 'User', 'Database', 'Query', 'Time']
+const processColumns = [
+  { label: 'ID', key: 'id', align: 'left', width: 1 },
+  { label: 'Command', key: 'command', align: 'left', width: 1 },
+  { label: 'User', key: 'user', align: 'left', width: 1 },
+  { label: 'Database', key: 'database', align: 'left', width: 1.5 },
+  { label: 'Query', key: 'query', align: 'left', width: 3 },
+  { label: 'Time', key: 'time', align: 'right', width: 1 },
+  { label: '', key: 'actions', align: 'right', width: '4rem' },
+]
+
+const binlogColumns = [
+  { label: '', key: 'selected', align: 'left', width: '2rem' },
+  { label: 'File', key: 'name', align: 'left', width: 2 },
+  { label: 'Date', key: 'date', align: 'left', width: 1.5 },
+  { label: 'Size', key: 'size', align: 'right', width: 1 },
+  { label: '', key: 'actions', align: 'right', width: '3rem' },
+]
+
 const engineOptions = [
   { label: 'MariaDB', value: 'mariadb' },
   { label: 'PostgreSQL', value: 'postgres' },
@@ -230,6 +229,28 @@ const showPurgeDialog = ref(false)
 const pendingIndex = ref(-1)
 const purging = ref(false)
 const purgeError = ref('')
+
+const processRows = computed(() =>
+  processes.value.map((process) => ({
+    id: process.Id,
+    command: process.Command,
+    user: process.User,
+    database: process.db || '—',
+    query: process.Info || '—',
+    time: `${process.Time}s`,
+    process,
+  })),
+)
+
+const binlogRows = computed(() =>
+  binlogs.value.map((file, index) => ({
+    name: file.name,
+    date: fileAge(file),
+    size: formatBytes(file.size_bytes),
+    index,
+    isActive: index === binlogs.value.length - 1,
+  })),
+)
 
 const killDetails = computed(() => {
   const process = killTarget.value
@@ -262,6 +283,19 @@ const pendingFiles = computed(() =>
 const pendingSize = computed(() =>
   formatBytes(pendingFiles.value.reduce((total, file) => total + file.size_bytes, 0)),
 )
+
+// Deletion is always a contiguous run from the oldest file, so the range says
+// everything a list of names would - and stays readable at hundreds of files.
+const purgeDetails = computed(() => {
+  const files = pendingFiles.value
+  if (!files.length) return []
+  const kept = binlogs.value[pendingIndex.value + 1]
+  return [
+    { label: 'Oldest deleted', value: files[0].name },
+    { label: 'Newest deleted', value: files[files.length - 1].name },
+    { label: 'Kept from', value: kept ? kept.name : '—' },
+  ]
+})
 
 function engineLabel(value) {
   return engineOptions.find((option) => option.value === value)?.label || value
