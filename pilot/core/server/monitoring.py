@@ -189,7 +189,9 @@ class Monitor:
             if not database.is_slow_log_enabled():
                 return
             log = SlowQueryLog(self.slow_query_log_path)
-            log.append(database.scan_slow_queries(since=log.watermark()))
+            watermark = log.watermark()
+            since_count = log.count_at(watermark) if watermark else 0
+            log.append(database.scan_slow_queries(since=watermark, since_count=since_count))
         except Exception:
             return
 

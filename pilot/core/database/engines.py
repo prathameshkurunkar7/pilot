@@ -132,7 +132,7 @@ class MariaDB(Database):
         finally:
             conn.close()
 
-    def scan_slow_queries(self, since: str | None = None, limit: int = 5000) -> list[dict]:
+    def scan_slow_queries(self, since: str | None = None, since_count: int = 0, limit: int = 5000) -> list[dict]:
         """New mysql.slow_log rows across all schemas, oldest first, for aggregation."""
         conn = self._connect()
         try:
@@ -140,15 +140,15 @@ class MariaDB(Database):
                 if since:
                     cursor.execute(
                         "SELECT db, sql_text, query_time, start_time FROM mysql.slow_log "
-                        "WHERE start_time > %s ORDER BY start_time ASC LIMIT %s",
-                        (since, int(limit)),
+                        "WHERE start_time >= %s ORDER BY start_time ASC LIMIT %s",
+                        (since, int(limit + since_count)),
                     )
-                else:
-                    cursor.execute(
-                        "SELECT db, sql_text, query_time, start_time FROM mysql.slow_log "
-                        "ORDER BY start_time ASC LIMIT %s",
-                        (int(limit),),
-                    )
+                    return list(cursor.fetchall())[since_count:]
+                cursor.execute(
+                    "SELECT db, sql_text, query_time, start_time FROM mysql.slow_log "
+                    "ORDER BY start_time ASC LIMIT %s",
+                    (int(limit),),
+                )
                 return list(cursor.fetchall())
         finally:
             conn.close()

@@ -43,8 +43,8 @@ const error = ref('')
 const data = ref(null)
 
 const points = computed(() => data.value?.points ?? [])
-const unsupported = computed(() => data.value?.unsupported === true)
-const empty = computed(() => !unsupported.value && points.value.length < 2)
+const unsupported = computed(() => data.value?.slow_queries?.unsupported === true)
+const empty = computed(() => !unsupported.value && points.value.length === 0)
 
 const GRID = { show: true, lineStyle: { type: 'dashed', color: 'var(--outline-gray-2)' } }
 

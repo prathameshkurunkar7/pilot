@@ -36,6 +36,19 @@ def test_append_separates_by_db(tmp_path: Path) -> None:
     assert {r["db"] for r in log.records()} == {"a", "b"}
 
 
+def test_count_at_returns_ties_sharing_the_watermark(tmp_path: Path) -> None:
+    log = SlowQueryLog(tmp_path / "slow.json")
+    log.append([
+        _row("SELECT 1", 1.0, started="2026-01-01T00:00:00"),
+        _row("SELECT 2", 1.0, started="2026-01-01T00:00:00"),
+        _row("SELECT 3", 1.0, started="2026-01-01T00:00:01"),
+    ])
+
+    assert log.count_at("2026-01-01T00:00:00") == 2
+    assert log.count_at("2026-01-01T00:00:01") == 1
+    assert log.count_at("2026-01-01T00:00:02") == 0
+
+
 def test_records_sorted_and_capped_to_max_records(tmp_path: Path) -> None:
     log = SlowQueryLog(tmp_path / "slow.json")
     rows = [

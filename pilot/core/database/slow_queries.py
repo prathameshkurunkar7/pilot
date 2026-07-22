@@ -57,6 +57,12 @@ class SlowQueryLog:
         records = self._read()
         return records[-1]["time"] if records else None
 
+    def count_at(self, time: str) -> int:
+        """How many already-recorded rows share the watermark timestamp, so a
+        rescan can skip exactly those instead of using a strict `>` that would
+        silently drop the rest of a same-timestamp group at a batch boundary."""
+        return sum(1 for record in self._read() if record["time"] == time)
+
     def records(self) -> list[dict]:
         return self._read()
 
