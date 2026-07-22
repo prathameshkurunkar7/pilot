@@ -27,6 +27,8 @@ declare module 'vue' {
     CronScheduleControl: typeof import('./src/components/common/CronScheduleControl.vue')['default']
     Danger: typeof import('./src/components/sites/settings/Danger.vue')['default']
     DatabaseInsights: typeof import('./src/components/dashboard/DatabaseInsights.vue')['default']
+    DiagnosticsSection: typeof import('./src/components/database/DiagnosticsSection.vue')['default']
+    DiagnosticsStat: typeof import('./src/components/database/DiagnosticsStat.vue')['default']
     Domains: typeof import('./src/components/sites/settings/Domains.vue')['default']
     Firewall: typeof import('./src/components/settings/Firewall.vue')['default']
     General: typeof import('./src/components/sites/settings/General.vue')['default']
