@@ -1,6 +1,10 @@
 <template>
   <Teleport defer to="#header-actions">
-    <FormControl type="select" v-model="engine" :options="engineOptions" class="w-32 sm:w-40" />
+    <div class="flex items-center gap-2">
+      <FormControl v-if="siteOptions.length > 1" type="select" v-model="selectedSite" :options="siteOptions"
+        class="w-32 sm:w-44" />
+      <FormControl type="select" v-model="engine" :options="engineOptions" class="w-32 sm:w-40" />
+    </div>
   </Teleport>
 
   <div class="flex flex-col gap-4">
@@ -28,10 +32,20 @@
     <ErrorMessage v-else-if="error" :message="error" />
 
     <template v-else-if="diagnostics">
+      <DatabasePanel title="Database Size Breakup" subtitle="Analyze how storage is used"
+        :badge="selectedSite ? scopeBadge : 'Server-wide'" :loading="sizeLoading" @refresh="loadSize">
+        <template v-if="selectedSite" #actions>
+          <Button variant="subtle" size="sm" @click="showTableSizes = true">View Details</Button>
+        </template>
+        <ErrorMessage v-if="sizeError" :message="sizeError" class="m-4" />
+        <p v-else-if="!size" class="py-6 text-ink-gray-5 text-sm text-center">No results to display</p>
+        <SizeBreakup v-else :size="size" />
+      </DatabasePanel>
+
       <DatabasePanel title="Database Processes" subtitle="Analyze the processes of the database"
-        :loading="processesLoading" @refresh="loadProcesses">
+        :badge="scopeBadge" :loading="processesLoading" @refresh="loadProcesses">
         <ErrorMessage v-if="processesError" :message="processesError" class="m-4" />
-        <ListView v-else class="p-4" :columns="processColumns" :rows="processRows" row-key="number"
+        <ListView v-else class="p-4 !w-full" :columns="processColumns" :rows="processRows" row-key="number"
           :options="{ selectable: false, showTooltip: false }">
           <template #cell="{ column, row, item }">
             <div v-if="column.key === 'actions'" class="flex justify-end">
@@ -48,11 +62,11 @@
       </DatabasePanel>
 
       <DatabasePanel title="Database Locks" subtitle="Analyze the lock waits of the database"
-        :badge="lockColumnsBadge" :loading="lockWaitsLoading" show-auto-refresh
+        :badge="[scopeBadge, lockColumnsBadge]" :loading="lockWaitsLoading" show-auto-refresh
         :auto-refresh="autoRefreshLocks" @update:auto-refresh="autoRefreshLocks = $event"
         @refresh="loadLockWaits">
         <ErrorMessage v-if="lockWaitsError" :message="lockWaitsError" class="m-4" />
-        <ListView v-else class="p-4" :columns="lockColumns" :rows="lockRows" row-key="number"
+        <ListView v-else class="p-4 !w-full" :columns="lockColumns" :rows="lockRows" row-key="number"
           :options="{ selectable: false, showTooltip: false }">
           <template #cell="{ column, row, item }">
             <ListRowItem :column="column" :row="row" :item="item" :align="column.align" />
@@ -64,10 +78,10 @@
       </DatabasePanel>
 
       <DatabasePanel title="Database Binary Logs" subtitle="Manage the binary logs of the database"
-        :loading="binlogsLoading" @refresh="loadBinlogs">
+        :badge="selectedSite ? 'Server-wide' : ''" :loading="binlogsLoading" @refresh="loadBinlogs">
         <ErrorMessage v-if="binlogsError" :message="binlogsError" class="m-4" />
         <div v-else class="p-4">
-          <ListView :columns="binlogColumns" :rows="binlogRows" row-key="number"
+          <ListView class="!w-full" :columns="binlogColumns" :rows="binlogRows" row-key="number"
             :options="{ selectable: false, showTooltip: false }">
             <template #cell="{ column, row, item }">
               <Checkbox v-if="column.key === 'selected'" :modelValue="row.index <= selectedIndex"
@@ -100,6 +114,8 @@
       </DatabasePanel>
     </template>
   </div>
+
+  <TableSizesDialog v-model:open="showTableSizes" :site="selectedSite" />
 
   <Dialog v-model="showKillDialog" :options="{ title: 'Kill database process', size: 'sm' }">
     <template #body-content>
@@ -171,6 +187,8 @@ import {
   toast,
 } from 'frappe-ui'
 import DatabasePanel from '@/components/database/DatabasePanel.vue'
+import SizeBreakup from '@/components/database/SizeBreakup.vue'
+import TableSizesDialog from '@/components/database/TableSizesDialog.vue'
 import { apiErrorMessage } from '@/api/client'
 import { databaseApi } from '@/api/database'
 import { formatBytes } from '@/utils/format'
@@ -200,8 +218,8 @@ const lockColumns = [
   { label: 'State', key: 'state', align: 'left', width: 0.8 },
   { label: 'Started', key: 'started', align: 'left', width: 1.2 },
   { label: 'Query', key: 'query', align: 'left', width: 1.5 },
-  { label: 'Locked', key: 'rowsLocked', align: 'right', width: 0.7 },
-  { label: 'Modified', key: 'rowsModified', align: 'right', width: 0.8 },
+  { label: 'Rows Locked', key: 'rowsLocked', align: 'right', width: 0.9 },
+  { label: 'Rows Modified', key: 'rowsModified', align: 'right', width: 1 },
 ]
 
 const binlogColumns = [
@@ -223,6 +241,8 @@ const error = ref('')
 const diagnostics = ref(null)
 const engine = ref('mariadb')
 const configuredEngine = ref('mariadb')
+const sites = ref([])
+const selectedSite = ref('')
 
 const processes = ref([])
 const processesLoading = ref(false)
@@ -237,6 +257,11 @@ let lockWaitsTimer = null
 const binlogs = ref([])
 const binlogsLoading = ref(false)
 const binlogsError = ref('')
+
+const size = ref(null)
+const sizeLoading = ref(false)
+const sizeError = ref('')
+const showTableSizes = ref(false)
 
 const killTarget = ref(null)
 const showKillDialog = ref(false)
@@ -327,6 +352,17 @@ const lockColumnsBadge = computed(() =>
   engine.value === 'postgres' ? "Some columns aren't available for PostgreSQL" : '',
 )
 
+// Only sites on this server can be scoped to; a SQLite site owns a file, not a
+// database on the selected engine.
+const siteOptions = computed(() => [
+  { label: 'All databases', value: '' },
+  ...sites.value
+    .filter((site) => site.db_type === configuredEngine.value)
+    .map((site) => ({ label: site.name, value: site.name })),
+])
+
+const scopeBadge = computed(() => selectedSite.value)
+
 function engineLabel(value) {
   return engineOptions.find((option) => option.value === value)?.label || value
 }
@@ -402,7 +438,7 @@ async function loadProcesses() {
   processesLoading.value = true
   processesError.value = ''
   try {
-    const result = await databaseApi.processList()
+    const result = await databaseApi.processList(selectedSite.value)
     if (result?.error) throw new Error(apiErrorMessage(result, 'Could not load database processes.'))
     processes.value = Array.isArray(result) ? result : []
   } catch (e) {
@@ -416,13 +452,28 @@ async function loadLockWaits() {
   lockWaitsLoading.value = true
   lockWaitsError.value = ''
   try {
-    const result = await databaseApi.lockWaitRows()
+    const result = await databaseApi.lockWaitRows(selectedSite.value)
     if (result?.error) throw new Error(apiErrorMessage(result, 'Could not load database lock waits.'))
     lockWaits.value = Array.isArray(result) ? result : []
   } catch (e) {
     lockWaitsError.value = e.message || 'Could not load database lock waits.'
   } finally {
     lockWaitsLoading.value = false
+  }
+}
+
+async function loadSize() {
+  sizeLoading.value = true
+  sizeError.value = ''
+  try {
+    const result = await databaseApi.size(selectedSite.value)
+    if (result?.error) throw new Error(apiErrorMessage(result, 'Could not read the database size.'))
+    size.value = result
+  } catch (e) {
+    size.value = null
+    sizeError.value = e.message || 'Could not read the database size.'
+  } finally {
+    sizeLoading.value = false
   }
 }
 
@@ -456,6 +507,13 @@ watch(autoRefreshLocks, (enabled) => {
   else stopLockWaitsAutoRefresh()
 })
 
+// Binary logs are server-wide, so only the scoped panels refetch.
+watch(selectedSite, () => {
+  loadProcesses()
+  loadLockWaits()
+  loadSize()
+})
+
 onUnmounted(stopLockWaitsAutoRefresh)
 
 async function load() {
@@ -468,7 +526,7 @@ async function load() {
     configuredEngine.value = result.engine || 'mariadb'
     engine.value = configuredEngine.value
     if (!result.supported) return
-    await Promise.all([loadProcesses(), loadLockWaits(), loadBinlogs()])
+    await Promise.all([loadSites(), loadSize(), loadProcesses(), loadLockWaits(), loadBinlogs()])
     if (autoRefreshLocks.value) startLockWaitsAutoRefresh()
   } catch (e) {
     error.value = e.message || 'Could not load database diagnostics.'
@@ -477,5 +535,24 @@ async function load() {
   }
 }
 
+async function loadSites() {
+  try {
+    const result = await databaseApi.sites()
+    sites.value = Array.isArray(result) ? result : []
+  } catch {
+    sites.value = [] // Scoping is optional - the page still works server-wide.
+  }
+}
+
 onMounted(load)
 </script>
+
+<style scoped>
+/* A `1fr` grid track takes its minimum from the item's min-content width, so a
+   long header label or query would widen the table past the panel and add a
+   horizontal scrollbar. Letting the cells shrink keeps every column in view. */
+:deep(.grid) > * {
+  min-width: 0;
+  overflow: hidden;
+}
+</style>

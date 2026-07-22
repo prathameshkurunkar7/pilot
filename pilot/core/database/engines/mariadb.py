@@ -7,35 +7,21 @@ from pilot.core.database.base import (
     BinlogFile,
     BinlogStatus,
     Database,
+    DatabaseSize,
     LockWaitRow,
     LockWaitStatus,
     QueryResult,
+    TableSize,
+)
+from pilot.core.database.engines.helpers import (
+    MAX_ROWS,
+    disk_free,
+    file_modified_ms,
+    is_local_host,
+    rows_as_dicts,
+    validated_process_id,
 )
 from pilot.exceptions import DatabaseError
-
-_MAX_ROWS = 5000
-
-
-def _rows_as_dicts(result: QueryResult) -> list[dict]:
-    return [dict(zip(result.columns, row, strict=True)) for row in result.rows]
-
-
-def _validated_process_id(process_id: int) -> int:
-    """Neither KILL nor pg_terminate_backend take placeholders here, so the id
-    is interpolated - reject anything that is not a positive integer."""
-    if isinstance(process_id, bool) or not isinstance(process_id, int):
-        raise DatabaseError(f"Process id must be an integer, got {process_id!r}")
-    if process_id <= 0:
-        raise DatabaseError(f"Process id must be positive, got {process_id}")
-    return process_id
-
-
-def _file_modified_ms(path: Path) -> int | None:
-    """Best-effort: the server may be remote or its datadir unreadable."""
-    try:
-        return int(path.stat().st_mtime * 1000)
-    except OSError:
-        return None
 
 
 class MariaDB(Database):
@@ -81,9 +67,9 @@ class MariaDB(Database):
                 cursor.execute(query)
                 if cursor.description:
                     columns = [d[0] for d in cursor.description]
-                    raw = list(cursor.fetchmany(_MAX_ROWS + 1))
-                    truncated = len(raw) > _MAX_ROWS
-                    rows = [[r[c] for c in columns] for r in raw[:_MAX_ROWS]]
+                    raw = list(cursor.fetchmany(MAX_ROWS + 1))
+                    truncated = len(raw) > MAX_ROWS
+                    rows = [[r[c] for c in columns] for r in raw[:MAX_ROWS]]
                 else:
                     columns, rows, truncated = [], [], False
                 affected = cursor.rowcount or 0
@@ -206,14 +192,59 @@ class MariaDB(Database):
             conn.close()
 
     def get_process_list(self, database: str = "") -> list[dict]:
-        rows = _rows_as_dicts(self.execute("SHOW FULL PROCESSLIST"))
+        rows = rows_as_dicts(self.execute("SHOW FULL PROCESSLIST"))
         if not database:
             return rows
         return [row for row in rows if row.get("db") == database]
 
+    def get_database_size(self) -> DatabaseSize:
+        result = self.execute(
+            "SELECT COALESCE(SUM(data_length), 0), COALESCE(SUM(index_length), 0), "
+            "COALESCE(SUM(data_free), 0) FROM information_schema.TABLES "
+            f"WHERE {self._size_scope}"
+        )
+        data, index, claimable = result.rows[0] if result.rows else (0, 0, 0)
+        return DatabaseSize(
+            data_bytes=int(data),
+            index_bytes=int(index),
+            claimable_bytes=int(claimable),
+            free_bytes=self._free_disk_bytes(),
+        )
+
+    def get_table_sizes(self) -> list[TableSize]:
+        result = self.execute(
+            "SELECT table_name, COALESCE(data_length, 0), COALESCE(index_length, 0), "
+            "COALESCE(data_free, 0) FROM information_schema.TABLES "
+            f"WHERE {self._size_scope} ORDER BY data_length + index_length DESC"
+        )
+        return [
+            TableSize(
+                name=row[0],
+                data_bytes=int(row[1]),
+                index_bytes=int(row[2]),
+                claimable_bytes=int(row[3]),
+            )
+            for row in result.rows
+        ]
+
+    @property
+    def _size_scope(self) -> str:
+        """DATABASE() keeps the scope in the connection instead of interpolating
+        a name; a connection with no database covers every user schema."""
+        if self._database:
+            return "table_schema = DATABASE()"
+        return "table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')"
+
+    def _free_disk_bytes(self) -> int | None:
+        """Only meaningful when the server shares this host - the data directory
+        path means nothing locally for a remote server."""
+        if not is_local_host(self._host, self._socket):
+            return None
+        return disk_free(str(self.get_scalar("SELECT @@datadir")))
+
     def kill_process(self, process_id: int) -> None:
         """Drop a connection and roll back whatever it was running."""
-        self.execute(f"KILL CONNECTION {_validated_process_id(process_id)}", read_only=False)
+        self.execute(f"KILL CONNECTION {validated_process_id(process_id)}", read_only=False)
 
     def get_active_connections(self) -> int:
         return self.get_status_value("Threads_connected")
@@ -277,7 +308,7 @@ class MariaDB(Database):
             BinlogFile(
                 name=row[name_column],
                 size_bytes=int(row[size_column]),
-                modified_ms=_file_modified_ms(directory / row[name_column]),
+                modified_ms=file_modified_ms(directory / row[name_column]),
             )
             for row in logs.rows
         ]
@@ -303,242 +334,3 @@ class MariaDB(Database):
         if not result.rows:
             raise DatabaseError(f"Query returned no rows: {query}")
         return result.rows[0][0]
-
-
-class PostgreSQL(Database):
-    def __init__(self, host: str, port: int, user: str, password: str, database: str) -> None:
-        self._host = host
-        self._port = port
-        self._user = user
-        self._password = password
-        self._database = database
-
-    def _connect(self):
-        try:
-            import psycopg2
-        except ImportError as exc:
-            raise DatabaseError("psycopg2 is not installed. Run: pip install psycopg2-binary") from exc
-        return psycopg2.connect(
-            host=self._host,
-            port=self._port,
-            user=self._user,
-            password=self._password,
-            dbname=self._database,
-        )
-
-    def execute(self, query: str, read_only: bool = True) -> QueryResult:
-        conn = self._connect()
-        start = time.monotonic()
-        try:
-            if read_only:
-                conn.set_session(readonly=True)
-            with conn.cursor() as cursor:
-                cursor.execute(query)
-                if cursor.description:
-                    columns = [d[0] for d in cursor.description]
-                    raw = cursor.fetchmany(_MAX_ROWS + 1)
-                    truncated = len(raw) > _MAX_ROWS
-                    rows = [list(r) for r in raw[:_MAX_ROWS]]
-                else:
-                    columns, rows, truncated = [], [], False
-                affected = cursor.rowcount or 0
-            if not read_only:
-                conn.commit()
-            return QueryResult(
-                columns=columns,
-                rows=rows,
-                duration_ms=(time.monotonic() - start) * 1000,
-                truncated=truncated,
-                affected_rows=affected,
-            )
-        except Exception as exc:
-            conn.rollback()
-            raise DatabaseError(str(exc)) from exc
-        finally:
-            conn.close()
-
-    def get_tables(self) -> list[str]:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
-                )
-                return [r[0] for r in cursor.fetchall()]
-        finally:
-            conn.close()
-
-    def get_table_columns(self, table: str) -> list[dict]:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT column_name, data_type FROM information_schema.columns "
-                    "WHERE table_schema = 'public' AND table_name = %s ORDER BY ordinal_position",
-                    (table,),
-                )
-                return [{"name": r[0], "type": r[1]} for r in cursor.fetchall()]
-        finally:
-            conn.close()
-
-    def get_schema(self) -> list[dict]:
-        conn = self._connect()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
-                )
-                tables = [r[0] for r in cursor.fetchall()]
-                cursor.execute(
-                    "SELECT table_name, column_name, data_type FROM information_schema.columns "
-                    "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position"
-                )
-                columns_by_table: dict[str, list[dict]] = {}
-                for table_name, column_name, data_type in cursor.fetchall():
-                    columns_by_table.setdefault(table_name, []).append(
-                        {"name": column_name, "type": data_type}
-                    )
-            return [{"name": t, "columns": columns_by_table.get(t, [])} for t in tables]
-        finally:
-            conn.close()
-
-    def get_process_list(self, database: str = "") -> list[dict]:
-        rows = _rows_as_dicts(
-            self.execute(
-                'SELECT pid, usename AS "user", datname AS "database", state, '
-                "EXTRACT(EPOCH FROM (now() - query_start)) AS duration_seconds, query "
-                "FROM pg_stat_activity WHERE pid <> pg_backend_pid()"
-            )
-        )
-        if not database:
-            return rows
-        return [row for row in rows if row.get("database") == database]
-
-    def kill_process(self, process_id: int) -> None:
-        """pg_terminate_backend reports a missing backend by returning false."""
-        pid = _validated_process_id(process_id)
-        result = self.execute(f"SELECT pg_terminate_backend({pid})")
-        if not result.rows or not result.rows[0][0]:
-            raise DatabaseError(f"No such process: {pid}")
-
-    def get_active_connections(self) -> int:
-        return int(self.execute("SELECT COUNT(*) FROM pg_stat_activity").rows[0][0])
-
-    def get_lock_waits(self) -> LockWaitStatus:
-        current = int(self.execute("SELECT COUNT(*) FROM pg_locks WHERE NOT granted").rows[0][0])
-        timeout_ms = int(self.execute("SELECT setting FROM pg_settings WHERE name = 'lock_timeout'").rows[0][0])
-        # PostgreSQL keeps no cumulative lock-wait counter; lock_timeout of 0 means disabled.
-        return LockWaitStatus(
-            current_waits=current,
-            total_waits=None,
-            timeout_seconds=timeout_ms // 1000 if timeout_ms else None,
-        )
-
-    def get_lock_wait_rows(self, database: str = "") -> list[LockWaitRow]:
-        """PostgreSQL has no lock-index concept and no per-transaction row
-        counters, so index/rows_locked/rows_modified are always None."""
-        result = self.execute(
-            "SELECT blocked.pid, blocked.locktype, blocked.mode, "
-            "blocked.relation::regclass::text, a.state, a.query_start, a.query, a.datname "
-            "FROM pg_locks blocked "
-            "JOIN pg_stat_activity a ON a.pid = blocked.pid "
-            "WHERE NOT blocked.granted"
-        )
-        rows = [row for row in result.rows if not database or row[7] == database]
-        return [
-            LockWaitRow(
-                id=str(row[0]),
-                type=row[1],
-                mode=row[2],
-                table=row[3],
-                index=None,
-                state=row[4],
-                started=str(row[5]) if row[5] is not None else None,
-                query=row[6],
-                rows_locked=None,
-                rows_modified=None,
-            )
-            for row in rows
-        ]
-
-    # No binary log: WAL archiving is configured server-side. Falls back to
-    # Database's default get_binlog_status/get_binlog_files/purge_binlogs.
-
-
-class SQLite(Database):
-    def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
-
-    def _connect(self):
-        import sqlite3
-
-        conn = sqlite3.connect(self._db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    def execute(self, query: str, read_only: bool = True) -> QueryResult:
-        import sqlite3
-
-        conn = self._connect()
-        start = time.monotonic()
-        try:
-            if read_only:
-                conn.execute("PRAGMA query_only = 1")
-            cursor = conn.execute(query)
-            if cursor.description:
-                columns = [d[0] for d in cursor.description]
-                raw = cursor.fetchmany(_MAX_ROWS + 1)
-                truncated = len(raw) > _MAX_ROWS
-                rows = [list(r) for r in raw[:_MAX_ROWS]]
-            else:
-                columns, rows, truncated = [], [], False
-            affected = cursor.rowcount or 0
-            if not read_only:
-                conn.commit()
-            return QueryResult(
-                columns=columns,
-                rows=rows,
-                duration_ms=(time.monotonic() - start) * 1000,
-                truncated=truncated,
-                affected_rows=affected,
-            )
-        except sqlite3.Error as exc:
-            conn.rollback()
-            raise DatabaseError(str(exc)) from exc
-        finally:
-            conn.close()
-
-    def get_tables(self) -> list[str]:
-        conn = self._connect()
-        try:
-            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-            return [r[0] for r in cursor.fetchall()]
-        finally:
-            conn.close()
-
-    def get_table_columns(self, table: str) -> list[dict]:
-        safe = table.replace('"', "")
-        conn = self._connect()
-        try:
-            cursor = conn.execute(f'PRAGMA table_info("{safe}")')
-            return [{"name": r["name"], "type": r["type"]} for r in cursor.fetchall()]
-        finally:
-            conn.close()
-
-    def get_schema(self) -> list[dict]:
-        conn = self._connect()
-        try:
-            cursor = conn.execute(
-                "SELECT m.name AS tbl, p.name AS col, p.type AS typ "
-                "FROM sqlite_master m JOIN pragma_table_info(m.name) p "
-                "WHERE m.type = 'table' ORDER BY m.name, p.cid"
-            )
-            columns_by_table: dict[str, list[dict]] = {}
-            for r in cursor.fetchall():
-                columns_by_table.setdefault(r["tbl"], []).append({"name": r["col"], "type": r["typ"]})
-            return [{"name": t, "columns": cols} for t, cols in columns_by_table.items()]
-        finally:
-            conn.close()
-
-    # SQLite has no server: no process list, connections, lock waits, or
-    # binary log. Falls back to Database's default implementations.

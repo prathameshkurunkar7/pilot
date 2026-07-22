@@ -8,9 +8,11 @@ from pilot.core.database.base import (
     BinlogFile,
     BinlogStatus,
     Database,
+    DatabaseSize,
     LockWaitRow,
     LockWaitStatus,
     QueryResult,
+    TableSize,
 )
 from pilot.core.database.engines import MariaDB, PostgreSQL, SQLite
 from pilot.exceptions import DatabaseError
@@ -22,12 +24,14 @@ __all__ = [
     "BinlogFile",
     "BinlogStatus",
     "Database",
+    "DatabaseSize",
     "LockWaitRow",
     "LockWaitStatus",
     "MariaDB",
     "PostgreSQL",
     "QueryResult",
     "SQLite",
+    "TableSize",
     "make_database",
     "make_site_database",
     "read_site_config",

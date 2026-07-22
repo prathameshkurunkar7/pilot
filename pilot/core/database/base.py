@@ -40,6 +40,26 @@ class LockWaitRow:
 
 
 @dataclass
+class DatabaseSize:
+    """Storage breakdown. `claimable_bytes` is space a rebuild would return to
+    the filesystem; `free_bytes` is what the data directory's disk has left.
+    Either is None when the engine or a remote host can't report it."""
+
+    data_bytes: int
+    index_bytes: int
+    claimable_bytes: int | None
+    free_bytes: int | None
+
+
+@dataclass
+class TableSize:
+    name: str
+    data_bytes: int
+    index_bytes: int
+    claimable_bytes: int | None
+
+
+@dataclass
 class BinlogStatus:
     enabled: bool
     file_count: int
@@ -68,6 +88,15 @@ class Database(ABC):
 
     def get_process_list(self, database: str = "") -> list[dict]:
         """`database` narrows the result to one database; empty means server-wide."""
+        raise NotImplementedError
+
+    def get_database_size(self) -> DatabaseSize:
+        """Sizes for whatever this connection covers: one database when it is
+        bound to one, otherwise the whole server."""
+        raise NotImplementedError
+
+    def get_table_sizes(self) -> list[TableSize]:
+        """Per-table sizes for this connection's database, largest first."""
         raise NotImplementedError
 
     def kill_process(self, process_id: int) -> None:

@@ -4,7 +4,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from pilot.config import BenchConfig
-from pilot.core.database import Database, make_database, site_database_name
+from pilot.core.database import Database, make_database, make_site_database, site_database_name
 from pilot.exceptions import DatabaseError
 
 NO_DATABASE_SERVER = (
@@ -56,6 +56,14 @@ class DatabaseDiagnosticsProvider:
         rows = self._call(self._require_server().get_lock_wait_rows, self._database_for(site))
         return [asdict(row) for row in rows]
 
+    def get_database_size(self, site: str = "") -> dict:
+        return asdict(self._call(self._connection_for(site).get_database_size))
+
+    def get_table_sizes(self, site: str) -> list[dict]:
+        if not site:
+            raise DatabaseError("A site is required to break sizes down by table.")
+        return [asdict(table) for table in self._call(self._connection_for(site).get_table_sizes)]
+
     def get_binlog_files(self) -> list[dict]:
         return [asdict(file) for file in self._call(self._require_server().get_binlog_files)]
 
@@ -66,6 +74,17 @@ class DatabaseDiagnosticsProvider:
         if self._db is None:
             raise DatabaseError(NO_DATABASE_SERVER)
         return self._db
+
+    def _connection_for(self, site: str) -> Database:
+        """Sizes are read through a connection bound to the site's own database,
+        so the engine scopes them without a database name reaching the query -
+        and so PostgreSQL, whose table catalog is per-database, can see them."""
+        if not site:
+            return self._require_server()
+        try:
+            return make_site_database(self._bench_root, site)
+        except (FileNotFoundError, ValueError, KeyError) as exc:
+            raise DatabaseError(f"Site '{site}' not found on this bench.") from exc
 
     def _database_for(self, site: str) -> str:
         """Resolve a site to the database it owns. Callers pass a site name, never
