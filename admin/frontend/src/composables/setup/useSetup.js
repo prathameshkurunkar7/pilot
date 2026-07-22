@@ -29,7 +29,6 @@ export function useSetup() {
   const errorMessage = ref('')
   const isSubmitting = ref(false)
   const benchName = ref('')
-  const isOnlyBench = ref(true)
   const isLinux = ref(true)
   const isProductionHandoff = ref(false)
   const mariadbWillInstall = ref(false)
@@ -120,9 +119,8 @@ export function useSetup() {
     isInstalling.value && showStreamDetails.value ? 'max-w-2xl' : 'max-w-lg',
   )
   const isDone = computed(() => currentStep.value === 'done')
-  // A bare `bench` errors once a second bench exists, so name it explicitly then.
   const benchCommand = computed(() =>
-    isOnlyBench.value || !benchName.value ? 'bench' : `bench -b ${benchName.value}`,
+    benchName.value ? `bench -b ${benchName.value}` : 'bench',
   )
   const stepTitle = computed(() => {
     if (isDone.value && isProductionHandoff.value) return 'Finishing setup'
@@ -149,7 +147,6 @@ export function useSetup() {
     try {
       const config = await setupApi.config()
       benchName.value = config.bench_name || ''
-      isOnlyBench.value = config.is_only_bench !== false
       isLinux.value = config.is_linux !== false
       adminPasswordConfigured.value = config.admin_password_configured === true
       mariadbPasswordConfigured.value = config.mariadb_password_configured === true

@@ -88,8 +88,6 @@ def read_defaults(bench_root: Path) -> dict:
 
     result = {
         "bench_name": bench_root.name,
-        # False means the wizard's commands need an explicit -b <name>.
-        "is_only_bench": len(list(bench_root.parent.glob("*/bench.toml"))) <= 1,
         "is_linux": is_linux(),
         "native_process_manager": native_process_manager(),
         **defaults,
