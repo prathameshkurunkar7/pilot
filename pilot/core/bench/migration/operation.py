@@ -5,7 +5,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
 
 from pilot.core.app import RevisionPin
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from pilot.core.bench import Bench
     from pilot.core.bench.migration.store import MigrationStore
 
-OnStep = Callable[[str, str], None]
+OnStep = Callable[[str, str], object]
 OnProgress = Callable[[str], None]
 
 _NO_STEP: OnStep = lambda key, label: None  # noqa: E731
@@ -53,7 +53,7 @@ class AppRevision:
     repository_url: str = ""
     updated_sha: str | None = None
     target_sha: str | None = None  # ref (commit or tag) captured at create time; None when unresolved
-    target_kind: str = "commit"  # "commit" | "tag" - how to check target_sha out
+    target_kind: Literal["tag", "commit"] = "commit"  # how to check target_sha out
 
     @property
     def compare_url(self) -> str | None:
