@@ -117,6 +117,48 @@ def test_no_site_filter_queries_the_whole_server() -> None:
     db.get_lock_wait_rows.assert_called_once_with("")
 
 
+def test_get_database_size_uses_a_connection_bound_to_the_site(tmp_path) -> None:
+    from unittest.mock import patch
+
+    from pilot.core.database import DatabaseSize
+
+    site_db = Mock()
+    site_db.get_database_size.return_value = DatabaseSize(
+        data_bytes=21, index_bytes=27, claimable_bytes=4, free_bytes=99
+    )
+    provider = DatabaseDiagnosticsProvider(bench_root=tmp_path, database=Mock())
+
+    with patch("admin.backend.providers.database.make_site_database", return_value=site_db) as make:
+        assert provider.get_database_size("shop.local") == {
+            "data_bytes": 21,
+            "index_bytes": 27,
+            "claimable_bytes": 4,
+            "free_bytes": 99,
+        }
+
+    make.assert_called_once_with(tmp_path, "shop.local")
+
+
+def test_get_database_size_without_a_site_uses_the_server_connection() -> None:
+    from pilot.core.database import DatabaseSize
+
+    db = Mock()
+    db.get_database_size.return_value = DatabaseSize(
+        data_bytes=1, index_bytes=2, claimable_bytes=None, free_bytes=None
+    )
+    assert _provider(db).get_database_size()["data_bytes"] == 1
+    db.get_database_size.assert_called_once_with()
+
+
+def test_get_table_sizes_requires_a_site() -> None:
+    import pytest
+
+    from pilot.exceptions import DatabaseError
+
+    with pytest.raises(DatabaseError, match="site is required"):
+        _provider(Mock()).get_table_sizes("")
+
+
 def test_unsupported_operation_surfaces_generic_message() -> None:
     import pytest
 
