@@ -266,6 +266,43 @@ def test_mariadb_get_process_list_maps_rows_to_dicts() -> None:
     ]
 
 
+def test_mariadb_kill_process_issues_kill_connection() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    calls: list = []
+    with patch.object(MariaDB, "execute", _canned_execute({"KILL": ([], [])}, calls)):
+        db.kill_process(4096)
+
+    assert calls == [("KILL CONNECTION 4096", False)]
+
+
+@pytest.mark.parametrize("process_id", ["7; DROP TABLE x", 7.5, None, True, 0, -1])
+def test_mariadb_kill_process_rejects_non_positive_integer_ids(process_id) -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    calls: list = []
+    with (
+        patch.object(MariaDB, "execute", _canned_execute({"KILL": ([], [])}, calls)),
+        pytest.raises(DatabaseError, match="Process id"),
+    ):
+        db.kill_process(process_id)
+
+    assert calls == []
+
+
+def test_postgres_kill_process_terminates_backend() -> None:
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
+    with patch.object(PostgreSQL, "execute", _canned_execute({"pg_terminate_backend": (["x"], [[True]])})):
+        db.kill_process(4096)
+
+
+def test_postgres_kill_process_raises_when_backend_is_gone() -> None:
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
+    with (
+        patch.object(PostgreSQL, "execute", _canned_execute({"pg_terminate_backend": (["x"], [[False]])})),
+        pytest.raises(DatabaseError, match="No such process: 4096"),
+    ):
+        db.kill_process(4096)
+
+
 def test_mariadb_get_active_connections_reads_threads_connected() -> None:
     db = MariaDB(host="h", port=3306, user="u", password="p", database="")
     responses = {"Threads_connected": (["Variable_name", "Value"], [["Threads_connected", "12"]])}
@@ -399,6 +436,8 @@ def test_sqlite_server_diagnostics_raise(tmp_path: Path) -> None:
     db = SQLite(str(tmp_path / "x.db"))
     with pytest.raises(DatabaseError, match="no server"):
         db.get_process_list()
+    with pytest.raises(DatabaseError, match="no server"):
+        db.kill_process(1)
     with pytest.raises(DatabaseError, match="no server"):
         db.get_active_connections()
     with pytest.raises(DatabaseError, match="no server"):

@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 from pilot.config import BenchConfig
 from pilot.exceptions import DatabaseError
 
@@ -83,6 +85,48 @@ def test_binlogs_lists_files(tmp_path: Path) -> None:
     assert response.get_json() == files
 
 
+def test_kill_process_succeeds(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    patcher, provider = _patched_provider()
+    with patcher:
+        response = client.post("/api/v1/database/processlist/kill", json={"process_id": 4096})
+
+    assert response.status_code == 200
+    provider.kill_process.assert_called_once_with(4096)
+
+
+@pytest.mark.parametrize("process_id", ["4096", 0, -1, True, None, 7.5])
+def test_kill_process_rejects_bad_ids(tmp_path: Path, process_id) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    patcher, provider = _patched_provider()
+    with patcher:
+        response = client.post("/api/v1/database/processlist/kill", json={"process_id": process_id})
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "invalid_process_id"
+    provider.kill_process.assert_not_called()
+
+
+def test_kill_process_maps_missing_process_to_422(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current")
+    patcher, _ = _patched_provider(**{"kill_process.side_effect": DatabaseError("Unknown thread id: 9")})
+    with patcher:
+        response = client.post("/api/v1/database/processlist/kill", json={"process_id": 9})
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "kill_failed"
+
+
+def test_kill_process_forbidden_when_bench_management_disabled(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current", allow_bench_management=False)
+    patcher, provider = _patched_provider()
+    with patcher:
+        response = client.post("/api/v1/database/processlist/kill", json={"process_id": 4096})
+
+    assert response.status_code == 403
+    provider.kill_process.assert_not_called()
+
+
 def test_purge_requires_up_to(tmp_path: Path) -> None:
     client = _client(tmp_path / "benches" / "current")
     response = client.post("/api/v1/database/binlogs/purge", json={})
@@ -126,7 +170,11 @@ def test_diagnostics_reports_unsupported_for_sqlite_bench(tmp_path: Path) -> Non
     response = client.get("/api/v1/database/diagnostics")
 
     assert response.status_code == 200
-    assert response.get_json() == {"supported": False, "reason": NO_DATABASE_SERVER}
+    assert response.get_json() == {
+        "engine": "sqlite",
+        "supported": False,
+        "reason": NO_DATABASE_SERVER,
+    }
 
 
 def test_binlogs_rejected_for_sqlite_bench(tmp_path: Path) -> None:
