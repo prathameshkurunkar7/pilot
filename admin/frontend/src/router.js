@@ -66,6 +66,25 @@ const routes = [
     meta: { group: 'Insights' },
   },
   {
+    path: '/migrations',
+    name: 'Migrations',
+    component: () => import('./pages/migrations/Migrations.vue'),
+    meta: { title: 'Migrations', group: 'Insights' },
+  },
+  {
+    path: '/migrations/:operationId',
+    name: 'MigrationDetail',
+    component: () => import('./pages/migrations/MigrationDetail.vue'),
+    props: true,
+    meta: { title: 'Migration', group: 'Insights' },
+  },
+  {
+    path: '/database/analyzer',
+    name: 'DB analyzer',
+    component: () => import('./pages/database/Analyzer.vue'),
+    meta: { title: 'DB analyzer', group: 'Dev tools' },
+  },
+  {
     path: '/database/sql-playground',
     name: 'SQL playground',
     component: () => import('./pages/database/SQLPlayground.vue'),

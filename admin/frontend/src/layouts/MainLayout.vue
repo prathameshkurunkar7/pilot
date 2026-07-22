@@ -12,6 +12,7 @@ import {
 } from 'frappe-ui'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import PilotLogo from '@/components/common/PilotLogo.vue'
+import MigrationStatusButton from '@/components/common/MigrationStatusButton.vue'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 
@@ -53,7 +54,9 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
       </button>
 
          <div id="header-badge" class="flex items-center" />
-        <div id="header-actions" class="flex items-center gap-2 ml-auto" />
+        <div id="header-actions" class="flex items-center gap-2 ml-auto">
+          <MigrationStatusButton />
+        </div>
     </PageHeader>
 
     <main class="p-3">
@@ -86,7 +89,9 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
       <div class="flex flex-1 items-center gap-2">
         <Breadcrumbs :items="breadcrumbs" />
         <div id="header-badge" class="flex items-center" />
-        <div id="header-actions" class="flex items-center gap-2 ml-auto" />
+        <div id="header-actions" class="flex items-center gap-2 ml-auto">
+          <MigrationStatusButton />
+        </div>
       </div>
     </PageHeader>
 

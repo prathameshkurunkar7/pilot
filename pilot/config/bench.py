@@ -104,8 +104,8 @@ class BenchConfig:
     http_port: int = 8000
     socketio_port: int = 9000
     socketio_backend: str = "node"
-    watch_apps_js: bool = False
-    reload_python: bool = False
+    watch_apps_js: bool = True
+    reload_python: bool = True
     watch_admin_js: bool = False
     # The single database engine for this bench's sites: "mariadb" or "postgres".
     db_type: str = "mariadb"
@@ -175,8 +175,8 @@ class BenchConfig:
             http_port=bench_data.get("http_port", 8000),
             socketio_port=bench_data.get("socketio_port", 9000),
             socketio_backend=bench_data.get("socketio_backend", "node"),
-            watch_apps_js=bench_data.get("watch_apps_js", False),
-            reload_python=bench_data.get("reload_python", False),
+            watch_apps_js=bench_data.get("watch_apps_js", True),
+            reload_python=bench_data.get("reload_python", True),
             watch_admin_js=bench_data.get("watch_admin_js", False),
             db_type=bench_data.get("db_type", "mariadb"),
             default_branch=bench_data.get("default_branch", ""),
@@ -558,6 +558,8 @@ class BenchConfig:
         monitor = self.monitor
         data: ConfigDict = {
             "system_log_path": str(monitor.system_log_path),
+            "db_log_path": str(monitor.db_log_path),
+            "slow_query_log_path": str(monitor.slow_query_log_path),
             "authority_file_path": str(monitor.authority_file_path),
             "system_log_max_size": monitor.system_log_max_size,
             "application_log_max_size": monitor.application_log_max_size,
