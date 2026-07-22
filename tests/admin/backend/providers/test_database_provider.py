@@ -84,6 +84,39 @@ def test_purge_binlogs_delegates() -> None:
     db.purge_binlogs.assert_called_once_with("mysql-bin.000002")
 
 
+def test_site_filter_resolves_to_the_sites_own_database_name(tmp_path) -> None:
+    import json
+
+    db = Mock()
+    db.get_process_list.return_value = []
+    site = tmp_path / "sites" / "shop.local"
+    site.mkdir(parents=True)
+    (site / "site_config.json").write_text(json.dumps({"db_name": "_8703c0ab425e4c70"}))
+
+    provider = DatabaseDiagnosticsProvider(bench_root=tmp_path, database=db)
+    provider.get_process_list("shop.local")
+
+    # The client names a site; the database name is looked up server-side.
+    db.get_process_list.assert_called_once_with("_8703c0ab425e4c70")
+
+
+def test_site_filter_rejects_unknown_site(tmp_path) -> None:
+    import pytest
+
+    from pilot.exceptions import DatabaseError
+
+    provider = DatabaseDiagnosticsProvider(bench_root=tmp_path, database=Mock())
+    with pytest.raises(DatabaseError, match="not found"):
+        provider.get_process_list("../../etc")
+
+
+def test_no_site_filter_queries_the_whole_server() -> None:
+    db = Mock()
+    db.get_lock_wait_rows.return_value = []
+    _provider(db).get_lock_wait_rows()
+    db.get_lock_wait_rows.assert_called_once_with("")
+
+
 def test_unsupported_operation_surfaces_generic_message() -> None:
     import pytest
 

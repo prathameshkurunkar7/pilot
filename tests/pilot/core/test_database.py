@@ -266,6 +266,24 @@ def test_mariadb_get_process_list_maps_rows_to_dicts() -> None:
     ]
 
 
+def test_mariadb_get_process_list_filters_by_database() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {
+        "PROCESSLIST": (
+            ["Id", "User", "db", "Command", "Time", "State", "Info"],
+            [
+                [7, "app", "site_one", "Query", 3, "Sending data", "SELECT 1"],
+                [8, "app", "site_two", "Query", 1, "Sending data", "SELECT 2"],
+                [9, "root", None, "Sleep", 0, "", None],
+            ],
+        )
+    }
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        assert [p["Id"] for p in db.get_process_list("site_one")] == [7]
+        # No database means server-wide, including connections with no database.
+        assert [p["Id"] for p in db.get_process_list()] == [7, 8, 9]
+
+
 def test_mariadb_kill_process_issues_kill_connection() -> None:
     db = MariaDB(host="h", port=3306, user="u", password="p", database="")
     calls: list = []
@@ -337,9 +355,9 @@ def test_mariadb_get_lock_wait_rows_maps_joined_columns() -> None:
     responses = {
         "INNODB_LOCK_WAITS": (
             ["requesting_trx_id", "lock_type", "lock_mode", "lock_table", "lock_index",
-             "trx_state", "trx_started", "trx_query", "trx_rows_locked", "trx_rows_modified"],
+             "trx_state", "trx_started", "trx_query", "trx_rows_locked", "trx_rows_modified", "DB"],
             [[42, "RECORD", "X", "`db`.`tabDoc`", "PRIMARY", "LOCK WAIT",
-              "2026-01-01 00:00:00", "UPDATE tabDoc SET x=1", 3, 1]],
+              "2026-01-01 00:00:00", "UPDATE tabDoc SET x=1", 3, 1, "db"]],
         )
     }
     with patch.object(MariaDB, "execute", _canned_execute(responses)):
@@ -357,6 +375,23 @@ def test_mariadb_get_lock_wait_rows_maps_joined_columns() -> None:
     assert row.query == "UPDATE tabDoc SET x=1"
     assert row.rows_locked == 3
     assert row.rows_modified == 1
+
+
+def test_mariadb_get_lock_wait_rows_filters_by_database() -> None:
+    db = MariaDB(host="h", port=3306, user="u", password="p", database="")
+    responses = {
+        "INNODB_LOCK_WAITS": (
+            ["requesting_trx_id", "lock_type", "lock_mode", "lock_table", "lock_index",
+             "trx_state", "trx_started", "trx_query", "trx_rows_locked", "trx_rows_modified", "DB"],
+            [
+                [42, "RECORD", "X", "t", "PRIMARY", "LOCK WAIT", None, None, 1, 0, "site_one"],
+                [43, "RECORD", "X", "t", "PRIMARY", "LOCK WAIT", None, None, 1, 0, "site_two"],
+            ],
+        )
+    }
+    with patch.object(MariaDB, "execute", _canned_execute(responses)):
+        assert [r.id for r in db.get_lock_wait_rows("site_one")] == ["42"]
+        assert [r.id for r in db.get_lock_wait_rows()] == ["42", "43"]
 
 
 def test_mariadb_get_binlog_status_disabled() -> None:
@@ -457,9 +492,9 @@ def test_postgres_get_lock_wait_rows_leaves_unsupported_fields_none() -> None:
     db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
     responses = {
         "blocked.granted": (
-            ["pid", "locktype", "mode", "relation", "state", "query_start", "query"],
+            ["pid", "locktype", "mode", "relation", "state", "query_start", "query", "datname"],
             [[123, "relation", "RowExclusiveLock", "tabDoc", "active",
-              "2026-01-01 00:00:00", "UPDATE tabDoc SET x=1"]],
+              "2026-01-01 00:00:00", "UPDATE tabDoc SET x=1", "site_one"]],
         )
     }
     with patch.object(PostgreSQL, "execute", _canned_execute(responses)):
@@ -477,6 +512,25 @@ def test_postgres_get_lock_wait_rows_leaves_unsupported_fields_none() -> None:
     assert row.query == "UPDATE tabDoc SET x=1"
     assert row.rows_locked is None
     assert row.rows_modified is None
+
+
+def test_postgres_diagnostics_filter_by_database() -> None:
+    db = PostgreSQL(host="h", port=5432, user="u", password="p", database="d")
+    lock_rows = (
+        ["pid", "locktype", "mode", "relation", "state", "query_start", "query", "datname"],
+        [
+            [1, "relation", "RowExclusiveLock", "t", "active", None, None, "site_one"],
+            [2, "relation", "RowExclusiveLock", "t", "active", None, None, "site_two"],
+        ],
+    )
+    processes = (
+        ["pid", "user", "database", "state", "duration_seconds", "query"],
+        [[1, "app", "site_one", "active", 1, "SELECT 1"], [2, "app", "site_two", "active", 1, "SELECT 2"]],
+    )
+    with patch.object(PostgreSQL, "execute", _canned_execute({"blocked.granted": lock_rows})):
+        assert [r.id for r in db.get_lock_wait_rows("site_one")] == ["1"]
+    with patch.object(PostgreSQL, "execute", _canned_execute({"pg_stat_activity": processes})):
+        assert [p["pid"] for p in db.get_process_list("site_two")] == [2]
 
 
 def test_postgres_get_binlog_status_falls_back_to_not_implemented() -> None:
