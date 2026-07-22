@@ -45,7 +45,7 @@
       </div>
 
       <div v-if="hovered !== null" ref="tooltipRef"
-        class="bottom-full left-0 z-10 absolute bg-surface-gray-8 shadow-lg mb-2 px-3 py-2 rounded-lg max-w-[calc(100%-16px)] text-xs"
+        class="bottom-full left-0 z-10 absolute bg-surface-gray-8 shadow-lg mb-2 px-3 py-2 rounded-lg max-w-[calc(100%_-_16px)] text-xs"
         :style="{ transform: `translateX(${tooltipLeft}px)` }">
         <div class="font-semibold text-ink-white">
           {{ formatPercent(data.buckets[hovered].percent) }} · {{ formatFullTime(data.buckets[hovered].time) }}
