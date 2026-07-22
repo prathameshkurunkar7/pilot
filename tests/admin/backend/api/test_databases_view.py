@@ -11,14 +11,17 @@ from pilot.exceptions import DatabaseError
 _PROVIDER = "admin.backend.providers.database.DatabaseDiagnosticsProvider"
 
 
-def _client(bench_root: Path, password: str = "secret"):
+def _client(bench_root: Path, password: str = "secret", allow_bench_management: bool = True):
     from admin.backend.app import create_app
     from admin.backend.auth import ensure_jwt_secret, issue_token
 
     bench_root.mkdir(parents=True, exist_ok=True)
-    (bench_root / "bench.toml").write_text(
-        BenchConfig.from_flat(bench_root.name, {"admin_enabled": True, "admin_password": password}).dumps()
-    )
+    flat = {
+        "admin_enabled": True,
+        "admin_password": password,
+        "admin_allow_bench_management": allow_bench_management,
+    }
+    (bench_root / "bench.toml").write_text(BenchConfig.from_flat(bench_root.name, flat).dumps())
     secret = ensure_jwt_secret(bench_root / "bench.toml")
     app = create_app(bench_root)
     app.config["TESTING"] = True
@@ -74,6 +77,24 @@ def test_purge_maps_unknown_file_to_422(tmp_path: Path) -> None:
 
     assert response.status_code == 422
     assert response.get_json()["error"]["code"] == "purge_failed"
+
+
+def test_purge_forbidden_when_bench_management_disabled(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current", allow_bench_management=False)
+    with patch(f"{_PROVIDER}.purge_binlogs") as purge, patch(f"{_PROVIDER}.__init__", return_value=None):
+        response = client.post("/api/v1/database/binlogs/purge", json={"up_to": "mysql-bin.000002"})
+
+    assert response.status_code == 403
+    assert response.get_json()["error"]["code"] == "bench_management_forbidden"
+    purge.assert_not_called()
+
+
+def test_binlog_listing_still_allowed_when_bench_management_disabled(tmp_path: Path) -> None:
+    client = _client(tmp_path / "benches" / "current", allow_bench_management=False)
+    with patch(f"{_PROVIDER}.get_binlog_files", return_value=[]), patch(f"{_PROVIDER}.__init__", return_value=None):
+        response = client.get("/api/v1/database/binlogs")
+
+    assert response.status_code == 200
 
 
 def test_purge_succeeds(tmp_path: Path) -> None:

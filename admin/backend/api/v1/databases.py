@@ -89,6 +89,12 @@ def get_diagnostics():
 
 @database_bp.get("/processlist")
 def get_process_list():
+    from admin.backend.api.v1.benches.support import guard_bench_management
+
+    forbidden = guard_bench_management()
+    if forbidden is not None:
+        return forbidden
+
     try:
         return jsonify(_provider().get_process_list())
     except Exception:
@@ -105,7 +111,12 @@ def get_binlogs():
 
 @database_bp.post("/binlogs/purge")
 def purge_binlogs():
+    from admin.backend.api.v1.benches.support import guard_bench_management
     from pilot.exceptions import DatabaseError
+
+    forbidden = guard_bench_management()
+    if forbidden is not None:
+        return forbidden
 
     data = request.get_json(silent=True)
     up_to = data.get("up_to", "") if isinstance(data, dict) else ""
