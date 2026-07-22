@@ -1,8 +1,17 @@
-<script setup>
-import { computed, watch } from 'vue'
+<script setup lang='ts'>
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Breadcrumbs } from 'frappe-ui'
-import AppSidebar from '@/components/common/AppSidebar.vue'
+import {
+  Breadcrumbs,
+  BottomSheet,
+  DesktopShell,
+  MobileShell,
+  PageHeader,
+  MobileNav,
+  MobileNavItem,
+} from 'frappe-ui'
+import Sidebar from '@/components/navigation/Sidebar.vue'
+import PilotLogo from '@/components/common/PilotLogo.vue'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 
@@ -10,7 +19,15 @@ const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
 const isMobile = useIsMobile()
 
-watch(() => route.name, resetBreadcrumbs)
+const mobileNavDrawer = ref(false)
+
+watch(
+  () => route.name,
+  () => {
+    resetBreadcrumbs()
+    mobileNavDrawer.value = false
+  },
+)
 
 const breadcrumbs = computed(() => {
   const all = items.value || breadcrumbsFromRouteMeta(route.meta)
@@ -23,18 +40,59 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
 </script>
 
 <template>
-  <div class="flex bg-surface-elevation-1 h-screen overflow-hidden">
-    <AppSidebar />
-    <main class="flex flex-col flex-1 overflow-hidden">
-      <header
-        class="top-0 z-10 sticky flex items-center gap-2 px-4 sm:px-6 py-2.5 border-b border-outline-alpha-gray-1 shrink-0">
+  <MobileShell v-if="isMobile">
+    <PageHeader>
+      <template v-if="route.name == 'Home'">
+        <PilotLogo class="size-6 rounded-sm" />
+        <span class="flex-1 text-center text-ink-gray-9">Home</span>
+      </template>
+
+      <button v-else class="flex items-center gap-1" @click="mobileNavDrawer = true">
+        <Breadcrumbs :items="breadcrumbs" />
+        <lucide-chevron-down class="size-4 text-ink-gray-5" />
+      </button>
+
+         <div id="header-badge" class="flex items-center" />
+        <div id="header-actions" class="flex items-center gap-2 ml-auto" />
+    </PageHeader>
+
+    <main class="p-3">
+      <slot />
+    </main>
+
+    <template #nav>
+     <MobileNav class='!bg-surface-base'>
+      <MobileNavItem label="Home" icon="lucide-house" to="/home" />
+      <MobileNavItem label="Search" icon="lucide-search"  />
+      <MobileNavItem label="Notifications" icon="lucide-bell"  />
+      <MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
+  </MobileNav>
+
+    </template>
+
+    <BottomSheet v-model:open="mobileNavDrawer">
+      <div class="px-4 pb-6">
+        <Sidebar is-mobile />
+      </div>
+    </BottomSheet>
+  </MobileShell>
+
+  <DesktopShell v-else class="h-screen">
+    <template #sidebar>
+      <Sidebar />
+    </template>
+
+    <PageHeader>
+      <div class="flex flex-1 items-center gap-2">
         <Breadcrumbs :items="breadcrumbs" />
         <div id="header-badge" class="flex items-center" />
         <div id="header-actions" class="flex items-center gap-2 ml-auto" />
-      </header>
-      <div class="flex-1 p-4 sm:p-6 min-h-0 overflow-auto [scrollbar-gutter:stable]">
-        <slot />
       </div>
-    </main>
-  </div>
+    </PageHeader>
+
+    <div class="p-4">
+      <slot />
+    </div>
+  </DesktopShell>
+
 </template>

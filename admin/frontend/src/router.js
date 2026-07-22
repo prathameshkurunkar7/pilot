@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { navigationRoutes } from './navigation'
 import { useSession } from './composables/auth/useSession'
 import { safeRedirect } from './utils/redirect'
 import { authApi } from './api/auth'
@@ -19,10 +18,46 @@ const routes = [
   },
   { path: '/', redirect: '/sites' },
   {
+    path: '/home',
+    name: 'Home',
+    component: () => import('./pages/home/Home.vue'),
+    meta: { title: 'Home' },
+  },
+  {
+    path: '/sites',
+    name: 'Sites',
+    component: () => import('./pages/sites/Sites.vue'),
+    meta: { title: 'Sites' },
+  },
+  {
     path: '/sites/:name/:tab?',
     name: 'SiteDetail',
     component: () => import('./pages/sites/SiteDetail.vue'),
     meta: { group: 'Sites' },
+  },
+  {
+    path: '/marketplace',
+    name: 'Marketplace',
+    component: () => import('./pages/marketplace/Marketplace.vue'),
+    meta: { title: 'Marketplace' },
+  },
+  {
+    path: '/insights/analytics',
+    name: 'Analytics',
+    component: () => import('./pages/dashboard/Analytics.vue'),
+    meta: { title: 'Analytics', group: 'Insights' },
+  },
+  {
+    path: '/insights/logs',
+    name: 'Logs',
+    component: () => import('./pages/logs/Logs.vue'),
+    meta: { title: 'Logs', group: 'Insights' },
+  },
+  {
+    path: '/insights/tasks',
+    name: 'Tasks',
+    component: () => import('./pages/tasks/Tasks.vue'),
+    meta: { title: 'Tasks', group: 'Insights' },
   },
   {
     path: '/insights/tasks/:taskId',
@@ -30,7 +65,18 @@ const routes = [
     component: () => import('./pages/tasks/TaskDetail.vue'),
     meta: { group: 'Insights' },
   },
-  ...navigationRoutes(),
+  {
+    path: '/database/sql-playground',
+    name: 'SQL playground',
+    component: () => import('./pages/database/SQLPlayground.vue'),
+    meta: { title: 'SQL playground', group: 'Dev tools' },
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: () => import('./pages/settings/Settings.vue'),
+    meta: { title: 'Settings' },
+  },
 ]
 
 export const router = createRouter({

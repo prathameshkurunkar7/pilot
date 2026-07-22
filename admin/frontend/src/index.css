@@ -9,6 +9,26 @@ body {
   @apply bg-surface-base text-ink-gray-9;
 }
 
+.text-base,
+.text-base-medium {
+  @apply !text-[16px];
+}
+
+@screen sm {
+  .text-base,
+  .text-base-medium {
+    @apply !text-[14px];
+  }
+}
+
+.mobile-sidebar [data-slot='sidebar-item'] .text-sm {
+  @apply !text-[16px];
+}
+
+.mobile-sidebar [data-slot='sidebar-item'] {
+  @apply !h-auto !py-2.5;
+}
+
 /* Reduced motion: keep transitions near-instant, drop movement */
 @media (prefers-reduced-motion: reduce) {
   *,
