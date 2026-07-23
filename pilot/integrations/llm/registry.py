@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import litellm
@@ -12,8 +13,9 @@ from pilot.integrations.llm.vllm import VLLMIntegration
 if TYPE_CHECKING:
     from pilot.config.llm import LLMConfig
 
-# Self-hosted providers are the only special case: they need an api_base
-SELF_HOSTED_INTEGRATIONS: dict[str, type[LLMIntegration]] = {
+# Self-hosted providers are the only special case: they need an api_base and their
+# own integration factory (no `provider` arg — it's fixed by the class).
+SELF_HOSTED_INTEGRATIONS: dict[str, Callable[..., LLMIntegration]] = {
     "self-hosted": VLLMIntegration,
 }
 
