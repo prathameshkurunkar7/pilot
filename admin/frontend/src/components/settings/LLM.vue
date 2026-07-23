@@ -27,6 +27,8 @@
         <FormControl label="Model" type="text" v-model="model" :placeholder="defaultModel || 'default model'"
           class="w-full" />
       </div>
+      <FormControl v-if="selfHosted" label="API Base URL" type="text" v-model="apiBase"
+        placeholder="http://your-host:8000/v1" />
       <FormControl label="API Key" type="password" v-model="apiKey"
         :placeholder="apiKeySet ? '••••••••' : 'Provider API key'" />
       <FormControl label="Max Tokens" type="number" v-model="maxTokens" placeholder="4096" class="w-full" />
@@ -57,13 +59,16 @@ const apiKey = ref('')
 const model = ref('')
 const maxTokens = ref(4096)
 const systemPrompt = ref('')
+const apiBase = ref('')
 const apiKeySet = ref(false)
 const providers = ref([])
 
 const connected = computed(() => Boolean(provider.value && apiKeySet.value))
-const providerLabel = computed(() => providers.value.find((p) => p.value === provider.value)?.label || provider.value)
+const selectedProvider = computed(() => providers.value.find((p) => p.value === provider.value))
+const providerLabel = computed(() => selectedProvider.value?.label || provider.value)
 const providerOptions = computed(() => providers.value.map((p) => ({ label: p.label, value: p.value })))
-const defaultModel = computed(() => providers.value.find((p) => p.value === provider.value)?.default_model || '')
+const defaultModel = computed(() => selectedProvider.value?.default_model || '')
+const selfHosted = computed(() => Boolean(selectedProvider.value?.self_hosted))
 
 async function load() {
   loading.value = true
@@ -75,6 +80,7 @@ async function load() {
     model.value = llm.model || ''
     maxTokens.value = llm.max_tokens || 4096
     systemPrompt.value = llm.system_prompt || ''
+    apiBase.value = llm.api_base || ''
     apiKeySet.value = !!llm.api_key_set
   } finally {
     loading.value = false
@@ -84,6 +90,10 @@ async function load() {
 async function save() {
   if (!provider.value) {
     error.value = 'Provider is required.'
+    return
+  }
+  if (selfHosted.value && !apiBase.value.trim()) {
+    error.value = 'API base URL is required for a self-hosted provider.'
     return
   }
   if (!apiKeySet.value && !apiKey.value.trim()) {
@@ -99,6 +109,7 @@ async function save() {
         api_key: apiKey.value.trim(),
         model: model.value.trim(),
         max_tokens: Number(maxTokens.value) || 4096,
+        api_base: apiBase.value.trim(),
         system_prompt: systemPrompt.value,
       },
     })
@@ -125,6 +136,7 @@ async function disconnect() {
       model.value = ''
       maxTokens.value = 4096
       systemPrompt.value = ''
+      apiBase.value = ''
       apiKeySet.value = false
       provider.value = providers.value[0]?.value || ''
       toast.success('AI assistant disconnected')

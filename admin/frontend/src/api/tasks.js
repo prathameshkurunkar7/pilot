@@ -12,6 +12,7 @@ export const tasksApi = {
   },
   outputUrl: (taskId) => apiUrl(`tasks/${taskId}/output/content`),
   streamUrl: (taskId) => apiUrl(`tasks/${taskId}/events`),
+  debugUrl: (taskId) => apiUrl(`tasks/${taskId}/debug`),
 }
 
 export const taskWorkerApi = {
