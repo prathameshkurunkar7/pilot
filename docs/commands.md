@@ -19,8 +19,7 @@ Bench commands with `--bench NAME` can run from outside the bench directory. `Be
 - `bench stop`: stop bench processes.
 - `bench restart`: restart the production workload.
 - `bench build`: build assets or download prebuilt assets when available.
-- `bench update`: pull app code and migrate sites.
-- `bench upgrade`: update bench-cli and admin frontend assets.
+- `bench upgrade`: update bench-cli to the latest version and restart the admin service.
 - `bench frappe -- ...`: pass through to Frappe's bench helper.
 
 Some runtime commands support all benches when invoked with the CLI option for all-bench execution.

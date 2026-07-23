@@ -65,7 +65,7 @@ def test_strip_bench_flag_empty_args() -> None:
 
 
 def test_passthrough_own_commands_are_not_forwarded() -> None:
-    for cmd in ("start", "stop", "init", "new", "get-app", "new-site", "build", "update"):
+    for cmd in ("start", "stop", "init", "new", "get-app", "new-site", "build", "upgrade"):
         assert not dispatch.is_frappe_passthrough([cmd]), f"{cmd!r} should not be a passthrough"
 
 
@@ -124,8 +124,8 @@ def test_command_discovery_matches_baseline() -> None:
     commands = registry._discover()
     identities = {(command.group, command.name) for command in commands}
 
-    assert len(commands) == 35
-    assert len(identities) == 35
+    assert len(commands) == 34
+    assert len(identities) == 34
     assert registry.command_names() == {
         "build",
         "build-admin",
@@ -154,7 +154,6 @@ def test_command_discovery_matches_baseline() -> None:
         "stop",
         "tasks",
         "uninstall-app",
-        "update",
         "upgrade",
     }
     assert {name for group, name in identities if group == "remove"} == {"production"}

@@ -689,36 +689,6 @@ def test_upgrade_command_performs_upgrade() -> None:
     mock_upgrade.assert_called_once()
 
 
-def test_update_command_runs_all_steps(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
-    from pilot.core.bench import Bench
-
-    bench = make_bench(tmp_path)
-    bench.create_directories()
-    cmd = UpdateCommand(bench, skip_confirm=True)
-
-    with (
-        patch.object(cmd, "_warn_if_running"),
-        patch.object(Bench, "_update_apps"),
-        patch.object(Bench, "_reinstall_apps"),
-        patch.object(Bench, "_rebuild_assets"),
-        patch.object(Bench, "_migrate_sites"),
-        patch.object(Bench, "reload_workers"),
-    ):
-        cmd.run()
-
-
-def test_update_command_skips_confirm_when_bench_not_running(tmp_path: Path) -> None:
-    from pilot.commands.runtime.update import UpdateCommand
-
-    bench = make_bench(tmp_path)
-    bench.create_directories()
-    cmd = UpdateCommand(bench, skip_confirm=False)
-
-    with patch("pilot.managers.processes.local.ProcessManager.is_running", return_value=False):
-        cmd._warn_if_running()  # no raise, no prompt
-
-
 def test_bench_update_apps_raises_on_command_error(tmp_path: Path) -> None:
     from pilot.exceptions import CommandError, MigrateError
 
