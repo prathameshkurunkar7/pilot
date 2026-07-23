@@ -17,6 +17,7 @@ class LLMConfig:
     api_key: str = ""
     model: str = ""  # blank falls back to the integration's default model
     max_tokens: int = 4096  # hard cap on generated tokens per request
+    api_base: str = ""  # endpoint URL for self-hosted providers
 
     def validate(self) -> None:
         if self.max_tokens <= 0:

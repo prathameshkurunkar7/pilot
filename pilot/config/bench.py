@@ -563,6 +563,7 @@ class BenchConfig:
             "api_key": self.llm.api_key,
             "model": self.llm.model,
             "max_tokens": self.llm.max_tokens,
+            "api_base": self.llm.api_base,
         }
 
     def _monitor_section(self) -> ConfigDict:
