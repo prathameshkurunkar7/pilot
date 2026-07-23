@@ -387,6 +387,7 @@ install_nginx_include() {
     [ -n "$bench_home" ] && [ -d /etc/nginx/conf.d ] || return 0
     echo "Installing the nginx include for '$1'..."
     cat > /etc/nginx/conf.d/00-pilot.conf <<EOF
+include $bench_home/pilot/nginx/*.conf;
 include $bench_home/pilot/benches/*/config/nginx/include.conf;
 EOF
     chmod 644 /etc/nginx/conf.d/00-pilot.conf

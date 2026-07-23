@@ -61,6 +61,13 @@ ERROR_PAGES = {
 LETSENCRYPT_LIVE = Path("/etc/letsencrypt/live")
 
 
+def _shared_nginx_dir() -> Path:
+    """Host-wide nginx artifacts the bench user owns, globbed in by 00-pilot.conf."""
+    from pilot.utils import cli_root
+
+    return cli_root() / "nginx"
+
+
 def render_error_html(code: int, title: str, message: str) -> str:
     return _ERROR_PAGE_TEMPLATE.render(code=code, title=title, message=message)
 
@@ -247,6 +254,15 @@ class NginxManager:
 
     def install_default_server(self) -> None:
         """Install the shared catch-all vhost and error pages. Idempotent."""
+        if self.has_shared_include:
+            error_dir = _shared_nginx_dir() / "error_pages"
+            error_dir.mkdir(parents=True, exist_ok=True)
+            for code, (title, message) in ERROR_PAGES.items():
+                (error_dir / f"{code}.html").write_text(render_error_html(code, title, message))
+            catchall = _shared_nginx_dir() / "00-bench-default.conf"
+            catchall.write_text(self._renderer.generate_server_config(error_dir))
+            return
+
         staging = self.bench.config_path / "nginx"
         for code, (title, message) in ERROR_PAGES.items():
             staged = staging / f"_catchall_{code}.html"
