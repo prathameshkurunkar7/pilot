@@ -177,10 +177,13 @@ class ProductionSetup:
             sys.exit(1)
 
     def _check_sudo_available(self) -> None:
-        """Fail early when production setup cannot get root privileges."""
+        """Fail early when production setup cannot get the privileges it needs.
+        The installer's scoped nginx/certbot grants are enough and need no tty;
+        only fall back to a password prompt when they are absent."""
+        from pilot.managers.nginx import NginxManager
         from pilot.managers.platform import has_passwordless_sudo, is_root, which
 
-        if is_root() or has_passwordless_sudo():
+        if is_root() or has_passwordless_sudo() or NginxManager(self.bench).has_passwordless_sudo:
             return
         if which("sudo") is None:
             raise BenchError(
