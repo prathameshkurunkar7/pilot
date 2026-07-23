@@ -29,3 +29,17 @@ def integration_for(provider: str) -> type[LLMIntegration]:
         return INTEGRATIONS[provider]
     except KeyError as error:
         raise ValueError(f"Unknown LLM provider: {provider!r}") from error
+
+
+def is_configured(llm_config) -> bool:
+    """Whether the bench has a usable AI provider connected."""
+    return bool(llm_config.provider and llm_config.api_key)
+
+
+def build_integration(llm_config, *, stream: bool = False) -> LLMIntegration:
+    """Construct the integration described by a bench's LLM config."""
+    return integration_for(llm_config.provider)(
+        api_key=llm_config.api_key,
+        stream=stream,
+        api_base=llm_config.api_base,
+    )

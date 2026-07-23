@@ -73,3 +73,14 @@ class LLMIntegration:
         if not response.choices:
             return ""
         return response.choices[0].message.content or ""
+
+    def iter_response_text(self, stream):
+        """Yield text deltas from a streamed `prompt` response (stream=True)."""
+        for chunk in stream:
+            choices = getattr(chunk, "choices", None)
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            text = getattr(delta, "content", None) if delta else None
+            if text:
+                yield text
