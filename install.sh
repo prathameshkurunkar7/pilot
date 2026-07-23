@@ -546,24 +546,36 @@ ensure_tzdata() {
     pkg_install tzdata
 }
 
+# Appends the given PATH line to a file once, if not already there.
+add_path_line() {
+    file="$1"; line="$2"
+    mkdir -p "$(dirname "$file")"
+    grep -qF 'pilot' "$file" 2>/dev/null && return 0
+    echo "$line" >> "$file"
+    echo "Added bench to PATH in $file"
+}
+
 # Sets RC_FILE to the rc it touched, for the closing hint.
 add_bench_to_path() {
-    RC_FILE=""
+    export_line='export PATH="$HOME/pilot:$PATH"'
     case "$SHELL" in
-        */fish)       RC_FILE="$HOME/.config/fish/config.fish" ;;
-        */zsh)        RC_FILE="$HOME/.zshrc" ;;
+        */fish)
+            RC_FILE="$HOME/.config/fish/config.fish"
+            add_path_line "$RC_FILE" 'fish_add_path $HOME/pilot' ;;
+        */zsh)
+            RC_FILE="$HOME/.zshrc"
+            add_path_line "$RC_FILE" "$export_line" ;;
         # POSIX login shells read ~/.profile.
-        */ash|*/sh|"") RC_FILE="$HOME/.profile" ;;
-        *)            RC_FILE="$HOME/.bashrc" ;;
+        */ash|*/sh|"")
+            RC_FILE="$HOME/.profile"
+            add_path_line "$RC_FILE" "$export_line" ;;
+        *)
+            # bash reads ~/.bashrc when interactive but ~/.profile on login
+            # (and non-interactive login, e.g. `su - user -c`), so cover both.
+            RC_FILE="$HOME/.bashrc"
+            add_path_line "$RC_FILE" "$export_line"
+            add_path_line "$HOME/.profile" "$export_line" ;;
     esac
-    mkdir -p "$(dirname "$RC_FILE")"
-    if ! grep -qF 'pilot' "$RC_FILE" 2>/dev/null; then
-        case "$SHELL" in
-            */fish) echo "fish_add_path \$HOME/pilot" >> "$RC_FILE" ;;
-            *)      echo "export PATH=\"\$HOME/pilot:\$PATH\"" >> "$RC_FILE" ;;
-        esac
-        echo "Added bench to PATH in $RC_FILE"
-    fi
 
     export PATH="$PILOT_DIR:$PATH"
     # fish rc syntax is not sh, so never source it back into this shell.
