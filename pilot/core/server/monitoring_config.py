@@ -54,6 +54,8 @@ class MonitorConfigurator:
         self.user_unit_dir = Path.home() / ".config" / "systemd" / "user"
 
     def install(self) -> None:
+        # systemd cannot open the unit's append: targets if this is missing.
+        (cli_root() / "logs").mkdir(parents=True, exist_ok=True)
         self._write_unit()
         self._install_user_unit()
         self._write_timer_unit()
