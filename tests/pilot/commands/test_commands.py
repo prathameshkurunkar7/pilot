@@ -681,7 +681,7 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
 
 
 def test_upgrade_command_performs_upgrade() -> None:
-    from pilot.commands.runtime.upgrade import UpgradeCommand
+    from pilot.commands.admin.upgrade import UpgradeCommand
 
     with patch("pilot.updater.perform_upgrade") as mock_upgrade:
         UpgradeCommand().run()

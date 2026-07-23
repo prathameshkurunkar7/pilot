@@ -10,6 +10,7 @@ from pilot.commands import BenchMode, Command
 @dataclass(kw_only=True)
 class UpgradeCommand(Command):
     name: ClassVar[str] = "upgrade"
+    group: ClassVar[str] = "admin"
     help: ClassVar[str] = "Update bench-cli to the latest version and restart the admin service."
     # OPTIONAL: used only to restart the admin service in production, if one is active.
     bench_mode: ClassVar[BenchMode] = BenchMode.OPTIONAL

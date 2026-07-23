@@ -8,7 +8,8 @@ from pilot.commands import BenchMode, Command
 
 @dataclass(kw_only=True)
 class BuildAdminCommand(Command):
-    name: ClassVar[str] = "build-admin"
+    name: ClassVar[str] = "build"
+    group: ClassVar[str] = "admin"
     help: ClassVar[str] = "Rebuild admin frontend assets from source."
     bench_mode: ClassVar[BenchMode] = BenchMode.NONE
 
