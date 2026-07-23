@@ -8,7 +8,7 @@ def test_normalizes_spaces_and_hyphens():
     assert App._normalize_new_app_name("My Cool-App") == "my_cool_app"
 
 
-@pytest.mark.parametrize("bad", ["9app", "app.name", ""])
+@pytest.mark.parametrize("bad", ["9app", "app.name", "", "/tmp/demo", "foo/bar", "../evil", "a b/c"])
 def test_rejects_invalid_names(bad):
     with pytest.raises(BenchError):
         App._normalize_new_app_name(bad)

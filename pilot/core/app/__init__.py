@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -90,8 +91,12 @@ class App:
 
         app = cls(AppConfig(name=name, repo="", branch=options.branch if options else ""), bench)
         on_progress(f"Installing '{name}'...")
-        app._install_into_environment()
-        app._register()
+        try:
+            app._install_into_environment()
+            app._register()
+        except Exception:
+            shutil.rmtree(app.path, ignore_errors=True)
+            raise
         on_progress(f"\n'{name}' created and installed successfully.")
         return app
 
@@ -103,9 +108,12 @@ class App:
 
     @staticmethod
     def _normalize_new_app_name(app_name: str) -> str:
-        name = app_name.lower().replace(" ", "_").replace("-", "_")
-        if not name or name[0].isdigit() or "." in name:
-            raise BenchError("App names cannot start with a digit or contain a dot.")
+        name = app_name.strip().lower().replace(" ", "_").replace("-", "_")
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+            raise BenchError(
+                "App name must start with a letter and contain only lowercase "
+                "letters, numbers, and underscores."
+            )
         return name
 
     @property
