@@ -16,12 +16,18 @@
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <Button variant="subtle" size="sm" :loading="loading" icon="lucide-refresh-cw" @click="load" />
+        <Button v-if="task.status === 'failed' && aiConnected" variant="subtle" size="sm"
+          icon-left="lucide-sparkles" @click="showDebug = true">
+          Debug with AI
+        </Button>
         <Button v-if="isTaskActive(task)" variant="subtle" size="sm" theme="red" icon-left="lucide-x"
           @click="cancelTask">
           Cancel
         </Button>
       </div>
     </div>
+
+    <TaskDebugDialog v-model="showDebug" :task-id="taskId" />
 
     <!-- Metadata -->
     <div class="gap-4 grid grid-cols-2 bg-surface-elevation-1 mt-4 px-0 py-4 rounded-xl"
@@ -52,6 +58,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { Badge, Button, ErrorMessage, LoadingText } from 'frappe-ui'
 import { apiErrorMessage } from '@/api/client'
 import { tasksApi } from '@/api/tasks'
+import { settingsApi } from '@/api/settings'
+import TaskDebugDialog from '@/components/tasks/TaskDebugDialog.vue'
 import { useBreadcrumbs } from '@/composables/common/useBreadcrumbs'
 import { useTaskDetail } from '@/composables/tasks/useTaskDetail'
 import { commandLabel, fmtDateTime, fmtDuration, isTaskActive, siteLabel, statusConfig } from '@/utils/taskFormat'
@@ -66,6 +74,17 @@ const { task, rawLines, loading, error, load } = useTaskDetail(taskId)
 setBreadcrumbs([{ label: 'Tasks', route: { name: 'Tasks' } }, { label: taskId }])
 
 const actionError = ref('')
+const showDebug = ref(false)
+const aiConnected = ref(false)
+
+async function loadAiStatus() {
+  try {
+    const data = await settingsApi.get()
+    aiConnected.value = Boolean(data.llm?.provider && data.llm?.api_key_set)
+  } catch {
+    aiConnected.value = false
+  }
+}
 
 const metadata = computed(() => {
   const items = [
@@ -102,5 +121,8 @@ async function cancelTask() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadAiStatus()
+})
 </script>

@@ -15,6 +15,7 @@ from pilot.config.central import CentralConfig
 from pilot.config.firewall import FirewallConfig, FirewallRule
 from pilot.config.gunicorn import GunicornConfig
 from pilot.config.letsencrypt import LetsEncryptConfig
+from pilot.config.llm import LLMConfig
 from pilot.config.mariadb import MariaDBConfig
 from pilot.config.monitor import MonitorConfig
 from pilot.config.nginx import NginxConfig
@@ -123,6 +124,7 @@ class BenchConfig:
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
     waf: WafConfig = field(default_factory=WafConfig)
     s3: S3Config = field(default_factory=S3Config)
+    llm: LLMConfig = field(default_factory=LLMConfig)
 
     # -- construction --
 
@@ -222,6 +224,7 @@ class BenchConfig:
         self.admin.validate(self.production.enabled, self.name)
         self.firewall.validate()
         self.waf.validate(self.nginx.client_max_body_size)
+        self.llm.validate()
 
     def _validate_required_fields(self) -> None:
         if not self.name:
@@ -559,6 +562,15 @@ class BenchConfig:
             "region": self.s3.region,
         }
 
+    def _llm_section(self) -> ConfigDict:
+        return {
+            "provider": self.llm.provider,
+            "api_key": self.llm.api_key,
+            "model": self.llm.model,
+            "max_tokens": self.llm.max_tokens,
+            "api_base": self.llm.api_base,
+        }
+
     def _monitor_section(self) -> ConfigDict:
         monitor = self.monitor
         data: ConfigDict = {
@@ -702,14 +714,16 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section(
         "central",
         lambda data: CentralConfig.from_dict(data.get("central", {})),
-        lambda config: config._central_section()
-        if (config.central.endpoint or config.central.auth_token)
-        else None,
+        lambda config: (
+            config._central_section() if (config.central.endpoint or config.central.auth_token) else None
+        ),
     ),
     _Section(
         "firewall",
         lambda data: FirewallConfig.from_dict(data.get("firewall")),
-        lambda config: config._firewall_section() if (config.firewall.enabled or config.firewall.rules) else None,
+        lambda config: (
+            config._firewall_section() if (config.firewall.enabled or config.firewall.rules) else None
+        ),
     ),
     _Section(
         "waf",
@@ -719,14 +733,27 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section(
         "s3",
         lambda data: S3Config(**BenchConfig._known_fields(S3Config, data.get("s3", {}))),
-        lambda config: config._s3_section()
-        if (config.s3.access_key or config.s3.secret_key or config.s3.bucket or config.s3.provider or config.s3.region)
-        else None,
+        lambda config: (
+            config._s3_section()
+            if (
+                config.s3.access_key
+                or config.s3.secret_key
+                or config.s3.bucket
+                or config.s3.provider
+                or config.s3.region
+            )
+            else None
+        ),
     ),
     _Section(
         "monitor",
         lambda data: MonitorConfig.from_dict(data.get("monitor", {})),
         lambda config: config._monitor_section() if config.production.enabled else None,
+    ),
+    _Section(
+        "llm",
+        lambda data: LLMConfig(**BenchConfig._known_fields(LLMConfig, data.get("llm", {}))),
+        lambda config: config._llm_section() if (config.llm.api_key or config.llm.provider) else None,
     ),
 )
 
@@ -818,6 +845,7 @@ def _bench_schema() -> _Table:
             "admin": _Table(keys=_keys(AdminConfig)),
             "central": _Table(keys=_keys(CentralConfig)),
             "s3": _Table(keys=_keys(S3Config)),
+            "llm": _Table(keys=_keys(LLMConfig)),
             "firewall": _Table(
                 keys=_keys(FirewallConfig) - {"rules"},
                 arrays={"rules": _Table(keys=_keys(FirewallRule))},

@@ -4,6 +4,8 @@ export const settingsApi = {
   get: () => unwrap(request.get('settings').json()),
   update: (data) => unwrap(request.patch('settings', { json: data }).json()),
   myIp: () => request.get('network/client').json(),
+  llmModels: (provider) =>
+    request.get('settings/llm/models', { searchParams: { provider } }).json(),
 }
 
 export const cliUpdatesApi = {
