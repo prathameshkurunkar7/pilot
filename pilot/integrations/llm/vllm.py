@@ -7,15 +7,15 @@ import urllib.request
 from pilot.integrations.llm.base import LLMError, LLMIntegration
 
 # litellm's route for a self-hosted, OpenAI-compatible vLLM server. The model
-# name after the slash is your vLLM --served-model-name, reached at api_base.
+# name is your vLLM --served-model-name, reached at api_base.
 PROVIDER = "hosted_vllm"
 
 
 class VLLMIntegration(LLMIntegration):
     """Self-hosted vLLM (OpenAI-compatible) served at `api_base`, via litellm."""
 
-    provider = PROVIDER
-    default_model = "deepseek-v4-flash"  # set per deployment; there is no shared catalog
+    def __init__(self, api_key: str, *, model: str, stream: bool = False, api_base: str = "") -> None:
+        super().__init__(api_key, provider=PROVIDER, model=model, stream=stream, api_base=api_base)
 
     def get_models(self) -> list[str]:
         """Query the vLLM server's OpenAI-compatible /models endpoint."""

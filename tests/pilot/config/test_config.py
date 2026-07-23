@@ -724,7 +724,7 @@ def test_every_field_survives_a_round_trip(tmp_path: Path) -> None:
     config.s3.provider = "aws"
     config.s3.region = "us-east-1"
 
-    config.llm.provider = "hosted_vllm"
+    config.llm.provider = "self-hosted"
     config.llm.api_key = "sk-llm-secret"
     config.llm.model = "my-served-model"
     config.llm.max_tokens = 2048

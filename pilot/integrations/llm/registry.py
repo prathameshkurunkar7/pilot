@@ -1,45 +1,84 @@
-"""Known LLM providers, for the settings UI and provider validation."""
+"""litellm provider/model catalog and integration construction for the settings UI."""
 
 from __future__ import annotations
 
-from pilot.integrations.llm.anthropic import AnthropicIntegration
+from typing import TYPE_CHECKING
+
+import litellm
+
 from pilot.integrations.llm.base import LLMIntegration
-from pilot.integrations.llm.openai import OpenAIIntegration
 from pilot.integrations.llm.vllm import VLLMIntegration
 
+if TYPE_CHECKING:
+    from pilot.config.llm import LLMConfig
+
+# Self-hosted providers are the only special case: they need an api_base
+SELF_HOSTED_INTEGRATIONS: dict[str, type[LLMIntegration]] = {
+    "self-hosted": VLLMIntegration,
+}
+
+# Providers surfaced in the settings combobox. Hosted providers route straight
+# through litellm by slug; self-hosted slugs are the keys in SELF_HOSTED_INTEGRATIONS.
+# Add a provider here to make it pluggable — no other code change is needed.
 PROVIDER_LABELS = {
-    "anthropic": "Anthropic",
+    "self-hosted": "Self-hosted Model",
     "openai": "OpenAI",
-    "hosted_vllm": "Self-hosted Model",
+    "anthropic": "Anthropic",
+    "openrouter": "OpenRouter",
+    "azure": "Azure OpenAI",
+    "vertex_ai": "Google Vertex AI",
+    "bedrock": "AWS Bedrock",
+    "gemini": "Google Gemini",
+    "mistral": "Mistral",
+    "groq": "Groq",
+    "ollama": "Ollama",
+    "cohere": "Cohere",
 }
 
-INTEGRATIONS: dict[str, type[LLMIntegration]] = {
-    AnthropicIntegration.provider: AnthropicIntegration,
-    OpenAIIntegration.provider: OpenAIIntegration,
-    VLLMIntegration.provider: VLLMIntegration,
-}
 
-# Providers that need an api_base URL to reach a self-hosted endpoint.
-SELF_HOSTED_PROVIDERS = {VLLMIntegration.provider}
+def is_self_hosted(provider: str) -> bool:
+    return provider in SELF_HOSTED_INTEGRATIONS
 
 
-def integration_for(provider: str) -> type[LLMIntegration]:
-    """Return the integration class for a provider slug."""
-    try:
-        return INTEGRATIONS[provider]
-    except KeyError as error:
-        raise ValueError(f"Unknown LLM provider: {provider!r}") from error
+def known_providers() -> set[str]:
+    """The providers we surface in the UI."""
+    return set(PROVIDER_LABELS)
 
 
-def is_configured(llm_config) -> bool:
+def provider_options() -> list[dict]:
+    """Provider list for the settings combobox (searchable in the UI)."""
+    return [
+        {"value": provider, "label": PROVIDER_LABELS[provider], "self_hosted": is_self_hosted(provider)}
+        for provider in sorted(known_providers())
+    ]
+
+
+def models_for(provider: str) -> list[str]:
+    """Model ids litellm knows for a provider; self-hosted models come from the server."""
+    if is_self_hosted(provider):
+        return []
+    return sorted(litellm.models_by_provider.get(provider, set()))
+
+
+def is_configured(llm_config: LLMConfig) -> bool:
     """Whether the bench has a usable AI provider connected."""
-    return bool(llm_config.provider and llm_config.api_key)
+    return bool(llm_config.provider and llm_config.api_key and llm_config.model)
 
 
-def build_integration(llm_config, *, stream: bool = False) -> LLMIntegration:
+def build_integration(llm_config: LLMConfig, *, stream: bool = False) -> LLMIntegration:
     """Construct the integration described by a bench's LLM config."""
-    return integration_for(llm_config.provider)(
-        api_key=llm_config.api_key,
+    self_hosted = SELF_HOSTED_INTEGRATIONS.get(llm_config.provider)
+    if self_hosted is not None:
+        return self_hosted(
+            llm_config.api_key,
+            model=llm_config.model,
+            stream=stream,
+            api_base=llm_config.api_base,
+        )
+    return LLMIntegration(
+        llm_config.api_key,
+        provider=llm_config.provider,
+        model=llm_config.model,
         stream=stream,
         api_base=llm_config.api_base,
     )

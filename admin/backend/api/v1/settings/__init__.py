@@ -127,17 +127,20 @@ def s3_provider_options() -> list[dict]:
 
 
 def llm_provider_options() -> list[dict]:
-    from pilot.integrations.llm.registry import INTEGRATIONS, PROVIDER_LABELS, SELF_HOSTED_PROVIDERS
+    from pilot.integrations.llm.registry import provider_options
 
-    return [
-        {
-            "value": provider,
-            "label": PROVIDER_LABELS[provider],
-            "default_model": integration.default_model,
-            "self_hosted": provider in SELF_HOSTED_PROVIDERS,
-        }
-        for provider, integration in INTEGRATIONS.items()
-    ]
+    return provider_options()
+
+
+@settings_bp.get("/llm/models")
+def llm_models():
+    """Models litellm knows for a provider — powers the model combobox."""
+    from pilot.integrations.llm.registry import models_for
+
+    provider = request.args.get("provider", "").strip()
+    if not provider:
+        return jsonify([])
+    return jsonify(models_for(provider))
 
 
 @settings_bp.get("")

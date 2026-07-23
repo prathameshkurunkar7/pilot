@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-try:
-    import litellm
-except ImportError:
-    litellm = None
+import litellm
 
 from pilot.exceptions import BenchError
 from pilot.integrations.llm import read_system_prompt
@@ -20,18 +17,20 @@ class LLMAuthError(LLMError):
 
 
 class LLMIntegration:
-    """Base class for a chat-completion provider, routed through litellm."""
+    """Any litellm-supported chat provider, addressed as ``provider/model``."""
 
-    provider: str = ""
-    default_model: str = ""
-
-    def __init__(self, api_key: str, stream: bool = False, api_base: str = "") -> None:
-        if litellm is None:
-            raise RuntimeError(
-                "Required dependency `litellm` is not installed. Please install it to use LLMIntegration. "
-                "Update admin dependencies to install the required packages",
-            )
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        provider: str,
+        model: str,
+        stream: bool = False,
+        api_base: str = "",
+    ) -> None:
         self.api_key = api_key
+        self.provider = provider
+        self.model = model
         self.stream = stream
         # Endpoint URL for self-hosted providers (e.g., vLLM).
         self.api_base = api_base
@@ -40,22 +39,15 @@ class LLMIntegration:
         """Return the model IDs litellm knows for this provider."""
         return sorted(litellm.models_by_provider.get(self.provider, set()))
 
-    def prompt(
-        self,
-        prompt: str,
-        *,
-        bench_root: str,
-        model: str | None = None,
-        max_tokens: int = 4096,
-        **kwargs,
-    ):
+    def prompt(self, prompt: str, *, bench_root: str, max_tokens: int = 4096, **kwargs):
         """Send a single-turn prompt and return the litellm response."""
-        messages = []
-        messages.append({"role": "system", "content": read_system_prompt(bench_root)})
-        messages.append({"role": "user", "content": prompt})
+        messages = [
+            {"role": "system", "content": read_system_prompt(bench_root)},
+            {"role": "user", "content": prompt},
+        ]
         try:
             return litellm.completion(
-                model=f"{self.provider}/{model or self.default_model}",
+                model=f"{self.provider}/{self.model}",
                 messages=messages,
                 api_key=self.api_key,
                 api_base=self.api_base or None,
@@ -63,14 +55,21 @@ class LLMIntegration:
                 stream=self.stream,
                 **kwargs,
             )
+        # Specific subclasses first — NotFoundError etc. subclass APIError, so a
+        # bare APIError catch above them would shadow them. Messages stay
+        # actionable and never echo the raw provider body (it can be HTML).
         except litellm.AuthenticationError as exc:
-            raise LLMAuthError(f"{self.provider} rejected the API key.") from exc
+            raise LLMAuthError("The API key was rejected. Check the provider key in Settings.") from exc
+        except litellm.NotFoundError as exc:
+            raise LLMError("Model or endpoint not found. Check the model name and API base URL.") from exc
+        except litellm.RateLimitError as exc:
+            raise LLMError("The AI provider is rate limiting requests. Try again shortly.") from exc
+        except (litellm.APIConnectionError, litellm.Timeout) as exc:
+            raise LLMError(
+                "Could not reach the AI provider. Check the API base URL and that the server is running."
+            ) from exc
         except litellm.APIError as exc:
-            raise LLMError(f"{self.provider} API error: {exc}") from exc
-        except litellm.exceptions.NotFoundError as exc:
-            raise LLMError(f"{self.provider} model not found: {exc}") from exc
-        except litellm.exceptions.BadGatewayError as exc:
-            raise LLMError(f"{self.provider} bad gateway: {exc}") from exc
+            raise LLMError("The AI provider returned an error. Check the model and endpoint.") from exc
 
     def get_response_text(self, response) -> str:
         """Extract the assistant's text from a `prompt` response."""

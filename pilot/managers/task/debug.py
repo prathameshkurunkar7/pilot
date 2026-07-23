@@ -44,4 +44,4 @@ def stream_task_debug(
     except LLMError:
         raise
     except Exception as exc:  # a provider hiccup mid-stream
-        raise LLMError(f"{llm_config.provider} streaming error: {exc}") from exc
+        raise LLMError(f"{llm_config.provider} stopped responding mid-answer.") from exc

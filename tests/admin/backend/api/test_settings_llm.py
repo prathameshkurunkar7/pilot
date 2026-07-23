@@ -69,7 +69,7 @@ def test_patcher_rejects_unknown_provider() -> None:
 
 def test_patcher_requires_api_base_for_self_hosted() -> None:
     config = _config()
-    error = ConfigPatcher(config, {"llm": {"provider": "hosted_vllm", "api_key": "k"}}).apply()
+    error = ConfigPatcher(config, {"llm": {"provider": "self-hosted", "api_key": "k", "model": "m"}}).apply()
     assert error is not None
     assert "api_base" in error
 
@@ -78,7 +78,7 @@ def test_patcher_accepts_self_hosted_with_api_base() -> None:
     config = _config()
     error = ConfigPatcher(
         config,
-        {"llm": {"provider": "hosted_vllm", "api_key": "k", "api_base": "http://vllm:8000/v1"}},
+        {"llm": {"provider": "self-hosted", "api_key": "k", "model": "m", "api_base": "http://vllm:8000/v1"}},
     ).apply()
     assert error is None
     assert config.llm.api_base == "http://vllm:8000/v1"
@@ -104,8 +104,8 @@ def test_response_exposes_llm_without_secret() -> None:
     assert payload["llm"]["api_key_set"] is True
     assert "api_key" not in payload["llm"]
     options = {p["value"]: p for p in payload["llm_providers"]}
-    assert options.keys() == {"anthropic", "openai", "hosted_vllm"}
-    assert options["hosted_vllm"]["self_hosted"] is True
+    assert {"anthropic", "openai", "self-hosted"} <= options.keys()
+    assert options["self-hosted"]["self_hosted"] is True
     assert options["anthropic"]["self_hosted"] is False
 
 
@@ -115,7 +115,7 @@ def test_system_prompt_persists_to_sidecar_not_toml(tmp_path: Path) -> None:
 
     response = client.patch(
         "/api/v1/settings",
-        json={"llm": {"provider": "openai", "api_key": "sk-key", "system_prompt": "Be terse."}},
+        json={"llm": {"provider": "openai", "api_key": "sk-key", "model": "gpt-4o", "system_prompt": "Be terse."}},
     )
     assert response.status_code == 200
 
@@ -139,7 +139,10 @@ def test_system_prompt_defaults_when_unset(tmp_path: Path) -> None:
 def test_disconnect_clears_sidecar_prompt(tmp_path: Path) -> None:
     bench_root = tmp_path / "test-bench"
     client = _client(bench_root)
-    client.patch("/api/v1/settings", json={"llm": {"provider": "openai", "api_key": "k", "system_prompt": "x"}})
+    client.patch(
+        "/api/v1/settings",
+        json={"llm": {"provider": "openai", "api_key": "k", "model": "gpt-4o", "system_prompt": "x"}},
+    )
     assert system_prompt_path(bench_root).exists()
 
     client.patch("/api/v1/settings", json={"llm": {"disconnect": True}})

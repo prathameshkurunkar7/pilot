@@ -28,6 +28,7 @@ def _write_bench(bench_root: Path, *, connect_ai: bool = True) -> None:
     if connect_ai:
         config.llm.provider = "openai"
         config.llm.api_key = "sk-key"
+        config.llm.model = "gpt-4o"
     config.write(bench_root)
 
 
