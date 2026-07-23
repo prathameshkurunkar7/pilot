@@ -3,10 +3,10 @@
     <span class="size-5 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
   </div>
   <div v-else class="space-y-6">
-    <Switch label="Developer mode"
-      description="Lets developers customise doctypes on every site in this bench."
-      :model-value="developerMode" :disabled="savingDeveloperMode"
-      @update:model-value="toggleDeveloperMode" />
+    <Switch label="Allow developer mode"
+      description="Lets developer mode be turned on per site from each site's settings."
+      :model-value="allowDeveloperMode" :disabled="savingDeveloperMode"
+      @update:model-value="toggleAllowDeveloperMode" />
 
     <div class="flex sm:flex-row sm:justify-between sm:items-center flex-col gap-3">
       <div>
@@ -53,7 +53,7 @@ const status = ref({ current_version: '', is_dev: true })
 const latestVersion = ref(null)
 const log = ref('')
 const error = ref(null)
-const developerMode = ref(false)
+const allowDeveloperMode = ref(false)
 const savingDeveloperMode = ref(false)
 
 const updateAvailable = computed(() => Boolean(latestVersion.value) && latestVersion.value !== status.value.current_version)
@@ -74,20 +74,20 @@ onMounted(async () => {
   if (versionResult.status === 'fulfilled') status.value = versionResult.value
   else error.value = 'Could not load version information.'
   if (settingsResult.status === 'fulfilled') {
-    developerMode.value = Boolean(settingsResult.value?.bench?.developer_mode)
+    allowDeveloperMode.value = Boolean(settingsResult.value?.bench?.allow_developer_mode)
   }
   loading.value = false
 })
 
-async function toggleDeveloperMode(value) {
+async function toggleAllowDeveloperMode(value) {
   savingDeveloperMode.value = true
   error.value = null
   try {
-    await settingsApi.update({ bench: { developer_mode: value } })
-    developerMode.value = value
-    toast.success(`Developer mode ${value ? 'enabled' : 'disabled'}`)
+    await settingsApi.update({ bench: { allow_developer_mode: value } })
+    allowDeveloperMode.value = value
+    toast.success(`Developer mode ${value ? 'allowed' : 'disallowed'}`)
   } catch (e) {
-    error.value = e.message || 'Could not update developer mode.'
+    error.value = e.message || 'Could not update developer mode setting.'
   } finally {
     savingDeveloperMode.value = false
   }

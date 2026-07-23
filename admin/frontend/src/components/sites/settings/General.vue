@@ -49,20 +49,18 @@ const GeneralSettings = [
 
 const savingKey = ref(null)
 const error = ref('')
-const benchDeveloperMode = ref(false)
+const allowDeveloperMode = ref(false)
 
-// Developer mode is bench-wide when enabled there, so the per-site toggle would
-// be a no-op that misreports the effective state.
 const visibleSettings = computed(() =>
-  GeneralSettings.filter((s) => s.key !== 'developer_mode' || !benchDeveloperMode.value),
+  GeneralSettings.filter((s) => s.key !== 'developer_mode' || allowDeveloperMode.value),
 )
 
 onMounted(async () => {
   try {
     const settings = await settingsApi.get()
-    benchDeveloperMode.value = Boolean(settings?.bench?.developer_mode)
+    allowDeveloperMode.value = Boolean(settings?.bench?.allow_developer_mode)
   } catch {
-    benchDeveloperMode.value = false
+    allowDeveloperMode.value = false
   }
 })
 
