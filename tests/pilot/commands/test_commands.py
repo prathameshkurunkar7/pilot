@@ -680,20 +680,13 @@ def test_requirements_installs_js_for_app_with_package_json(tmp_path: Path) -> N
         assert mock_rc.call_args[0][0] == ["yarn", "install"]
 
 
-def test_upgrade_command_installs_admin_python_deps() -> None:
+def test_upgrade_command_performs_upgrade() -> None:
     from pilot.commands.runtime.upgrade import UpgradeCommand
 
-    with (
-        patch("pilot.utils.cli_root", return_value=Path("/tmp/pilot")),
-        patch("pilot.utils.run_command") as mock_run_command,
-        patch("pilot.commands.admin.start.download_admin_frontend", return_value=True),
-        patch("pilot.managers.environment.AdminEnvManager") as mock_admin_env,
-    ):
+    with patch("pilot.updater.perform_upgrade") as mock_upgrade:
         UpgradeCommand().run()
 
-    mock_run_command.assert_called_once_with(["git", "-C", "/tmp/pilot", "pull"], stream_output=True)
-    mock_admin_env.assert_called_once_with(Path("/tmp/pilot"))
-    mock_admin_env.return_value.install_python_deps.assert_called_once_with()
+    mock_upgrade.assert_called_once()
 
 
 def test_update_command_runs_all_steps(tmp_path: Path) -> None:
@@ -1354,7 +1347,7 @@ def test_start_rebuilds_admin_when_source_changed(tmp_path: Path, monkeypatch: p
 
     BenchRuntime(make_bench(tmp_path))._ensure_admin_dist(lambda _message: None)
 
-    build.assert_called_once_with(True, on_progress=ANY)
+    build.assert_called_once_with(on_progress=ANY)
 
 
 def test_start_skips_admin_rebuild_when_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
