@@ -6,7 +6,6 @@ import {
   BottomSheet,
   DesktopShell,
   MobileShell,
-  PageHeader,
   MobileNav,
   MobileNavItem,
 } from 'frappe-ui'
@@ -49,22 +48,24 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
 
 <template>
   <MobileShell v-if="isMobile">
-    <PageHeader>
-      <template v-if="route.name == 'Home'">
-        <PilotLogo class="size-6 rounded-sm" />
-        <span class="flex-1 text-center text-ink-gray-9">Home</span>
-      </template>
+    <header class="z-10 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 sm:px-5">
+      <div class="flex items-center justify-between">
+        <template v-if="route.name == 'Home'">
+          <PilotLogo class="size-6 rounded-sm" />
+          <span class="flex-1 text-center text-ink-gray-9">Home</span>
+        </template>
 
-      <button v-else class="flex items-center gap-1" @click="mobileNavDrawer = true">
-        <Breadcrumbs :items="breadcrumbs" />
-        <lucide-chevron-down class="size-4 text-ink-gray-5" />
-      </button>
+        <button v-else class="flex items-center gap-1" @click="mobileNavDrawer = true">
+          <Breadcrumbs :items="breadcrumbs" />
+          <lucide-chevron-down class="size-4 text-ink-gray-5" />
+        </button>
 
-         <div id="header-badge" class="flex items-center" />
+        <div id="header-badge" class="flex items-center" />
         <div id="header-actions" class="flex items-center gap-2 ml-auto">
           <MigrationStatusButton />
         </div>
-    </PageHeader>
+      </div>
+    </header>
 
     <main class="p-3">
       <slot />
@@ -72,10 +73,10 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
 
     <template #nav>
      <MobileNav class='!bg-surface-base'>
-      <MobileNavItem label="Home" icon="lucide-house" to="/home" />
+      <MobileNavItem label="Home" icon="lucide-house" to="/home" :active="route.name == 'Home'"  />
       <MobileNavItem label="Search" icon="lucide-search"  />
       <MobileNavItem label="Notifications" icon="lucide-bell"  />
-      <MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
+      <MobileNavItem label="Settings" icon="lucide-settings" to="/settings" :active="route.name == 'Settings'"  />
   </MobileNav>
 
     </template>
@@ -92,15 +93,17 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
       <Sidebar />
     </template>
 
-    <PageHeader>
-      <div class="flex flex-1 items-center gap-2">
-        <Breadcrumbs :items="breadcrumbs" />
-        <div id="header-badge" class="flex items-center" />
-        <div id="header-actions" class="flex items-center gap-2 ml-auto">
-          <MigrationStatusButton />
+    <header class="z-10 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 sm:px-5">
+      <div class="flex items-center justify-between">
+        <div class="flex flex-1 items-center gap-2">
+          <Breadcrumbs :items="breadcrumbs" />
+          <div id="header-badge" class="flex items-center" />
+          <div id="header-actions" class="flex items-center gap-2 ml-auto">
+            <MigrationStatusButton />
+          </div>
         </div>
       </div>
-    </PageHeader>
+    </header>
 
     <div class="p-4">
       <slot />
