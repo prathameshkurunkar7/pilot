@@ -70,7 +70,7 @@ def test_debug_streams_ai_explanation(tmp_path: Path) -> None:
     _write_bench(tmp_path, connect_ai=True)
     _make_task(tmp_path, TaskStatus.FAILED)
 
-    with patch("pilot.integrations.llm.registry.build_integration", return_value=_FakeIntegration()):
+    with patch("pilot.managers.task.debug.build_integration", return_value=_FakeIntegration()):
         response = _client(tmp_path).get(f"/api/v1/tasks/{TASK_ID}/debug")
 
     assert response.status_code == 200
@@ -78,7 +78,7 @@ def test_debug_streams_ai_explanation(tmp_path: Path) -> None:
     body = response.get_data(as_text=True)
     assert "Root " in body
     assert "cause: bad migration." in body
-    assert '"type": "done"' in body
+    assert '"type":"done"' in body
 
 
 def test_debug_rejects_non_failed_task(tmp_path: Path) -> None:
