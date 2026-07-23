@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -50,28 +51,22 @@ def test_get_models_lists_provider_catalog(fake_litellm) -> None:
 
 
 def test_prompt_routes_model_and_key(fake_litellm) -> None:
-    AnthropicIntegration("sk-key").prompt("hello", system_prompt="be terse")
+    from pilot.integrations.llm import read_system_prompt
+
+    AnthropicIntegration("sk-key").prompt("hello", bench_root=Path("/tmp/bench"))
 
     kwargs = fake_litellm.completion.call_args.kwargs
     assert kwargs["model"] == "anthropic/claude-opus-4-8"
     assert kwargs["api_key"] == "sk-key"
     assert kwargs["max_tokens"] == 4096
     assert kwargs["messages"] == [
-        {"role": "system", "content": "be terse"},
+        {"role": "system", "content": read_system_prompt(Path("/tmp/bench"))},
         {"role": "user", "content": "hello"},
     ]
 
 
-def test_prompt_omits_system_when_absent(fake_litellm) -> None:
-    OpenAIIntegration("sk-key").prompt("hi", model="gpt-4o-mini")
-
-    kwargs = fake_litellm.completion.call_args.kwargs
-    assert kwargs["model"] == "openai/gpt-4o-mini"
-    assert kwargs["messages"] == [{"role": "user", "content": "hi"}]
-
-
 def test_prompt_forwards_extra_kwargs(fake_litellm) -> None:
-    OpenAIIntegration("sk-key").prompt("hi", temperature=0.2)
+    OpenAIIntegration("sk-key").prompt("hi", temperature=0.2, bench_root=Path("/tmp/bench"))
     assert fake_litellm.completion.call_args.kwargs["temperature"] == 0.2
 
 
@@ -89,10 +84,10 @@ def test_get_response_text_handles_empty(fake_litellm) -> None:
 def test_auth_error_maps_to_llm_auth_error(fake_litellm) -> None:
     fake_litellm.completion.side_effect = _FakeAuthError("bad key")
     with pytest.raises(LLMAuthError):
-        AnthropicIntegration("sk-key").prompt("hi")
+        AnthropicIntegration("sk-key").prompt(prompt="be terse", bench_root=Path("/tmp/bench"))
 
 
 def test_api_error_maps_to_llm_error(fake_litellm) -> None:
     fake_litellm.completion.side_effect = _FakeAPIError("boom")
     with pytest.raises(LLMError):
-        AnthropicIntegration("sk-key").prompt("hi")
+        AnthropicIntegration("sk-key").prompt(prompt="be terse", bench_root=Path("/tmp/bench"))
