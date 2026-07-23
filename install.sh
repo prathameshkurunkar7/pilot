@@ -405,6 +405,20 @@ EOF
     done
 }
 
+# nginx workers must run as the bench user to read its sites. Doing it here
+# keeps `bench setup production` out of /etc/nginx/nginx.conf entirely.
+set_nginx_worker_user() {
+    conf=/etc/nginx/nginx.conf
+    [ "$DISTRO" != "macos" ] && [ -f "$conf" ] || return 0
+    grep -q "^[[:space:]]*user[[:space:]]\{1,\}$1;" "$conf" && return 0
+    echo "Setting the nginx worker user to '$1'..."
+    if grep -q "^[[:space:]]*user[[:space:]]" "$conf"; then
+        sed -i "s/^[[:space:]]*user[[:space:]].*;/user $1;/" "$conf"
+    else
+        sed -i "1i user $1;" "$conf"
+    fi
+}
+
 # ── Path A: running as root → create the bench user, then stop ───────────────
 # We do NOT switch users on the fly. We prepare the account and ask the operator
 # to re-run the installer as that user.
@@ -423,6 +437,7 @@ if [ "$(id -u)" -eq 0 ]; then
     fi
 
     install_nginx_include "$BENCH_USER"
+    set_nginx_worker_user "$BENCH_USER"
 
     echo ""
     echo "========================================================================"
