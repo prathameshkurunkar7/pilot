@@ -3,50 +3,31 @@
     <span class="size-5 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
   </div>
   <div v-else class="space-y-6">
-    <div>
-      <p class="mb-1 font-medium text-ink-gray-5 text-xs uppercase tracking-wide">Version</p>
-      <div class="divide-y divide-outline-gray-1">
-        <div class="flex justify-between items-center py-2.5">
-          <span class="text-ink-gray-7 text-sm">Current version</span>
-          <span class="flex items-center gap-2 text-ink-gray-9 text-sm">
-            {{ status.current_version }}
-            <span v-if="status.is_dev"
-              class="px-1.5 py-0.5 rounded bg-surface-gray-3 text-ink-gray-6 text-xs">dev</span>
-          </span>
-        </div>
-        <div v-if="status.is_dev && status.branch" class="flex justify-between items-center py-2.5">
-          <span class="text-ink-gray-7 text-sm">Branch</span>
-          <span class="text-ink-gray-9 text-sm">{{ status.branch }}</span>
-        </div>
+    <div class="flex sm:flex-row sm:justify-between sm:items-center flex-col gap-3">
+      <div>
+        <p class="flex items-center gap-2 font-medium text-ink-gray-8 text-sm">
+          {{ status.current_version || 'Unknown version' }}
+          <span v-if="status.is_dev"
+            class="px-1.5 py-0.5 rounded bg-surface-gray-3 font-normal text-ink-gray-6 text-xs">dev</span>
+        </p>
+        <p class="text-ink-gray-5 text-p-sm">{{ subtitle }}</p>
+      </div>
+      <div v-if="!status.is_dev" class="flex items-center gap-2">
+        <Button class="flex-1 sm:flex-none" variant="subtle" :loading="checking"
+          icon-left="lucide-refresh-cw" @click="check">Check for updates</Button>
+        <Button v-if="updateAvailable" class="flex-1 sm:flex-none" variant="solid" :loading="updating"
+          icon-left="lucide-download" @click="update">Update to {{ latestVersion }}</Button>
       </div>
     </div>
 
-    <div v-if="status.is_dev">
-      <p class="text-ink-gray-5 text-sm">
-        This is a development install. Update it with <code
-          class="px-1 bg-surface-gray-2 rounded text-ink-gray-7">git pull</code> or
-        <code class="px-1 bg-surface-gray-2 rounded text-ink-gray-7">bench upgrade</code>.
-      </p>
-    </div>
+    <p v-if="status.is_dev" class="text-ink-gray-5 text-p-sm">
+      Development install — update with <code class="text-xs">git pull</code> or
+      <code class="text-xs">bench admin upgrade</code>.
+    </p>
 
-    <div v-else class="space-y-3">
-      <div class="flex items-center gap-3">
-        <Button :loading="checking" icon-left="lucide-refresh-cw" @click="check">Check for updates</Button>
-        <Button v-if="latestVersion && updateAvailable" variant="solid" :loading="updating"
-          icon-left="lucide-download" @click="update">
-          Update to {{ latestVersion }}
-        </Button>
-      </div>
-      <p v-if="checked && !updateAvailable && !updating" class="text-ink-gray-6 text-sm">
-        You are on the latest version.
-      </p>
-      <p v-else-if="updateAvailable && !updating" class="text-ink-gray-7 text-sm">
-        A new version is available: {{ latestVersion }}
-      </p>
-
-      <pre v-if="log" class="p-3 bg-surface-gray-2 rounded max-h-48 overflow-auto text-ink-gray-7 text-xs whitespace-pre-wrap">{{ log }}</pre>
-      <ErrorMessage :message="error" />
-    </div>
+    <pre v-if="log"
+      class="p-3 bg-surface-gray-2 rounded max-h-48 overflow-auto text-ink-gray-7 text-xs whitespace-pre-wrap">{{ log }}</pre>
+    <ErrorMessage v-if="error" :message="error" />
   </div>
 </template>
 
@@ -69,6 +50,14 @@ const log = ref('')
 const error = ref(null)
 
 const updateAvailable = computed(() => Boolean(latestVersion.value) && latestVersion.value !== status.value.current_version)
+
+const subtitle = computed(() => {
+  if (status.value.is_dev) return 'Development build'
+  if (updating.value) return 'Updating…'
+  if (updateAvailable.value) return `Update available: ${latestVersion.value}`
+  if (checked.value) return 'You are on the latest version'
+  return 'Released build'
+})
 
 onMounted(async () => {
   try {
