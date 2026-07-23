@@ -557,11 +557,12 @@ add_path_line() {
 
 # Sets RC_FILE to the rc it touched, for the closing hint.
 add_bench_to_path() {
-    export_line='export PATH="$HOME/pilot:$PATH"'
+    # Escaped so $HOME lands literally in the rc file and expands at shell start.
+    export_line="export PATH=\"\$HOME/pilot:\$PATH\""
     case "$SHELL" in
         */fish)
             RC_FILE="$HOME/.config/fish/config.fish"
-            add_path_line "$RC_FILE" 'fish_add_path $HOME/pilot' ;;
+            add_path_line "$RC_FILE" "fish_add_path \$HOME/pilot" ;;
         */zsh)
             RC_FILE="$HOME/.zshrc"
             add_path_line "$RC_FILE" "$export_line" ;;
