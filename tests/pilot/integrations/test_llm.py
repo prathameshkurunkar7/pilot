@@ -1,106 +1,98 @@
-"""Tests for pilot.integrations.llm - Anthropic Messages API over raw HTTP."""
+"""Tests for pilot.integrations.llm - litellm-backed chat completion providers."""
 
 from __future__ import annotations
 
-import io
-import json
-import urllib.error
-from contextlib import contextmanager
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
-from pilot.integrations.llm.anthropic import (
-    ANTHROPIC_VERSION,
-    DEFAULT_MODEL,
-    AnthropicIntegration,
-)
+from pilot.integrations.llm import base
+from pilot.integrations.llm.anthropic import AnthropicIntegration
 from pilot.integrations.llm.base import LLMAuthError, LLMError
+from pilot.integrations.llm.openai import OpenAIIntegration
 
 
-class _FakeResponse(io.BytesIO):
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        self.close()
+class _FakeAuthError(Exception):
+    pass
 
 
-@contextmanager
-def _capture(monkeypatch: pytest.MonkeyPatch, payload: dict):
-    """Patch urlopen; record the outgoing request, return `payload` as the body."""
-    captured: dict = {}
-
-    def fake_urlopen(request, timeout=None):
-        captured["url"] = request.full_url
-        captured["method"] = request.get_method()
-        captured["headers"] = dict(request.header_items())
-        captured["body"] = json.loads(request.data.decode()) if request.data else None
-        captured["timeout"] = timeout
-        return _FakeResponse(json.dumps(payload).encode())
-
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
-    yield captured
+class _FakeAPIError(Exception):
+    pass
 
 
-def test_authentication_headers_use_raw_key_and_version() -> None:
-    headers = AnthropicIntegration("sk-key").authentication_headers()
-    assert headers["x-api-key"] == "sk-key"  # no "Bearer" prefix
-    assert headers["anthropic-version"] == ANTHROPIC_VERSION
+def _response(text: str | None):
+    message = SimpleNamespace(content=text)
+    return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
 
-def test_get_models_returns_ids(monkeypatch: pytest.MonkeyPatch) -> None:
-    with _capture(monkeypatch, {"data": [{"id": "claude-opus-4-8"}, {"id": "claude-haiku-4-5"}]}):
-        models = AnthropicIntegration("sk-key").get_models()
-    assert models == ["claude-opus-4-8", "claude-haiku-4-5"]
+@pytest.fixture
+def fake_litellm(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    stub = SimpleNamespace(
+        completion=MagicMock(return_value=_response("hi")),
+        models_by_provider={"anthropic": {"claude-opus-4-8"}, "openai": {"gpt-4o", "gpt-4o-mini"}},
+        AuthenticationError=_FakeAuthError,
+        APIError=_FakeAPIError,
+    )
+    monkeypatch.setattr(base, "litellm", stub)
+    return stub
 
 
-def test_prompt_builds_messages_body(monkeypatch: pytest.MonkeyPatch) -> None:
-    with _capture(monkeypatch, {"content": []}) as captured:
-        AnthropicIntegration("sk-key").prompt("hello", system_prompt="be terse")
-
-    assert captured["url"] == "https://api.anthropic.com/v1/messages"  # single slash
-    assert captured["method"] == "POST"
-    body = captured["body"]
-    assert body["model"] == DEFAULT_MODEL
-    assert body["max_tokens"] == 4096
-    assert body["system"] == "be terse"
-    assert body["messages"] == [{"role": "user", "content": "hello"}]
+def test_missing_litellm_raises_at_construction(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(base, "litellm", None)
+    with pytest.raises(RuntimeError, match="litellm is not installed"):
+        AnthropicIntegration("sk-key")
 
 
-def test_prompt_omits_system_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    with _capture(monkeypatch, {"content": []}) as captured:
-        AnthropicIntegration("sk-key").prompt("hi")
-    assert "system" not in captured["body"]
+def test_get_models_lists_provider_catalog(fake_litellm) -> None:
+    assert OpenAIIntegration("sk-key").get_models() == ["gpt-4o", "gpt-4o-mini"]
+    assert AnthropicIntegration("sk-key").get_models() == ["claude-opus-4-8"]
 
 
-def test_get_response_text_joins_text_blocks() -> None:
-    response = {
-        "content": [
-            {"type": "text", "text": "Hello "},
-            {"type": "thinking", "thinking": "ignored"},
-            {"type": "text", "text": "world"},
-        ]
-    }
-    assert AnthropicIntegration("sk-key").get_response_text(response) == "Hello world"
+def test_prompt_routes_model_and_key(fake_litellm) -> None:
+    AnthropicIntegration("sk-key").prompt("hello", system_prompt="be terse")
+
+    kwargs = fake_litellm.completion.call_args.kwargs
+    assert kwargs["model"] == "anthropic/claude-opus-4-8"
+    assert kwargs["api_key"] == "sk-key"
+    assert kwargs["max_tokens"] == 4096
+    assert kwargs["messages"] == [
+        {"role": "system", "content": "be terse"},
+        {"role": "user", "content": "hello"},
+    ]
 
 
-def _http_error(code: int) -> urllib.error.HTTPError:
-    return urllib.error.HTTPError("url", code, "err", {}, io.BytesIO(b'{"error": "x"}'))
+def test_prompt_omits_system_when_absent(fake_litellm) -> None:
+    OpenAIIntegration("sk-key").prompt("hi", model="gpt-4o-mini")
+
+    kwargs = fake_litellm.completion.call_args.kwargs
+    assert kwargs["model"] == "openai/gpt-4o-mini"
+    assert kwargs["messages"] == [{"role": "user", "content": "hi"}]
 
 
-def test_auth_error_maps_to_llm_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    def raise_401(request, timeout=None):
-        raise _http_error(401)
+def test_prompt_forwards_extra_kwargs(fake_litellm) -> None:
+    OpenAIIntegration("sk-key").prompt("hi", temperature=0.2)
+    assert fake_litellm.completion.call_args.kwargs["temperature"] == 0.2
 
-    monkeypatch.setattr("urllib.request.urlopen", raise_401)
+
+def test_get_response_text_reads_first_choice(fake_litellm) -> None:
+    text = OpenAIIntegration("sk-key").get_response_text(_response("Hello world"))
+    assert text == "Hello world"
+
+
+def test_get_response_text_handles_empty(fake_litellm) -> None:
+    integration = OpenAIIntegration("sk-key")
+    assert integration.get_response_text(SimpleNamespace(choices=[])) == ""
+    assert integration.get_response_text(_response(None)) == ""
+
+
+def test_auth_error_maps_to_llm_auth_error(fake_litellm) -> None:
+    fake_litellm.completion.side_effect = _FakeAuthError("bad key")
     with pytest.raises(LLMAuthError):
-        AnthropicIntegration("sk-key").get_models()
+        AnthropicIntegration("sk-key").prompt("hi")
 
 
-def test_other_http_error_maps_to_llm_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    def raise_500(request, timeout=None):
-        raise _http_error(500)
-
-    monkeypatch.setattr("urllib.request.urlopen", raise_500)
+def test_api_error_maps_to_llm_error(fake_litellm) -> None:
+    fake_litellm.completion.side_effect = _FakeAPIError("boom")
     with pytest.raises(LLMError):
-        AnthropicIntegration("sk-key").get_models()
+        AnthropicIntegration("sk-key").prompt("hi")
