@@ -27,9 +27,7 @@
       <div class="divide-y divide-outline-gray-1">
         <div v-for="(value, label) in info.runtime" :key="label" class="flex justify-between items-center py-2.5">
           <span class="text-ink-gray-7 text-sm">{{ label }}</span>
-          <a v-if="label === 'Pilot'" :href="`https://github.com/frappe/pilot/commit/${value}`" target="_blank"
-            rel="noopener noreferrer" class="text-ink-gray-9 text-sm hover:underline">{{ value }}</a>
-          <span v-else class="text-ink-gray-9 text-sm">{{ value }}</span>
+          <span class="text-ink-gray-9 text-sm">{{ value }}</span>
         </div>
         <p v-if="!Object.keys(info.runtime).length" class="py-2.5 text-ink-gray-5 text-sm">
           No runtime versions detected.
