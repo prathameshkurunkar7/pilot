@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import litellm
 
 from pilot.exceptions import BenchError
@@ -39,7 +41,7 @@ class LLMIntegration:
         """Return the model IDs litellm knows for this provider."""
         return sorted(litellm.models_by_provider.get(self.provider, set()))
 
-    def prompt(self, prompt: str, *, bench_root: str, max_tokens: int = 4096, **kwargs):
+    def prompt(self, prompt: str, *, bench_root: Path, max_tokens: int = 4096, **kwargs):
         """Send a single-turn prompt and return the litellm response."""
         messages = [
             {"role": "system", "content": read_system_prompt(bench_root)},
