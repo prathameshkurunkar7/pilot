@@ -394,6 +394,15 @@ EOF
     # The distro's stock default site also claims default_server on :80;
     # nginx rejects a duplicate, so drop it and let a bench's vhost win.
     rm -f /etc/nginx/sites-enabled/default
+    # Older installs symlinked each bench into conf.d. The glob above now
+    # loads the same file, and nginx rejects the duplicate server blocks, so
+    # a re-run has to clear the symlinks it supersedes.
+    for link in /etc/nginx/conf.d/*.conf; do
+        [ -L "$link" ] || continue
+        case "$(readlink "$link")" in
+            "$bench_home"/pilot/benches/*) rm -f "$link" ;;
+        esac
+    done
 }
 
 # ── Path A: running as root → create the bench user, then stop ───────────────
