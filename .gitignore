@@ -1,6 +1,9 @@
 # Benches (created by `bench new`)
 /benches/
 
+# Monitor logs (written beside the install)
+/logs/
+
 # Local agent scratch files
 /plan_refactor.md
 
@@ -23,6 +26,9 @@ build/
 .eggs/
 wheels/
 uv.lock
+
+# Written only into release tarballs, never committed
+/VERSION
 
 # Virtual environments
 env/
