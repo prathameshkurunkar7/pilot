@@ -8,10 +8,15 @@
         <Alert v-if="error" theme="red" title="Couldn't debug this task" :dismissible="false">
           <template #description>{{ error }}</template>
         </Alert>
-        <div v-if="text"
-          class="bg-surface-gray-2 p-4 rounded-lg max-h-[60vh] overflow-y-auto prose prose-sm dark:prose-invert max-w-none">
+        <div
+          v-if="text"
+          class="bg-surface-gray-2 p-4 rounded-lg max-h-[60vh] overflow-y-auto prose prose-sm dark:prose-invert max-w-none"
+        >
           <span v-html="html"></span>
-          <span v-if="streaming" class="inline-block bg-ink-gray-6 ml-0.5 w-2 h-4 align-text-bottom animate-pulse" />
+          <span
+            v-if="streaming"
+            class="inline-block bg-ink-gray-6 ml-0.5 w-2 h-4 align-text-bottom animate-pulse"
+          />
         </div>
       </div>
     </template>

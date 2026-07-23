@@ -3,10 +3,13 @@
     <span class="size-5 text-ink-gray-4 animate-spin lucide-loader-circle"></span>
   </div>
   <div v-else class="space-y-6">
-    <Switch label="Allow developer mode"
+    <Switch
+      label="Allow developer mode"
       description="Lets developer mode be turned on per site from each site's settings."
-      :model-value="allowDeveloperMode" :disabled="saving"
-      @update:model-value="toggleAllowDeveloperMode" />
+      :model-value="allowDeveloperMode"
+      :disabled="saving"
+      @update:model-value="toggleAllowDeveloperMode"
+    />
 
     <ErrorMessage v-if="error" :message="error" />
   </div>
