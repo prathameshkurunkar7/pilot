@@ -9,9 +9,11 @@ set -e
 # As that user it installs bench itself, needing no privileges at all.
 
 # ── configuration ─────────────────────────────────────────────────────────────
-INSTALL_URL="https://raw.githubusercontent.com/frappe/pilot/main/install.sh"
-# Overridable so smoke tests can install from a local checkout.
-REPO_URL="${PILOT_REPO_URL:-https://github.com/frappe/pilot}"
+# All three point at the same GitHub repo; override PILOT_GITHUB_SLUG to install
+# from a fork (releases + self-reference URL follow it).
+GITHUB_SLUG="${PILOT_GITHUB_SLUG:-frappe/pilot}"
+INSTALL_URL="https://raw.githubusercontent.com/$GITHUB_SLUG/main/install.sh"
+REPO_URL="${PILOT_REPO_URL:-https://github.com/$GITHUB_SLUG}"
 BRANCH_NAME="${PILOT_BRANCH:-main}"
 PILOT_DIR="$HOME/pilot"
 BENCH_USER="${BENCH_USER:-frappe}"
@@ -500,7 +502,7 @@ fetch_pilot() {
 
     echo "Fetching the latest pilot release..."
     asset_url=$(curl -fsSL --proto '=https' --tlsv1.2 \
-        "https://api.github.com/repos/frappe/pilot/releases?per_page=1" \
+        "https://api.github.com/repos/$GITHUB_SLUG/releases?per_page=1" \
         | grep -o 'https://[^"]*/pilot\.tar\.gz' | head -n1)
     if [ -z "$asset_url" ]; then
         echo "Could not find a pilot.tar.gz release asset." >&2
