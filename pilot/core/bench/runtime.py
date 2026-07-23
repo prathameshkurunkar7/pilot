@@ -144,15 +144,17 @@ class BenchRuntime:
 
     def _ensure_admin_dist(self, on_progress: Callable[[str], None]) -> None:
         from admin.backend.frontend import build_admin_frontend
+        from pilot import is_dev_build
         from pilot.utils import cli_root
 
         root = cli_root()
         dist = root / "admin" / "backend" / "static" / "dist"
         frontend = root / "admin" / "frontend"
-        has_source = (frontend / "package.json").exists()
+        # Releases ship the source too; only dev builds may (re)compile it.
+        can_build = is_dev_build and (frontend / "package.json").exists()
 
         if not (dist / "assets").exists():
-            if not has_source:
+            if not can_build:
                 raise BenchError(
                     "Admin UI is missing from this release. Reinstall bench-cli, "
                     "or run it from a source checkout."
@@ -161,7 +163,7 @@ class BenchRuntime:
             build_admin_frontend(on_progress=on_progress)
             return
 
-        if has_source and self._admin_source_is_newer(frontend, dist):
+        if can_build and self._admin_source_is_newer(frontend, dist):
             self._rebuild_admin(on_progress)
 
     def _rebuild_admin(self, on_progress: Callable[[str], None]) -> None:

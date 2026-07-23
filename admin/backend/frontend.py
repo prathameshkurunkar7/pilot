@@ -12,11 +12,14 @@ _MIN_NODE = (20, 11)
 
 
 def ensure_admin_frontend(on_progress: Callable[[str], None] = lambda message: None) -> None:
-    """Build the admin UI from source in dev checkouts; released installs ship it prebuilt."""
+    """Build the admin UI from source in dev checkouts; released installs ship it prebuilt.
+    Released tarballs carry the source too, so the version - not source presence -
+    decides: only dev builds compile, releases always serve the bundled dist."""
+    from pilot import is_dev_build
     from pilot.utils import cli_root
 
     root = cli_root()
-    if _has_frontend_source(root):
+    if is_dev_build and _has_frontend_source(root):
         build_admin_frontend(on_progress=on_progress)
         return
     if _has_admin_dist(root):
