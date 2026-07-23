@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import urllib.request
@@ -77,32 +78,63 @@ def _upgrade_release(on_progress: Progress) -> None:
         return
 
     root = cli_root()
+    staging = root.with_name(root.name + ".update")
     on_progress(f"Updating {pilot.__version__} -> {release['tag']}...")
-    with tempfile.TemporaryDirectory() as tmp:
-        tarball = Path(tmp) / _TARBALL_ASSET
-        on_progress("Downloading release...")
-        urllib.request.urlretrieve(release["asset_url"], tarball)
-        _back_up_install(root, on_progress)
-        # ponytail: extract-over overlays new files but does not delete files
-        # dropped between versions; acceptable for now, revisit if stale files bite.
-        on_progress("Extracting new version...")
-        extract_tar_archive(tarball, root)
+    _reset_dir(staging)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tarball = Path(tmp) / _TARBALL_ASSET
+            on_progress("Downloading release...")
+            urllib.request.urlretrieve(release["asset_url"], tarball)
+            on_progress("Extracting new version...")
+            extract_tar_archive(tarball, staging)
+        on_progress("Swapping in the new version...")
+        _swap_in(root, staging, on_progress)
+    finally:
+        _remove(staging)
 
     on_progress("Installing admin Python dependencies...")
     AdminEnvManager(root).install_python_deps()
     on_progress(f"Updated to {release['tag']}.")
 
 
-def _back_up_install(root: Path, on_progress: Progress) -> None:
+def _swap_in(root: Path, staging: Path, on_progress: Progress) -> None:
+    """Atomically replace each top-level entry the release ships, keeping a rollback backup.
+
+    Directories in the release (pilot/, admin/) are swapped whole, so files dropped between
+    versions are pruned. Data dirs (benches/, .admin-venv, .git) are absent from the tarball
+    and never touched. A stale top-level entry removed entirely between versions is left in
+    place - rare, and harmless. (ponytail: prune those too only if it ever matters.)
+    """
     backup = root.with_name(root.name + ".backup")
-    on_progress(f"Backing up current install to {backup}...")
-    if backup.exists():
-        shutil.rmtree(backup)
-    shutil.copytree(
-        root,
-        backup,
-        symlinks=True,
-        ignore=shutil.ignore_patterns(
-            ".git", "benches", ".admin-venv", ".venv", "node_modules", "__pycache__"
-        ),
-    )
+    _reset_dir(backup)
+    swapped: list[tuple[str, bool]] = []
+    try:
+        for entry in sorted(staging.iterdir()):
+            target = root / entry.name
+            had_original = target.exists()
+            if had_original:
+                os.rename(target, backup / entry.name)
+            os.rename(entry, target)
+            swapped.append((entry.name, had_original))
+    except Exception:
+        on_progress("Update failed; rolling back...")
+        for name, had_original in reversed(swapped):
+            _remove(root / name)
+            if had_original:
+                os.rename(backup / name, root / name)
+        raise
+    finally:
+        _remove(backup)
+
+
+def _reset_dir(path: Path) -> None:
+    _remove(path)
+    path.mkdir(parents=True)
+
+
+def _remove(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
