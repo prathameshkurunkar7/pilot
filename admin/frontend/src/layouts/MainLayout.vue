@@ -1,4 +1,4 @@
-<script setup lang='ts'>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
@@ -48,7 +48,9 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
 
 <template>
   <MobileShell v-if="isMobile">
-    <header class="sticky top-0 z-10 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 sm:px-5">
+    <header
+      class="sticky top-0 z-10 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 sm:px-5"
+    >
       <div class="flex items-center justify-between">
         <template v-if="route.name == 'Home'">
           <PilotLogo class="size-6 rounded-sm" />
@@ -72,17 +74,21 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
     </main>
 
     <template #nav>
-     <MobileNav class='!bg-surface-base'>
-      <MobileNavItem label="Home" icon="lucide-house" to="/home" :active="route.name == 'Home'"  />
-      <MobileNavItem label="Search" icon="lucide-search"  />
-      <MobileNavItem label="Notifications" icon="lucide-bell"  />
-      <MobileNavItem label="Settings" icon="lucide-settings" to="/settings" :active="route.name == 'Settings'"  />
-  </MobileNav>
-
+      <MobileNav class="!bg-surface-base">
+        <MobileNavItem label="Home" icon="lucide-house" to="/home" :active="route.name == 'Home'" />
+        <MobileNavItem label="Search" icon="lucide-search" />
+        <MobileNavItem label="Notifications" icon="lucide-bell" />
+        <MobileNavItem
+          label="Settings"
+          icon="lucide-settings"
+          to="/settings"
+          :active="route.name == 'Settings'"
+        />
+      </MobileNav>
     </template>
 
     <BottomSheet v-model:open="mobileNavDrawer">
-     <Sidebar is-mobile class='p-2' />
+      <Sidebar is-mobile class="p-2" />
     </BottomSheet>
   </MobileShell>
 
@@ -91,7 +97,9 @@ function breadcrumbsFromRouteMeta({ title = '', group }) {
       <Sidebar />
     </template>
 
-    <header class="sticky top-0 z-10 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 sm:px-5">
+    <header
+      class="sticky top-0 z-10 flex min-h-12 flex-col justify-center border-b bg-surface-base px-3 sm:px-5"
+    >
       <div class="flex items-center justify-between">
         <div class="flex flex-1 items-center gap-2">
           <Breadcrumbs :items="breadcrumbs" />

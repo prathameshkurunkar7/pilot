@@ -15,7 +15,11 @@
     <div>
       <p class="mb-1 font-medium text-ink-gray-5 text-xs uppercase tracking-wide">System</p>
       <div class="divide-y divide-outline-gray-1">
-        <div v-for="(value, label) in systemRows" :key="label" class="flex justify-between items-center py-2.5">
+        <div
+          v-for="(value, label) in systemRows"
+          :key="label"
+          class="flex justify-between items-center py-2.5"
+        >
           <span class="text-ink-gray-7 text-sm">{{ label }}</span>
           <span class="text-ink-gray-9 text-sm">{{ value }}</span>
         </div>
@@ -25,7 +29,11 @@
     <div>
       <p class="mb-1 font-medium text-ink-gray-5 text-xs uppercase tracking-wide">Runtime</p>
       <div class="divide-y divide-outline-gray-1">
-        <div v-for="(value, label) in info.runtime" :key="label" class="flex justify-between items-center py-2.5">
+        <div
+          v-for="(value, label) in info.runtime"
+          :key="label"
+          class="flex justify-between items-center py-2.5"
+        >
           <span class="text-ink-gray-7 text-sm">{{ label }}</span>
           <span class="text-ink-gray-9 text-sm">{{ value }}</span>
         </div>
@@ -37,7 +45,9 @@
 
     <Dialog v-model="dialogOpen" :options="{ title: 'Update', size: 'md' }">
       <div v-if="isDev" class="flex flex-col gap-3">
-        <p class="text-ink-gray-7 text-sm">This is a development install. Update it from a terminal:</p>
+        <p class="text-ink-gray-7 text-sm">
+          This is a development install. Update it from a terminal:
+        </p>
         <pre class="p-3 bg-surface-gray-2 rounded overflow-x-auto text-ink-gray-8 text-xs">git pull
 bench admin build
 bench admin upgrade</pre>
@@ -46,8 +56,10 @@ bench admin upgrade</pre>
 
       <div v-else-if="updating" class="flex flex-col gap-3">
         <p class="text-ink-gray-7 text-sm">Updating to {{ latestVersion }}…</p>
-        <pre v-if="log"
-          class="p-3 bg-surface-gray-2 rounded max-h-64 overflow-auto text-ink-gray-7 text-xs whitespace-pre-wrap">{{ log }}</pre>
+        <pre
+          v-if="log"
+          class="p-3 bg-surface-gray-2 rounded max-h-64 overflow-auto text-ink-gray-7 text-xs whitespace-pre-wrap"
+        >{{ log }}</pre>
       </div>
 
       <div v-else-if="updateAvailable" class="flex flex-col gap-3">
@@ -176,7 +188,8 @@ async function pollTask(taskId) {
     } catch {
       failures += 1
       if (failures >= MAX_CONSECUTIVE_FAILURES) {
-        dialogError.value = 'Lost contact with the admin service after the update. Check the Tasks view.'
+        dialogError.value =
+          'Lost contact with the admin service after the update. Check the Tasks view.'
         return
       }
       continue

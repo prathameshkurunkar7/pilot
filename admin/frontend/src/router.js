@@ -113,7 +113,9 @@ router.beforeEach(async (to) => {
   if (to.query.sid) {
     try {
       await authApi.loginWithSid(to.query.sid)
-    } catch { /* fall through to the unauthenticated redirect below */ }
+    } catch {
+      /* fall through to the unauthenticated redirect below */
+    }
     const { sid: _sid, ...query } = to.query
     return { path: to.path, query, replace: true }
   }
@@ -124,8 +126,7 @@ router.beforeEach(async (to) => {
   if (to.name === 'Setup') return { path: '/' }
   if (!session.authenticated && to.name !== 'Login')
     return { name: 'Login', query: { redirect: to.fullPath } }
-  if (session.authenticated && to.name === 'Login')
-    return { path: safeRedirect(to.query.redirect) }
+  if (session.authenticated && to.name === 'Login') return { path: safeRedirect(to.query.redirect) }
   return true
 })
 

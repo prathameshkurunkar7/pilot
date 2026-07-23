@@ -2,18 +2,32 @@
   <Dialog v-model="open" bare size="3xl">
     <template #default="{ close }">
       <div class="relative flex sm:h-[70vh] max-h-[85vh]">
-        <div class="flex-col p-4 sm:border-r border-outline-gray-2 w-full sm:w-52 shrink-0"
-          :class="activeSection ? 'hidden sm:flex' : 'flex'">
+        <div
+          class="flex-col p-4 sm:border-r border-outline-gray-2 w-full sm:w-52 shrink-0"
+          :class="activeSection ? 'hidden sm:flex' : 'flex'"
+        >
           <h3
-            class="mb-1 p-2 pb-3 border-b sm:border-b-0 border-outline-gray-2 font-semibold text-ink-gray-9 text-base">
-            Settings</h3>
-          <Button v-if="!activeSection" class="sm:hidden top-3 right-3 absolute" variant="ghost" icon="lucide-x"
-            @click="close" />
+            class="mb-1 p-2 pb-3 border-b sm:border-b-0 border-outline-gray-2 font-semibold text-ink-gray-9 text-base"
+          >
+            Settings
+          </h3>
+          <Button
+            v-if="!activeSection"
+            class="sm:hidden top-3 right-3 absolute"
+            variant="ghost"
+            icon="lucide-x"
+            @click="close"
+          />
           <div class="flex flex-col gap-2 sm:gap-0.5 pt-2 sm:pt-0">
-            <Button v-for="section in sections" :key="section.id" :variant="isMobile ? 'subtle' : 'ghost'"
-              :size="isMobile ? 'md' : 'sm'" class="!justify-start border sm:border-0 w-full"
+            <Button
+              v-for="section in sections"
+              :key="section.id"
+              :variant="isMobile ? 'subtle' : 'ghost'"
+              :size="isMobile ? 'md' : 'sm'"
+              class="!justify-start border sm:border-0 w-full"
               :class="currentSection === section.id ? 'sm:!bg-surface-gray-3 sm:!text-ink-gray-9 !text-ink-gray-6' : '!text-ink-gray-6'"
-              @click="activeSection = section.id">
+              @click="activeSection = section.id"
+            >
               <template #prefix>
                 <span :class="section.icon" class="size-4"></span>
               </template>
@@ -21,17 +35,35 @@
             </Button>
           </div>
         </div>
-        <div class="flex-col flex-1 p-6 overflow-y-auto" :class="activeSection ? 'flex' : 'hidden sm:flex'">
+        <div
+          class="flex-col flex-1 p-6 overflow-y-auto"
+          :class="activeSection ? 'flex' : 'hidden sm:flex'"
+        >
           <div class="flex justify-between items-center pb-4">
             <div class="flex items-center gap-2">
-              <Button class="sm:hidden -ml-2" variant="subtle" icon="lucide-arrow-left" @click="activeSection = null" />
+              <Button
+                class="sm:hidden -ml-2"
+                variant="subtle"
+                icon="lucide-arrow-left"
+                @click="activeSection = null"
+              />
               <h3 class="font-semibold text-ink-gray-9 text-lg">{{ activeSectionLabel }}</h3>
             </div>
             <div id="settings-header-actions" class="contents"></div>
-            <Button v-if="currentSection === 'workers'" variant="subtle" icon-left="lucide-plus"
-              @click="workersRef?.addGroup()">Add</Button>
-            <Button v-else-if="currentSection === 'ssh-keys'" variant="subtle" icon-left="lucide-plus"
-              @click="sshKeysRef?.openAdd()">Add</Button>
+            <Button
+              v-if="currentSection === 'workers'"
+              variant="subtle"
+              icon-left="lucide-plus"
+              @click="workersRef?.addGroup()"
+              >Add</Button
+            >
+            <Button
+              v-else-if="currentSection === 'ssh-keys'"
+              variant="subtle"
+              icon-left="lucide-plus"
+              @click="sshKeysRef?.openAdd()"
+              >Add</Button
+            >
           </div>
           <General v-if="currentSection === 'general'" />
           <Workers v-else-if="currentSection === 'workers'" ref="workersRef" />
@@ -81,5 +113,7 @@ const activeSection = ref(null)
 const workersRef = ref(null)
 const sshKeysRef = ref(null)
 const currentSection = computed(() => activeSection.value ?? sections.value[0].id)
-const activeSectionLabel = computed(() => sections.value.find((s) => s.id === currentSection.value)?.label)
+const activeSectionLabel = computed(
+  () => sections.value.find((s) => s.id === currentSection.value)?.label,
+)
 </script>

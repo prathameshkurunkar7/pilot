@@ -4,7 +4,6 @@
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
-
 body {
   @apply bg-surface-base text-ink-gray-9 text-base;
 }
@@ -21,11 +20,11 @@ body {
 /*   } */
 /* } */
 
-.mobile-sidebar [data-slot='sidebar-item'] .text-sm {
+.mobile-sidebar [data-slot="sidebar-item"] .text-sm {
   @apply !text-[16px];
 }
 
-.mobile-sidebar [data-slot='sidebar-item'] {
+.mobile-sidebar [data-slot="sidebar-item"] {
   @apply !h-auto !py-2.5;
 }
 
@@ -108,4 +107,3 @@ body {
 .hover-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
-

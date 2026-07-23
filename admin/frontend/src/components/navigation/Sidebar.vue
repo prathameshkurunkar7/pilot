@@ -20,9 +20,11 @@ function isActive(to) {
 </script>
 
 <template>
-  <Sidebar :disable-collapse="isMobile" class="border-r dark:border-outline-gray-2"
-    :class="isMobile ? '!w-full !border-r-0 mobile-sidebar bg-transparent' : ''">
-
+  <Sidebar
+    :disable-collapse="isMobile"
+    class="border-r dark:border-outline-gray-2"
+    :class="isMobile ? '!w-full !border-r-0 mobile-sidebar bg-transparent' : ''"
+  >
     <SidebarHeader v-if="!isMobile" title="Pilot" :menu-items="menuItems">
       <template #logo>
         <PilotLogo class="size-8" />
@@ -32,11 +34,17 @@ function isActive(to) {
     <nav class="flex-1 overflow-y-auto px-2 pt-2">
       <template v-for="section in sidebarSections" :key="section.label || 'main'">
         <SidebarLabel v-if="section.label" class="mt-2">{{ section.label }}</SidebarLabel>
-        <SidebarItem v-for="item in section.items" :key="item.to" :icon="item.icon" :to="item.to"
-          :active="isActive(item.to)" class="mb-0.5">
+        <SidebarItem
+          v-for="item in section.items"
+          :key="item.to"
+          :icon="item.icon"
+          :to="item.to"
+          :active="isActive(item.to)"
+          class="mb-0.5"
+        >
           {{ item.label }}
 
-          <lucide-chevron-right v-if='isMobile' class="size-4 text-ink-gray-4 ml-auto mr-1" />
+          <lucide-chevron-right v-if="isMobile" class="size-4 text-ink-gray-4 ml-auto mr-1" />
         </SidebarItem>
       </template>
     </nav>
