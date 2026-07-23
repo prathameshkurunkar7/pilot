@@ -15,7 +15,7 @@ class VLLMIntegration(LLMIntegration):
     """Self-hosted vLLM (OpenAI-compatible) served at `api_base`, via litellm."""
 
     provider = PROVIDER
-    default_model = ""  # set per deployment; there is no shared catalog
+    default_model = "deepseek-v4-flash"  # set per deployment; there is no shared catalog
 
     def get_models(self) -> list[str]:
         """Query the vLLM server's OpenAI-compatible /models endpoint."""
