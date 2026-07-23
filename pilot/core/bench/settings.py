@@ -170,7 +170,6 @@ def llm_payload(config: BenchConfig) -> dict:
         "api_key_set": bool(config.llm.api_key),
         "model": config.llm.model,
         "max_tokens": config.llm.max_tokens,
-        "system_prompt_path": config.llm.system_prompt_path,
     }
 
 

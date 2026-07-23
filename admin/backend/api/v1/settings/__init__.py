@@ -15,6 +15,7 @@ from pilot.config import (
     WAF_RULE_OPERATORS,
     BenchConfig,
 )
+from pilot.config.llm import clear_system_prompt, read_system_prompt, write_system_prompt
 from pilot.core.bench import Bench
 from pilot.core.bench.settings import (
     SettingsApplyFailed,
@@ -53,7 +54,7 @@ class _SettingsUpdateRejected(Exception):
     pass
 
 
-def build_settings_response(config: BenchConfig) -> dict:
+def build_settings_response(config: BenchConfig, bench_root: Path | None = None) -> dict:
     return {
         "is_linux": is_linux(),
         "native_process_manager": native_process_manager(),
@@ -101,7 +102,10 @@ def build_settings_response(config: BenchConfig) -> dict:
         "letsencrypt": {"email": config.letsencrypt.email},
         "s3": s3_payload(config),
         "s3_providers": s3_provider_options(),
-        "llm": llm_payload(config),
+        "llm": {
+            **llm_payload(config),
+            "system_prompt": read_system_prompt(bench_root) if bench_root else "",
+        },
         "llm_providers": llm_provider_options(),
         "monitor": {
             "system_log_path": str(config.monitor.system_log_path),
@@ -137,7 +141,7 @@ def get_settings():
         config = BenchConfig.read(bench_root)
     except Exception:
         return error_response("settings_unavailable", "Could not read settings.", 500)
-    return jsonify(build_settings_response(config))
+    return jsonify(build_settings_response(config, bench_root))
 
 
 _AUDIT_LOG_DEFAULT_LIMIT = 50
@@ -214,6 +218,8 @@ def _save_settings_update(bench_root: Path, data: dict) -> dict:
             raise _SettingsUpdateRejected(error)
         _verify_s3_update(config, old_s3_config)
 
+    _apply_system_prompt(bench_root, data.get("llm") or {})
+
     return {
         "config": config,
         "old_restart": old_restart,
@@ -221,6 +227,14 @@ def _save_settings_update(bench_root: Path, data: dict) -> dict:
         "old_waf": old_waf,
         "old_s3_config": old_s3_config,
     }
+
+
+def _apply_system_prompt(bench_root: Path, llm: dict) -> None:
+    """Persist the system prompt to its sidecar file (not bench.toml)."""
+    if llm.get("disconnect"):
+        clear_system_prompt(bench_root)
+    elif "system_prompt" in llm:
+        write_system_prompt(bench_root, str(llm["system_prompt"]))
 
 
 def _verify_s3_update(config: BenchConfig, old_s3_config: dict) -> None:

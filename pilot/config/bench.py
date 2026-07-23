@@ -563,7 +563,6 @@ class BenchConfig:
             "api_key": self.llm.api_key,
             "model": self.llm.model,
             "max_tokens": self.llm.max_tokens,
-            "system_prompt_path": self.llm.system_prompt_path,
         }
 
     def _monitor_section(self) -> ConfigDict:

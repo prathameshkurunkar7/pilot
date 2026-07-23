@@ -204,8 +204,6 @@ class ConfigPatcher:
             llm_config.provider = str(llm["provider"]).strip()
         if "model" in llm:
             llm_config.model = str(llm["model"]).strip()
-        if "system_prompt_path" in llm:
-            llm_config.system_prompt_path = str(llm["system_prompt_path"]).strip()
         api_key = str(llm.get("api_key", "")).strip()
         if api_key:
             llm_config.api_key = api_key

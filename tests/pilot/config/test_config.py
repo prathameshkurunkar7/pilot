@@ -728,7 +728,6 @@ def test_every_field_survives_a_round_trip(tmp_path: Path) -> None:
     config.llm.api_key = "sk-llm-secret"
     config.llm.model = "claude-opus-4-8"
     config.llm.max_tokens = 2048
-    config.llm.system_prompt_path = "./system-prompt"
 
     config.monitor.system_log_path = Path("/var/log/custom-system.log")
     config.monitor.authority_file_path = Path("/var/log/.custom-authority")
