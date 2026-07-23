@@ -20,6 +20,7 @@ from pilot.core.bench.settings import (
     SettingsApplyFailed,
     firewall_payload,
     is_restart_needed,
+    llm_payload,
     restart_trigger_values,
     s3_payload,
     waf_payload,
@@ -39,6 +40,7 @@ __all__ = [
     "build_settings_response",
     "firewall_payload",
     "is_restart_needed",
+    "llm_payload",
     "network_bp",
     "restart_trigger_values",
     "s3_payload",
@@ -99,6 +101,8 @@ def build_settings_response(config: BenchConfig) -> dict:
         "letsencrypt": {"email": config.letsencrypt.email},
         "s3": s3_payload(config),
         "s3_providers": s3_provider_options(),
+        "llm": llm_payload(config),
+        "llm_providers": llm_provider_options(),
         "monitor": {
             "system_log_path": str(config.monitor.system_log_path),
             "log_path": str(config.monitor.log_path) if config.monitor.log_path else "",
@@ -114,6 +118,15 @@ def s3_provider_options() -> list[dict]:
     return [
         {"value": provider, "label": PROVIDER_LABELS[provider], "regions": regions}
         for provider, regions in SUPPORTED_REGIONS.items()
+    ]
+
+
+def llm_provider_options() -> list[dict]:
+    from pilot.integrations.llm.registry import INTEGRATIONS, PROVIDER_LABELS
+
+    return [
+        {"value": provider, "label": PROVIDER_LABELS[provider], "default_model": integration.default_model}
+        for provider, integration in INTEGRATIONS.items()
     ]
 
 
