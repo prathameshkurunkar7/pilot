@@ -67,6 +67,23 @@ def test_patcher_rejects_unknown_provider() -> None:
     assert "llm.provider" in error
 
 
+def test_patcher_requires_api_base_for_self_hosted() -> None:
+    config = _config()
+    error = ConfigPatcher(config, {"llm": {"provider": "hosted_vllm", "api_key": "k"}}).apply()
+    assert error is not None
+    assert "api_base" in error
+
+
+def test_patcher_accepts_self_hosted_with_api_base() -> None:
+    config = _config()
+    error = ConfigPatcher(
+        config,
+        {"llm": {"provider": "hosted_vllm", "api_key": "k", "api_base": "http://vllm:8000/v1"}},
+    ).apply()
+    assert error is None
+    assert config.llm.api_base == "http://vllm:8000/v1"
+
+
 def test_patcher_disconnect_resets_llm() -> None:
     config = _config()
     config.llm.provider = "openai"
@@ -86,7 +103,10 @@ def test_response_exposes_llm_without_secret() -> None:
     assert payload["llm"]["provider"] == "anthropic"
     assert payload["llm"]["api_key_set"] is True
     assert "api_key" not in payload["llm"]
-    assert {p["value"] for p in payload["llm_providers"]} == {"anthropic", "openai"}
+    options = {p["value"]: p for p in payload["llm_providers"]}
+    assert options.keys() == {"anthropic", "openai", "hosted_vllm"}
+    assert options["hosted_vllm"]["self_hosted"] is True
+    assert options["anthropic"]["self_hosted"] is False
 
 
 def test_system_prompt_persists_to_sidecar_not_toml(tmp_path: Path) -> None:

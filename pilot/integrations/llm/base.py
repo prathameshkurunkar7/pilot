@@ -67,6 +67,8 @@ class LLMIntegration:
             raise LLMAuthError(f"{self.provider} rejected the API key.") from exc
         except litellm.APIError as exc:
             raise LLMError(f"{self.provider} API error: {exc}") from exc
+        except litellm.exceptions.NotFoundError as exc:
+            raise LLMError(f"{self.provider} model not found: {exc}") from exc
 
     def get_response_text(self, response) -> str:
         """Extract the assistant's text from a `prompt` response."""
