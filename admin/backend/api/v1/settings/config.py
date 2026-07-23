@@ -46,6 +46,8 @@ class ConfigPatcher:
             self.config.socketio_port = int(bench["socketio_port"])
         if "default_branch" in bench:
             self.config.default_branch = str(bench["default_branch"]).strip()
+        if "allow_developer_mode" in bench:
+            self.config.allow_developer_mode = bool(bench["allow_developer_mode"])
 
     def _apply_mariadb(self) -> None:
         mariadb = self.data.get("mariadb") or {}
