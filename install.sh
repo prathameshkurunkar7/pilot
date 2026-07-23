@@ -405,6 +405,27 @@ EOF
     done
 }
 
+# logrotate refuses to read a config it doesn't own, so these can't be written
+# by the bench user at runtime. One root-owned config globbing the log dirs
+# covers every bench and every monitor, present and future.
+install_logrotate() {
+    bench_home="$(getent passwd "$1" | cut -d: -f6)"
+    [ -n "$bench_home" ] && [ -d /etc/logrotate.d ] || return 0
+    echo "Installing log rotation for '$1'..."
+    cat > /etc/logrotate.d/pilot <<EOF
+$bench_home/pilot/logs/*.log $bench_home/pilot/benches/*/logs/*.log {
+    size 500M
+    rotate 3
+    compress
+    missingok
+    notifempty
+    copytruncate
+    su $1 $1
+}
+EOF
+    chmod 644 /etc/logrotate.d/pilot
+}
+
 # nginx workers must run as the bench user to read its sites. Doing it here
 # keeps `bench setup production` out of /etc/nginx/nginx.conf entirely.
 set_nginx_worker_user() {
@@ -438,6 +459,7 @@ if [ "$(id -u)" -eq 0 ]; then
 
     install_nginx_include "$BENCH_USER"
     set_nginx_worker_user "$BENCH_USER"
+    install_logrotate "$BENCH_USER"
 
     echo ""
     echo "========================================================================"

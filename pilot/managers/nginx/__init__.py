@@ -342,27 +342,7 @@ class NginxManager:
         if self.bench.config.waf.enabled:
             self._ensure_modsecurity_module()
         self.install_default_server()
-        self._write_nginx_logrotate()
         self._reload_or_rollback(symlink_path)
-
-    def _write_nginx_logrotate(self) -> None:
-        """Idempotent: same deterministic content every call. copytruncate avoids
-        needing to signal nginx to reopen the logs, matching how the bench monitor
-        rotates its own stats logs."""
-        target = Path(f"/etc/logrotate.d/{self.bench.config.name}-nginx")
-        access_log = self.bench.logs_path / "nginx-access.log"
-        error_log = self.bench.logs_path / "nginx-error.log"
-        config = f"""\
-{access_log} {error_log} {{
-    size 50M
-    rotate 3
-    compress
-    missingok
-    notifempty
-    copytruncate
-}}
-"""
-        self._stage_and_copy(config, target)
 
     def _stage_and_copy(self, content: str, target: Path, validate: list[str] | None = None) -> None:
         """Sudo-copy content into a root-owned target via a bench-owned staging file."""
